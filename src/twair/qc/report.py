@@ -162,8 +162,65 @@ def wind_direction_totals(root: Path | None = None) -> pl.DataFrame:
     )
 
 
+def pm_pair_diagnostics(root: Path | None = None) -> pl.DataFrame:
+    """PM2.5 vs PM10 per year: correlation, ratio, and impossible pairs.
+
+    PM2.5 is a physical subset of PM10, so ``PM2.5 > PM10`` cannot happen — but
+    the two are measured by separate instruments with independent errors, and
+    it does. Quantifying that rate matters because the 2018 project used PM10
+    as a *predictor* of PM2.5 and reported r = 0.887 on monthly means. Computing
+    the same correlation hourly shows how much of that came from averaging away
+    independent instrument noise rather than from any relationship.
+    """
+    paired = (
+        _base(root)
+        .filter(
+            pl.col("pollutant").is_in(["PM2.5", "PM10"])
+            & (pl.col("flag") == Flag.VALID.value)
+            & pl.col("value").is_not_null()
+        )
+        .select("obs_year", "station_name", "ts_local", "pollutant", "value")
+        .collect()
+    )
+    if paired.is_empty():
+        return pl.DataFrame(schema={"obs_year": pl.Int16, "paired_hours": pl.UInt32})
+
+    wide = (
+        paired.pivot(
+            on="pollutant",
+            index=["obs_year", "station_name", "ts_local"],
+            values="value",
+            aggregate_function="first",
+        )
+        .drop_nulls(["PM2.5", "PM10"])
+        .filter(pl.col("PM10") > 0)
+    )
+    if wide.is_empty():
+        return pl.DataFrame(schema={"obs_year": pl.Int16, "paired_hours": pl.UInt32})
+
+    return (
+        wide.with_columns((pl.col("PM2.5") / pl.col("PM10")).alias("ratio"))
+        .group_by("obs_year")
+        .agg(
+            pl.len().alias("paired_hours"),
+            pl.corr("PM2.5", "PM10").alias("hourly_corr"),
+            (pl.col("PM2.5") > pl.col("PM10")).sum().alias("impossible"),
+            (pl.col("PM2.5") == pl.col("PM10")).sum().alias("identical"),
+            pl.col("ratio").median().alias("ratio_median"),
+            pl.col("ratio").quantile(0.05).alias("ratio_p05"),
+            pl.col("ratio").quantile(0.95).alias("ratio_p95"),
+        )
+        .with_columns(
+            (pl.col("impossible") / pl.col("paired_hours")).round(5).alias("impossible_rate"),
+            (pl.col("identical") / pl.col("paired_hours")).round(5).alias("identical_rate"),
+        )
+        .sort("obs_year")
+    )
+
+
 REPORTS = {
     "coverage_by_year": coverage_by_year,
+    "pm_pair_diagnostics": pm_pair_diagnostics,
     "completeness_matrix": completeness_matrix,
     "station_lifecycle": station_lifecycle,
     "flag_distribution": flag_distribution,
@@ -228,6 +285,23 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
         )
         sentinel_section = _md_table(joined, ["obs_year", "sentinels", "wind_cells", "rate"])
 
+    pm_pairs = results["pm_pair_diagnostics"]
+    pm_section = (
+        _md_table(
+            pm_pairs,
+            [
+                "obs_year",
+                "paired_hours",
+                "hourly_corr",
+                "impossible_rate",
+                "identical_rate",
+                "ratio_median",
+            ],
+        )
+        if not pm_pairs.is_empty()
+        else "_無成對資料。_"
+    )
+
     retention_section = (
         _md_table(retention, ["obs_year", "generation", "invalid", "retained", "retained_ratio"])
         if not retention.is_empty()
@@ -275,6 +349,17 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
 
 {sentinel_section}
 
+## PM2.5 與 PM10 的配對診斷
+
+PM2.5 在定義上是 PM10 的子集，因此 `PM2.5 > PM10` **物理上不可能發生**——
+但兩者由不同儀器獨立量測，誤差各自獨立，所以實際上會發生。
+
+這件事之所以重要：2018 年原始畢業專題把 **PM10 當作 PM2.5 的解釋變數**，
+並在月平均資料上得到 r = 0.887。同樣的相關係數改用逐時資料計算會低得多——
+差額來自月平均把獨立的儀器雜訊平均掉了，而不是來自任何真實關係。
+
+{pm_section}
+
 ## 產出檔案
 
 | 檔案 | 內容 |
@@ -285,6 +370,7 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
 | `flag_distribution.parquet` | 逐年旗標分布 |
 | `retention_asymmetry.parquet` | 無效值測值保留率 |
 | `sentinel_rates.parquet` | 風向哨兵碼出現率 |
+| `pm_pair_diagnostics.parquet` | PM2.5/PM10 逐時相關、不可能配對率、比值分布 |
 | `consistency/*.parquet` | 物理一致性違反率（逐年） |
 """,
         encoding="utf-8",
