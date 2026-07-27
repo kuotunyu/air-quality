@@ -80,6 +80,10 @@ pollutants:
     name_zh: 雨量
     unit: mm
     valid_range: [0, 500]
+    # 「NR」（無降雨）對雨量而言是**測到零**，不是缺值。
+    # 環境部逐時資料中約 90% 的雨量格位是 NR；若把它們排除，
+    # 「平均雨量」就變成「下雨時的平均雨強」，數值差一個量級。
+    no_rain_is_zero: true
   "RH":
     name_zh: 相對溼度
     unit: percent
@@ -108,10 +112,14 @@ pollutants:
     name_zh: 酸鹼值（酸雨）
     unit: pH
     valid_range: [0, 14]
+    # 沒下的雨其 pH 未定義，**不是 0**（pH 0 是強酸）。
+    no_rain_is_zero: false
   "RAIN_COND":
     name_zh: 導電度（酸雨）
     unit: uS/cm
     valid_range: [0, 10000]
+    # 同 PH_RAIN：未定義而非零。
+    no_rain_is_zero: false
 
 # 物理一致性規則。違反者標記，不刪除；違反率本身是研究發現。
 consistency_rules:

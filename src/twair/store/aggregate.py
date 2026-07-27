@@ -29,7 +29,7 @@ import polars as pl
 
 from twair.config import load_conf
 from twair.paths import processed_dir
-from twair.qc.flags import Flag
+from twair.qc.rainfall import usable
 from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
 
@@ -96,7 +96,7 @@ def aggregate_daily(
 
     valid = (
         scan_observations(root)
-        .filter((pl.col("flag") == Flag.VALID.value) & pl.col("value").is_not_null())
+        .filter(usable())
         .select(
             normalise_name_expr(),
             pl.col("pollutant").cast(pl.Utf8),

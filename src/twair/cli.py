@@ -181,6 +181,14 @@ def qc_report() -> None:
     run_report()
 
 
+@app.command("repair")
+def repair() -> None:
+    """Re-apply quality rules to the built store, without re-parsing archives."""
+    from twair.store.repair import repair_store
+
+    repair_store()
+
+
 @app.command("aggregate")
 def aggregate() -> None:
     """Build daily and monthly tables with coverage gating and circular means."""
@@ -219,6 +227,29 @@ def stations(
         path = destination / "stations.parquet"
         table.write_parquet(path)
         console.print(f"wrote {path}")
+
+
+analysis_app = typer.Typer(help="Phase 2+: analysis modules.")
+app.add_typer(analysis_app, name="analyze")
+
+
+@analysis_app.command("m1")
+def analyze_m1(
+    valid_only: bool = typer.Option(
+        True, "--valid-only/--all-values", help="Exclude agency-rejected readings."
+    ),
+) -> None:
+    """M1 — replicate the 2018 project and compare against its published numbers."""
+    from twair.analysis.replication import run_replication, write_replication_report
+
+    result = run_replication(valid_only=valid_only)
+    console.print(
+        f"N = [bold]{result.n:,}[/bold] (published 7,286), {result.n_stations} stations\n"
+    )
+    console.print(result.comparison.filter(result.comparison["kind"] == "ols_coefficient"))
+    paths = write_replication_report(result)
+    for name, path in paths.items():
+        console.print(f"wrote {name}: {path}")
 
 
 @app.command("summary")

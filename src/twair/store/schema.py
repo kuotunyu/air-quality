@@ -14,8 +14,10 @@ from twair.qc.flags import Flag
 
 __all__ = [
     "OBSERVATION_SCHEMA",
+    "PARTITION_SCHEMA",
     "SchemaError",
     "conform",
+    "conform_partition",
     "validate",
 ]
 
@@ -44,6 +46,13 @@ OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
 }
 
 REQUIRED_COLUMNS = tuple(OBSERVATION_SCHEMA)
+
+# What a Parquet partition actually stores: year and month live in the path,
+# not the file. Anything that rewrites a partition in place must conform to
+# this, or the store ends up with mixed dtypes and refuses to scan.
+PARTITION_SCHEMA: dict[str, pl.DataType] = {
+    name: dtype for name, dtype in OBSERVATION_SCHEMA.items() if name not in {"year", "month"}
+}
 
 VALID_FLAGS = frozenset(f.value for f in Flag)
 
@@ -112,3 +121,17 @@ def validate(frame: pl.DataFrame, *, context: str = "") -> pl.DataFrame:
         raise SchemaError(f"{orphans} rows flagged valid but carry no value{where}")
 
     return frame
+
+
+def conform_partition(frame: pl.DataFrame) -> pl.DataFrame:
+    """Coerce a partition frame back to the stored dtypes.
+
+    QC passes build new columns with ``pl.lit``, which yields String where the
+    store holds Categorical. Rewriting a partition without this leaves the
+    store with mixed dtypes across files, and the next scan fails with a schema
+    mismatch — which is exactly what happened once.
+    """
+    missing = [c for c in PARTITION_SCHEMA if c not in frame.columns]
+    if missing:
+        raise SchemaError(f"partition is missing columns: {missing}")
+    return frame.select([pl.col(name).cast(dtype) for name, dtype in PARTITION_SCHEMA.items()])

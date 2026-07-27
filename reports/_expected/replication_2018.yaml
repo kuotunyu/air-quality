@@ -19,7 +19,7 @@ study:
   predictors:
     - AMB_TEMP
     - CO
-    - NO
+    - "NO"
     - NO2
     - NOx
     - O3
@@ -36,7 +36,7 @@ descriptive:
   PM2.5:    {min: 2.33,  median: 23.60,  mean: 26.17,  max: 78.66,  sd: 12.28}
   AMB_TEMP: {min: 7.42,  median: 24.58,  mean: 23.80,  max: 32.34,  sd: 4.87}
   CO:       {min: 0.04,  median: 0.40,   mean: 0.45,   max: 2.24,   sd: 0.25}
-  NO:       {min: 0.16,  median: 3.17,   mean: 5.54,   max: 110.27, sd: 9.32}
+  "NO":       {min: 0.16,  median: 3.17,   mean: 5.54,   max: 110.27, sd: 9.32}
   NO2:      {min: 0.83,  median: 14.06,  mean: 15.01,  max: 54.04,  sd: 7.54}
   NOx:      {min: 1.78,  median: 17.28,  mean: 20.54,  max: 157.73, sd: 15.35}
   O3:       {min: 3.18,  median: 28.58,  mean: 29.51,  max: 65.63,  sd: 7.49}
@@ -51,7 +51,7 @@ descriptive:
 correlation_with_pm25:
   AMB_TEMP: -0.39412
   CO:        0.33898
-  NO:        0.06395
+  "NO":        0.06395
   NO2:       0.49707
   NOx:       0.28297
   O3:        0.22861
@@ -68,7 +68,7 @@ ols_coefficients:
   Intercept: 2.65190
   AMB_TEMP: -0.24500
   CO:        1.38776
-  NO:        0.98901
+  "NO":        0.98901
   NO2:       1.42739
   NOx:      -1.18582
   O3:        0.09644
@@ -92,7 +92,7 @@ vif:
   WD_HR:     1.62105
   WS_HR:     1.66306
   # 原文列為 15716 / 10273 / 42622，量級即為證據本身。
-  NO:    15716.0
+  "NO":    15716.0
   NO2:   10273.0
   NOx:   42622.0
 
@@ -106,7 +106,7 @@ mixed_model_full:
     Intercept: 2.6519
     AMB_TEMP: -0.2450
     CO:        1.3878
-    NO:        0.9890
+    "NO":        0.9890
     NO2:       1.4274
     NOx:      -1.1858
     O3:        0.09644

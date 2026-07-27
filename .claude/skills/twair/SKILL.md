@@ -119,6 +119,31 @@ completely absent in 1982–1992 and 2005–2025.
 this as a defect of that work; the full data disproved it. Do not reintroduce
 the claim. The circular-mean objection is separate and still stands.
 
+### `NR` is a measured zero, not a missing value
+
+About 90% of hourly rainfall cells carry `NR` (無降雨). Excluding them turns
+"mean rainfall" into "mean rainfall intensity while raining" — 2.32 mm against
+a true 0.23. The M1 replication found this by failing to match the original.
+
+**The conversion is pollutant-specific.** `RAINFALL` and `RAIN_INT` become 0;
+`PH_RAIN`, `RAIN_COND` and `RAIN_TEMP` stay null, because the pH of rain that
+never fell is undefined and pH 0 is strongly acidic. See `no_rain_is_zero` in
+`conf/pollutants.yaml`.
+
+Select rows with `twair.qc.rainfall.usable()`, not `flag == "valid"`.
+
+### Repairing the store
+
+`twair repair` re-applies the value-level QC passes across all partitions in
+~40s, versus hours for a rebuild. Use it whenever a QC rule changes; use a
+rebuild only when the *parser* changes.
+
+Anything that writes a partition outside `write_observations` must call
+`conform_partition` first. A repair pass once wrote `flag` as String into 298
+partitions and the whole store stopped scanning — and re-running found nothing
+to fix, because the values were already right. `repair` now also rewrites on
+dtype drift.
+
 ### PM10 is not a predictor of PM2.5
 
 PM2.5 is a physical subset of PM10. `modelling_columns()` excludes it by

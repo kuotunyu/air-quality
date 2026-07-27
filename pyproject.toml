@@ -36,16 +36,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Classical statistics — everything M1 (replication of the 2018 method) needs.
+# Deliberately excludes the ML stack: shap pulls in numba, which needs a
+# compiler toolchain, and M1 must stay installable without one.
 analysis = [
     "pandas>=2.2",
     "numpy>=2.1",
     "scipy>=1.14",
     "statsmodels>=0.14",
+    "matplotlib>=3.9",
+]
+# Gradient boosting and explainability — M2 onwards.
+ml = [
     "scikit-learn>=1.6",
     "lightgbm>=4.5",
     "shap>=0.46",
-    "matplotlib>=3.9",
-    "pingouin>=0.5.5",
 ]
 geo = [
     "geopandas>=1.0",

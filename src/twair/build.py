@@ -21,6 +21,7 @@ from twair.ingest.archive import ArchiveFormatError, read_archive
 from twair.paths import outputs_dir, raw_dir
 from twair.qc.consistency import check_consistency, check_ranges
 from twair.qc.flags import Flag
+from twair.qc.rainfall import apply_no_rain_zero
 from twair.qc.sentinels import apply_sentinels
 from twair.store.writer import write_observations
 
@@ -114,9 +115,11 @@ def _build_year(result: YearResult, archive: Path, *, root: Path | None) -> Year
         )
         return result
 
-    # Order matters: sentinels first (888/999 are not measurements, so they
-    # must not be judged against a 0-360 range), then range checks.
+    # Order matters. Sentinels first (888/999 are not measurements, so they
+    # must not be judged against a 0-360 range), then no-rain zeros (which
+    # create values that the range check should then see), then ranges.
     parsed = apply_sentinels(parsed)
+    parsed = apply_no_rain_zero(parsed)
     parsed = check_ranges(parsed)
 
     result.rows = parsed.height
