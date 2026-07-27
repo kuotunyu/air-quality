@@ -61,6 +61,33 @@ def get_settings() -> Settings:
     return Settings()
 
 
+class ConfigError(RuntimeError):
+    """Raised when a config file is structurally unusable."""
+
+
+def _reject_boolean_keys(node: Any, path: str = "") -> None:
+    """Guard against YAML 1.1's implicit boolean keys.
+
+    PyYAML resolves unquoted ``NO``, ``YES``, ``ON``, ``OFF``, ``Y`` and ``N``
+    to booleans — the "Norway problem". In this project that silently turned
+    the pollutant key ``NO`` (nitric oxide) into ``False``, dropping it from
+    range checks with no error at all. Quoting the key fixes it; this check
+    makes sure a future edit cannot reintroduce the bug quietly.
+    """
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(key, bool):
+                raise ConfigError(
+                    f"{path or '<root>'} has boolean key {key!r}. This is almost certainly "
+                    f"an unquoted YAML scalar such as NO/YES/ON/OFF being coerced to a "
+                    f'boolean — quote it (e.g. "NO":) to keep it a string.'
+                )
+            _reject_boolean_keys(value, f"{path}.{key}" if path else str(key))
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            _reject_boolean_keys(item, f"{path}[{i}]")
+
+
 @cache
 def load_conf(name: str) -> dict[str, Any]:
     """Load ``conf/<name>.yaml``. Cached; call ``load_conf.cache_clear()`` in tests."""
@@ -73,6 +100,7 @@ def load_conf(name: str) -> dict[str, Any]:
         return {}
     if not isinstance(data, dict):
         raise TypeError(f"{path} must contain a YAML mapping at the top level.")
+    _reject_boolean_keys(data, name)
     return data
 
 

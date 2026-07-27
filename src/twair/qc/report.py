@@ -1,0 +1,305 @@
+"""Data quality reporting over the canonical store.
+
+The 2018 project disposed of its data-quality problems in one sentence:
+「本專題將有遺漏值之資料以鄰近測站之資料代替」. What follows is the opposite
+approach — every quality property is measured, published, and left visible for
+the analysis stage to reason about.
+
+Outputs go to ``data/outputs/qc/`` as Parquet (for the website and further
+analysis) plus ``docs/data-quality.md`` as a human-readable summary.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import polars as pl
+from rich.console import Console
+
+from twair.paths import DOCS_DIR, outputs_dir
+from twair.qc.flags import Flag
+from twair.store.writer import scan_observations
+
+log = logging.getLogger(__name__)
+console = Console()
+
+INVALID_FLAGS = (
+    Flag.INSTRUMENT_CHECK_INVALID.value,
+    Flag.PROGRAM_CHECK_INVALID.value,
+    Flag.MANUAL_CHECK_INVALID.value,
+)
+
+
+def _base(root: Path | None = None) -> pl.LazyFrame:
+    return scan_observations(root).with_columns(
+        pl.col("ts_local").dt.year().cast(pl.Int16).alias("obs_year")
+    )
+
+
+def coverage_by_year(root: Path | None = None) -> pl.DataFrame:
+    """Rows, stations, pollutants and valid fraction per year."""
+    return (
+        _base(root)
+        .group_by("obs_year")
+        .agg(
+            pl.len().alias("rows"),
+            pl.col("station_name").n_unique().alias("stations"),
+            pl.col("pollutant").n_unique().alias("pollutants"),
+            (pl.col("flag") == Flag.VALID.value).sum().alias("valid"),
+            pl.col("flag").is_in(INVALID_FLAGS).sum().alias("invalid"),
+            (pl.col("flag") == Flag.MISSING.value).sum().alias("missing"),
+            pl.col("value_retained").sum().alias("value_retained"),
+            pl.col("generation").n_unique().alias("generations"),
+        )
+        .with_columns(
+            (pl.col("valid") / pl.col("rows")).round(4).alias("valid_ratio"),
+            (pl.col("missing") / pl.col("rows")).round(4).alias("missing_ratio"),
+        )
+        .sort("obs_year")
+        .collect()
+    )
+
+
+def completeness_matrix(root: Path | None = None) -> pl.DataFrame:
+    """Per station × pollutant × year completeness — the heat-map source."""
+    return (
+        _base(root)
+        .group_by("obs_year", "station_name", "pollutant")
+        .agg(
+            pl.len().alias("hours"),
+            (pl.col("flag") == Flag.VALID.value).sum().alias("valid"),
+        )
+        .with_columns((pl.col("valid") / pl.col("hours")).round(4).alias("valid_ratio"))
+        .sort("obs_year", "station_name", "pollutant")
+        .collect()
+    )
+
+
+def station_lifecycle(root: Path | None = None) -> pl.DataFrame:
+    """First and last year each station reports — the Gantt-chart source.
+
+    Stations are added, renamed and retired over 40 years. Comparing a national
+    mean across years without accounting for this conflates network expansion
+    with air-quality change.
+    """
+    return (
+        _base(root)
+        .group_by("station_name")
+        .agg(
+            pl.col("obs_year").min().alias("first_year"),
+            pl.col("obs_year").max().alias("last_year"),
+            pl.col("obs_year").n_unique().alias("years_present"),
+            pl.len().alias("rows"),
+        )
+        .with_columns(
+            (pl.col("last_year") - pl.col("first_year") + 1).alias("span"),
+        )
+        .with_columns((pl.col("years_present") < pl.col("span")).alias("has_gap"))
+        .sort("first_year", "station_name")
+        .collect()
+    )
+
+
+def flag_distribution(root: Path | None = None) -> pl.DataFrame:
+    """Flag counts per year — does instrument reliability improve over time?"""
+    return (
+        _base(root)
+        .group_by("obs_year", "flag")
+        .agg(pl.len().alias("n"))
+        .sort("obs_year", "flag")
+        .collect()
+    )
+
+
+def retention_asymmetry(root: Path | None = None) -> pl.DataFrame:
+    """How often a rejected reading still carries its value, by generation.
+
+    Quantifies the archive-format asymmetry: pre-2018 files keep the number
+    behind an invalidation flag, later files discard it. Any long-term trend
+    analysis that imputes missing data has to account for this changing
+    denominator.
+    """
+    return (
+        _base(root)
+        .filter(pl.col("flag").is_in(INVALID_FLAGS))
+        .group_by("obs_year", "generation")
+        .agg(
+            pl.len().alias("invalid"),
+            pl.col("value_retained").sum().alias("retained"),
+        )
+        .with_columns((pl.col("retained") / pl.col("invalid")).round(4).alias("retained_ratio"))
+        .sort("obs_year")
+        .collect()
+    )
+
+
+def sentinel_rates(root: Path | None = None) -> pl.DataFrame:
+    """Wind-direction sentinel occurrence per year.
+
+    Settles the Phase 0 question: were 888/999 actually present during
+    2010-2017, the window the 2018 project analysed?
+    """
+    return (
+        _base(root)
+        .filter(pl.col("flag").is_in([Flag.CALM.value, Flag.INSTRUMENT_FAULT.value]))
+        .group_by("obs_year", "pollutant", "flag")
+        .agg(pl.len().alias("n"))
+        .sort("obs_year", "pollutant", "flag")
+        .collect()
+    )
+
+
+def wind_direction_totals(root: Path | None = None) -> pl.DataFrame:
+    """Denominator for the sentinel rate."""
+    return (
+        _base(root)
+        .filter(pl.col("pollutant").is_in(["WD_HR", "WIND_DIREC"]))
+        .group_by("obs_year")
+        .agg(pl.len().alias("wind_cells"))
+        .sort("obs_year")
+        .collect()
+    )
+
+
+REPORTS = {
+    "coverage_by_year": coverage_by_year,
+    "completeness_matrix": completeness_matrix,
+    "station_lifecycle": station_lifecycle,
+    "flag_distribution": flag_distribution,
+    "retention_asymmetry": retention_asymmetry,
+    "sentinel_rates": sentinel_rates,
+    "wind_direction_totals": wind_direction_totals,
+}
+
+
+def build_reports(root: Path | None = None) -> dict[str, pl.DataFrame]:
+    """Run every report and persist it."""
+    destination = outputs_dir("qc")
+    destination.mkdir(parents=True, exist_ok=True)
+
+    results: dict[str, pl.DataFrame] = {}
+    for name, fn in REPORTS.items():
+        console.print(f"  computing [bold]{name}[/bold] …")
+        frame = fn(root)
+        frame.write_parquet(destination / f"{name}.parquet")
+        results[name] = frame
+    return results
+
+
+def _md_table(frame: pl.DataFrame, columns: list[str], *, limit: int = 60) -> str:
+    subset = frame.select(columns).head(limit)
+    header = "| " + " | ".join(columns) + " |"
+    divider = "|" + "|".join(["---"] * len(columns)) + "|"
+    rows = [
+        "| " + " | ".join("" if v is None else str(v) for v in row) + " |"
+        for row in subset.iter_rows()
+    ]
+    body = "\n".join(rows)
+    note = (
+        f"\n\n_顯示前 {limit} 列，共 {frame.height} 列。完整資料見 `data/outputs/qc/`。_"
+        if frame.height > limit
+        else ""
+    )
+    return f"{header}\n{divider}\n{body}{note}"
+
+
+def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
+    """Render the human-readable data-quality report."""
+    coverage = results["coverage_by_year"]
+    lifecycle = results["station_lifecycle"]
+    retention = results["retention_asymmetry"]
+    sentinels = results["sentinel_rates"]
+    wind_totals = results["wind_direction_totals"]
+
+    total_rows = int(coverage["rows"].sum())
+    year_min = int(coverage["obs_year"].min())
+    year_max = int(coverage["obs_year"].max())
+    overall_valid = float(coverage["valid"].sum()) / total_rows if total_rows else 0.0
+
+    sentinel_section = "本期間資料中**未出現**風向哨兵碼。"
+    if not sentinels.is_empty():
+        joined = (
+            sentinels.group_by("obs_year")
+            .agg(pl.col("n").sum().alias("sentinels"))
+            .join(wind_totals, on="obs_year", how="left")
+            .with_columns((pl.col("sentinels") / pl.col("wind_cells")).round(5).alias("rate"))
+            .sort("obs_year")
+        )
+        sentinel_section = _md_table(joined, ["obs_year", "sentinels", "wind_cells", "rate"])
+
+    retention_section = (
+        _md_table(retention, ["obs_year", "generation", "invalid", "retained", "retained_ratio"])
+        if not retention.is_empty()
+        else "_無無效值紀錄。_"
+    )
+
+    doc = DOCS_DIR / "data-quality.md"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(
+        f"""# 資料品質報告
+
+> 由 `uv run twair qc report` 產生。原始表格位於 `data/outputs/qc/*.parquet`。
+
+## 總覽
+
+| 項目 | 值 |
+|---|---|
+| 涵蓋年份 | {year_min}–{year_max} |
+| 總觀測筆數 | {total_rows:,} |
+| 測站數（歷來） | {lifecycle.height} |
+| 整體有效值比例 | {overall_valid:.2%} |
+
+## 逐年覆蓋
+
+{_md_table(coverage, ["obs_year", "rows", "stations", "pollutants", "valid_ratio", "missing_ratio"])}
+
+## 測站生命週期
+
+監測網從 1990 年代初的十餘站擴張到近 80 站。**跨年度比較「全台平均」時，
+測站組成的變動會與空氣品質變化混淆**，這是原專題完全未處理的問題。
+
+{_md_table(lifecycle, ["station_name", "first_year", "last_year", "years_present", "has_gap"], limit=40)}
+
+## 無效值的測值保留率（格式世代差異）
+
+舊格式把旗標附加在數值後（`15#`），無效值仍保留原始測值；
+新格式以旗標整格取代（`#`），測值遺失。
+
+這代表**同一套缺漏填補策略在不同年代的效果並不相同**，
+任何跨越 2018 年的長期趨勢分析都必須對此做敏感度檢驗。
+
+{retention_section}
+
+## 風向哨兵碼（888 無風 / 999 儀器故障）
+
+{sentinel_section}
+
+## 產出檔案
+
+| 檔案 | 內容 |
+|---|---|
+| `coverage_by_year.parquet` | 逐年筆數、測站數、有效率 |
+| `completeness_matrix.parquet` | 測站 × 測項 × 年 的完整度（熱圖來源） |
+| `station_lifecycle.parquet` | 各測站起訖年份與資料缺口 |
+| `flag_distribution.parquet` | 逐年旗標分布 |
+| `retention_asymmetry.parquet` | 無效值測值保留率 |
+| `sentinel_rates.parquet` | 風向哨兵碼出現率 |
+| `consistency/*.parquet` | 物理一致性違反率（逐年） |
+""",
+        encoding="utf-8",
+    )
+    return doc
+
+
+def run_report(root: Path | None = None) -> None:
+    """Entry point for ``twair qc report``."""
+    results = build_reports(root)
+    doc = write_markdown(results)
+
+    coverage = results["coverage_by_year"]
+    console.print(
+        f"\n[green]{int(coverage['rows'].sum()):,}[/green] rows across "
+        f"[green]{coverage.height}[/green] year(s); "
+        f"wrote [bold]{doc}[/bold]"
+    )

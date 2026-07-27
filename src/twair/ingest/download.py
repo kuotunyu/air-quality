@@ -11,6 +11,7 @@ always traceable back to a specific upstream file.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,8 +77,31 @@ def _destination(item: AirtwFile) -> Path:
     return raw_dir("airtw") / f"{item.year}_{item.station_group}.zip"
 
 
-def download_one(item: AirtwFile, *, force: bool = False) -> DownloadResult:
-    """Fetch a single archive, reusing an intact cached copy when possible."""
+# Drive throttles after a few dozen fetches from the same folder with
+# "Cannot retrieve the public link ... or have had many accesses". It is a
+# rate limit, not a permanent failure, so it is worth waiting out.
+_QUOTA_MARKERS = ("many accesses", "Cannot retrieve the public link", "quota")
+_QUOTA_BACKOFF_SECONDS = (60, 180, 420, 900)
+
+
+def _looks_like_quota(message: str) -> bool:
+    return any(marker.lower() in message.lower() for marker in _QUOTA_MARKERS)
+
+
+def _is_supported_archive(path: Path) -> bool:
+    """MOENV ships both zip and 7z; anything else means we got an error page."""
+    with path.open("rb") as fh:
+        magic = fh.read(8)
+    return magic.startswith(b"PK\x03\x04") or magic.startswith(b"7z\xbc\xaf\x27\x1c")
+
+
+def download_one(item: AirtwFile, *, force: bool = False, patient: bool = False) -> DownloadResult:
+    """Fetch a single archive, reusing an intact cached copy when possible.
+
+    With ``patient=True`` the download waits out Google Drive rate limits
+    instead of giving up, which is what the oldest years need after a long run
+    has already burned through the per-folder allowance.
+    """
     if not force:
         cached = is_cached(item.key)
         if cached is not None:
@@ -88,16 +112,34 @@ def download_one(item: AirtwFile, *, force: bool = False) -> DownloadResult:
 
     import gdown
 
-    try:
-        gdown.download(id=item.drive_file_id, output=str(dest), quiet=True)
-    except Exception as exc:
-        log.warning("download failed for %s: %s", item.key, exc)
-        return DownloadResult(item, None, cached=False, error=str(exc))
+    attempts = len(_QUOTA_BACKOFF_SECONDS) + 1 if patient else 1
+    error = ""
+    for attempt in range(attempts):
+        try:
+            gdown.download(id=item.drive_file_id, output=str(dest), quiet=True)
+            error = ""
+            break
+        except Exception as exc:
+            error = str(exc)
+            if not (patient and _looks_like_quota(error) and attempt < attempts - 1):
+                log.warning("download failed for %s: %s", item.key, error)
+                return DownloadResult(item, None, cached=False, error=error)
+            wait = _QUOTA_BACKOFF_SECONDS[attempt]
+            log.info("%s rate-limited; waiting %ss before retry", item.key, wait)
+            time.sleep(wait)
+
+    if error:
+        return DownloadResult(item, None, cached=False, error=error)
 
     if not dest.exists() or dest.stat().st_size == 0:
         # Google Drive returns an HTML interstitial instead of an error status
         # when a file is unavailable, so an empty result is a real failure mode.
         return DownloadResult(item, None, cached=False, error="empty or missing after download")
+
+    if not _is_supported_archive(dest):
+        head = dest.read_bytes()[:64]
+        dest.unlink(missing_ok=True)
+        return DownloadResult(item, None, cached=False, error=f"not an archive (got {head[:32]!r})")
 
     record_download(
         key=item.key,
@@ -119,6 +161,7 @@ def download_archives(
     years: range | None = None,
     refresh_catalog: bool = False,
     force: bool = False,
+    patient: bool = False,
 ) -> list[DownloadResult]:
     """Download every selected annual archive."""
     if refresh_catalog:
@@ -148,7 +191,7 @@ def download_archives(
         task = progress.add_task("downloading", total=len(targets))
         for item in targets:
             progress.update(task, description=f"downloading {item.year}")
-            result = download_one(item, force=force)
+            result = download_one(item, force=force, patient=patient)
             results.append(result)
             progress.advance(task)
 

@@ -19,6 +19,7 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, T
 
 from twair.ingest.archive import ArchiveFormatError, read_archive
 from twair.paths import outputs_dir, raw_dir
+from twair.qc.consistency import check_consistency, check_ranges
 from twair.qc.flags import Flag
 from twair.qc.sentinels import apply_sentinels
 from twair.store.writer import write_observations
@@ -37,7 +38,13 @@ class YearResult:
     pollutants: int = 0
     generation: str = ""
     partitions: int = 0
+    valid: int = 0
     sentinels: int = 0
+    out_of_range: int = 0
+    retained_invalid: int = 0
+    """Invalid readings whose value survived — only the legacy suffix form allows this."""
+    consistency_checked: int = 0
+    consistency_violations: int = 0
     unparseable: dict[str, int] = field(default_factory=dict)
     error: str | None = None
 
@@ -78,12 +85,28 @@ def build_year(year: int, archive: Path, *, root: Path | None = None) -> YearRes
     """Parse and store one annual archive."""
     result = YearResult(year=year)
     try:
+        return _build_year(result, archive, root=root)
+    except Exception as exc:
+        # A 44-year unattended run must not die on one malformed archive.
+        # The failure is recorded in the summary and the year can be retried
+        # on its own with `twair build --years <year>`.
+        log.exception("build failed for %s", year)
+        result.error = f"{type(exc).__name__}: {exc}"
+        return result
+
+
+def _build_year(result: YearResult, archive: Path, *, root: Path | None) -> YearResult:
+    year = result.year
+    try:
         parsed = read_archive(archive)
     except (ArchiveFormatError, OSError) as exc:
         result.error = f"{type(exc).__name__}: {exc}"
         return result
 
+    # Order matters: sentinels first (888/999 are not measurements, so they
+    # must not be judged against a 0-360 range), then range checks.
     parsed = apply_sentinels(parsed)
+    parsed = check_ranges(parsed)
 
     result.rows = parsed.height
     result.stations = parsed["station_name"].n_unique()
@@ -93,7 +116,18 @@ def build_year(year: int, archive: Path, *, root: Path | None = None) -> YearRes
     result.sentinels = parsed.filter(
         pl.col("flag").is_in([Flag.CALM.value, Flag.INSTRUMENT_FAULT.value])
     ).height
+    result.out_of_range = parsed.filter(pl.col("flag") == Flag.OUT_OF_RANGE.value).height
+    result.valid = parsed.filter(pl.col("flag") == Flag.VALID.value).height
+    result.retained_invalid = parsed.filter(pl.col("value_retained")).height
     result.unparseable = _unparseable_tokens(parsed)
+
+    consistency = check_consistency(parsed)
+    if not consistency.is_empty():
+        destination = outputs_dir("qc") / "consistency"
+        destination.mkdir(parents=True, exist_ok=True)
+        consistency.write_parquet(destination / f"{year}.parquet")
+        result.consistency_violations = int(consistency["violations"].sum())
+        result.consistency_checked = int(consistency["checked"].sum())
 
     written = write_observations(parsed.drop("raw"), root=root)
     result.partitions = len(written)
@@ -170,7 +204,13 @@ def _report(results: list[YearResult]) -> None:
                 "stations": r.stations,
                 "pollutants": r.pollutants,
                 "generation": r.generation,
+                "valid": r.valid,
+                "valid_ratio": round(r.valid / r.rows, 4) if r.rows else 0.0,
                 "sentinels": r.sentinels,
+                "out_of_range": r.out_of_range,
+                "retained_invalid": r.retained_invalid,
+                "consistency_checked": r.consistency_checked,
+                "consistency_violations": r.consistency_violations,
                 "error": r.error or "",
             }
             for r in results

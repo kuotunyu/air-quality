@@ -117,6 +117,11 @@ def ingest_airtw(
         help="Re-resolve download links from airtw instead of using conf/sources.yaml.",
     ),
     force: bool = typer.Option(False, "--force", help="Re-download even if already cached."),
+    patient: bool = typer.Option(
+        False,
+        "--patient",
+        help="Wait out Google Drive rate limits (adds up to ~25 min per file).",
+    ),
 ) -> None:
     """Download annual hourly archives (全部 station group, one file per year)."""
     from twair.ingest.download import download_archives
@@ -125,6 +130,7 @@ def ingest_airtw(
         years=_parse_year_range(years),
         refresh_catalog=refresh_catalog,
         force=force,
+        patient=patient,
     )
 
 
@@ -138,6 +144,18 @@ def build(
     from twair.build import build_observations
 
     build_observations(years=_parse_year_range(years))
+
+
+qc_app = typer.Typer(help="Quality assurance reporting over the canonical store.")
+app.add_typer(qc_app, name="qc")
+
+
+@qc_app.command("report")
+def qc_report() -> None:
+    """Measure and publish data-quality properties of the built store."""
+    from twair.qc.report import run_report
+
+    run_report()
 
 
 @app.command("summary")

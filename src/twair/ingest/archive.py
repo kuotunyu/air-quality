@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import re
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -55,6 +57,85 @@ class ArchiveFormatError(RuntimeError):
     """Raised when a member cannot be mapped onto a known dialect."""
 
 
+# MOENV switched some years to 7-Zip while keeping the `.zip` extension in the
+# download link, so the container is identified by magic bytes, not by name.
+_ZIP_MAGIC = b"PK\x03\x04"
+_7Z_MAGIC = b"7z\xbc\xaf\x27\x1c"
+
+
+class ArchiveContainer:
+    """Uniform read access to a zip or 7z archive.
+
+    Both are used by MOENV, sometimes for adjacent years, and 7z members can
+    only be extracted in bulk — so this hides the difference from the readers.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.kind = detect_container(path)
+        self._zip: zipfile.ZipFile | None = None
+        self._extracted: Path | None = None
+        self._tmp: tempfile.TemporaryDirectory[str] | None = None
+
+    def __enter__(self) -> ArchiveContainer:
+        if self.kind == "zip":
+            self._zip = zipfile.ZipFile(self.path)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._zip is not None:
+            self._zip.close()
+            self._zip = None
+        if self._tmp is not None:
+            self._tmp.cleanup()
+            self._tmp = None
+            self._extracted = None
+
+    def _extract_seven(self) -> Path:
+        """Extract a 7z archive once into scratch space.
+
+        py7zr has no random-access read, and decompression is solid-block, so
+        pulling members individually would re-inflate the whole archive each
+        time. Extracting once and reading from disk is both simpler and faster.
+        """
+        if self._extracted is None:
+            import py7zr
+
+            self._tmp = tempfile.TemporaryDirectory(prefix="twair-7z-")
+            self._extracted = Path(self._tmp.name)
+            log.debug("extracting %s to %s", self.path.name, self._extracted)
+            with py7zr.SevenZipFile(self.path, mode="r") as archive:
+                archive.extractall(path=self._extracted)
+        return self._extracted
+
+    def namelist(self) -> list[str]:
+        if self.kind == "zip":
+            assert self._zip is not None, "use ArchiveContainer as a context manager"
+            return self._zip.namelist()
+
+        import py7zr
+
+        with py7zr.SevenZipFile(self.path, mode="r") as archive:
+            return list(archive.namelist())
+
+    def read(self, name: str) -> bytes:
+        if self.kind == "zip":
+            assert self._zip is not None, "use ArchiveContainer as a context manager"
+            return self._zip.read(name)
+        return (self._extract_seven() / name).read_bytes()
+
+
+def detect_container(path: Path) -> str:
+    """Identify the container from its magic bytes."""
+    with path.open("rb") as fh:
+        magic = fh.read(8)
+    if magic.startswith(_ZIP_MAGIC):
+        return "zip"
+    if magic.startswith(_7Z_MAGIC):
+        return "7z"
+    raise ArchiveFormatError(f"{path.name} is neither zip nor 7z (magic={magic[:8]!r})")
+
+
 @dataclass(frozen=True, slots=True)
 class Dialect:
     """How one archive member lays out its data."""
@@ -72,6 +153,8 @@ class Dialect:
 
     @property
     def generation(self) -> str:
+        if self.container == "xls":
+            return "legacy_xls"
         if self.container == "ods":
             return "legacy_ods"
         if self.encoding in {"cp950", "big5"}:
@@ -192,6 +275,58 @@ def _read_ods_member(raw: bytes) -> tuple[pl.DataFrame, str]:
     return frame, "xml"
 
 
+def _xls_cell_to_text(book: object, sheet: object, row: int, col: int) -> str:
+    """Render one XLS cell as the string the CSV generations would have held.
+
+    Three cases matter: dates arrive as Excel serial numbers, numbers as
+    floats, and quality-flagged readings (``-99#``) as text that must survive
+    untouched for the flag parser.
+    """
+    import xlrd
+
+    kind = sheet.cell_type(row, col)  # type: ignore[attr-defined]
+    value = sheet.cell_value(row, col)  # type: ignore[attr-defined]
+
+    if kind == xlrd.XL_CELL_DATE:
+        stamp = xlrd.xldate.xldate_as_datetime(value, book.datemode)  # type: ignore[attr-defined]
+        return stamp.strftime("%Y/%m/%d")
+    if kind == xlrd.XL_CELL_EMPTY:
+        return ""
+    if kind == xlrd.XL_CELL_NUMBER:
+        # Keep integers integral so `15.0` does not become the string "15.0"
+        # in a column the rest of the pipeline treats as raw text.
+        return str(int(value)) if float(value).is_integer() else str(value)
+    return str(value).strip()
+
+
+def _read_xls_member(raw: bytes) -> tuple[pl.DataFrame, str]:
+    """Read a legacy BIFF spreadsheet.
+
+    Only needed for 1987, the one year MOENV published without an ODS twin.
+    """
+    import xlrd
+
+    try:
+        book = xlrd.open_workbook(file_contents=raw)
+        sheet = book.sheet_by_index(0)
+    except Exception as exc:
+        # Normalise to our own error so a single unreadable member is skipped
+        # by read_archive rather than aborting the whole year.
+        raise ArchiveFormatError(f"unreadable XLS member: {exc}") from exc
+
+    if sheet.nrows < 2:
+        raise ArchiveFormatError("XLS member has no data rows")
+
+    header = [str(sheet.cell_value(0, c)).strip() for c in range(sheet.ncols)]
+    columns: dict[str, list[str]] = {name: [] for name in header}
+    for row in range(1, sheet.nrows):
+        for col, name in enumerate(header):
+            columns[name].append(_xls_cell_to_text(book, sheet, row, col))
+
+    frame = pl.DataFrame(columns, schema=dict.fromkeys(header, pl.Utf8))
+    return frame, "biff"
+
+
 def select_members(names: list[str]) -> list[str]:
     """Choose which archive members to parse.
 
@@ -259,43 +394,80 @@ def _to_long(frame: pl.DataFrame, dialect: Dialect, *, source_member: str) -> pl
     )
 
 
-def read_member(archive: Path, member: str) -> pl.DataFrame:
-    """Parse one member of an archive into the long observation format."""
-    with zipfile.ZipFile(archive) as zf:
-        raw = zf.read(member)
-
+def _read_by_suffix(raw: bytes, member: str) -> tuple[pl.DataFrame, str, str]:
+    """Dispatch on member type, returning (frame, encoding, container)."""
     suffix = PurePosixPath(member).suffix.lower()
     if suffix == ".csv":
         frame, encoding = _read_csv_member(raw)
-        container = "csv"
-    elif suffix == ".ods":
+        return frame, encoding, "csv"
+    if suffix == ".ods":
         frame, encoding = _read_ods_member(raw)
-        container = "ods"
-    else:
-        raise ArchiveFormatError(f"unsupported member type: {member!r}")
+        return frame, encoding, "ods"
+    if suffix == ".xls":
+        frame, encoding = _read_xls_member(raw)
+        return frame, encoding, "xls"
+    raise ArchiveFormatError(f"unsupported member type: {member!r}")
 
+
+def _parse_member_bytes(raw: bytes, member: str) -> pl.DataFrame:
+    frame, encoding, container = _read_by_suffix(raw, member)
     dialect = detect_dialect(frame.columns, encoding=encoding, container=container)
     return _to_long(frame, dialect, source_member=member)
 
 
-def read_archive(archive: Path, *, limit: int | None = None) -> pl.DataFrame:
+def read_member(archive: Path, member: str) -> pl.DataFrame:
+    """Parse one member of an archive into the long observation format."""
+    with ArchiveContainer(archive) as container:
+        raw = container.read(member)
+    return _parse_member_bytes(raw, member)
+
+
+def _parse_member_task(args: tuple[str, str]) -> pl.DataFrame | None:
+    """Worker entry point: open the archive independently and parse one member.
+
+    Top-level (not a closure) so it can be pickled for a process pool. Zip
+    members are randomly accessible, so each worker paying its own open is
+    cheaper than shipping decompressed bytes across the process boundary.
+    """
+    archive_path, member = args
+    try:
+        with ArchiveContainer(Path(archive_path)) as container:
+            return _parse_member_bytes(container.read(member), member)
+    except (ArchiveFormatError, zipfile.BadZipFile, OSError) as exc:
+        log.warning("skipping %s in %s: %s", member, Path(archive_path).name, exc)
+        return None
+
+
+def read_archive(
+    archive: Path,
+    *,
+    limit: int | None = None,
+    workers: int | None = None,
+) -> pl.DataFrame:
     """Parse an entire annual archive into one long frame.
 
     ``limit`` caps the number of members read, which keeps exploratory runs and
     tests fast on multi-hundred-megabyte archives.
+
+    ``workers`` parallelises member parsing. ODS years are dominated by XML
+    decoding — hundreds of megabytes of it per year — which is CPU-bound and
+    scales almost linearly. 7z archives stay single-threaded because each
+    worker would have to re-extract the whole solid block.
     """
-    with zipfile.ZipFile(archive) as zf:
-        members = select_members(zf.namelist())
+    with ArchiveContainer(archive) as container:
+        kind = container.kind
+        members = select_members(container.namelist())
+        if limit is not None:
+            members = members[:limit]
 
-    if limit is not None:
-        members = members[:limit]
-
-    frames: list[pl.DataFrame] = []
-    for member in members:
-        try:
-            frames.append(read_member(archive, member))
-        except (ArchiveFormatError, zipfile.BadZipFile) as exc:
-            log.warning("skipping %s in %s: %s", member, archive.name, exc)
+        if kind == "7z" or (workers is not None and workers <= 1) or len(members) < 4:
+            frames = [
+                frame
+                for frame in (_safe_parse(container, member, archive.name) for member in members)
+                if frame is not None
+            ]
+        else:
+            frames = _parse_in_parallel(archive, members, workers)
 
     if not frames:
         raise ArchiveFormatError(f"no parseable members in {archive}")
@@ -303,9 +475,29 @@ def read_archive(archive: Path, *, limit: int | None = None) -> pl.DataFrame:
     return pl.concat(frames, how="vertical_relaxed")
 
 
+def _safe_parse(container: ArchiveContainer, member: str, archive_name: str) -> pl.DataFrame | None:
+    try:
+        return _parse_member_bytes(container.read(member), member)
+    except (ArchiveFormatError, zipfile.BadZipFile) as exc:
+        log.warning("skipping %s in %s: %s", member, archive_name, exc)
+        return None
+
+
+def _parse_in_parallel(
+    archive: Path, members: list[str], workers: int | None
+) -> list[pl.DataFrame]:
+    from concurrent.futures import ProcessPoolExecutor
+
+    max_workers = workers or max(1, (os.cpu_count() or 2) - 2)
+    tasks = [(str(archive), member) for member in members]
+
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        return [frame for frame in pool.map(_parse_member_task, tasks) if frame is not None]
+
+
 def describe_archive(archive: Path) -> dict[str, object]:
     """Cheap structural summary — used to map format generations without parsing."""
-    with zipfile.ZipFile(archive) as zf:
+    with ArchiveContainer(archive) as zf:
         names = zf.namelist()
         chosen = select_members(names)
         suffixes: dict[str, int] = {}
@@ -317,19 +509,14 @@ def describe_archive(archive: Path) -> dict[str, object]:
         error = None
         if chosen:
             try:
-                raw = zf.read(chosen[0])
-                if chosen[0].lower().endswith(".csv"):
-                    frame, encoding = _read_csv_member(raw)
-                    container = "csv"
-                else:
-                    frame, encoding = _read_ods_member(raw)
-                    container = "ods"
+                frame, encoding, container = _read_by_suffix(zf.read(chosen[0]), chosen[0])
                 dialect = detect_dialect(frame.columns, encoding=encoding, container=container)
             except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
 
     return {
         "archive": archive.name,
+        "container": detect_container(archive),
         "members": len(names),
         "data_members": len(chosen),
         "suffixes": suffixes,

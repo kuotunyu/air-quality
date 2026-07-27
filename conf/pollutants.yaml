@@ -11,28 +11,28 @@ sentinels:
   # 這是本專案最關鍵的資料陷阱之一：888/999 是哨兵碼，不是角度。
   # 2018 年原始畢業專題把 WD_HR 當線性變數直接進迴歸，
   # 若資料含哨兵碼即為污染值。Phase 2 必須實測其出現率。
-  wind_direction:
+  "wind_direction":
     888: calm          # 無風
     999: instrument_fault
 
 pollutants:
-  SO2:
+  "SO2":
     name_zh: 二氧化硫
     unit: ppb
     valid_range: [0, 500]
-  CO:
+  "CO":
     name_zh: 一氧化碳
     unit: ppm
     valid_range: [0, 50]
-  O3:
+  "O3":
     name_zh: 臭氧
     unit: ppb
     valid_range: [0, 500]
-  PM10:
+  "PM10":
     name_zh: 懸浮微粒
     unit: ug/m3
     valid_range: [0, 2000]
-  PM2.5:
+  "PM2.5":
     name_zh: 細懸浮微粒
     unit: ug/m3
     valid_range: [0, 1000]
@@ -40,75 +40,75 @@ pollutants:
     # 不宜直接與 PM2.5 空氣品質標準之 24 小時值（35 微克/立方公尺）比較」
     # 測量方法為貝他射線衰減法。
     caveat: hourly_values_are_advisory_only
-  NOx:
+  "NOx":
     name_zh: 氮氧化物
     unit: ppb
     valid_range: [0, 1000]
     # NO + NO2 = NOx 為恆等式。三者不可同時進入線性模型
     # （2018 原專題的逐步剔除震盪即源於此）。
     identity: NO + NO2
-  NO:
+  "NO":
     name_zh: 一氧化氮
     unit: ppb
     valid_range: [0, 1000]
-  NO2:
+  "NO2":
     name_zh: 二氧化氮
     unit: ppb
     valid_range: [0, 500]
-  THC:
+  "THC":
     name_zh: 總碳氫合物
     unit: ppm
     valid_range: [0, 50]
-  NMHC:
+  "NMHC":
     name_zh: 非甲烷碳氫化合物
     unit: ppm
     valid_range: [0, 50]
     identity: THC - CH4
-  CH4:
+  "CH4":
     name_zh: 甲烷
     unit: ppm
     valid_range: [0, 50]
-  UVB:
+  "UVB":
     name_zh: 紫外線指數
     unit: UVI
     valid_range: [0, 20]
-  AMB_TEMP:
+  "AMB_TEMP":
     name_zh: 大氣溫度
     unit: degC
     valid_range: [-10, 50]
-  RAINFALL:
+  "RAINFALL":
     name_zh: 雨量
     unit: mm
     valid_range: [0, 500]
-  RH:
+  "RH":
     name_zh: 相對溼度
     unit: percent
     valid_range: [0, 100]
-  WIND_SPEED:
+  "WIND_SPEED":
     name_zh: 風速（每小時最後 10 分鐘算術平均）
     unit: m/s
     valid_range: [0, 100]
-  WIND_DIREC:
+  "WIND_DIREC":
     name_zh: 風向（每小時最後 10 分鐘向量平均）
     unit: degree
     valid_range: [0, 360]
     circular: true
     sentinel_set: wind_direction
-  WS_HR:
+  "WS_HR":
     name_zh: 風速小時值（整個小時算術平均）
     unit: m/s
     valid_range: [0, 100]
-  WD_HR:
+  "WD_HR":
     name_zh: 風向小時值（整個小時向量平均）
     unit: degree
     valid_range: [0, 360]
     circular: true
     sentinel_set: wind_direction
-  PH_RAIN:
+  "PH_RAIN":
     name_zh: 酸鹼值（酸雨）
     unit: pH
     valid_range: [0, 14]
-  RAIN_COND:
+  "RAIN_COND":
     name_zh: 導電度（酸雨）
     unit: uS/cm
     valid_range: [0, 10000]

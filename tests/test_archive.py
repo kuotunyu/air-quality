@@ -266,4 +266,65 @@ def test_archive_with_nothing_parseable_raises(tmp_path: Path) -> None:
 
 def test_read_member_rejects_unsupported_types(ods_archive: Path) -> None:
     with pytest.raises(ArchiveFormatError, match="unsupported member type"):
+        read_member(ods_archive, "083年 中部空品區/ReadMe_普通測站.odt")
+
+
+def test_unreadable_xls_becomes_our_own_error(ods_archive: Path) -> None:
+    """Normalised so read_archive skips the member instead of aborting the year."""
+    with pytest.raises(ArchiveFormatError, match="unreadable XLS"):
         read_member(ods_archive, "083年 中部空品區/83年二林站.xls")
+
+
+class TestXlsCellConversion:
+    """1987 is the one year published only as BIFF spreadsheets.
+
+    Its cells arrive typed rather than as text, so they have to be rendered
+    back into the string form the rest of the pipeline expects.
+    """
+
+    class _Sheet:
+        def __init__(self, kinds: list[int], values: list[object]) -> None:
+            self._kinds = kinds
+            self._values = values
+
+        def cell_type(self, row: int, col: int) -> int:
+            return self._kinds[col]
+
+        def cell_value(self, row: int, col: int) -> object:
+            return self._values[col]
+
+    class _Book:
+        datemode = 0
+
+    def _convert(self, kind: int, value: object) -> str:
+        from twair.ingest.archive import _xls_cell_to_text
+
+        sheet = self._Sheet([kind], [value])
+        return _xls_cell_to_text(self._Book(), sheet, 0, 0)
+
+    def test_excel_date_serial_becomes_a_date_string(self) -> None:
+        import xlrd
+
+        # 31778 is 1987-01-01 in the 1900 date system.
+        assert self._convert(xlrd.XL_CELL_DATE, 31778.0) == "1987/01/01"
+
+    def test_whole_numbers_do_not_grow_a_decimal_point(self) -> None:
+        import xlrd
+
+        assert self._convert(xlrd.XL_CELL_NUMBER, 15.0) == "15"
+
+    def test_fractional_numbers_are_preserved(self) -> None:
+        import xlrd
+
+        assert self._convert(xlrd.XL_CELL_NUMBER, 1.9) == "1.9"
+
+    def test_flagged_text_passes_through_untouched(self) -> None:
+        """`-99#` must reach the flag parser intact."""
+        import xlrd
+
+        assert self._convert(xlrd.XL_CELL_TEXT, "-99#") == "-99#"
+
+    def test_empty_cells_become_empty_strings(self) -> None:
+        import xlrd
+
+        assert self._convert(xlrd.XL_CELL_EMPTY, "") == ""
