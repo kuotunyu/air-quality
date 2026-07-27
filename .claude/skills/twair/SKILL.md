@@ -87,13 +87,17 @@ parse but yield no rows, and `build_year` treats an empty parse as an error.
 Any new "skip the bad rows" filter needs a matching "did everything get
 skipped?" guard.
 
-### Flag semantics changed between generations
+### Flag semantics vary *by year*, not by generation
 
-- legacy: `15#` — flag suffixed, **value retained**
-- modern: `#` — flag replaces the value, **value lost**
+- legacy: `15#` — flag suffixed, value retained
+- modern: `#` — flag replaces the value, value lost
 
-`value_retained` records which. Any analysis crossing 2018 needs a sensitivity
-check on this.
+But the split is not clean. Measured over all 44 years, retention is ~1.0 for
+most legacy years yet **0.000 in 1997 and 2001, 0.340 in 1998, 0.818 in 1995**
+— all "legacy" years. The convention changed year to year within a generation.
+
+**Read `value_retained` from the data per year; never infer it from
+`generation`.** `data/outputs/qc/retention_asymmetry.parquet` has the numbers.
 
 ### YAML eats `NO`
 
@@ -107,9 +111,13 @@ Arithmetic mean of 350° and 10° is 180° — due south, when the answer is nor
 Use `circular_mean_expr`. Circular pollutants are marked `circular: true` in
 `conf/pollutants.yaml`.
 
-Sentinels 888 (calm) / 999 (fault) exist but are **era-dependent**: 6.34% in
-1994, 0% in 2010/2023/2024. Do not overstate their effect on the original's
-2010–2017 window.
+Sentinels 888 (calm) / 999 (fault) are handled by `twair.qc.sentinels`, but
+measured over all 44 years they exist **only in 1993–2004** (2.6–6.4%), and are
+completely absent in 1982–1992 and 2005–2025.
+
+**The 2018 project's 2010–2017 window contains zero of them.** Phase 0 listed
+this as a defect of that work; the full data disproved it. Do not reintroduce
+the claim. The circular-mean objection is separate and still stands.
 
 ### PM10 is not a predictor of PM2.5
 
@@ -168,6 +176,9 @@ forty-three. Anything written per-run needs the same treatment.
 - Where a fast implementation shadows a readable one (`parse_expr` vs
   `parse_token`), a test asserts they agree.
 - Ingest tests never touch the network.
+- Tests that scan the whole 341M-row store are marked `@pytest.mark.slow` and
+  excluded by default (`addopts` carries `-m 'not slow'`). Run them with
+  `pytest -m slow`. Never run two full-store scans in one process — that OOMs.
 
 ### Commits
 

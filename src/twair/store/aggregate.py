@@ -221,12 +221,26 @@ def aggregate_monthly(
     )
 
 
+def _write(frame: pl.DataFrame, table: str, name: str) -> Path:
+    """Write one aggregate, creating its directory first.
+
+    ``processed_dir`` resolves a path without creating it, so a table that is
+    not part of the standard tree needs the mkdir here — otherwise a full
+    aggregation runs to completion and then dies on the write.
+    """
+    destination = processed_dir(table)
+    destination.mkdir(parents=True, exist_ok=True)
+    path = destination / name
+    frame.write_parquet(path, compression="zstd")
+    return path
+
+
 def build_aggregates(root: Path | None = None) -> dict[str, pl.DataFrame]:
     """Produce and persist both aggregate tables."""
     daily = aggregate_daily(root)
-    daily.write_parquet(processed_dir("daily") / "daily.parquet")
+    _write(daily, "daily", "daily.parquet")
 
     monthly = aggregate_monthly(daily)
-    monthly.write_parquet(processed_dir("monthly") / "monthly.parquet")
+    _write(monthly, "monthly", "monthly.parquet")
 
     return {"daily": daily, "monthly": monthly}

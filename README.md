@@ -79,8 +79,8 @@ uv run twair probe sources
 | 階段 | 內容 | 狀態 |
 |---|---|---|
 | Phase 0 | 專案骨架、資料源盤點 | ✅ 完成 |
-| Phase 1 | 資料取得、QA/QC、發布資料集 | 🚧 約 85% |
-| Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ⬜ |
+| Phase 1 | 資料取得、QA/QC、Canonical Parquet | ✅ 完成 |
+| Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ⬜ 下一步 |
 | Phase 3 | 互動網站首波上線 | ⬜ |
 | Phase 4 | 氣象正規化、政策因果推論 | ⬜ |
 | Phase 5 | 空間分析、境外傳輸軌跡 | ⬜ |

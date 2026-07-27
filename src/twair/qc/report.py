@@ -19,6 +19,7 @@ from rich.console import Console
 
 from twair.paths import DOCS_DIR, outputs_dir
 from twair.qc.flags import Flag
+from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
 
 log = logging.getLogger(__name__)
@@ -32,8 +33,15 @@ INVALID_FLAGS = (
 
 
 def _base(root: Path | None = None) -> pl.LazyFrame:
+    """Scan the store with station names normalised and the year derived.
+
+    Normalisation matters here as much as anywhere: without it 台南 and 臺南
+    are counted as two stations, and every per-station statistic splits at the
+    year MOENV changed the spelling.
+    """
     return scan_observations(root).with_columns(
-        pl.col("ts_local").dt.year().cast(pl.Int16).alias("obs_year")
+        normalise_name_expr(),
+        pl.col("ts_local").dt.year().cast(pl.Int16).alias("obs_year"),
     )
 
 

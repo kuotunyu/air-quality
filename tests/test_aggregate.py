@@ -215,3 +215,25 @@ class TestMonthlyAggregation:
         row = monthly.to_dicts()[0]
         assert row["mean"] == pytest.approx(0.0, abs=1e-6)
         assert row["consistency"] is not None
+
+
+def test_build_aggregates_creates_its_output_directories(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A full aggregation must not run to completion and then die on the write.
+
+    processed_dir resolves a path without creating it, so the daily/monthly
+    directories have to be made before writing.
+    """
+    from twair.store import aggregate as agg
+
+    store = tmp_path / "store"
+    rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0) for h in range(20)]
+    _write_store(store, _hourly(rows))
+
+    processed = tmp_path / "processed"
+    monkeypatch.setattr(agg, "processed_dir", lambda table=None: processed / table)
+
+    tables = agg.build_aggregates(store)
+
+    assert (processed / "daily" / "daily.parquet").exists()
+    assert (processed / "monthly" / "monthly.parquet").exists()
+    assert set(tables) == {"daily", "monthly"}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from twair.config import load_conf
 from twair.store.stations import (
@@ -230,7 +231,10 @@ class TestAirzoneConflicts:
         assert first == second == ["中部空品區"]
 
 
+@pytest.mark.slow
 class TestShippedZoneConfig:
+    """Scans the whole 341M-row store; deselect with -m 'not slow'."""
+
     def test_every_station_resolves_to_a_zone(self) -> None:
         """No station may be left without one — a null zone breaks zone analysis."""
         import polars as pl
@@ -242,3 +246,12 @@ class TestShippedZoneConfig:
         assert table["airzone"].null_count() == 0
         assert set(table["airzone"].unique()) <= set(load_conf("stations")["airzones"])
         assert table.filter(pl.col("airzone_ambiguous")).height > 0, "ambiguity must stay visible"
+
+
+@pytest.mark.slow
+def test_qc_report_counts_the_same_stations_as_the_station_table() -> None:
+    """Both must normalise names, or 台南 and 臺南 are counted as two stations."""
+    from twair.qc.report import station_lifecycle
+    from twair.store.stations import build_station_table
+
+    assert station_lifecycle().height == build_station_table().height
