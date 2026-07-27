@@ -41,7 +41,7 @@
 
 | 來源 | 內容 | 期間 |
 |---|---|---|
-| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–2025 |
+| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測（**已取得全部 44 年**） | 1982–2025 |
 | [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站基本資料、即時 AQI（每日增量） | 即時 |
 | [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 |
 | [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、風場、氣壓 | 1982– |
@@ -74,10 +74,12 @@ uv run twair probe sources
 
 ## 專案狀態
 
+目前進度見 **[PROGRESS.md](PROGRESS.md)**。
+
 | 階段 | 內容 | 狀態 |
 |---|---|---|
-| Phase 0 | 專案骨架、資料源盤點 | 🚧 進行中 |
-| Phase 1 | 資料取得、QA/QC、發布資料集 | ⬜ |
+| Phase 0 | 專案骨架、資料源盤點 | ✅ 完成 |
+| Phase 1 | 資料取得、QA/QC、發布資料集 | 🚧 約 85% |
 | Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ⬜ |
 | Phase 3 | 互動網站首波上線 | ⬜ |
 | Phase 4 | 氣象正規化、政策因果推論 | ⬜ |

@@ -1,0 +1,190 @@
+---
+name: twair
+description: Working rules for the AirLens Taiwan / twair repo — the reanalysis of a 2018 PM2.5 graduation project over 44 years of MOENV hourly data. Load when touching anything in this repo: the ingest pipeline, QC, the Parquet store, analysis modules, or the web front end. Covers architecture, hard-won data gotchas, commands, testing conventions, and the end-of-session close-out ritual.
+---
+
+# twair — working rules
+
+## What this project is
+
+A reanalysis of a 2018 university graduation project (《台灣地區之 PM2.5 之影響分析》)
+using Taiwan MOENV hourly air-quality data from **1982–2025**.
+
+The point is **not** "same analysis, newer tools". It is:
+
+> Take the original's defects one at a time, and show with the same data that
+> fixing them changes the conclusions.
+
+Every module should be traceable to a defect in `PLAN.md`'s table (D1–D11).
+If a piece of work does not map to one, ask whether it belongs.
+
+Read `PROGRESS.md` first — it is the current state of play.
+
+## The governing principle
+
+**Measure and publish data quality; never silently repair it.**
+
+The original disposed of its data problems in one sentence
+(「將有遺漏值之資料以鄰近測站之資料代替」). Here the *rate* of every problem is
+itself a result. Concretely:
+
+- Invalid readings are **flagged, not deleted**.
+- Out-of-range values keep their value so they stay inspectable.
+- Gap filling defaults to `none`; every filled value carries `imputed` and
+  `impute_method`.
+- Aggregates below coverage threshold return **null**, never a biased mean.
+- Unrecognised tokens become `Flag.UNPARSEABLE` and get reported — never
+  coerced, never dropped.
+
+If you find yourself writing code that makes a problem disappear, stop.
+
+## Architecture
+
+```
+ingest/   download + parse archives      -> long frames
+qc/       flags, sentinels, ranges, consistency, reporting
+store/    schema, Parquet writer, stations, aggregates, wide view
+analysis/ M1-M10 (Phase 2+)
+models/   forecasting (Phase 7)
+viz/      website export layers
+```
+
+Data flow: `raw archives → long observations (Parquet, Hive year/month) →
+{daily, monthly, hourly_wide} → analysis → web export`.
+
+**The long table is the source of truth.** It is the only shape that can
+record *why* a value is absent. Wide and aggregate tables are derived and
+regenerated, never edited.
+
+## Hard-won gotchas — do not relearn these
+
+### Archive formats do not evolve monotonically
+
+Detect dialect from **each file's own header and magic bytes**. Never build a
+year→format lookup. Four independent counterexamples:
+
+- 2008 is an ODS island between CSV runs
+- hour labelling flips independently of container (1992 vs 1993; 2012 vs 2013)
+- 2024 is 7-Zip while its link still says `.zip`
+- 1987 ships XLS with no ODS twin
+
+### Hour columns labelled 1–24 start at midnight
+
+Official ReadMe: 「0時：指 0:00-0:59」. Column `1` is **00:00**, not 01:00.
+Getting this wrong shifts 1996–2012 by an hour. Pinned by
+`test_hour_one_column_lands_at_midnight`.
+
+### Flag semantics changed between generations
+
+- legacy: `15#` — flag suffixed, **value retained**
+- modern: `#` — flag replaces the value, **value lost**
+
+`value_retained` records which. Any analysis crossing 2018 needs a sensitivity
+check on this.
+
+### YAML eats `NO`
+
+Unquoted `NO`/`YES`/`ON`/`OFF` become booleans (the Norway problem). This
+silently removed nitric oxide from range checks. **Quote every key in
+`conf/*.yaml`.** `load_conf` now raises on boolean keys.
+
+### Wind direction is circular
+
+Arithmetic mean of 350° and 10° is 180° — due south, when the answer is north.
+Use `circular_mean_expr`. Circular pollutants are marked `circular: true` in
+`conf/pollutants.yaml`.
+
+Sentinels 888 (calm) / 999 (fault) exist but are **era-dependent**: 6.34% in
+1994, 0% in 2010/2023/2024. Do not overstate their effect on the original's
+2010–2017 window.
+
+### PM10 is not a predictor of PM2.5
+
+PM2.5 is a physical subset of PM10. `modelling_columns()` excludes it by
+default. It remains available for ratio features.
+
+### Polars: do not group_by a Hive partition key
+
+Grouping directly on `year`/`month` from `scan_parquet(hive_partitioning=True)`
+makes Polars report per-file totals as global. Derive the year from `ts_local`.
+
+### Google Drive rate-limits after ~34 files
+
+Use `--patient` (60/180/420/900s backoff). Drive returns an HTML interstitial
+rather than an error status, so downloads are verified by magic bytes.
+
+## Commands
+
+```bash
+uv run twair doctor          # which credentials are configured
+uv run twair probe sources   # re-resolve download links (they rotate)
+uv run twair ingest airtw    # download archives; --years 2010:2017 --patient
+uv run twair build           # archives -> canonical Parquet
+uv run twair aggregate       # daily + monthly with coverage gating
+uv run twair stations        # station identity / zone / type
+uv run twair qc report       # data-quality measurement -> docs/data-quality.md
+uv run twair summary         # row counts per year
+```
+
+Long runs (`ingest`, `build`) belong in the background — a full build is hours.
+`build_year` catches every exception and records it in the summary, so one bad
+archive cannot kill an unattended run.
+
+## Conventions
+
+- **Python 3.12, uv.** `uv run --no-sync ...` when a background job holds
+  `twair.exe` open on Windows.
+- **Polars** for data, **pandas** only where a library demands it.
+- **Config over constants**: paths, URLs, thresholds, station lists all live in
+  `conf/*.yaml`.
+- **Comments explain why, not what.** Prefer a sentence about the data's
+  behaviour over a restatement of the code.
+- **Docstrings carry the scientific reasoning**, especially where a choice
+  differs from the original project.
+- `ruff check --fix && ruff format` before committing.
+
+### Testing
+
+- Tests are **specifications**, named as claims:
+  `test_the_wraparound_case_the_2018_project_got_wrong`.
+- Fixtures mirror real observed formats, not invented ones.
+- Where a fast implementation shadows a readable one (`parse_expr` vs
+  `parse_token`), a test asserts they agree.
+- Ingest tests never touch the network.
+
+### Commits
+
+Explain what was *learned*, not just what changed — especially when a finding
+contradicts an earlier claim. Prior commits corrected the "three generations by
+era" story and the wind-sentinel overreach; keep doing that.
+
+End with:
+```
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+```
+
+Use `git commit -F <file>` — this is Git Bash, so PowerShell here-strings
+(`@'...'@`) break, and apostrophes in `-m` truncate the message.
+
+## Open decisions (do not decide unilaterally)
+
+1. **Raw-data redistribution licensing.** `docs/legal.md` documents a conflict
+   between the open-data terms and the archive ReadMe. Until the owner rules,
+   **do not publish a full copy of the raw hourly records** to HuggingFace.
+2. **Publishing the original PDF.** It carries author and advisor names, is
+   gitignored, and needs co-author consent before any figure is reproduced.
+
+## Close-out ritual — run this before ending a work session
+
+1. `uv run --no-sync pytest -q` and `ruff check src tests` — both clean.
+2. Update **`PROGRESS.md`**: what moved, what is running, what is next, any new
+   open question.
+3. Update the affected **`docs/*.md`**. If a measurement contradicts something
+   already written there, correct it in place — do not leave both versions.
+4. Tick the phase checkboxes in **`README.md`** and `PLAN.md` if a phase moved.
+5. Update **this skill** if a new gotcha was learned that would otherwise cost
+   the next session an hour.
+6. Commit.
+
+The test of a good close-out: someone returning in two weeks reads
+`PROGRESS.md` and knows what to type next.

@@ -5,6 +5,14 @@
 
 ---
 
+**這份文件是規劃，不是進度。** 目前做到哪裡請看 **[PROGRESS.md](PROGRESS.md)**。
+
+執行過程中發現的事實若與本規劃牴觸，以 `docs/` 下的實測文件為準
+（特別是 [docs/archive-formats.md](docs/archive-formats.md)），
+並在 PROGRESS.md 的「已更正的說法」一節記錄差異。
+
+---
+
 ## Context
 
 ### 為什麼做這件事
