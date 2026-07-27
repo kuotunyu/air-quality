@@ -23,12 +23,13 @@ from typing import Any
 
 import polars as pl
 
-from twair.config import load_conf
+from twair.config import ConfigError, load_conf
 from twair.store.writer import scan_observations
 
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "airzone_pattern",
     "alias_map",
     "build_station_table",
     "derive_airzones",
@@ -36,8 +37,20 @@ __all__ = [
     "station_type_map",
 ]
 
-# `99年 中部空品區/…` — the leading 民國 year prefix varies, so match the tail.
-_AIRZONE = re.compile(r"([一-鿿]+空品區)")
+
+def airzone_pattern(config: dict[str, Any] | None = None) -> str:
+    """Regex alternation over the known air-quality zones.
+
+    Deliberately an explicit list rather than a wildcard. Folder names carry a
+    民國 year prefix with inconsistent spacing (``99年 北部空品區`` and
+    ``97年中部空品區`` both occur), and a greedy CJK match swallows the 年,
+    splitting each zone into two spellings.
+    """
+    conf = config if config is not None else load_conf("stations")
+    zones = conf.get("airzones") or []
+    if not zones:
+        raise ConfigError("conf/stations.yaml defines no `airzones`")
+    return "(" + "|".join(re.escape(z) for z in zones) + ")"
 
 
 def alias_map(config: dict[str, Any] | None = None) -> dict[str, str]:
@@ -92,34 +105,48 @@ def derive_airzones(
 
     zoned = (
         pairs.with_columns(
-            pl.col("source_member").str.extract(_AIRZONE.pattern, 1).alias("airzone")
+            pl.col("source_member").str.extract(airzone_pattern(conf), 1).alias("airzone")
         )
         .filter(pl.col("airzone").is_not_null())
-        .select("station_name", "airzone")
-        .unique()
+        .group_by("station_name", "airzone")
+        .agg(pl.len().alias("members"))
     )
 
-    # A station should map to exactly one zone; report it if not.
-    conflicts = (
-        zoned.group_by("station_name")
-        .agg(pl.col("airzone").n_unique().alias("n"))
-        .filter(pl.col("n") > 1)
+    # Some stations appear under more than one zone. Two causes, both real:
+    #
+    #   * upstream filing errors — 臺南, 臺西, 嘉義 and others each show up once
+    #     in a 北部空品區 folder inside the 1999 package alone, against 23
+    #     members under 雲嘉南空品區;
+    #   * genuine reclassification — 阿里山 is filed under 中部空品區 (6) and
+    #     雲嘉南空品區 (3) across overlapping years.
+    #
+    # Majority by member count settles both deterministically, and the fact
+    # that a station was ambiguous is kept as a column rather than discarded.
+    ranked = zoned.sort(["station_name", "members", "airzone"], descending=[False, True, False])
+    resolved = ranked.unique(subset=["station_name"], keep="first").select(
+        "station_name", "airzone"
     )
-    if not conflicts.is_empty():
-        log.warning("stations with conflicting airzones: %s", conflicts["station_name"].to_list())
 
-    resolved = zoned.unique(subset=["station_name"], keep="first")
+    ambiguity = zoned.group_by("station_name").agg(
+        (pl.col("airzone").n_unique() > 1).alias("airzone_ambiguous")
+    )
+
+    contested = ambiguity.filter(pl.col("airzone_ambiguous"))["station_name"].to_list()
+    if contested:
+        log.info("airzone resolved by majority for %d station(s): %s", len(contested), contested)
 
     all_stations = pairs.select("station_name").unique()
     overrides = conf.get("airzone_overrides", {}) or {}
 
     return (
         all_stations.join(resolved, on="station_name", how="left")
+        .join(ambiguity, on="station_name", how="left")
         .with_columns(
             pl.when(pl.col("airzone").is_null())
             .then(pl.col("station_name").replace_strict(overrides, default=None))
             .otherwise(pl.col("airzone"))
-            .alias("airzone")
+            .alias("airzone"),
+            pl.col("airzone_ambiguous").fill_null(False),
         )
         .sort("station_name")
     )
@@ -167,6 +194,7 @@ def build_station_table(root: Path | None = None) -> pl.DataFrame:
         .select(
             "station_name",
             "airzone",
+            "airzone_ambiguous",
             "station_type",
             "dual_role",
             "first_year",

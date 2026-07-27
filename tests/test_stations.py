@@ -13,6 +13,16 @@ from twair.store.stations import (
 )
 
 CONFIG = {
+    "airzones": [
+        "北部空品區",
+        "竹苗空品區",
+        "中部空品區",
+        "雲嘉南空品區",
+        "高屏空品區",
+        "宜蘭空品區",
+        "花東空品區",
+        "離島",
+    ],
     "aliases": {"台南": "臺南", "台東": "臺東", "台西": "臺西"},
     "airzone_overrides": {"金門": "離島", "富貴角": "北部空品區"},
     "station_types": {
@@ -154,3 +164,81 @@ class TestShippedConfig:
 
         for name in conf["dual_role"]:
             assert name in typed, f"{name} is dual-role but has no primary type"
+
+
+class TestAirzoneConflicts:
+    """Stations filed under more than one zone, resolved by majority."""
+
+    def test_year_prefix_is_not_swallowed_into_the_zone_name(self) -> None:
+        """Folder names are `99年 北部空品區` and `97年中部空品區` — spacing varies.
+
+        A greedy CJK match captures the 年 too, splitting one zone into two.
+        """
+        frame = _members(
+            [
+                ("中山", "99年 北部空品區/99年中山站.csv"),
+                ("二林", "97年中部空品區/97年二林站.csv"),
+            ]
+        )
+
+        zones = derive_airzones(frame, CONFIG)
+
+        assert set(zones["airzone"].to_list()) == {"北部空品區", "中部空品區"}
+
+    def test_upstream_misfiling_loses_to_the_majority(self) -> None:
+        """臺南 appears once under 北部空品區 in the 1999 package, 23 times under 雲嘉南."""
+        frame = _members(
+            [("臺南", f"{y}年 雲嘉南空品區/{y}年臺南站.ods") for y in range(82, 105)]
+            + [("臺南", "88年 北部空品區/88年臺南站.ods")]
+        )
+
+        zones = derive_airzones(frame, CONFIG)
+
+        assert zones["airzone"].to_list() == ["雲嘉南空品區"]
+
+    def test_contested_stations_are_marked_not_silently_resolved(self) -> None:
+        frame = _members(
+            [
+                ("阿里山", "89年中部空品區/89年阿里山站.csv"),
+                ("阿里山", "92年中部空品區/92年阿里山站.csv"),
+                ("阿里山", "97年 雲嘉南空品區/97年阿里山站.ods"),
+            ]
+        )
+
+        zones = derive_airzones(frame, CONFIG)
+
+        assert zones["airzone"].to_list() == ["中部空品區"]
+        assert zones["airzone_ambiguous"].to_list() == [True]
+
+    def test_unambiguous_stations_are_not_marked(self) -> None:
+        frame = _members([("二林", "99年 中部空品區/99年二林站.csv")])
+
+        zones = derive_airzones(frame, CONFIG)
+
+        assert zones["airzone_ambiguous"].to_list() == [False]
+
+    def test_resolution_is_deterministic_regardless_of_input_order(self) -> None:
+        rows = [
+            ("阿里山", "97年 雲嘉南空品區/97年阿里山站.ods"),
+            ("阿里山", "89年中部空品區/89年阿里山站.csv"),
+            ("阿里山", "92年中部空品區/92年阿里山站.csv"),
+        ]
+
+        first = derive_airzones(_members(rows), CONFIG)["airzone"].to_list()
+        second = derive_airzones(_members(list(reversed(rows))), CONFIG)["airzone"].to_list()
+
+        assert first == second == ["中部空品區"]
+
+
+class TestShippedZoneConfig:
+    def test_every_station_resolves_to_a_zone(self) -> None:
+        """No station may be left without one — a null zone breaks zone analysis."""
+        import polars as pl
+
+        from twair.store.stations import build_station_table
+
+        table = build_station_table()
+
+        assert table["airzone"].null_count() == 0
+        assert set(table["airzone"].unique()) <= set(load_conf("stations")["airzones"])
+        assert table.filter(pl.col("airzone_ambiguous")).height > 0, "ambiguity must stay visible"
