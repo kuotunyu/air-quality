@@ -1,0 +1,50 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+This licence applies to the DERIVED data products, documentation, figures and
+analysis outputs produced by this project — not to the underlying government
+source data.
+
+Full text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+
+UNDERLYING SOURCE DATA
+----------------------
+
+This project does not claim any rights over the source observations. Those
+remain with the issuing agencies:
+
+  * Air quality observations
+    Ministry of Environment, Republic of China (Taiwan) / 中華民國環境部
+    https://airtw.moenv.gov.tw/  ·  https://data.moenv.gov.tw/
+
+  * Meteorological observations
+    Central Weather Administration, MOTC / 交通部中央氣象署
+    https://opendata.cwa.gov.tw/
+
+  * ERA5 reanalysis
+    Generated using Copernicus Climate Change Service information.
+    Neither the European Commission nor ECMWF is responsible for any use that
+    may be made of the Copernicus information or data it contains.
+
+  * Sentinel-5P
+    Contains modified Copernicus Sentinel data.
+
+  * MODIS
+    Courtesy of NASA.
+
+
+IMPORTANT — REDISTRIBUTION OF SOURCE DATA IS UNRESOLVED
+-------------------------------------------------------
+
+Two statements issued by the Ministry of Environment conflict on whether the
+raw air quality observations may be redistributed. See docs/legal.md for the
+full analysis. Until that is resolved, this repository publishes derived
+products and the pipeline needed to regenerate them, rather than a wholesale
+copy of the raw hourly records.
+
+
+ATTRIBUTION
+-----------
+
+When using this project's derived data, please cite both this project and the
+originating agency. See CITATION.cff.

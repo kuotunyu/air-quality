@@ -1,0 +1,85 @@
+# QA/QC 規則設定。
+#
+# 旗標定義逐字取自環境部隨資料附上的 `ReadMe_普通測站20170301.odt`：
+#
+#   #     表示儀器檢核為無效值
+#   *     表示程式檢核為無效值
+#   x     表示人工檢核為無效值
+#   NR    表示無降雨
+#   空白  表示缺值
+#
+# 注意本專案不接受「無效值就丟掉」的做法：無效值的**分布本身**
+# （哪一站、哪一年、哪個測項特別多）是資料品質研究的一部分。
+
+# 原始檔中的旗標符號 → 標準化 flag 值。
+flag_tokens:
+  "#": instrument_check_invalid   # 儀器檢核為無效值
+  "*": program_check_invalid      # 程式檢核為無效值
+  "x": manual_check_invalid       # 人工檢核為無效值
+  "X": manual_check_invalid
+  "NR": no_rain                   # 無降雨（非缺值，語意為「確實沒下雨」）
+  "NA": not_applicable            # 僅見於新格式
+  "A": rain_present               # 僅見於新格式（酸雨相關）
+  "ND": below_detection_limit
+  "": missing
+  "-": missing
+
+# 各格式世代對「旗標」與「數值」的處理方式不同 —— 這是長期趨勢分析的隱形陷阱。
+#
+#   舊格式（約 1994–2010，Big5 CSV / ODS）：旗標是**數值後綴**，如 `15#`、`0.1#`
+#                                            → 無效值仍保留原始測值
+#   新格式（約 2018 以後，UTF-8 CSV）：      旗標**整格取代數值**，如 `#`
+#                                            → 無效值的原始測值已遺失
+#
+# 因此「無效值改用鄰近測站補」在新舊年代的意義不同，Phase 2 必須做敏感度分析。
+flag_placement:
+  legacy_suffix:
+    description: 旗標附加在數值之後，測值保留
+    example: "15#"
+    retains_value: true
+  modern_replacement:
+    description: 旗標取代整個欄位，測值遺失
+    example: "#"
+    retains_value: false
+
+# 缺漏填補策略。預設不填補 —— 原始畢業專題「以鄰近測站之資料代替」
+# 是一句話帶過的黑盒，本專案把它變成可切換、可稽核、可比較的選項。
+gapfill:
+  default_strategy: none
+  strategies:
+    none:
+      description: 不填補，分析時明確排除
+    interpolate:
+      description: 時間軸線性內插
+      max_gap_hours: 3
+    neighbor:
+      description: 鄰近測站迴歸（復刻 2018 原專題做法，供對照）
+      max_distance_km: 30
+      min_correlation: 0.7
+    iterative:
+      description: 多變量疊代填補（MICE 類）
+      max_iter: 10
+  # 每筆填補值都必須帶 imputed=true 與 impute_method，絕不靜默填補。
+  record_provenance: true
+
+# 異常偵測：區分「儀器尖峰」與「真實污染事件」。
+outliers:
+  spike:
+    # 單站短暫尖峰、鄰站無同步反應 → 可疑
+    max_duration_hours: 2
+    neighbor_radius_km: 50
+    min_neighbor_corroboration: 1
+  event:
+    # 多站同步上升 → 視為真實事件（境外傳輸／沙塵／逆溫）
+    min_stations: 3
+    min_zscore: 3.0
+
+# 聚合覆蓋率門檻。原始畢業專題直接把逐時平均成月值，
+# 未檢查該月實際有多少有效小時 —— 這會讓資料稀疏的測站與完整測站等權。
+aggregation:
+  hourly_to_daily:
+    min_valid_hours: 16          # 24 小時中至少 16 筆有效
+  daily_to_monthly:
+    min_valid_days_ratio: 0.75
+  # 未達門檻者輸出 null 並記錄 coverage_ratio，而非輸出偏誤的平均值。
+  emit_coverage_ratio: true

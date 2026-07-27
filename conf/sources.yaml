@@ -1,0 +1,716 @@
+# Discovered data sources — GENERATED FILE, do not edit by hand.
+#
+# Regenerate with:  uv run twair probe sources
+#
+# Google Drive file ids rotate whenever MOENV re-uploads an archive, so this
+# file is a cache of the last successful resolution, not a permanent contract.
+
+generated_at: '2026-07-27T10:23:37+00:00'
+airtw:
+  his_data_url: https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx
+  access: ASP.NET WebForms postback on ctl00$CPH_Content$ddlQYear
+  license: 政府資料開放授權條款第1版
+  summary:
+    total_files: 111
+    hourly_files: 108
+    hourly_year_min: 1982
+    hourly_year_max: 2025
+    hourly_year_count: 44
+    data_types:
+    - 全年逐時資料
+    - 品保查核報告
+    - 年報
+    station_groups:
+    - 中部空品區
+    - 全部
+    - 北部空品區
+    - 宜蘭空品區
+    - 竹苗空品區
+    - 花東空品區
+    - 離島
+    - 雲嘉南空品區
+    - 高屏空品區
+  files:
+  - year: 1982
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1w2NkDk3HVsxQO-7LIKyvBmGrh35DzxLi
+    url: https://drive.google.com/file/d/1w2NkDk3HVsxQO-7LIKyvBmGrh35DzxLi/view
+    note: ''
+  - year: 1983
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1nDxQcBT9WFS0S_YmZYg35T0Y2HyySJZr
+    url: https://drive.google.com/file/d/1nDxQcBT9WFS0S_YmZYg35T0Y2HyySJZr/view
+    note: ''
+  - year: 1984
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1HQswEVlD3ipv2qswwwRsBSJ1XPwdzq8q
+    url: https://drive.google.com/file/d/1HQswEVlD3ipv2qswwwRsBSJ1XPwdzq8q/view
+    note: ''
+  - year: 1985
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 13--WsmnA6UXeXPX1nIXCz2n39gKjszT4
+    url: https://drive.google.com/file/d/13--WsmnA6UXeXPX1nIXCz2n39gKjszT4/view
+    note: ''
+  - year: 1986
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1dQV5X9oHNSZtnCxE9N16cgG5LcNZRcks
+    url: https://drive.google.com/file/d/1dQV5X9oHNSZtnCxE9N16cgG5LcNZRcks/view
+    note: ''
+  - year: 1987
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1V0M0-_nheWLG8Tlv9gaGetSCH2VFetBH
+    url: https://drive.google.com/file/d/1V0M0-_nheWLG8Tlv9gaGetSCH2VFetBH/view
+    note: ''
+  - year: 1988
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1tDxOiHc1QrQXglDlEBXlV6JoxOqJD2YF
+    url: https://drive.google.com/file/d/1tDxOiHc1QrQXglDlEBXlV6JoxOqJD2YF/view
+    note: ''
+  - year: 1989
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1_A25tStt8PJIBi1ipO7Xq7w4kumXjBSV
+    url: https://drive.google.com/file/d/1_A25tStt8PJIBi1ipO7Xq7w4kumXjBSV/view
+    note: ''
+  - year: 1990
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 122iScrnBYxfQil2aJS8O_aBZ_BJ-YMjW
+    url: https://drive.google.com/file/d/122iScrnBYxfQil2aJS8O_aBZ_BJ-YMjW/view
+    note: ''
+  - year: 1991
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1EGjuuI-4kh8kxx8WiwwthGehC4mPVXNS
+    url: https://drive.google.com/file/d/1EGjuuI-4kh8kxx8WiwwthGehC4mPVXNS/view
+    note: ''
+  - year: 1992
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1TqKN4eywNJC78h-ZxP2ZvzN5vcYdtpPB
+    url: https://drive.google.com/file/d/1TqKN4eywNJC78h-ZxP2ZvzN5vcYdtpPB/view
+    note: ''
+  - year: 1993
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1Q4oJCSyXUXsetYc2rwVHDD4KIT2zu3oJ
+    url: https://drive.google.com/file/d/1Q4oJCSyXUXsetYc2rwVHDD4KIT2zu3oJ/view
+    note: ''
+  - year: 1994
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 14Vfok3NwoUIJ2jhvGucCZ0k2ZGRGmA5_
+    url: https://drive.google.com/file/d/14Vfok3NwoUIJ2jhvGucCZ0k2ZGRGmA5_/view
+    note: ''
+  - year: 1995
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1lD98DkPIOfZ8HMFKylrl3fHy5sN9IxcQ
+    url: https://drive.google.com/file/d/1lD98DkPIOfZ8HMFKylrl3fHy5sN9IxcQ/view
+    note: ''
+  - year: 1996
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1qDPsWj_ATlWuzzOiojA9eULshS-nUGIz
+    url: https://drive.google.com/file/d/1qDPsWj_ATlWuzzOiojA9eULshS-nUGIz/view
+    note: ''
+  - year: 1997
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1viTx0Xngmn8LNNM3u0-D4Y14uTnoxBr0
+    url: https://drive.google.com/file/d/1viTx0Xngmn8LNNM3u0-D4Y14uTnoxBr0/view
+    note: ''
+  - year: 1998
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1HPSqJun2kGmOHBFFGqREaa1iESmesMPK
+    url: https://drive.google.com/file/d/1HPSqJun2kGmOHBFFGqREaa1iESmesMPK/view
+    note: ''
+  - year: 1999
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1HYztVEdGq6j-RoW9ZoZn1seWdyXKnIIH
+    url: https://drive.google.com/file/d/1HYztVEdGq6j-RoW9ZoZn1seWdyXKnIIH/view
+    note: ''
+  - year: 2000
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1G51AmHbzAUzWmuoLPOF-bPUBg7vP3F4e
+    url: https://drive.google.com/file/d/1G51AmHbzAUzWmuoLPOF-bPUBg7vP3F4e/view
+    note: ''
+  - year: 2001
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1KpPPCWSZZM7rWpBHexjbaDtOJuyeSD_K
+    url: https://drive.google.com/file/d/1KpPPCWSZZM7rWpBHexjbaDtOJuyeSD_K/view
+    note: ''
+  - year: 2002
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1qdoZNKhzdx80liKMQynTr9GlK85SPgVV
+    url: https://drive.google.com/file/d/1qdoZNKhzdx80liKMQynTr9GlK85SPgVV/view
+    note: ''
+  - year: 2003
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1CKkKBnoHUOZs0aL54kz1ZUA_xvQOTapS
+    url: https://drive.google.com/file/d/1CKkKBnoHUOZs0aL54kz1ZUA_xvQOTapS/view
+    note: ''
+  - year: 2004
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 14W4o6GFOs8jywmKA0Q1jSqmHDLxd-_Z7
+    url: https://drive.google.com/file/d/14W4o6GFOs8jywmKA0Q1jSqmHDLxd-_Z7/view
+    note: ''
+  - year: 2005
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1dssX_0JqgKO5HE3CS6VbLXFDSsO46t6D
+    url: https://drive.google.com/file/d/1dssX_0JqgKO5HE3CS6VbLXFDSsO46t6D/view
+    note: ''
+  - year: 2006
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1fZEPGEaNK3yZrWPrV3RX1YRfF8NqWAIT
+    url: https://drive.google.com/file/d/1fZEPGEaNK3yZrWPrV3RX1YRfF8NqWAIT/view
+    note: ''
+  - year: 2007
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1THel9L5x2rlu535AZjPHpXAJGtBskJCc
+    url: https://drive.google.com/file/d/1THel9L5x2rlu535AZjPHpXAJGtBskJCc/view
+    note: ''
+  - year: 2008
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 12cYez8BAn6ugnPkmg4aVsLg6_7_Lf3FW
+    url: https://drive.google.com/file/d/12cYez8BAn6ugnPkmg4aVsLg6_7_Lf3FW/view
+    note: ''
+  - year: 2009
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 12puka9VqaAkOOEuUlzdRXGpdKhPaWPXM
+    url: https://drive.google.com/file/d/12puka9VqaAkOOEuUlzdRXGpdKhPaWPXM/view
+    note: ''
+  - year: 2010
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1tU_tfvuS5LoP2VHyl5p1cIokRqqlHEwE
+    url: https://drive.google.com/file/d/1tU_tfvuS5LoP2VHyl5p1cIokRqqlHEwE/view
+    note: ''
+  - year: 2011
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1vLglk29wsuCyd1csilvjexAeXvZ8CR0R
+    url: https://drive.google.com/file/d/1vLglk29wsuCyd1csilvjexAeXvZ8CR0R/view
+    note: ''
+  - year: 2012
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1VAfT0BN-AkxZnJtKgXVNjB8LElbo01s5
+    url: https://drive.google.com/file/d/1VAfT0BN-AkxZnJtKgXVNjB8LElbo01s5/view
+    note: ''
+  - year: 2013
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1hrPgzyHz60RHFSxBukJyq0gLAyuddcj9
+    url: https://drive.google.com/file/d/1hrPgzyHz60RHFSxBukJyq0gLAyuddcj9/view
+    note: ''
+  - year: 2014
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1-WgaIOSx1z3658T6WHBxZyiZ-ytBBwag
+    url: https://drive.google.com/file/d/1-WgaIOSx1z3658T6WHBxZyiZ-ytBBwag/view
+    note: ''
+  - year: 2015
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1L9WTOlb5WXojkdAGw27CiosuFk5vhOIM
+    url: https://drive.google.com/file/d/1L9WTOlb5WXojkdAGw27CiosuFk5vhOIM/view
+    note: ''
+  - year: 2016
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1l4Ag44i3K28NQB0zBTAkMHBL6i6PJ8Z1
+    url: https://drive.google.com/file/d/1l4Ag44i3K28NQB0zBTAkMHBL6i6PJ8Z1/view
+    note: ''
+  - year: 2017
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1gxmQsN7tNc3h9gCJ2IiYg4T1Tsw6AGUP
+    url: https://drive.google.com/file/d/1gxmQsN7tNc3h9gCJ2IiYg4T1Tsw6AGUP/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 14D9K-230295IIpBqNZtyLRihRR1yz1J6
+    url: https://drive.google.com/file/d/14D9K-230295IIpBqNZtyLRihRR1yz1J6/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1Y0j6fw-5vXzGmz3Zb4LuPJn4ui7CveDi
+    url: https://drive.google.com/file/d/1Y0j6fw-5vXzGmz3Zb4LuPJn4ui7CveDi/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 15Ov3CGMJ8H_Ka4uqxcQ0V2ld3Ni8Lo04
+    url: https://drive.google.com/file/d/15Ov3CGMJ8H_Ka4uqxcQ0V2ld3Ni8Lo04/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 1FzJ3wj_iUHfa7-IlxvWMAqNq9cbvO0-8
+    url: https://drive.google.com/file/d/1FzJ3wj_iUHfa7-IlxvWMAqNq9cbvO0-8/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1sK9auH04vgUHkoQ13NB-3zJcprevCW1R
+    url: https://drive.google.com/file/d/1sK9auH04vgUHkoQ13NB-3zJcprevCW1R/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 1Znipc8mcZJ22Q0wO91El02idm7ZcZpEN
+    url: https://drive.google.com/file/d/1Znipc8mcZJ22Q0wO91El02idm7ZcZpEN/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1if7pJsYh2qSuf2tQ5lBIvxSZDbz83bWx
+    url: https://drive.google.com/file/d/1if7pJsYh2qSuf2tQ5lBIvxSZDbz83bWx/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 12lsG26dbgGerWNW_Gp1JC052phPtLNJ7
+    url: https://drive.google.com/file/d/12lsG26dbgGerWNW_Gp1JC052phPtLNJ7/view
+    note: ''
+  - year: 2018
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 1DJKqDOsLuxpTFOK6fhsv4VqvjJvOzgFg
+    url: https://drive.google.com/file/d/1DJKqDOsLuxpTFOK6fhsv4VqvjJvOzgFg/view
+    note: ''
+  - year: 2018
+    data_type: 品保查核報告
+    station_group: 全部
+    drive_file_id: 1RpREH3unap175kNSCjtQsqzlGofPua0g
+    url: https://drive.google.com/file/d/1RpREH3unap175kNSCjtQsqzlGofPua0g/view
+    note: ''
+  - year: 2018
+    data_type: 年報
+    station_group: 全部
+    drive_file_id: 1RZ52sEslynnhhdcRXxoU4pqstu8Ubj06
+    url: https://drive.google.com/file/d/1RZ52sEslynnhhdcRXxoU4pqstu8Ubj06/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 1zV85fiimNOAozUU-5o-x97EBcbDwQ4JO
+    url: https://drive.google.com/file/d/1zV85fiimNOAozUU-5o-x97EBcbDwQ4JO/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1pV-2Hw02Gdh47r6PlvX3uhE5XXEGlePL
+    url: https://drive.google.com/file/d/1pV-2Hw02Gdh47r6PlvX3uhE5XXEGlePL/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 1EElY-1W6KukQ9tTzTwn6-SYHQu5q7FzV
+    url: https://drive.google.com/file/d/1EElY-1W6KukQ9tTzTwn6-SYHQu5q7FzV/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 117gDgtmK-w1yrXYxBU3cye2GXSxnsAFC
+    url: https://drive.google.com/file/d/117gDgtmK-w1yrXYxBU3cye2GXSxnsAFC/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1xbdMAQHEV52NFYwQOMWJe9CRJ9OQk6vz
+    url: https://drive.google.com/file/d/1xbdMAQHEV52NFYwQOMWJe9CRJ9OQk6vz/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 1V7kStLrM-jg9xYKnZx3-kOkUOK7WGGsJ
+    url: https://drive.google.com/file/d/1V7kStLrM-jg9xYKnZx3-kOkUOK7WGGsJ/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1ZeaqRjzwvSK8aMmbBtDrcWT3DQJmC2Mm
+    url: https://drive.google.com/file/d/1ZeaqRjzwvSK8aMmbBtDrcWT3DQJmC2Mm/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 1I44Et9P83wOITrQ5A9fhGV3K9iHj0Jhf
+    url: https://drive.google.com/file/d/1I44Et9P83wOITrQ5A9fhGV3K9iHj0Jhf/view
+    note: ''
+  - year: 2019
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 1BmciHYg1qK_B5NIbtx6mm22kiNMxgb9D
+    url: https://drive.google.com/file/d/1BmciHYg1qK_B5NIbtx6mm22kiNMxgb9D/view
+    note: ''
+  - year: 2019
+    data_type: 年報
+    station_group: 全部
+    drive_file_id: 1ixsX-Q-utKf2rRBdfQ5m41_ctN3D5WYo
+    url: https://drive.google.com/file/d/1ixsX-Q-utKf2rRBdfQ5m41_ctN3D5WYo/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 1OCKfUDz49Pw1_yR3qMwDSLrRoB1HmkHK
+    url: https://drive.google.com/file/d/1OCKfUDz49Pw1_yR3qMwDSLrRoB1HmkHK/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1tL3L4hu3jfGUANZhBOYJFk3rBn12a5FY
+    url: https://drive.google.com/file/d/1tL3L4hu3jfGUANZhBOYJFk3rBn12a5FY/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 1kGSa5gbXPeWm5w5Z2K41TvmilnF9YeGZ
+    url: https://drive.google.com/file/d/1kGSa5gbXPeWm5w5Z2K41TvmilnF9YeGZ/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 1daPpyLRvaFkrJT_Bg6IabjEFrD2eIF36
+    url: https://drive.google.com/file/d/1daPpyLRvaFkrJT_Bg6IabjEFrD2eIF36/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1p_efToc6p6BVyMT8B2pIAOPqCAycoI3t
+    url: https://drive.google.com/file/d/1p_efToc6p6BVyMT8B2pIAOPqCAycoI3t/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 1Ahy5P-0w6_W_6nsIf7M_jrf6Bm3hVGac
+    url: https://drive.google.com/file/d/1Ahy5P-0w6_W_6nsIf7M_jrf6Bm3hVGac/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1WP8Li1zNXF_tdcJZEuF9cgL0O0S0HlqP
+    url: https://drive.google.com/file/d/1WP8Li1zNXF_tdcJZEuF9cgL0O0S0HlqP/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 1GZd22lAMZQ6SzU23Rodw7DZzTYCLL0Y8
+    url: https://drive.google.com/file/d/1GZd22lAMZQ6SzU23Rodw7DZzTYCLL0Y8/view
+    note: ''
+  - year: 2020
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 11zZI7dDsoNzJy8_GYhpgXK6Lb2u3zskR
+    url: https://drive.google.com/file/d/11zZI7dDsoNzJy8_GYhpgXK6Lb2u3zskR/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 1-HUghVLiLI_45KiWH3zRGjj7LHd0ZfcH
+    url: https://drive.google.com/file/d/1-HUghVLiLI_45KiWH3zRGjj7LHd0ZfcH/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1ebpWUWlJrmGpA9lzNuydPiPbscooQgs7
+    url: https://drive.google.com/file/d/1ebpWUWlJrmGpA9lzNuydPiPbscooQgs7/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 1H0vQwx_n7rOLMZCtiF-QGCAiShwanY4z
+    url: https://drive.google.com/file/d/1H0vQwx_n7rOLMZCtiF-QGCAiShwanY4z/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 1eUkx8-NCi1-vG3JedB2VxC3mcLAuF1On
+    url: https://drive.google.com/file/d/1eUkx8-NCi1-vG3JedB2VxC3mcLAuF1On/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1Fl2QWslIPzK0i52hn9tnGb_ggoPY3paw
+    url: https://drive.google.com/file/d/1Fl2QWslIPzK0i52hn9tnGb_ggoPY3paw/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 10zaoT1ttuWrZ6VnfQytbsTaZ_cR76H_1
+    url: https://drive.google.com/file/d/10zaoT1ttuWrZ6VnfQytbsTaZ_cR76H_1/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1iJibM6_qQzuz4RheSm4cazahq6KQTpgn
+    url: https://drive.google.com/file/d/1iJibM6_qQzuz4RheSm4cazahq6KQTpgn/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 1dhGW2f2pihi4htMFoJ56jLAH90PZn6pH
+    url: https://drive.google.com/file/d/1dhGW2f2pihi4htMFoJ56jLAH90PZn6pH/view
+    note: ''
+  - year: 2021
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 1xiY7VXTsBUAFLgE6yx2sl3nWzikrcDwj
+    url: https://drive.google.com/file/d/1xiY7VXTsBUAFLgE6yx2sl3nWzikrcDwj/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 1FWGCaDm5e_w2Uoozyb0iqrZX0tuOHd6F
+    url: https://drive.google.com/file/d/1FWGCaDm5e_w2Uoozyb0iqrZX0tuOHd6F/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1DN33GCBuKtPHPheogtm9Gq3RthWDK2Nd
+    url: https://drive.google.com/file/d/1DN33GCBuKtPHPheogtm9Gq3RthWDK2Nd/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 191jnUTRbXSz6_OFfKwFYxtovEJ9DlJo6
+    url: https://drive.google.com/file/d/191jnUTRbXSz6_OFfKwFYxtovEJ9DlJo6/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 17Ob6_8D5H1u9X1wWt92BbSmWLq4nQvx8
+    url: https://drive.google.com/file/d/17Ob6_8D5H1u9X1wWt92BbSmWLq4nQvx8/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 12kB-rxHS10vwnd7DSJ8toT-Zt8Qry_LJ
+    url: https://drive.google.com/file/d/12kB-rxHS10vwnd7DSJ8toT-Zt8Qry_LJ/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 1sJQ8_iXouAHsJW-tVmYwB0yoZJ_ttPMe
+    url: https://drive.google.com/file/d/1sJQ8_iXouAHsJW-tVmYwB0yoZJ_ttPMe/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1K5NyqltpmPvwLmgqV6zgSVTge-Ua7irq
+    url: https://drive.google.com/file/d/1K5NyqltpmPvwLmgqV6zgSVTge-Ua7irq/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 1OzCqPkkj78gRp1BwZ6_0NI1NbscGPGrx
+    url: https://drive.google.com/file/d/1OzCqPkkj78gRp1BwZ6_0NI1NbscGPGrx/view
+    note: ''
+  - year: 2022
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 17UJTmd_1THdYxyO1RnWkvyj_vtvINQ4h
+    url: https://drive.google.com/file/d/17UJTmd_1THdYxyO1RnWkvyj_vtvINQ4h/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 1YjsSn_zK_OZacGOmRvCH0l4PkpzCzbj0
+    url: https://drive.google.com/file/d/1YjsSn_zK_OZacGOmRvCH0l4PkpzCzbj0/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1pYvNAOEFlsVxvHTzF5_81zoZzX7h73Ub
+    url: https://drive.google.com/file/d/1pYvNAOEFlsVxvHTzF5_81zoZzX7h73Ub/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 1TqP6HNNUUuE29_unBAKbaLJPwSwcZbRW
+    url: https://drive.google.com/file/d/1TqP6HNNUUuE29_unBAKbaLJPwSwcZbRW/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 1oPAfyCeEEMYILMjBlPChsN4J7y53xShJ
+    url: https://drive.google.com/file/d/1oPAfyCeEEMYILMjBlPChsN4J7y53xShJ/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1qKmeKoYZFNfQxaD91cqtq38UFq60P7ST
+    url: https://drive.google.com/file/d/1qKmeKoYZFNfQxaD91cqtq38UFq60P7ST/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 1Nz-1WqB91at4xLUMN7aQx_O89OAeqzg9
+    url: https://drive.google.com/file/d/1Nz-1WqB91at4xLUMN7aQx_O89OAeqzg9/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1Y7o4ykl8W2Z4RmZWY63XnIEbRkISc8_K
+    url: https://drive.google.com/file/d/1Y7o4ykl8W2Z4RmZWY63XnIEbRkISc8_K/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 1kQvYzjzkJ4BHs1Ajw26B08DtCrGbaxzL
+    url: https://drive.google.com/file/d/1kQvYzjzkJ4BHs1Ajw26B08DtCrGbaxzL/view
+    note: ''
+  - year: 2023
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 1YGjKHb6Wby3qCYJGC0epMJc3RAbCmEJJ
+    url: https://drive.google.com/file/d/1YGjKHb6Wby3qCYJGC0epMJc3RAbCmEJJ/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 10Zd2PZ7P05hSS2GDOQWJS_yEw82zGy2a
+    url: https://drive.google.com/file/d/10Zd2PZ7P05hSS2GDOQWJS_yEw82zGy2a/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 1s9PIHQoelnN20CcNE0qyOmnBxQM4IzU2
+    url: https://drive.google.com/file/d/1s9PIHQoelnN20CcNE0qyOmnBxQM4IzU2/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 1pewUoIcqfryDO-SX6-cuxX4Tb6QnAnvd
+    url: https://drive.google.com/file/d/1pewUoIcqfryDO-SX6-cuxX4Tb6QnAnvd/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 1In6G7tyBDJGwITU10jg2-EJRZZ9q_1jh
+    url: https://drive.google.com/file/d/1In6G7tyBDJGwITU10jg2-EJRZZ9q_1jh/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1g8ZJGOCiZ_Kz8guBuaR4S2bOZDByOmP1
+    url: https://drive.google.com/file/d/1g8ZJGOCiZ_Kz8guBuaR4S2bOZDByOmP1/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 11c80jaMzW3ekTPhLXkdxfKc95zl1sA46
+    url: https://drive.google.com/file/d/11c80jaMzW3ekTPhLXkdxfKc95zl1sA46/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1uYkMCFM8kzG6dA5eU6zlFQE3s1CB-NMM
+    url: https://drive.google.com/file/d/1uYkMCFM8kzG6dA5eU6zlFQE3s1CB-NMM/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 17b67GBjE7hjz4mljC_f6qokuQylLVtbH
+    url: https://drive.google.com/file/d/17b67GBjE7hjz4mljC_f6qokuQylLVtbH/view
+    note: ''
+  - year: 2024
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 17u72RDglLz7BP1C4dCz_xAbIgZMX55-M
+    url: https://drive.google.com/file/d/17u72RDglLz7BP1C4dCz_xAbIgZMX55-M/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 中部空品區
+    drive_file_id: 1LA7sG6dlt6mQvN0SNpeRbN1ETUCM-aMj
+    url: https://drive.google.com/file/d/1LA7sG6dlt6mQvN0SNpeRbN1ETUCM-aMj/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 全部
+    drive_file_id: 14bCim8L7tX7LO0j05oaH_7fKY25xMv9C
+    url: https://drive.google.com/file/d/14bCim8L7tX7LO0j05oaH_7fKY25xMv9C/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 北部空品區
+    drive_file_id: 1-p3x4z9Cv71n-LWNm-kaVYuzYbwk3lOd
+    url: https://drive.google.com/file/d/1-p3x4z9Cv71n-LWNm-kaVYuzYbwk3lOd/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 宜蘭空品區
+    drive_file_id: 1FvsrdX23LOU83bXfCmudds1pko17UsII
+    url: https://drive.google.com/file/d/1FvsrdX23LOU83bXfCmudds1pko17UsII/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 竹苗空品區
+    drive_file_id: 1gk51JfnFL2mf5BXBbMMsT9_8z7h_qfNv
+    url: https://drive.google.com/file/d/1gk51JfnFL2mf5BXBbMMsT9_8z7h_qfNv/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 花東空品區
+    drive_file_id: 1NQay79yVPWQdcMzRgU00EMUbo2gppG2L
+    url: https://drive.google.com/file/d/1NQay79yVPWQdcMzRgU00EMUbo2gppG2L/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 離島
+    drive_file_id: 1d_zXG__iXq-Lw3HTazW1l60lQpVn0fLG
+    url: https://drive.google.com/file/d/1d_zXG__iXq-Lw3HTazW1l60lQpVn0fLG/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 雲嘉南空品區
+    drive_file_id: 1MZXM45IrVCoyZjj6SYZfJPFw22G0Yjsg
+    url: https://drive.google.com/file/d/1MZXM45IrVCoyZjj6SYZfJPFw22G0Yjsg/view
+    note: ''
+  - year: 2025
+    data_type: 全年逐時資料
+    station_group: 高屏空品區
+    drive_file_id: 1ma3NNnxzot4iLEzO1k7D3ikO8bTakBdJ
+    url: https://drive.google.com/file/d/1ma3NNnxzot4iLEzO1k7D3ikO8bTakBdJ/view
+    note: ''
+credentialed:
+  moenv_api:
+    credential_present: false
+    register_at: https://data.moenv.gov.tw
+    probed: false
+  cwa_opendata:
+    credential_present: false
+    register_at: https://opendata.cwa.gov.tw
+    probed: false
+  era5_cds:
+    credential_present: false
+    register_at: https://cds.climate.copernicus.eu
+    probed: false
+  earthengine:
+    credential_present: false
+    register_at: https://code.earthengine.google.com
+    probed: false
