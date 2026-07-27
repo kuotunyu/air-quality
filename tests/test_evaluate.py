@@ -146,9 +146,7 @@ class TestLeaveOneStationOut:
 
 class TestLeaveOneYearOut:
     def test_the_held_out_year_is_absent_from_training(self) -> None:
-        frame = pl.concat(
-            [_series(["A"], datetime(y, 1, 1), 24) for y in (2014, 2015, 2016)]
-        )
+        frame = pl.concat([_series(["A"], datetime(y, 1, 1), 24) for y in (2014, 2015, 2016)])
 
         for split in leave_one_year_out(frame):
             years = split.train["ts_local"].dt.year().unique().to_list()

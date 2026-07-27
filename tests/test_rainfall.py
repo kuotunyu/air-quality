@@ -40,53 +40,39 @@ def _frame(rows: list[tuple[str, float | None, str]]) -> pl.DataFrame:
 class TestNoRainIsZero:
     def test_rainfall_no_rain_becomes_zero(self) -> None:
         """90% of hourly rainfall cells are NR; excluding them inflates the mean tenfold."""
-        out = apply_no_rain_zero(
-            _frame([("RAINFALL", None, Flag.NO_RAIN.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("RAINFALL", None, Flag.NO_RAIN.value)]), config=CONFIG)
 
         assert out["value"].to_list() == [0.0]
 
     def test_rain_intensity_also_becomes_zero(self) -> None:
-        out = apply_no_rain_zero(
-            _frame([("RAIN_INT", None, Flag.NO_RAIN.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("RAIN_INT", None, Flag.NO_RAIN.value)]), config=CONFIG)
 
         assert out["value"].to_list() == [0.0]
 
     def test_ph_of_rain_that_never_fell_stays_undefined(self) -> None:
         """pH 0 is strongly acidic — coercing dry weather to it invents acid rain."""
-        out = apply_no_rain_zero(
-            _frame([("PH_RAIN", None, Flag.NO_RAIN.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("PH_RAIN", None, Flag.NO_RAIN.value)]), config=CONFIG)
 
         assert out["value"].to_list() == [None]
 
     def test_conductivity_stays_undefined_too(self) -> None:
-        out = apply_no_rain_zero(
-            _frame([("RAIN_COND", None, Flag.NO_RAIN.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("RAIN_COND", None, Flag.NO_RAIN.value)]), config=CONFIG)
 
         assert out["value"].to_list() == [None]
 
     def test_the_flag_is_preserved_not_rewritten(self) -> None:
         """How the agency recorded it stays visible; only the value is filled."""
-        out = apply_no_rain_zero(
-            _frame([("RAINFALL", None, Flag.NO_RAIN.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("RAINFALL", None, Flag.NO_RAIN.value)]), config=CONFIG)
 
         assert out["flag"].to_list() == [Flag.NO_RAIN.value]
 
     def test_existing_measurements_are_untouched(self) -> None:
-        out = apply_no_rain_zero(
-            _frame([("RAINFALL", 4.5, Flag.VALID.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("RAINFALL", 4.5, Flag.VALID.value)]), config=CONFIG)
 
         assert out["value"].to_list() == [4.5]
 
     def test_other_pollutants_are_untouched(self) -> None:
-        out = apply_no_rain_zero(
-            _frame([("PM2.5", None, Flag.MISSING.value)]), config=CONFIG
-        )
+        out = apply_no_rain_zero(_frame([("PM2.5", None, Flag.MISSING.value)]), config=CONFIG)
 
         assert out["value"].to_list() == [None]
 
@@ -114,9 +100,7 @@ class TestUsablePredicate:
 
     def test_no_rain_without_a_value_is_still_excluded(self) -> None:
         """PH_RAIN keeps its null, so the null check drops it."""
-        frame = apply_no_rain_zero(
-            _frame([("PH_RAIN", None, Flag.NO_RAIN.value)]), config=CONFIG
-        )
+        frame = apply_no_rain_zero(_frame([("PH_RAIN", None, Flag.NO_RAIN.value)]), config=CONFIG)
 
         assert frame.filter(usable()).is_empty()
 

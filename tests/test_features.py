@@ -86,9 +86,7 @@ class TestWindVector:
 
     def test_raw_bearing_is_retained(self) -> None:
         """M3 needs it to show what using it directly produced."""
-        assert "WD_HR" in add_wind_features(
-            pl.DataFrame({"WD_HR": [90.0], "WS_HR": [1.0]})
-        ).columns
+        assert "WD_HR" in add_wind_features(pl.DataFrame({"WD_HR": [90.0], "WS_HR": [1.0]})).columns
 
     def test_missing_inputs_are_reported(self) -> None:
         with pytest.raises(KeyError, match="WS_HR"):

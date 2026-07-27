@@ -136,9 +136,7 @@ class TestNaiveAggregation:
         values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 1.0)
         rows = _full_month("二林", 2012, 6, values)
         rows = [
-            (r[0], r[1], r[2], r[3], Flag.INSTRUMENT_CHECK_INVALID.value)
-            if r[1] == RESPONSE
-            else r
+            (r[0], r[1], r[2], r[3], Flag.INSTRUMENT_CHECK_INVALID.value) if r[1] == RESPONSE else r
             for r in rows
         ]
         # A second station keeps every pollutant present in the store, so the
