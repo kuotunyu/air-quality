@@ -158,6 +158,32 @@ def qc_report() -> None:
     run_report()
 
 
+@app.command("stations")
+def stations(
+    save: bool = typer.Option(True, "--save/--no-save", help="Write to data/outputs/qc/."),
+) -> None:
+    """Resolve station identity, air-quality zone and type from the store."""
+    from twair.paths import outputs_dir
+    from twair.store.stations import build_station_table
+
+    table = build_station_table()
+    console.print(table)
+
+    missing = table.filter(table["airzone"].is_null())
+    if not missing.is_empty():
+        console.print(
+            f"[yellow]{missing.height} station(s) without an air-quality zone:[/yellow] "
+            f"{missing['station_name'].to_list()}"
+        )
+
+    if save:
+        destination = outputs_dir("qc")
+        destination.mkdir(parents=True, exist_ok=True)
+        path = destination / "stations.parquet"
+        table.write_parquet(path)
+        console.print(f"wrote {path}")
+
+
 @app.command("summary")
 def summary() -> None:
     """Row counts per year in the canonical store."""
