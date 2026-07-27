@@ -28,6 +28,20 @@ app = typer.Typer(
 probe_app = typer.Typer(help="Phase 0: discover and verify upstream data sources.")
 app.add_typer(probe_app, name="probe")
 
+ingest_app = typer.Typer(help="Phase 1: download raw data from upstream providers.")
+app.add_typer(ingest_app, name="ingest")
+
+
+def _parse_year_range(spec: str | None) -> range | None:
+    """Accept ``2010:2017``, ``2024``, or None for everything."""
+    if not spec:
+        return None
+    if ":" in spec:
+        start, _, end = spec.partition(":")
+        return range(int(start), int(end) + 1)
+    year = int(spec)
+    return range(year, year + 1)
+
 
 def _setup_logging() -> None:
     level = get_settings().twair_log_level.upper()
@@ -87,6 +101,53 @@ def probe_sources(
     from twair.ingest.probe import run_probe
 
     run_probe(download_samples=samples)
+
+
+@ingest_app.command("airtw")
+def ingest_airtw(
+    years: str = typer.Option(
+        None,
+        "--years",
+        "-y",
+        help="Year or range, e.g. 2024 or 2010:2017. Omit for every available year.",
+    ),
+    refresh_catalog: bool = typer.Option(
+        False,
+        "--refresh-catalog",
+        help="Re-resolve download links from airtw instead of using conf/sources.yaml.",
+    ),
+    force: bool = typer.Option(False, "--force", help="Re-download even if already cached."),
+) -> None:
+    """Download annual hourly archives (全部 station group, one file per year)."""
+    from twair.ingest.download import download_archives
+
+    download_archives(
+        years=_parse_year_range(years),
+        refresh_catalog=refresh_catalog,
+        force=force,
+    )
+
+
+@app.command("build")
+def build(
+    years: str = typer.Option(
+        None, "--years", "-y", help="Year or range, e.g. 2024 or 2010:2017. Omit for all."
+    ),
+) -> None:
+    """Parse downloaded archives into the canonical Parquet store."""
+    from twair.build import build_observations
+
+    build_observations(years=_parse_year_range(years))
+
+
+@app.command("summary")
+def summary() -> None:
+    """Row counts per year in the canonical store."""
+    from twair.store.writer import partition_summary
+
+    frame = partition_summary()
+    console.print(frame)
+    console.print(f"total rows: {frame['rows'].sum():,}")
 
 
 if __name__ == "__main__":
