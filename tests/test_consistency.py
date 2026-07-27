@@ -155,3 +155,27 @@ class TestConsistency:
         empty = _obs([]).clear()
 
         assert check_consistency(empty).is_empty()
+
+
+class TestBuildSummaryMerge:
+    """Rebuilding one year must not erase the record of the others."""
+
+    def test_existing_years_survive_a_single_year_rebuild(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        import polars as pl
+
+        from twair import build as build_module
+
+        outputs = tmp_path / "build"
+        outputs.mkdir(parents=True)
+        monkeypatch.setattr(build_module, "outputs_dir", lambda name=None: tmp_path / name)
+
+        first = [build_module.YearResult(year=y, rows=100, stations=1) for y in (2010, 2011)]
+        build_module._report(first)
+
+        rebuilt = build_module.YearResult(year=2011, rows=999, stations=2)
+        build_module._report([rebuilt])
+
+        summary = pl.read_csv(outputs / "year_summary.csv").sort("year")
+        assert summary["year"].to_list() == [2010, 2011]
+        assert summary.filter(pl.col("year") == 2011)["rows"].item() == 999
+        assert summary.filter(pl.col("year") == 2010)["rows"].item() == 100

@@ -230,5 +230,13 @@ def _report(results: list[YearResult]) -> None:
 
     destination = outputs_dir("build")
     destination.mkdir(parents=True, exist_ok=True)
-    summary.write_csv(destination / "year_summary.csv")
-    console.print(f"  wrote {destination / 'year_summary.csv'}")
+    path = destination / "year_summary.csv"
+
+    # Merge rather than replace: rebuilding a single year must not erase the
+    # record of the other forty-three. Rows for years in this run win.
+    if path.exists():
+        previous = pl.read_csv(path).filter(~pl.col("year").is_in(summary["year"].to_list()))
+        summary = pl.concat([previous, summary], how="diagonal_relaxed").sort("year")
+
+    summary.write_csv(path)
+    console.print(f"  wrote {path} ({summary.height} year(s) recorded)")

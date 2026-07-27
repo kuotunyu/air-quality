@@ -74,6 +74,19 @@ Official ReadMe: 「0時：指 0:00-0:59」. Column `1` is **00:00**, not 01:00.
 Getting this wrong shifts 1996–2012 by an hour. Pinned by
 `test_hour_one_column_lands_at_midnight`.
 
+### 1992 and 2008 date their rows M/D/YYYY
+
+Every other year uses Y/M/D. Parsing only Y/M/D returned null for every
+timestamp in those two years, the null filter dropped every row, and the build
+reported success while losing them entirely. `DATE_FORMATS` coalesces over both
+orders; they cannot be confused (month 2010 and day 1992 are both invalid).
+
+**The general lesson:** `strict=False` parsing plus a downstream null filter is
+how a whole year disappears quietly. `read_archive` now raises when members
+parse but yield no rows, and `build_year` treats an empty parse as an error.
+Any new "skip the bad rows" filter needs a matching "did everything get
+skipped?" guard.
+
 ### Flag semantics changed between generations
 
 - legacy: `15#` — flag suffixed, **value retained**
@@ -129,6 +142,10 @@ uv run twair summary         # row counts per year
 Long runs (`ingest`, `build`) belong in the background — a full build is hours.
 `build_year` catches every exception and records it in the summary, so one bad
 archive cannot kill an unattended run.
+
+Incremental artefacts must **merge, not replace**. `year_summary.csv` used to
+be rewritten wholesale, so rebuilding one year erased the record of the other
+forty-three. Anything written per-run needs the same treatment.
 
 ## Conventions
 
