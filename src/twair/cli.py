@@ -67,28 +67,51 @@ def version() -> None:
 
 
 @app.command()
-def doctor() -> None:
-    """Report which credentials are configured and which are still missing."""
-    settings = get_settings()
-    checks: list[tuple[str, str | None, str]] = [
-        ("MOENV_API_KEY", settings.moenv_api_key, "Phase 1 — MOENV open data API"),
-        ("CWA_API_KEY", settings.cwa_api_key, "Phase 1 — CWA weather observations"),
-        ("CDSAPI_KEY", settings.cdsapi_key, "Phase 4 — ERA5 boundary layer height"),
-        ("GEE_PROJECT_ID", settings.gee_project_id, "Phase 6 — Sentinel-5P / MODIS"),
-        ("HF_TOKEN", settings.hf_token, "Publishing — HuggingFace dataset & Space"),
-    ]
-    missing = 0
-    for name, value, purpose in checks:
-        if value:
-            console.print(f"[green]OK[/green]      {name:<16} {purpose}")
-        else:
-            missing += 1
-            console.print(f"[yellow]MISSING[/yellow] {name:<16} {purpose}")
+def doctor(
+    live: bool = typer.Option(
+        True,
+        "--live/--offline",
+        help="Contact each provider to prove the credential works, not just that it is set.",
+    ),
+) -> None:
+    """Verify credentials against the providers themselves."""
+    from rich.table import Table
+
+    from twair.ingest.verify import verify_all
+
+    if live:
+        console.print("Contacting providers …\n")
+    results = verify_all(live=live)
+
+    style = {"ok": "green", "failed": "red", "missing": "yellow", "unchecked": "dim"}
+    table = Table(header_style="bold")
+    table.add_column("provider")
+    table.add_column("status")
+    table.add_column("variable")
+    table.add_column("detail", overflow="fold")
+
+    for r in results:
+        table.add_row(
+            r.name,
+            f"[{style[r.status]}]{r.status.upper()}[/{style[r.status]}]",
+            r.env_var,
+            r.detail or r.purpose,
+        )
+    console.print(table)
+
+    failed = [r for r in results if r.status == "failed"]
+    missing = [r for r in results if r.status == "missing"]
+
+    if failed:
+        console.print(f"\n[red]{len(failed)} credential(s) configured but not working.[/red]")
     if missing:
         console.print(
-            f"\n[yellow]{missing} credential(s) missing.[/yellow] "
-            "See [bold]docs/registrations.md[/bold]."
+            f"[yellow]{len(missing)} not yet configured:[/yellow] "
+            f"{', '.join(r.env_var for r in missing)}"
         )
+        console.print("See [bold]docs/registrations.md[/bold] for where to obtain each.")
+    if not failed and not missing:
+        console.print("\n[green]All credentials verified.[/green]")
 
 
 @probe_app.command("sources")

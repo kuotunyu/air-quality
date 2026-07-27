@@ -10,8 +10,17 @@ uv run twair doctor
 
 ## 優先順序
 
-**Phase 1 完全不需要任何金鑰。** airtw 年度資料包是公開直接下載，
-`uv run twair probe sources` 現在就能跑。以下金鑰是後續階段才會用到。
+**Phase 1 完全不需要任何金鑰**，airtw 年度資料包是公開直接下載。
+
+驗證已設定的金鑰（會實際呼叫各家 API，不只檢查有沒有填）：
+
+```bash
+uv run twair doctor
+```
+
+> **注意**：CWA 的 API 把授權碼放在網址參數。`twair doctor` 會在檢查期間
+> 壓低 httpx 的 log 層級以免金鑰被寫進終端機或記錄檔，
+> 但若你自行用 `curl` 或其他工具測試，金鑰仍會留在 shell 歷史裡。
 
 | 階段 | 需要 | 用途 |
 |---|---|---|
@@ -19,7 +28,7 @@ uv run twair doctor
 | Phase 1（增量） | `MOENV_API_KEY` | 每日更新、測站基本資料 |
 | Phase 2 | `CWA_API_KEY` | 氣象站觀測 |
 | Phase 4 | `CDSAPI_KEY` | ERA5 邊界層高度 |
-| Phase 6 | `GEE_PROJECT_ID` | 衛星資料 |
+| Phase 6 | `GEE_PROJECT_ID` | 衛星資料 —— **可選，有替代方案，見下** |
 | 發布 | `HF_TOKEN` | HuggingFace 資料集與 Space |
 
 ---
@@ -65,7 +74,23 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
 
 下載採排隊制，大範圍請求可能等數小時，建議背景批次執行。
 
-## 4. Google Earth Engine — `GEE_PROJECT_ID`
+## 4. Google Earth Engine — `GEE_PROJECT_ID`（**可選，可延後**）
+
+> **這一項不急，也不是非它不可。**
+>
+> GEE 只影響 Phase 6 的衛星部分（Sentinel-5P 柱濃度、MODIS AOD、
+> 由此推出的 1km 濃度場）。Phase 2–5、7、8 完全用不到，
+> Phase 6 的另一半（微型感測器校正）也不需要。
+>
+> 註冊流程要建 Google Cloud 專案並通過非商業資格審查，比其他幾項繁瑣許多。
+> **建議做到 Phase 6 再決定**，屆時可比較這兩個替代方案：
+>
+> | 替代方案 | 提供 | 註冊難度 |
+> |---|---|---|
+> | [Copernicus Data Space](https://dataspace.copernicus.eu/) | Sentinel-5P | 低，一般帳號即可 |
+> | [NASA Earthdata](https://urs.earthdata.nasa.gov/) | MODIS AOD（LAADS DAAC） | 低 |
+>
+> GEE 的優勢是「不必自行下載數 TB 原始檔」，代價就是那套 Cloud 專案流程。
 
 <https://code.earthengine.google.com/>
 

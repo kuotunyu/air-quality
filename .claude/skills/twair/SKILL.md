@@ -194,6 +194,20 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Use `git commit -F <file>` — this is Git Bash, so PowerShell here-strings
 (`@'...'@`) break, and apostrophes in `-m` truncate the message.
 
+## Credentials
+
+`uv run twair doctor` contacts each provider rather than checking that a
+variable is non-empty — a typo and a revoked key look identical otherwise.
+
+**Never let a credential reach a log.** CWA takes its key as a query
+parameter and httpx logs full URLs at INFO, which leaked a key to the terminal
+once. `verify.py` wraps every check in `_quiet_http()`. Any new code that puts
+a secret in a URL needs the same treatment.
+
+Earth Engine is **optional** and deferred: it only affects the satellite half
+of Phase 6, and Copernicus Data Space or NASA Earthdata can replace it. Do not
+treat its absence as a blocker.
+
 ## Open decisions (do not decide unilaterally)
 
 1. **Raw-data redistribution licensing.** `docs/legal.md` documents a conflict
