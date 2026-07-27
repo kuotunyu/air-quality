@@ -328,3 +328,64 @@ class TestXlsCellConversion:
         import xlrd
 
         assert self._convert(xlrd.XL_CELL_EMPTY, "") == ""
+
+
+class TestDateFormats:
+    """1992 and 2008 date their rows M/D/YYYY; every other year uses Y/M/D.
+
+    Parsing only Y/M/D returned null for every row in those two years, and the
+    build reported success while silently dropping them. The orders are
+    mutually exclusive (month 2010 and day 1992 are both invalid), so a
+    coalesce over both is unambiguous.
+    """
+
+    _counter = 0
+
+    def _archive(self, tmp_path: Path, date_text: str) -> Path:
+        header = ",".join(["日期", "測站", "測項", *_hours(0)])
+        row = ",".join([date_text, "三民", "PM2.5", *[str(10 + i) for i in range(24)]])
+        # Names are generated rather than derived from the date: `:` and `/`
+        # are not legal in Windows filenames.
+        TestDateFormats._counter += 1
+        path = tmp_path / f"case{TestDateFormats._counter}.zip"
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("station.csv", f"{header}\n{row}\n".encode())
+        return path
+
+    def test_iso_style_year_first(self, tmp_path: Path) -> None:
+        frame = read_archive(self._archive(tmp_path, "2012/01/03"))
+
+        assert frame["ts_local"].min().date().isoformat() == "2012-01-03"
+
+    def test_us_style_month_first(self, tmp_path: Path) -> None:
+        """`1/3/1992` is 3 January, not 1 March."""
+        frame = read_archive(self._archive(tmp_path, "1/3/1992"))
+
+        assert frame["ts_local"].min().date().isoformat() == "1992-01-03"
+
+    def test_month_first_with_two_digit_day(self, tmp_path: Path) -> None:
+        frame = read_archive(self._archive(tmp_path, "12/31/2008"))
+
+        assert frame["ts_local"].min().date().isoformat() == "2008-12-31"
+
+    def test_the_two_orders_cannot_be_confused(self, tmp_path: Path) -> None:
+        iso = read_archive(self._archive(tmp_path, "2008/12/31"))
+        us = read_archive(self._archive(tmp_path, "12/31/2008"))
+
+        assert iso["ts_local"].min() == us["ts_local"].min()
+
+    def test_datetime_suffix_is_trimmed(self, tmp_path: Path) -> None:
+        """2018+ archives append a zero time component."""
+        frame = read_archive(self._archive(tmp_path, "2024/01/01 00:00:00"))
+
+        assert frame["ts_local"].min().date().isoformat() == "2024-01-01"
+
+    def test_unmatched_date_format_fails_loudly(self, tmp_path: Path) -> None:
+        """The exact failure mode that silently lost 1992 and 2008.
+
+        Members read cleanly, so the old code saw success; every row was then
+        discarded for having a null timestamp, and an entire year disappeared
+        from a build that reported no failures.
+        """
+        with pytest.raises(ArchiveFormatError, match="no usable rows"):
+            read_archive(self._archive(tmp_path, "not-a-date"))

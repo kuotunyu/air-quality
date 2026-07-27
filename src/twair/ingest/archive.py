@@ -52,6 +52,18 @@ _ROW_TAG = f"{{{_NS['table']}}}table-row"
 # faithfully would blow up memory for no benefit.
 _MAX_REPEAT = 64
 
+# Date layouts observed across the archive. Most years use ISO-ish Y/M/D, but
+# 1992 and 2008 use US-style M/D/Y — presumably an Excel export under a
+# different locale. Verified by inspection rather than assumed: in both years
+# the first component takes exactly 12 distinct values (1-12) and the second
+# takes 31 (1-31), which settles the order. Both are leap years and both yield
+# 366 distinct dates, which confirms it independently.
+#
+# Order matters only for speed, not correctness: a Y/M/D string cannot parse as
+# M/D/Y (month 2010 is invalid) and vice versa (day 1992 is invalid), so the
+# coalesce is unambiguous.
+DATE_FORMATS = ("%Y/%m/%d", "%m/%d/%Y", "%Y-%m-%d")
+
 
 class ArchiveFormatError(RuntimeError):
     """Raised when a member cannot be mapped onto a known dialect."""
@@ -375,9 +387,13 @@ def _to_long(frame: pl.DataFrame, dialect: Dialect, *, source_member: str) -> pl
         dialect.hour_map, return_dtype=pl.Int8, default=None
     )
 
+    date_expr = pl.coalesce(
+        [pl.col("date_raw").str.to_date(fmt, strict=False) for fmt in DATE_FORMATS]
+    )
+
     return (
         long.with_columns(
-            pl.col("date_raw").str.to_date("%Y/%m/%d", strict=False).alias("date"),
+            date_expr.alias("date"),
             hour_expr.alias("hour"),
             parse_expr("raw").alias("parsed"),
         )
@@ -472,7 +488,16 @@ def read_archive(
     if not frames:
         raise ArchiveFormatError(f"no parseable members in {archive}")
 
-    return pl.concat(frames, how="vertical_relaxed")
+    combined = pl.concat(frames, how="vertical_relaxed")
+    if combined.is_empty():
+        # Members read fine but every row was discarded — in practice this
+        # means no date format matched, which is how 1992 and 2008 vanished
+        # from a build that reported success. Fail where it is detectable.
+        raise ArchiveFormatError(
+            f"{archive.name}: members parsed but produced no usable rows "
+            f"(no DATE_FORMATS entry matched?)"
+        )
+    return combined
 
 
 def _safe_parse(container: ArchiveContainer, member: str, archive_name: str) -> pl.DataFrame | None:

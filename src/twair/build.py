@@ -103,6 +103,17 @@ def _build_year(result: YearResult, archive: Path, *, root: Path | None) -> Year
         result.error = f"{type(exc).__name__}: {exc}"
         return result
 
+    if parsed.is_empty():
+        # An archive that parses without error but yields nothing is a silent
+        # failure, and it happened: 1992 and 2008 date their rows M/D/YYYY,
+        # every timestamp came back null, and the whole year was dropped while
+        # the run reported success. Treat it as the error it is.
+        result.error = (
+            "archive parsed to zero rows — likely an unhandled date or hour "
+            "format; inspect with describe_archive()"
+        )
+        return result
+
     # Order matters: sentinels first (888/999 are not measurements, so they
     # must not be judged against a 0-360 range), then range checks.
     parsed = apply_sentinels(parsed)
