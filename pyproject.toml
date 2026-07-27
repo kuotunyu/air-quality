@@ -46,11 +46,15 @@ analysis = [
     "statsmodels>=0.14",
     "matplotlib>=3.9",
 ]
-# Gradient boosting and explainability — M2 onwards.
+# Gradient boosting — M2 onwards.
+#
+# `shap` is deliberately absent. It depends on numba, which needs a compiler
+# toolchain and resolves to a very old release here. LightGBM computes exact
+# TreeSHAP values itself via `predict(..., pred_contrib=True)`, so the
+# dependency buys nothing.
 ml = [
     "scikit-learn>=1.6",
     "lightgbm>=4.5",
-    "shap>=0.46",
 ]
 geo = [
     "geopandas>=1.0",
