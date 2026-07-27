@@ -158,6 +158,20 @@ def qc_report() -> None:
     run_report()
 
 
+@app.command("aggregate")
+def aggregate() -> None:
+    """Build daily and monthly tables with coverage gating and circular means."""
+    from twair.store.aggregate import build_aggregates
+
+    tables = build_aggregates()
+    for name, frame in tables.items():
+        gated = frame.filter(~frame["meets_threshold"]).height
+        console.print(
+            f"{name}: [green]{frame.height:,}[/green] rows, "
+            f"[yellow]{gated:,}[/yellow] below coverage threshold (mean withheld)"
+        )
+
+
 @app.command("stations")
 def stations(
     save: bool = typer.Option(True, "--save/--no-save", help="Write to data/outputs/qc/."),
