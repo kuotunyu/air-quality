@@ -26,7 +26,7 @@ class SchemaError(RuntimeError):
     """Raised when a frame does not satisfy the canonical schema."""
 
 
-OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
+OBSERVATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # --- identity ---
     "station_name": pl.Categorical,
     "pollutant": pl.Categorical,
@@ -50,7 +50,7 @@ REQUIRED_COLUMNS = tuple(OBSERVATION_SCHEMA)
 # What a Parquet partition actually stores: year and month live in the path,
 # not the file. Anything that rewrites a partition in place must conform to
 # this, or the store ends up with mixed dtypes and refuses to scan.
-PARTITION_SCHEMA: dict[str, pl.DataType] = {
+PARTITION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     name: dtype for name, dtype in OBSERVATION_SCHEMA.items() if name not in {"year", "month"}
 }
 

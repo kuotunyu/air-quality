@@ -105,7 +105,7 @@ def download_sample(catalog: list[AirtwFile]) -> Path | None:
         console.print(f"  sample already present: {dest.name} ({dest.stat().st_size:,} bytes)")
         return dest
 
-    import gdown
+    import gdown.download as gdown
 
     console.print(f"  downloading sample: {target.year} {target.station_group} …")
     dest.parent.mkdir(parents=True, exist_ok=True)

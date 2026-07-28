@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -214,16 +215,18 @@ def climatology_baseline(
     something about this particular hour".
     """
     keys = [station_column, "_month", "_hour"]
-    with_keys = lambda f: f.with_columns(  # noqa: E731
-        pl.col(time_column).dt.month().alias("_month"),
-        pl.col(time_column).dt.hour().alias("_hour"),
-    )
 
-    lookup = with_keys(train).group_by(keys).agg(pl.col(target).mean().alias("_clim"))
-    fallback = float(train[target].mean())
+    def _with_keys(f: pl.DataFrame) -> pl.DataFrame:
+        return f.with_columns(
+            pl.col(time_column).dt.month().alias("_month"),
+            pl.col(time_column).dt.hour().alias("_hour"),
+        )
+
+    lookup = _with_keys(train).group_by(keys).agg(pl.col(target).mean().alias("_clim"))
+    fallback = float(cast(Any, train[target].mean()))
 
     return (
-        with_keys(test)
+        _with_keys(test)
         .join(lookup, on=keys, how="left")
         .with_columns(pl.col("_clim").fill_null(fallback))["_clim"]
         .rename("prediction")

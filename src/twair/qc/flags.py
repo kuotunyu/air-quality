@@ -33,6 +33,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any, cast
 
 import polars as pl
 
@@ -160,30 +161,30 @@ def parse_token(raw: str | None) -> ParsedValue:
     marker = (match.group(2) if match else text) or ""
 
     if number_part is None:
-        flag = FLAG_TOKENS.get(marker, Flag.UNPARSEABLE)
-        return ParsedValue(None, flag, raw, value_retained=False)
+        token_flag = FLAG_TOKENS.get(marker, Flag.UNPARSEABLE)
+        return ParsedValue(None, token_flag, raw, value_retained=False)
 
     value = float(number_part)
 
     if not marker:
         return ParsedValue(value, Flag.VALID, raw, value_retained=False)
 
-    flag = FLAG_TOKENS.get(marker)
-    if flag is None:
+    flag_opt = FLAG_TOKENS.get(marker)
+    if flag_opt is None:
         # A number followed by something we do not recognise: keep the raw cell
         # visible rather than guessing.
         return ParsedValue(None, Flag.UNPARSEABLE, raw, value_retained=False)
 
     # Legacy suffix form: the reading survived its own rejection.
-    return ParsedValue(value, flag, raw, value_retained=True)
+    return ParsedValue(value, flag_opt, raw, value_retained=True)
 
 
 def _flag_mapping_expr(marker: pl.Expr) -> pl.Expr:
     """Map a marker string to a Flag value, defaulting to UNPARSEABLE."""
-    expr = pl.when(marker == "").then(pl.lit(Flag.MISSING.value))
+    expr: Any = pl.when(marker == "").then(pl.lit(Flag.MISSING.value))
     for token, flag in FLAG_TOKENS.items():
         expr = expr.when(marker == token).then(pl.lit(flag.value))
-    return expr.otherwise(pl.lit(Flag.UNPARSEABLE.value))
+    return cast(pl.Expr, expr.otherwise(pl.lit(Flag.UNPARSEABLE.value)))
 
 
 def parse_expr(column: str | pl.Expr) -> pl.Expr:

@@ -110,7 +110,7 @@ def download_one(item: AirtwFile, *, force: bool = False, patient: bool = False)
     dest = _destination(item)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    import gdown
+    import gdown.download as gdown
 
     attempts = len(_QUOTA_BACKOFF_SECONDS) + 1 if patient else 1
     error = ""

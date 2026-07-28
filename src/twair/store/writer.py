@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
+from typing import Literal
 
 import polars as pl
 
@@ -19,7 +20,7 @@ from twair.store.schema import conform, validate
 log = logging.getLogger(__name__)
 
 OBSERVATIONS = "observations"
-COMPRESSION = "zstd"
+COMPRESSION: Literal["zstd"] = "zstd"
 
 
 def partition_path(root: Path, year: int, month: int) -> Path:

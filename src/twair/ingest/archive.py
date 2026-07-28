@@ -301,7 +301,7 @@ def _xls_cell_to_text(book: object, sheet: object, row: int, col: int) -> str:
 
     if kind == xlrd.XL_CELL_DATE:
         stamp = xlrd.xldate.xldate_as_datetime(value, book.datemode)  # type: ignore[attr-defined]
-        return stamp.strftime("%Y/%m/%d")
+        return str(stamp.strftime("%Y/%m/%d"))
     if kind == xlrd.XL_CELL_EMPTY:
         return ""
     if kind == xlrd.XL_CELL_NUMBER:
