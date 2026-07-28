@@ -348,6 +348,47 @@ def analyze_m4(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m7")
+def analyze_m7(
+    years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),
+    percentile: float = typer.Option(75.0, "--percentile", help="What counts as a high hour."),
+    stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
+) -> None:
+    """M7 — where the dirty air comes from (CBPF, no trajectory model)."""
+    from twair.analysis.sources import run_sources, write_sources_report
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2006, 2025)
+    subset = [s.strip() for s in stations.split(",")] if stations else None
+
+    tables = run_sources(period=period, stations=subset, percentile=percentile)
+    summary = tables["summary"]
+
+    console.print(
+        summary.select(
+            "station_name", "threshold", "calm_fraction", "resultant", "peak_sector", "peak_speed"
+        ).head(15)
+    )
+
+    # A peak at low wind speed points at something nearby; a peak at high speed
+    # points at something far away that needed wind to arrive.
+    transported = summary.filter(pl.col("peak_speed").is_in(["6-8", "8+"]))
+    local = summary.filter(pl.col("peak_speed").is_in(["<0.5", "0.5-1.5"]))
+    console.print(
+        f"\n[bold]{summary.height}[/bold] station(s); "
+        f"[bold]{transported.height}[/bold] peak at high wind (transport signature), "
+        f"[bold]{local.height}[/bold] at low wind (local signature)"
+    )
+    console.print(
+        f"  median calm fraction {summary['calm_fraction'].median():.1%} "
+        f"(excluded from the polar plot — no direction — but counted)"
+    )
+    console.print(f"  {int(summary['n_suppressed_bins'].sum())} bin(s) withheld for too few hours")
+
+    for name, path in write_sources_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m5")
 def analyze_m5(
     years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),
