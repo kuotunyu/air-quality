@@ -12,7 +12,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair import reporting  # type: ignore[import-untyped]
+from twair import reporting
 
 
 @pytest.fixture

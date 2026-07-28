@@ -7,8 +7,8 @@ from pathlib import Path
 
 import polars as pl
 
-from twair.qc.flags import Flag  # type: ignore[import-untyped]
-from twair.store.wide import (  # type: ignore[import-untyped]
+from twair.qc.flags import Flag
+from twair.store.wide import (
     modelling_columns,
     valid_only,
     wide_year,
@@ -16,7 +16,7 @@ from twair.store.wide import (  # type: ignore[import-untyped]
 
 
 def _store(tmp_path: Path, rows: list[tuple[str, str, datetime, float | None, str]]) -> Path:
-    from twair.store.writer import write_observations  # type: ignore[import-untyped]
+    from twair.store.writer import write_observations
 
     frame = pl.DataFrame(
         {

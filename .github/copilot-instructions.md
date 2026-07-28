@@ -34,7 +34,7 @@ A null in this codebase is a *finding*, not a defect.
 ```python
 # ❌ NEVER do any of these
 df.fill_null(0)
-df.drop_nulls()                 # unless the task explicitly says to
+df.drop_nulls()  # unless the task explicitly says to
 df.interpolate()
 df["mean"].fill_null(strategy="forward")
 value if value is not None else 0
@@ -124,6 +124,24 @@ Must print `0 errors`.
 **If you cannot make all checks pass, say so plainly and show the failing
 output. Do not disable a check, add `# type: ignore` to silence an error you
 did not understand, or delete a failing test.**
+
+> ⚠️ **A green check obtained by turning the check off is worse than a red
+> one**, because it hides the problem from the next person too.
+>
+> This has already happened once. Mypy reported `twair.viz` as untyped, and 38
+> `# type: ignore[import-untyped]` comments were added to make the error go
+> away. Each one switched off type-checking for everything imported from that
+> module, so `mypy tests` reported success while 219 real errors sat
+> unexamined. The actual cause was a missing `src/twair/py.typed` marker — one
+> empty file.
+>
+> **`twair.*` is this repository's own package.** If mypy claims it is
+> untyped, something is wrong with the packaging, not with the import. Never
+> suppress it. Report it.
+
+**A suppression is a last resort and always needs a reason.** If you write
+`# type: ignore[...]`, the same commit must say in prose why the error is not a
+real defect. "To make mypy pass" is not a reason.
 
 ---
 

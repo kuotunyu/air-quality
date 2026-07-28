@@ -149,9 +149,30 @@ module = [
     "statsmodels", "statsmodels.*", "matplotlib", "matplotlib.*", "pandas", "pandas.*",
     "geopandas", "geopandas.*", "xarray", "xarray.*", "netCDF4", "netCDF4.*",
     "cdsapi", "cdsapi.*", "statsforecast", "statsforecast.*", "neuralforecast", "neuralforecast.*",
-    "datasets", "datasets.*", "huggingface_hub", "huggingface_hub.*", "py7zr", "py7zr.*"
+    "datasets", "datasets.*", "huggingface_hub", "huggingface_hub.*", "py7zr", "py7zr.*",
+    "xlrd", "xlrd.*"
 ]
 ignore_missing_imports = true
+
+# Tests keep their annotations — they document what each fixture hands back —
+# but two strict checks are switched off here, and only here.
+#
+# `Series.__getitem__` in Polars is typed as a union of every value a cell
+# could hold: int | float | Decimal | date | time | timedelta | str | bytes |
+# ndarray | ... Mypy cannot narrow it, so an ordinary assertion such as
+#
+#     assert annual["coverage"][0] >= 0.75
+#
+# produces one `operator` error per member of that union. Across the suite that
+# is 150 `operator` and 64 `union-attr` errors, none of which corresponds to a
+# defect: every one is a comparison that is correct at runtime and checked by
+# the assertion itself.
+#
+# Silencing them individually would mean 214 `# type: ignore` comments in the
+# specification files, which is worse than the noise. `src/` stays fully strict.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["operator", "union-attr"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

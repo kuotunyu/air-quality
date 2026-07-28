@@ -12,7 +12,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from twair.models.evaluate import (  # type: ignore[import-untyped]
+from twair.models.evaluate import (
     climatology_baseline,
     evaluate_predictions,
     leave_one_station_out,

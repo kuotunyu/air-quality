@@ -16,7 +16,7 @@ from typing import Any
 import polars as pl
 import pytest
 
-from twair.viz import story  # type: ignore[import-untyped]
+from twair.viz import story
 
 
 def _daily_frame(rows: list[dict[str, Any]]) -> pl.DataFrame:

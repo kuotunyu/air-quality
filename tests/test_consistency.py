@@ -8,12 +8,12 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair.qc.consistency import (  # type: ignore[import-untyped]
+from twair.qc.consistency import (
     check_consistency,
     check_ranges,
     range_report,
 )
-from twair.qc.flags import Flag  # type: ignore[import-untyped]
+from twair.qc.flags import Flag
 
 CONFIG = {
     "pollutants": {
@@ -171,7 +171,7 @@ class TestBuildSummaryMerge:
     ) -> None:
         import polars as pl
 
-        from twair import build as build_module  # type: ignore[import-untyped]
+        from twair import build as build_module
 
         outputs = tmp_path / "build"
         outputs.mkdir(parents=True)

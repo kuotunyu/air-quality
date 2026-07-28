@@ -9,7 +9,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from twair.qc.flags import Flag, parse_expr, parse_token  # type: ignore[import-untyped]
+from twair.qc.flags import Flag, parse_expr, parse_token
 
 # Tokens seen in real files, by generation.
 LEGACY_SUFFIX_TOKENS = ["15#", "0.1#", "12.3*", "4.5x", "-0.2#", ".33#"]
@@ -102,11 +102,20 @@ class TestModernReplacementForm:
 
 class TestSemanticMarkers:
     def test_no_rain_is_information_not_absence(self) -> None:
-        """`NR` means it genuinely did not rain — distinct from a missing reading."""
-        parsed = parse_token("NR")
+        """`NR` means it genuinely did not rain — distinct from a missing reading.
 
-        assert parsed.flag is Flag.NO_RAIN
-        assert parsed.flag is not Flag.MISSING
+        Both carry a null value, so the flag is the only thing separating "we
+        measured, and it was zero" from "we do not know". The two tokens are
+        parsed side by side here because asserting the distinction against a
+        literal proves nothing: once ``flag is Flag.NO_RAIN`` has been checked,
+        ``flag is not Flag.MISSING`` is true by construction.
+        """
+        no_rain = parse_token("NR")
+        missing = parse_token("")
+
+        assert no_rain.flag is Flag.NO_RAIN
+        assert missing.flag is Flag.MISSING
+        assert no_rain.value is None and missing.value is None
 
     def test_below_detection_limit_is_not_zero(self) -> None:
         parsed = parse_token("ND")

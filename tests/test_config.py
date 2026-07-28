@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from twair.config import (  # type: ignore[import-untyped]
+from twair.config import (
     ConfigError,
     _reject_boolean_keys,
     load_conf,

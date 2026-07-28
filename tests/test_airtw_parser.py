@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from selectolax.parser import HTMLParser
 
-from twair.ingest.airtw import (  # type: ignore[import-untyped]
+from twair.ingest.airtw import (
     AirtwFile,
     _parse_table,
     _year_options,

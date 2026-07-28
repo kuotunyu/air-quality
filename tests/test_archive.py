@@ -13,7 +13,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair.ingest.archive import (  # type: ignore[import-untyped]
+from twair.ingest.archive import (
     ArchiveFormatError,
     detect_dialect,
     read_archive,
@@ -300,10 +300,10 @@ class TestXlsCellConversion:
         from twair.ingest.archive import _xls_cell_to_text
 
         sheet = self._Sheet([kind], [value])
-        return _xls_cell_to_text(self._Book(), sheet, 0, 0)  # type: ignore[no-any-return]
+        return _xls_cell_to_text(self._Book(), sheet, 0, 0)
 
     def test_excel_date_serial_becomes_a_date_string(self) -> None:
-        import xlrd  # type: ignore[import-untyped]
+        import xlrd
 
         # 31778 is 1987-01-01 in the 1900 date system.
         assert self._convert(xlrd.XL_CELL_DATE, 31778.0) == "1987/01/01"

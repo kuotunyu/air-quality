@@ -13,7 +13,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair.store.aggregate import (  # type: ignore[import-untyped]
+from twair.store.aggregate import (
     aggregate_daily,
     aggregate_monthly,
     circular_mean_expr,
@@ -99,7 +99,7 @@ def _hourly(rows: list[tuple[str, str, datetime, float]]) -> pl.DataFrame:
 
 def _write_store(tmp_path: Path, frame: pl.DataFrame) -> Path:
     """Persist a minimal store the aggregation functions can scan."""
-    from twair.store.writer import write_observations  # type: ignore[import-untyped]
+    from twair.store.writer import write_observations
 
     complete = frame.with_columns(
         pl.lit(False).alias("value_retained"),
@@ -226,7 +226,7 @@ def test_build_aggregates_creates_its_output_directories(
     processed_dir resolves a path without creating it, so the daily/monthly
     directories have to be made before writing.
     """
-    from twair.store import aggregate as agg  # type: ignore[import-untyped]
+    from twair.store import aggregate as agg
 
     store = tmp_path / "store"
     rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0) for h in range(20)]

@@ -6,8 +6,8 @@ from datetime import datetime
 
 import polars as pl
 
-from twair.qc.flags import Flag  # type: ignore[import-untyped]
-from twair.qc.sentinels import (  # type: ignore[import-untyped]
+from twair.qc.flags import Flag
+from twair.qc.sentinels import (
     apply_sentinels,
     sentinel_columns,
     sentinel_report,

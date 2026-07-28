@@ -17,18 +17,18 @@ from typing import Any
 import polars as pl
 import pytest
 
-from twair.analysis.pitfalls import (  # type: ignore[import-untyped]
+from twair.analysis.pitfalls import (
     collinearity_instability,
     diurnal_cycle_lost_to_monthly_means,
     normality_remedy_does_not_work_on_its_own_numbers,
     normality_test_fallacy,
     wind_direction_linearisation,
 )
-from twair.qc.flags import Flag  # type: ignore[import-untyped]
+from twair.qc.flags import Flag
 
 
 def _store(tmp_path: Path, rows: Sequence[tuple[str, str, datetime, Any]]) -> Path:
-    from twair.store.writer import write_observations  # type: ignore[import-untyped]
+    from twair.store.writer import write_observations
 
     write_observations(
         pl.DataFrame(
@@ -287,7 +287,7 @@ class TestLeakagePrice:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The number quoted must be the one the comparison produced."""
-        from twair.analysis import pitfalls  # type: ignore[import-untyped]
+        from twair.analysis import pitfalls
 
         outputs = tmp_path / "m2_drivers"
         outputs.mkdir(parents=True)

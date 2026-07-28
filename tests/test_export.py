@@ -17,7 +17,7 @@ from typing import Any
 import polars as pl
 import pytest
 
-from twair.viz import export  # type: ignore[import-untyped]
+from twair.viz import export
 
 
 @pytest.fixture

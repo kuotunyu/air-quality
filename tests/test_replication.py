@@ -14,18 +14,18 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair.analysis.replication import (  # type: ignore[import-untyped]
+from twair.analysis.replication import (
     ORIGINAL_PERIOD,
     ORIGINAL_PREDICTORS,
     RESPONSE,
     load_expected,
     naive_monthly_panel,
 )
-from twair.qc.flags import Flag  # type: ignore[import-untyped]
+from twair.qc.flags import Flag
 
 
 def _store(tmp_path: Path, rows: Sequence[tuple[str, str, datetime, float | None, str]]) -> Path:
-    from twair.store.writer import write_observations  # type: ignore[import-untyped]
+    from twair.store.writer import write_observations
 
     frame = pl.DataFrame(
         {

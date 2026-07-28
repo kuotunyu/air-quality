@@ -13,17 +13,17 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair.analysis.drivers import (  # type: ignore[import-untyped]
+from twair.analysis.drivers import (
     FEATURE_SETS,
     POLLUTANTS,
     TARGET,
     build_modelling_frame,
 )
-from twair.qc.flags import Flag  # type: ignore[import-untyped]
+from twair.qc.flags import Flag
 
 
 def _store(tmp_path: Path, hours: int = 48, stations: Sequence[str] = ("二林", "關山")) -> Path:
-    from twair.store.writer import write_observations  # type: ignore[import-untyped]
+    from twair.store.writer import write_observations
 
     start = datetime(2015, 6, 1)
     rows = []

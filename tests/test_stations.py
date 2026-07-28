@@ -5,8 +5,8 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from twair.config import load_conf  # type: ignore[import-untyped]
-from twair.store.stations import (  # type: ignore[import-untyped]
+from twair.config import load_conf
+from twair.store.stations import (
     alias_map,
     derive_airzones,
     normalise_name_expr,
@@ -251,7 +251,7 @@ class TestShippedZoneConfig:
 @pytest.mark.slow
 def test_qc_report_counts_the_same_stations_as_the_station_table() -> None:
     """Both must normalise names, or 台南 and 臺南 are counted as two stations."""
-    from twair.qc.report import station_lifecycle  # type: ignore[import-untyped]
+    from twair.qc.report import station_lifecycle
     from twair.store.stations import build_station_table
 
     assert station_lifecycle().height == build_station_table().height
