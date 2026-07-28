@@ -271,6 +271,19 @@ def analyze_m3(
         console.print(f"wrote {name}: {path}")
 
 
+report_app = typer.Typer(help="Assemble reports from analysis outputs.")
+app.add_typer(report_app, name="report")
+
+
+@report_app.command("core")
+def report_core() -> None:
+    """Build reports/01-core.md from the M1, M2 and M3 outputs."""
+    from twair.reporting import build_core_report
+
+    path = build_core_report()
+    console.print(f"wrote {path}")
+
+
 @app.command("summary")
 def summary() -> None:
     """Row counts per year in the canonical store."""
