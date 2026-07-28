@@ -52,7 +52,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 ### 目標產出（四位一體）
 
 1. **開源資料集** — HuggingFace Datasets，台灣 2006→今 全測站逐時空品 + 氣象，含 QA flag
-2. **可引用研究** — Quarto 產出的技術報告，方法完整可重現
+2. **看得懂的技術報告** — 方法完整可重現（Markdown 即可，不需要 Quarto/DOI 那一套）
 3. **科普互動網站** — GitHub Pages，scrollytelling + 瀏覽器端資料探索器
 4. **可用工具** — `twair` Python 套件（PyPI）+ HuggingFace Space 預測 demo
 
@@ -535,13 +535,15 @@ Gradio 介面：選測站 → 顯示最近觀測 + 未來 72h 預測（含預測
 #### 收尾
 1. **CI 自動更新**：`daily-update.yml` — 每日抓增量 → QC → 更新 Parquet → push HF dataset → 重建網站 L0/L1 → 部署
 2. **文件**
-   - `README.md`（中）/ `README.en.md`：一句話定位、hero 圖、快速開始、主要發現摘要、引用格式
-   - `docs/methodology.md`：完整方法論
-   - `CITATION.cff`
+   - `README.md`（中）/ `README.en.md`：一句話定位、快速開始、主要發現摘要 ✅
+   - `docs/methodology.md`：完整方法論 ✅
    - 所有模組的 docstring + `mkdocs` API 文件（選配）
-3. **`twair` 發布到 PyPI**
-4. **Zenodo DOI**（讓資料集與程式碼可被正式引用）
-5. **完整報告** `reports/00-full.qmd` → PDF + HTML，作為「新版畢業專題」
+3. **`twair` 發布到 PyPI**（選配）
+4. **完整報告** `reports/00-full.md`：把各階段的發現串成一份能讀完的文件
+
+> **不做學術形式的那一套。** 這是 side project，不是投稿用的研究：
+> 沒有 `CITATION.cff`、沒有 Zenodo DOI、不用 Quarto 出 PDF。
+> 嚴謹度留著（那是這個專案好玩的地方），行政開銷丟掉。
 
 **驗收**
 - [ ] CI 綠燈，每日更新連續成功 7 天

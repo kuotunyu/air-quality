@@ -6,7 +6,7 @@
 
 [繁體中文](README.md) ·
 Interactive site — *not yet deployed* ·
-Dataset — *pending a licensing answer* ·
+Dataset — *not yet uploaded* ·
 [Methodology](docs/methodology.md)
 
 ---
@@ -207,4 +207,5 @@ npm run dev    # Dashboard launches on http://localhost:4321
 
 ## Citation
 
-Formal citation formats and DOIs will be provided with the v1.0 release. See `CITATION.cff`.
+A personal side project — no DOI, no formal citation format. Link to the repository
+if you need to reference it, and credit the data to Taiwan's Ministry of Environment.
