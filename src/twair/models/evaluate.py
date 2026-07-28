@@ -22,10 +22,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, cast
 
 import numpy as np
 import polars as pl
+
+from twair.scalars import as_float
 
 log = logging.getLogger(__name__)
 
@@ -223,7 +224,7 @@ def climatology_baseline(
         )
 
     lookup = _with_keys(train).group_by(keys).agg(pl.col(target).mean().alias("_clim"))
-    fallback = float(cast(Any, train[target].mean()))
+    fallback = as_float(train[target].mean(), what="climatology fallback")
 
     return (
         _with_keys(test)

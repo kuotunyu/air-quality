@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import cast
 
 import polars as pl
 from rich.console import Console
 
 from twair.paths import DOCS_DIR, outputs_dir
 from twair.qc.flags import Flag
+from twair.scalars import as_float, as_int
 from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
 
@@ -289,10 +289,10 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
     sentinels = results["sentinel_rates"]
     wind_totals = results["wind_direction_totals"]
 
-    total_rows = int(cast(int, coverage["rows"].sum()))
-    year_min = int(cast(int, coverage["obs_year"].min()))
-    year_max = int(cast(int, coverage["obs_year"].max()))
-    overall_valid = float(cast(float, coverage["valid"].sum())) / total_rows if total_rows else 0.0
+    total_rows = as_int(coverage["rows"].sum(), what="total rows")
+    year_min = as_int(coverage["obs_year"].min(), what="first year")
+    year_max = as_int(coverage["obs_year"].max(), what="last year")
+    overall_valid = as_float(coverage["valid"].sum()) / total_rows if total_rows else 0.0
 
     sentinel_section = "本期間資料中**未出現**風向哨兵碼。"
     if not sentinels.is_empty():
