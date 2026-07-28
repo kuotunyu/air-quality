@@ -102,8 +102,8 @@ uv run twair probe sources
 | Phase 1 | 資料取得、QA/QC、Canonical Parquet | ✅ 完成 |
 | Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ✅ 完成 |
 | Phase 3 | 互動網站首波上線 | ✅ 完成 |
-| Phase 4 | 氣象正規化、政策因果推論 | ⬜ 下一步 |
-| Phase 5 | 空間分析、境外傳輸軌跡 | ⬜ |
+| Phase 4 | 氣象正規化、政策因果推論 | ✅ 完成 |
+| Phase 5 | 空間分析、境外傳輸軌跡 | ⬜ 下一步 |
 | Phase 6 | 衛星與微型感測器融合 | ⬜ |
 | Phase 7 | 預測模型、HuggingFace Space | ⬜ |
 | Phase 8 | 健康衝擊、自動更新、發布 | ⬜ |
