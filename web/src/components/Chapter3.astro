@@ -1,0 +1,439 @@
+---
+/**
+ * Chapter 3 — where the bad hours arrive from.
+ *
+ * A CBPF polar plot: one annular sector per (wind direction, wind speed) bin,
+ * shaded by the probability that the hour was in the top quartile.
+ *
+ * The geometry is identical for every station, so it is rendered once and the
+ * client swaps fills when the reader picks a different one. That keeps the
+ * chart in the HTML — it works, labelled and shaded, before any JavaScript
+ * runs — while 74 stations cost 68 KB of data rather than 74 SVGs.
+ *
+ * A bin with fewer than 20 hours has no fill at all, and is hatched instead.
+ * "Rarely windy from there" must not look like "clean when windy from there".
+ */
+import sourcesData from "../../public/data/story/sources.json";
+import { compass, SIGNATURE } from "../lib/labels";
+import { n } from "../lib/chart";
+
+const data = sourcesData as {
+  explains: string;
+  percentile: number;
+  min_bin_count: number;
+  null_means: string;
+  cannot_say: string;
+  sectors: number[];
+  speed_bins: string[];
+  signature_counts: Record<string, number>;
+  median_calm_fraction: number;
+  n_suppressed_bins: number;
+  stations: Record<
+    string,
+    {
+      threshold: number;
+      calm_fraction: number;
+      resultant: number;
+      peak_sector: number | null;
+      peak_speed: string | null;
+      signature: string;
+      county?: string | null;
+      airzone?: string | null;
+      probability: (number | null)[][];
+      n: number[][];
+    }
+  >;
+};
+
+const names = Object.keys(data.stations).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+const initial = names.includes("富貴角") ? "富貴角" : names[0];
+
+const SIZE = 360;
+const CX = SIZE / 2;
+const CY = SIZE / 2;
+const R_INNER = 34;
+const R_OUTER = 165;
+
+const nSectors = data.sectors.length;
+const nRings = data.speed_bins.length;
+const sweep = 360 / nSectors;
+const ringWidth = (R_OUTER - R_INNER) / nRings;
+
+/** One annular sector, as an SVG path. Angles are compass bearings. */
+function cell(sectorIndex: number, ringIndex: number): string {
+  const a0 = ((data.sectors[sectorIndex] - 90) * Math.PI) / 180;
+  const a1 = ((data.sectors[sectorIndex] + sweep - 90) * Math.PI) / 180;
+  const r0 = R_INNER + ringIndex * ringWidth;
+  const r1 = r0 + ringWidth;
+
+  const p = (r: number, a: number) => `${(CX + r * Math.cos(a)).toFixed(2)} ${(CY + r * Math.sin(a)).toFixed(2)}`;
+  return [
+    `M${p(r0, a0)}`,
+    `A${r0} ${r0} 0 0 1 ${p(r0, a1)}`,
+    `L${p(r1, a1)}`,
+    `A${r1} ${r1} 0 0 0 ${p(r1, a0)}`,
+    "Z",
+  ].join(" ");
+}
+
+// Seven steps from "rarely high" to "usually high". The ramp is the site's, so
+// the map, the trend lines and this plot all mean the same thing by a colour.
+const RAMP = ["--c0", "--c1", "--c2", "--c3", "--c4", "--c5", "--c6"];
+const BREAKS = [0.1, 0.2, 0.3, 0.45, 0.6, 0.75];
+
+function fillFor(p: number | null): string {
+  if (p == null) return "none";
+  let i = 0;
+  while (i < BREAKS.length && p >= BREAKS[i]) i += 1;
+  return `var(${RAMP[i]})`;
+}
+
+const cells = data.sectors.flatMap((sector, si) =>
+  data.speed_bins.map((speed, ri) => ({
+    key: `${si}-${ri}`,
+    d: cell(si, ri),
+    sector,
+    speed,
+  })),
+);
+
+const start = data.stations[initial];
+const counts = data.signature_counts;
+
+const legend = BREAKS.map((b, i) => ({
+  colour: `var(${RAMP[i]})`,
+  label: i === 0 ? `< ${b}` : `${BREAKS[i - 1]}–${b}`,
+})).concat([{ colour: `var(${RAMP[RAMP.length - 1]})`, label: `≥ ${BREAKS[BREAKS.length - 1]}` }]);
+---
+
+<section id="sources" class="page">
+  <p class="eyebrow">第三章</p>
+  <h2>壞空氣是從哪個方向來的</h2>
+
+  <p class="lede">{data.explains}</p>
+
+  <p>
+    這張圖叫 CBPF。角度是<strong>風吹來的方位</strong>，半徑是<strong>風速</strong>——
+    圓心附近是微風，外圈是強風。每一格的顏色是：風從這個方位、以這個速度吹來時，
+    該小時的 PM2.5 落在最高四分之一的機率。
+  </p>
+
+  <div class="picker-row">
+    <label>
+      測站
+      <select id="cbpf-station">
+        {
+          names.map((name) => (
+            <option value={name} selected={name === initial}>
+              {name}
+              {data.stations[name].county ? `（${data.stations[name].county}）` : ""}
+            </option>
+          ))
+        }
+      </select>
+    </label>
+    <span id="cbpf-signature" class="badge">{SIGNATURE[start.signature] ?? start.signature}</span>
+  </div>
+
+  <div class="plot-row">
+    <div class="chart polar">
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-labelledby="cbpf-caption">
+        <defs>
+          <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" class="hatch-line" />
+          </pattern>
+        </defs>
+        {
+          cells.map((c) => (
+            <path
+              d={c.d}
+              class="cell"
+              data-key={c.key}
+              fill={fillFor(start.probability[data.sectors.indexOf(c.sector)][data.speed_bins.indexOf(c.speed)])}
+            >
+              <title>{compass(c.sector)} · {c.speed} m/s</title>
+            </path>
+          ))
+        }
+        {
+          data.sectors.map((s) => {
+            const a = ((s - 90) * Math.PI) / 180;
+            const r = R_OUTER + 15;
+            return (
+              <text x={CX + r * Math.cos(a)} y={CY + r * Math.sin(a) + 4} class="bearing">
+                {s === 0 ? "北" : s === 90 ? "東" : s === 180 ? "南" : s === 270 ? "西" : s}
+              </text>
+            );
+          })
+        }
+        <circle cx={CX} cy={CY} r={R_INNER - 2} class="hub" />
+        <text x={CX} y={CY - 2} class="hub-label">靜風</text>
+        <text x={CX} y={CY + 11} class="hub-value" id="cbpf-calm">
+          {(start.calm_fraction * 100).toFixed(1)}%
+        </text>
+      </svg>
+    </div>
+
+    <div class="readout">
+      <div class="stat">
+        <span class="stat-value" id="cbpf-threshold">{start.threshold.toFixed(1)}</span>
+        <span class="stat-label">高值門檻 μg/m³</span>
+        <span class="stat-note">該站自己的第 {n(data.percentile, 0)} 百分位</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="cbpf-peak">
+          {start.peak_sector == null ? "—" : compass(start.peak_sector)}
+        </span>
+        <span class="stat-label">機率最高的方位</span>
+        <span class="stat-note" id="cbpf-peak-speed">風速 {start.peak_speed} m/s</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="cbpf-resultant">{start.resultant.toFixed(3)}</span>
+        <span class="stat-label">方向集中度</span>
+        <span class="stat-note">0 = 四面八方；1 = 只有一個方位</span>
+      </div>
+
+      <div class="legend">
+        {
+          legend.map((l) => (
+            <span class="legend-item">
+              <span class="swatch" style={`background:${l.colour}`} />
+              {l.label}
+            </span>
+          ))
+        }
+        <span class="legend-item">
+          <span class="swatch hatched" />
+          時數不足
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <figcaption id="cbpf-caption">
+    CBPF 極座標圖。<strong>沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，
+    機率不予報告</strong>——那是「不知道」，不是「乾淨」。
+    全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
+  </figcaption>
+
+  <h3>近處與遠處，在圖上長得不一樣</h3>
+
+  <p>
+    這就是要用二維而不是傳統風花圖的原因。近處的污染源只有在<strong>風弱</strong>時才顯現，
+    風一大就吹散了——圖上是<strong>靠近圓心</strong>的亮塊。
+    遠處的污染源要有風才送得到，所以顯現在<strong>強風</strong>時——圖上是<strong>靠近外圈</strong>的亮塊。
+    一維的風花圖會把兩者畫在同一個角度上，說不出距離。
+  </p>
+
+  <div class="grid grid-3">
+    <div class="card stat">
+      <span class="stat-value">{counts.local}</span>
+      <span class="stat-label">本地型（尖峰在低風速）</span>
+    </div>
+    <div class="card stat">
+      <span class="stat-value">{counts.mixed}</span>
+      <span class="stat-label">中間型</span>
+    </div>
+    <div class="card stat">
+      <span class="stat-value" style="color:var(--c1)">{counts.transport}</span>
+      <span class="stat-label">傳輸型（尖峰在強風）</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>傳輸型的 7 站裡，有 4 站是地理極端點或離島</strong>——
+    富貴角（本島最北端岬角）、馬公、金門、恆春（最南端）。
+    那正是幾乎沒有本地污染源的地方，所以它們的壞小時只能是風送來的。
+    這個方法並不知道任何測站的位置，是資料自己指出來的。
+  </div>
+
+  <div class="note">
+    <strong>靜風時數被排除，但沒有被忽略。</strong>
+    沒有風就沒有方位，那些小時上不了極座標圖——可是停滯正是污染累積的時候。
+    全台靜風時數的中位數佔比是 {n(data.median_calm_fraction * 100, 1)}%，
+    標在每張圖的圓心。<strong>圖上沒有，不代表問題沒有。</strong>
+  </div>
+
+  <div class="note caveat">
+    <strong>這張圖說不出來的事：{data.cannot_say}</strong>
+  </div>
+</section>
+
+<script type="application/json" id="cbpf-data" is:inline set:html={JSON.stringify({
+  sectors: data.sectors,
+  speed_bins: data.speed_bins,
+  breaks: BREAKS,
+  ramp: RAMP,
+  stations: data.stations,
+})} />
+
+<script>
+  const node = document.getElementById("cbpf-data");
+  if (node?.textContent) {
+    const d = JSON.parse(node.textContent) as {
+      sectors: number[];
+      speed_bins: string[];
+      breaks: number[];
+      ramp: string[];
+      stations: Record<string, any>;
+    };
+
+    const SIGNATURE: Record<string, string> = {
+      transport: "傳輸型",
+      local: "本地型",
+      mixed: "中間型",
+    };
+
+    const COMPASS: Record<number, string> = {
+      0: "北", 30: "北北東", 60: "東北東", 90: "東", 120: "東南東", 150: "南南東",
+      180: "南", 210: "南南西", 240: "西南西", 270: "西", 300: "西北西", 330: "北北西",
+    };
+    const bearing = (deg: number) => `${deg}° ${COMPASS[deg] ?? ""}`.trim();
+
+    function fill(p: number | null): string {
+      if (p == null) return "none";
+      let i = 0;
+      while (i < d.breaks.length && p >= d.breaks[i]) i += 1;
+      return `var(${d.ramp[i]})`;
+    }
+
+    const select = document.getElementById("cbpf-station") as HTMLSelectElement;
+    const set = (id: string, text: string) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+
+    select?.addEventListener("change", () => {
+      const s = d.stations[select.value];
+      if (!s) return;
+
+      d.sectors.forEach((_, si) =>
+        d.speed_bins.forEach((_, ri) => {
+          const path = document.querySelector<SVGPathElement>(`path[data-key="${si}-${ri}"]`);
+          if (!path) return;
+          const p = s.probability[si][ri];
+          path.setAttribute("fill", fill(p));
+          const title = path.querySelector("title");
+          if (title) {
+            // The count travels with the probability: a bin with no fill and
+            // 3 hours behind it is unknown, not clean.
+            const hours = s.n[si][ri];
+            title.textContent =
+              `${bearing(d.sectors[si])} · ${d.speed_bins[ri]} m/s — ` +
+              (p == null ? `時數不足（${hours} 小時）` : `機率 ${p}（${hours} 小時）`);
+          }
+        }),
+      );
+
+      set("cbpf-threshold", s.threshold.toFixed(1));
+      set("cbpf-peak", s.peak_sector == null ? "—" : bearing(s.peak_sector));
+      set("cbpf-peak-speed", `風速 ${s.peak_speed} m/s`);
+      set("cbpf-resultant", s.resultant.toFixed(3));
+      set("cbpf-calm", `${(s.calm_fraction * 100).toFixed(1)}%`);
+
+      const badge = document.getElementById("cbpf-signature");
+      if (badge) {
+        badge.textContent = SIGNATURE[s.signature] ?? s.signature;
+        badge.dataset.signature = s.signature;
+      }
+    });
+  }
+</script>
+
+<style>
+  .picker-row {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin: 1.4rem 0 0.6rem;
+  }
+  .picker-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+  }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--text-muted);
+  }
+  .plot-row {
+    display: grid;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  @media (min-width: 52rem) {
+    .plot-row {
+      grid-template-columns: minmax(280px, 400px) 1fr;
+    }
+  }
+  .plot-row > * {
+    min-width: 0;
+  }
+  .polar svg {
+    width: 100%;
+    max-width: 400px;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    min-width: 0;
+  }
+  .cell {
+    stroke: var(--bg-sunken);
+    stroke-width: 1;
+  }
+  /* No fill means no data. Hatching says so rather than leaving a hole that
+     reads as background. */
+  .cell[fill="none"] {
+    fill: url(#cbpf-hatch);
+    stroke: var(--line);
+  }
+  .hatch-line {
+    stroke: var(--line);
+    stroke-width: 1.5;
+  }
+  .bearing {
+    fill: var(--text-faint);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-anchor: middle;
+  }
+  .hub {
+    fill: var(--bg-raised);
+    stroke: var(--line);
+  }
+  .hub-label {
+    fill: var(--text-faint);
+    font-size: 9px;
+    text-anchor: middle;
+  }
+  .hub-value {
+    fill: var(--text-muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    text-anchor: middle;
+  }
+  .readout {
+    display: grid;
+    gap: 1rem;
+  }
+  .swatch.hatched {
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      var(--line) 2px,
+      var(--line) 4px
+    );
+    border: 1px solid var(--line);
+  }
+  figcaption {
+    margin-top: 0.8rem;
+  }
+</style>

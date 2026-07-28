@@ -54,3 +54,16 @@ export const SYNTHETIC_DATA: Record<string, string> = {
   truly_normal: "真的是常態",
   slightly_skewed: "輕微偏態",
 };
+
+/**
+ * CBPF source signatures.
+ *
+ * Which bin a station's probability peaks in says something about distance:
+ * near sources show at low wind speed because stronger wind disperses them,
+ * distant ones at high speed because it takes wind to carry pollution far.
+ */
+export const SIGNATURE: Record<string, string> = {
+  transport: "傳輸型",
+  local: "本地型",
+  mixed: "中間型",
+};

@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import TrendChart from "../components/TrendChart.astro";
 import StationMap from "../components/StationMap.astro";
+import Chapter3 from "../components/Chapter3.astro";
 import Chapter4 from "../components/Chapter4.astro";
 import Chapter5 from "../components/Chapter5.astro";
 import StationPicker from "../components/StationPicker.astro";
@@ -197,6 +198,9 @@ const airzoneSeries = (trendByAirzone.series as {
 
     <StationPicker cards={cards} caveat={cigaretteCaveat} />
   </section>
+
+  <!-- ═══════════ 3. 空氣從哪來 ═══════════ -->
+  <Chapter3 />
 
   <!-- ═══════════ 4. 偵測極限 ═══════════ -->
   <Chapter4 />

@@ -445,7 +445,105 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     written.extend(_export_replication(root))
     written.extend(_export_deweather(root))
     written.extend(_export_detection_limit(root))
+    written.extend(_export_sources(root))
     return written
+
+
+def _export_sources(root: Path) -> list[Path]:
+    """Chapter 3: the CBPF grid for every station, plus its reading.
+
+    The grid ships whole rather than pre-rendered, because the same geometry
+    serves every station and only the fills change. A null probability stays
+    null all the way to the browser — a bin the wind rarely reaches must look
+    unknown, not clean.
+    """
+    source = outputs_dir("m7_sources")
+    summary_path = source / "summary.parquet"
+    if not summary_path.exists():
+        log.warning("no M7 output — run `twair analyze m7`")
+        return []
+
+    summary = pl.read_parquet(summary_path)
+    grid = pl.read_parquet(source / "grid.parquet")
+    stations = _stations()
+
+    geo_columns = [c for c in ("county", "airzone", "station_type") if c in stations.columns]
+    if geo_columns:
+        summary = summary.join(
+            stations.select("station_name", *geo_columns), on="station_name", how="left"
+        )
+
+    # Speed bins in physical order, not the alphabetical order a group_by
+    # leaves behind. "<0.5" sorts after "1.5-2.5" as a string.
+    speed_order = [
+        s
+        for s in ("<0.5", "0.5-1.5", "1.5-2.5", "2.5-4", "4-6", "6-8", "8+")
+        if s in set(grid["speed_bin"].cast(pl.Utf8).to_list())
+    ]
+    sectors = sorted({int(s) for s in grid["sector"]})
+
+    def signature(peak_speed: str | None) -> str:
+        if peak_speed in {"6-8", "8+"}:
+            return "transport"
+        if peak_speed in {"<0.5", "0.5-1.5"}:
+            return "local"
+        return "mixed"
+
+    by_station: dict[str, Any] = {}
+    for row in summary.iter_rows(named=True):
+        name = row["station_name"]
+        cells = grid.filter(pl.col("station_name") == name)
+        lookup = {(int(c["sector"]), str(c["speed_bin"])): c for c in cells.iter_rows(named=True)}
+        by_station[name] = {
+            "threshold": _round(row["threshold"], 1),
+            "calm_fraction": _round(row["calm_fraction"], 4),
+            "resultant": _round(row["resultant"], 3),
+            "peak_sector": row["peak_sector"],
+            "peak_speed": row["peak_speed"],
+            "signature": signature(row["peak_speed"]),
+            **{k: row.get(k) for k in geo_columns},
+            # Row-major over (sector, speed). null means the bin had too few
+            # hours to report, which is not the same as a low probability.
+            "probability": [
+                [_round(lookup.get((s, b), {}).get("probability"), 3) for b in speed_order]
+                for s in sectors
+            ],
+            "n": [
+                [int(lookup.get((s, b), {}).get("n") or 0) for b in speed_order] for s in sectors
+            ],
+        }
+
+    counts = dict.fromkeys(("transport", "local", "mixed"), 0)
+    for entry in by_station.values():
+        counts[entry["signature"]] += 1
+
+    return [
+        write_json(
+            root / "sources.json",
+            {
+                "method": "CBPF (Uria-Tellaetxe & Carslaw, 2014)",
+                "explains": (
+                    "給定風從某方位、以某風速吹來，該小時濃度落在高值區的機率。"
+                    "近處的污染源在**低風速**時顯現（風大就吹散），"
+                    "遠處的在**高風速**時顯現（要有風才送得到）。"
+                ),
+                "percentile": _round(summary["percentile"][0], 0),
+                "min_bin_count": 20,
+                "null_means": "該格觀測時數不足 20 小時，機率不予報告（不是機率為零）",
+                "cannot_say": (
+                    "方位不是來源地。這張圖支撐「高值在強風、風從某方位來時出現」，"
+                    "不支撐「污染來自某地」——距離、沿途其他污染源、"
+                    "以及空氣不走直線，都在中間。"
+                ),
+                "sectors": sectors,
+                "speed_bins": speed_order,
+                "signature_counts": counts,
+                "median_calm_fraction": _round(summary["calm_fraction"].median(), 4),
+                "n_suppressed_bins": int(summary["n_suppressed_bins"].sum()),
+                "stations": by_station,
+            },
+        )
+    ]
 
 
 def _export_deweather(root: Path) -> list[Path]:
