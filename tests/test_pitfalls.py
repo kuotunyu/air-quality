@@ -249,3 +249,73 @@ class TestCollinearityInstability:
 
         assert values["r2_mean"] > 0.5
         assert values["r2_sd"] < 0.1, "predictions are stable even as coefficients are not"
+
+
+class TestLeakagePrice:
+    def test_reads_the_m2_scores_rather_than_refitting(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """The number quoted must be the one the comparison produced."""
+        from twair.analysis import pitfalls
+
+        outputs = tmp_path / "m2_drivers"
+        outputs.mkdir(parents=True)
+        pl.DataFrame(
+            {
+                "model": ["lightgbm"] * 2,
+                "feature_set": ["full", "full_with_pm10"],
+                "split_kind": ["rolling"] * 2,
+                "split": ["rolling_1"] * 2,
+                "n": [100, 100],
+                "rmse": [14.0, 9.0],
+                "mae": [10.0, 7.0],
+                "r2": [0.4, 0.8],
+                "exceedance_f1": [0.6, 0.85],
+            }
+        ).write_parquet(outputs / "scores.parquet")
+        monkeypatch.setattr(pitfalls, "outputs_dir", lambda m=None: tmp_path / m, raising=False)
+        monkeypatch.setattr("twair.paths.outputs_dir", lambda m=None: tmp_path / m)
+
+        result = pitfalls.pm10_leakage_price()
+        share = result.filter(pl.col("feature_set") == "leak_share_of_r2")["r2"][0]
+
+        assert share == pytest.approx(0.5), "half the leaking model's R² comes from PM10"
+
+    def test_missing_m2_output_is_reported_clearly(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        monkeypatch.setattr("twair.paths.outputs_dir", lambda m=None: tmp_path / m)
+
+        from twair.analysis.pitfalls import pm10_leakage_price
+
+        with pytest.raises(FileNotFoundError, match="run_m2"):
+            pm10_leakage_price()
+
+
+class TestAllPitfallsRunner:
+    def test_the_four_self_contained_demonstrations_survive_missing_m2(
+        self, tmp_path, monkeypatch
+    ) -> None:  # type: ignore[no-untyped-def]
+        """One demonstration failing must not take the others with it."""
+        monkeypatch.setattr("twair.paths.outputs_dir", lambda m=None: tmp_path / m)
+
+        start = datetime(2010, 1, 1)
+        rows = []
+        for h in range(24 * 40):
+            ts = start + timedelta(hours=h)
+            rows += [
+                ("二林", "PM2.5", ts, 20.0 + (h % 24)),
+                ("二林", "WD_HR", ts, float((h * 11) % 360)),
+                ("二林", "WS_HR", ts, 2.0),
+                ("二林", "NO", ts, 5.0 + (h % 3)),
+                ("二林", "NO2", ts, 12.0 + (h % 5)),
+                ("二林", "NOx", ts, 17.0 + (h % 3) + (h % 5)),
+                ("二林", "O3", ts, 30.0 + (h % 7)),
+            ]
+        root = _store(tmp_path / "store", rows)
+
+        from twair.analysis.pitfalls import run_all_pitfalls
+
+        tables = run_all_pitfalls(root, period=(2010, 2010))
+
+        assert "normality.by_sample_size" in tables
+        assert "diurnal.variance" in tables
+        assert "wind.summary" in tables
+        assert "collinearity.stability" in tables
+        assert "leakage.price" not in tables, "no M2 output, so it is skipped not faked"

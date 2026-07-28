@@ -394,6 +394,21 @@ def run_all_pitfalls(
 
     tables["normality.by_sample_size"] = normality_test_fallacy()
     tables["normality.published_table"] = normality_remedy_does_not_work_on_its_own_numbers()
+
+    # These two depend on the M2 run having produced scores; skip rather than
+    # fail if it has not, so the other four still publish.
+    try:
+        tables["leakage.price"] = pm10_leakage_price(root)
+    except FileNotFoundError as exc:
+        log.warning("skipping PM10 leakage: %s", exc)
+
+    try:
+        tables["validation.in_vs_out_of_sample"] = in_sample_versus_out_of_sample(
+            root, period=period
+        )
+    except Exception as exc:
+        log.warning("skipping in/out-of-sample: %s", exc)
+
     return tables
 
 
@@ -410,3 +425,124 @@ def write_pitfall_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
         frame.write_parquet(path)
         written[name] = path
     return written
+
+
+def pm10_leakage_price(root: Path | None = None) -> pl.DataFrame:
+    """Pitfall 2 — what PM10 was worth as a predictor of its own subset.
+
+    Reads the M2 scores rather than refitting, so the number quoted here is the
+    same number the model comparison produced.
+
+    PM2.5 is a physical subset of PM10. A model given both is partly being told
+    the answer, and the share of its explanatory power that comes from that
+    overlap is not knowledge about how PM2.5 forms.
+    """
+    from twair.paths import outputs_dir
+
+    path = outputs_dir("m2_drivers") / "scores.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} — run scripts/run_m2.py first")
+
+    rolling = (
+        pl.read_parquet(path)
+        .filter(
+            (pl.col("split_kind") == "rolling")
+            & pl.col("feature_set").is_in(["full", "full_with_pm10"])
+        )
+        .group_by("feature_set")
+        .agg(
+            pl.col("r2").mean().alias("r2"),
+            pl.col("rmse").mean().alias("rmse"),
+            pl.col("mae").mean().alias("mae"),
+            pl.col("exceedance_f1").mean().alias("exceedance_f1"),
+        )
+    )
+
+    honest = rolling.filter(pl.col("feature_set") == "full")
+    leaking = rolling.filter(pl.col("feature_set") == "full_with_pm10")
+    if honest.is_empty() or leaking.is_empty():
+        return rolling
+
+    r2_honest = float(honest["r2"][0])
+    r2_leaking = float(leaking["r2"][0])
+
+    return rolling.vstack(
+        pl.DataFrame(
+            {
+                "feature_set": ["leak_share_of_r2"],
+                "r2": [(r2_leaking - r2_honest) / r2_leaking if r2_leaking else None],
+                "rmse": [float(leaking["rmse"][0]) - float(honest["rmse"][0])],
+                "mae": [float(leaking["mae"][0]) - float(honest["mae"][0])],
+                "exceedance_f1": [
+                    float(leaking["exceedance_f1"][0]) - float(honest["exceedance_f1"][0])
+                ],
+            }
+        )
+    )
+
+
+def in_sample_versus_out_of_sample(
+    root: Path | None = None,
+    *,
+    period: tuple[int, int] = (2010, 2017),
+    feature_set: str = "full",
+    seed: int = 0,
+) -> pl.DataFrame:
+    """Pitfall 6 — the gap the original had no way to see.
+
+    The 2018 project selected its model by AIC and BIC computed on the same
+    rows it was fitted to. Nothing in that procedure can detect a model that
+    has learned the sample rather than the phenomenon.
+
+    Fits one model and scores it twice: on the rows it was trained on, and on
+    future rows it has never seen. The difference is what in-sample selection
+    cannot report.
+    """
+    import lightgbm as lgb
+
+    from twair.analysis.drivers import FEATURE_SETS, TARGET, build_modelling_frame
+    from twair.models.evaluate import evaluate_predictions, rolling_origin
+
+    frame = build_modelling_frame(root, period=period)
+    features = list(FEATURE_SETS[feature_set])
+
+    splits = list(rolling_origin(frame, n_splits=3))
+    if not splits:
+        raise RuntimeError("not enough rows for a rolling-origin split")
+    split = splits[-1]
+
+    train = split.train.select([*features, TARGET]).drop_nulls()
+    test = split.test.select([*features, TARGET]).drop_nulls()
+
+    model = lgb.LGBMRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        num_leaves=63,
+        min_child_samples=50,
+        random_state=seed,
+        n_jobs=-1,
+        verbose=-1,
+    )
+    model.fit(train.select(features).to_numpy(), train[TARGET].to_numpy())
+
+    rows = []
+    for label, subset in (("in_sample", train), ("out_of_sample", test)):
+        prediction = model.predict(subset.select(features).to_numpy())
+        metrics = evaluate_predictions(subset[TARGET].to_numpy(), prediction)
+        rows.append({"evaluated_on": label, **metrics.as_dict()})
+
+    result = pl.DataFrame(rows)
+    optimism = float(result["r2"][0]) - float(result["r2"][1])
+    return result.vstack(
+        pl.DataFrame(
+            {
+                "evaluated_on": ["optimism_r2"],
+                "n": [None],
+                "rmse": [float(result["rmse"][1]) - float(result["rmse"][0])],
+                "mae": [float(result["mae"][1]) - float(result["mae"][0])],
+                "r2": [optimism],
+                "exceedance_f1": [None],
+            }
+        ),
+        in_place=False,
+    )
