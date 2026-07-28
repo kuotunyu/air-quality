@@ -147,7 +147,28 @@ dtype drift.
 ### PM10 is not a predictor of PM2.5
 
 PM2.5 is a physical subset of PM10. `modelling_columns()` excludes it by
-default. It remains available for ratio features.
+default. It remains available for ratio features. Measured cost of the leak:
+**32.1% of the leaking model's R²** (0.524 without, 0.772 with).
+
+### Circular encoding matters for linear models, not for trees
+
+Measured, and it contradicted the expectation: LightGBM does *slightly better*
+with the raw bearing (R² 0.537) than with sin/cos (0.524), because trees split
+repeatedly and can carve 0-360 into as many pieces as they need.
+
+Under OLS — which is what the 2018 project used — sin/cos gives **2.55x** the
+R² of the raw bearing (0.0254 to 0.0647). State the distinction; do not claim
+the encoding helps everywhere.
+
+### Persistence beats every explanatory model, and that is not a failure
+
+Persistence (this hour = last hour) reaches R² 0.900 against 0.524 for the best
+feature set, because it uses PM2.5's own lag while the models use only
+concurrent covariates and no PM2.5 history.
+
+The models here are **explanatory, not forecasting**. Any forecasting work
+(Phase 7) must add lag features, and persistence is the bar to clear rather
+than a peer to compare against.
 
 ### Polars: do not group_by a Hive partition key
 

@@ -392,6 +392,7 @@ def run_all_pitfalls(
         for key, frame in result.items():
             tables[f"{name}.{key}"] = frame
 
+    tables["wind.linear_model_encoding"] = wind_encoding_in_a_linear_model(root, period=period)
     tables["normality.by_sample_size"] = normality_test_fallacy()
     tables["normality.published_table"] = normality_remedy_does_not_work_on_its_own_numbers()
 
@@ -546,3 +547,80 @@ def in_sample_versus_out_of_sample(
         ),
         in_place=False,
     )
+
+
+def wind_encoding_in_a_linear_model(
+    root: Path | None = None,
+    *,
+    period: tuple[int, int] = (2010, 2017),
+    sample_size: int = 200_000,
+    seed: int = 0,
+) -> pl.DataFrame:
+    """Pitfall 3b — where the circular-variable problem actually bites.
+
+    The M2 comparison produced a result worth stating plainly: a gradient
+    boosted tree does *slightly better* with the raw bearing than with sin/cos
+    (R² 0.537 against 0.524). Trees split on a variable repeatedly and can
+    carve 0-360 into as many pieces as they need, so linearity across the wrap
+    point costs them almost nothing.
+
+    That does not rescue the original. Its methods were Pearson correlation,
+    OLS and a linear mixed model, and for those the encoding is decisive. This
+    fits the same rows both ways under OLS, which is the comparison that
+    matches what the 2018 project actually did.
+    """
+    import statsmodels.api as sm
+
+    from twair.features.met import add_wind_features
+
+    start, end = period
+    wide = (
+        scan_observations(root)
+        .filter(
+            pl.col("pollutant").is_in(["PM2.5", "WD_HR", "WS_HR"])
+            & pl.col("ts_local").dt.year().is_between(start, end)
+            & usable()
+        )
+        .select(
+            normalise_name_expr(),
+            pl.col("pollutant").cast(pl.Utf8),
+            "ts_local",
+            pl.col("value").cast(pl.Float64),
+        )
+        .collect()
+        .pivot(
+            on="pollutant",
+            index=["station_name", "ts_local"],
+            values="value",
+            aggregate_function="first",
+        )
+        .drop_nulls(["PM2.5", "WD_HR", "WS_HR"])
+    )
+
+    if wide.height > sample_size:
+        wide = wide.sample(sample_size, seed=seed)
+
+    featured = add_wind_features(wide)
+    frame = featured.to_pandas()
+    y = frame["PM2.5"]
+
+    rows = []
+    for label, columns in (
+        ("raw_bearing", ["WD_HR", "WS_HR"]),
+        ("sin_cos", ["wd_sin", "wd_cos", "WS_HR"]),
+        ("sin_cos_plus_uv", ["wd_sin", "wd_cos", "u", "v", "WS_HR"]),
+    ):
+        model = sm.OLS(y, sm.add_constant(frame[columns], has_constant="add")).fit()
+        rows.append(
+            {
+                "encoding": label,
+                "n_terms": len(columns),
+                "r_squared": float(model.rsquared),
+                "adj_r_squared": float(model.rsquared_adj),
+                "rmse": float(np.sqrt(model.mse_resid)),
+            }
+        )
+
+    result = pl.DataFrame(rows)
+    baseline = float(result.filter(pl.col("encoding") == "raw_bearing")["r_squared"][0])
+    return result.with_columns((pl.col("r_squared") / baseline).alias("r2_relative_to_raw_bearing"))

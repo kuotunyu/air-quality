@@ -119,6 +119,8 @@ def _m2_section() -> str:
         "",
         _table(rolling, ["model", "feature_set", "rmse", "mae", "r2", "f1", "splits"]),
         "",
+        _persistence_note(rolling),
+        "",
         leak_note,
     ]
 
@@ -142,6 +144,37 @@ def _m2_section() -> str:
         ]
 
     return "\n".join(sections) + "\n"
+
+
+def _persistence_note(rolling: pl.DataFrame) -> str:
+    """Explain why the simplest baseline tops the table.
+
+    Without this the table reads as "the models are useless", which is the
+    wrong conclusion from the right numbers.
+    """
+    persistence = rolling.filter(pl.col("model") == "persistence")
+    honest = rolling.filter(pl.col("feature_set") == "full")
+    if persistence.is_empty() or honest.is_empty():
+        return ""
+
+    return f"""#### 為什麼最笨的基準排第一
+
+persistence（「這小時等於上小時」）以 R² {float(persistence["r2"][0]):.3f} 遠勝所有模型的
+{float(honest["r2"][0]):.3f}。這不是模型沒用，而是**兩者回答的問題不同**：
+
+- persistence 用的是 **PM2.5 自己前一小時的值**
+- 所有 LightGBM 模型**完全沒有 PM2.5 的歷史**，只有同一小時的其他測項與氣象
+
+逐時 PM2.5 的自相關極高，所以只要允許使用前一小時，就能贏過任何只看當下共變數的模型。
+
+這給出兩個明確結論：
+
+1. **本節的模型是解釋性的，不是預報用的。** 它們回答「這小時的濃度由什麼構成」，
+   而非「下小時會是多少」。
+2. **要做預報就必須加入落後項。** 這是 Phase 7 的工作，屆時 persistence 是
+   必須超越的門檻，而不是拿來比較的對象。
+
+原專題同樣沒有落後項，也同樣沒有報告任何基準——差別在於它沒有機會發現這一點。"""
 
 
 def _leak_comparison(rolling: pl.DataFrame) -> str:
@@ -178,6 +211,9 @@ def _m3_section() -> str:
     published = _load("m3_pitfalls", "normality_published_table")
     wind = _load("m3_pitfalls", "wind_summary")
     sectors = _load("m3_pitfalls", "wind_by_sector")
+    wind_linear = _load("m3_pitfalls", "wind_linear_model_encoding")
+    leakage = _load("m3_pitfalls", "leakage_price")
+    validation = _load("m3_pitfalls", "validation_in_vs_out_of_sample")
     variance = _load("m3_pitfalls", "diurnal_variance")
     stability = _load("m3_pitfalls", "collinearity_stability")
 
@@ -211,6 +247,63 @@ def _m3_section() -> str:
             "",
             _table(sectors, limit=12),
         ]
+
+    if wind_linear is not None:
+        raw = wind_linear.filter(pl.col("encoding") == "raw_bearing")
+        encoded = wind_linear.filter(pl.col("encoding") == "sin_cos")
+        ratio = float(encoded["r2_relative_to_raw_bearing"][0]) if not encoded.is_empty() else 0.0
+        parts += [
+            "",
+            "#### 但要說清楚：這個問題只對線性模型致命",
+            "",
+            "M2 的比較產生了一個與預期相反、必須直說的結果：**梯度提升樹用原始方位角",
+            "反而略勝** sin/cos 編碼（R² 0.537 對 0.524）。樹可以對同一變數反覆切分，",
+            "把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎不造成損失。",
+            "",
+            "這並不能為原專題解套——它用的是 Pearson 相關、OLS 與線性混合模型。",
+            "在**同一批資料上用 OLS** 比較兩種編碼：",
+            "",
+            _table(
+                wind_linear,
+                ["encoding", "n_terms", "r_squared", "rmse", "r2_relative_to_raw_bearing"],
+            ),
+            "",
+            f"線性模型下 sin/cos 的解釋力是原始方位角的 **{ratio:.2f} 倍**"
+            f"（R² {float(raw['r_squared'][0]):.4f} → {float(encoded['r_squared'][0]):.4f}）。",
+            "編碼方式在原專題所用的方法家族裡是決定性的，在樹模型裡不是。",
+        ]
+
+    if leakage is not None:
+        share = leakage.filter(pl.col("feature_set") == "leak_share_of_r2")
+        parts += [
+            "",
+            "### 陷阱 2：PM10 洩漏的定價",
+            "",
+            _table(leakage),
+        ]
+        if not share.is_empty() and share["r2"][0] is not None:
+            parts += [
+                "",
+                f"含 PM10 的模型有 **{100 * float(share['r2'][0]):.1f}%** 的解釋力"
+                "來自這個定義上的重疊。",
+            ]
+
+    if validation is not None:
+        optimism = validation.filter(pl.col("evaluated_on") == "optimism_r2")
+        parts += [
+            "",
+            "### 陷阱 6：樣本內與樣本外",
+            "",
+            "原專題以 AIC、BIC 選模，兩者都算在配適用的同一批資料上。",
+            "同一個模型分別在訓練列與未見過的未來列上評分：",
+            "",
+            _table(validation),
+        ]
+        if not optimism.is_empty():
+            parts += [
+                "",
+                f"樂觀偏誤 **{float(optimism['r2'][0]):.3f} R²**——這正是樣本內選模無法回報的量。",
+            ]
 
     if normality is not None:
         parts += [
