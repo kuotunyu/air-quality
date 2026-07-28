@@ -29,6 +29,7 @@ __all__ = [
     "diurnal_cycle_lost_to_monthly_means",
     "normality_remedy_does_not_work_on_its_own_numbers",
     "normality_test_fallacy",
+    "run_all_pitfalls",
     "wind_direction_linearisation",
 ]
 
@@ -369,3 +370,43 @@ def normality_remedy_does_not_work_on_its_own_numbers() -> pl.DataFrame:
             "report_claims_not_rejected_at_0.01": [True] * len(published),
         }
     )
+
+
+def run_all_pitfalls(
+    root: Path | None = None,
+    *,
+    period: tuple[int, int] = (2010, 2017),
+) -> dict[str, pl.DataFrame]:
+    """Run every demonstration and return the evidence tables, flattened.
+
+    Keys are ``<pitfall>.<table>`` so the caller can persist them without
+    knowing the shape of each result.
+    """
+    tables: dict[str, pl.DataFrame] = {}
+
+    for name, result in (
+        ("diurnal", diurnal_cycle_lost_to_monthly_means(root, period=period)),
+        ("wind", wind_direction_linearisation(root, period=period)),
+        ("collinearity", collinearity_instability(root, period=period)),
+    ):
+        for key, frame in result.items():
+            tables[f"{name}.{key}"] = frame
+
+    tables["normality.by_sample_size"] = normality_test_fallacy()
+    tables["normality.published_table"] = normality_remedy_does_not_work_on_its_own_numbers()
+    return tables
+
+
+def write_pitfall_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
+    """Persist every evidence table for the report and the website."""
+    from twair.paths import outputs_dir
+
+    destination = outputs_dir("m3_pitfalls")
+    destination.mkdir(parents=True, exist_ok=True)
+
+    written: dict[str, Path] = {}
+    for name, frame in tables.items():
+        path = destination / f"{name.replace('.', '_')}.parquet"
+        frame.write_parquet(path)
+        written[name] = path
+    return written

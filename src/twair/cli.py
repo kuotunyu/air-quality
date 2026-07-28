@@ -252,6 +252,25 @@ def analyze_m1(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m3")
+def analyze_m3(
+    years: str = typer.Option("2010:2017", "--years", "-y", help="Period to analyse."),
+) -> None:
+    """M3 — the paired demonstrations of what each method choice cost."""
+    from twair.analysis.pitfalls import run_all_pitfalls, write_pitfall_report
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2010, 2017)
+
+    tables = run_all_pitfalls(period=period)
+    for name, frame in tables.items():
+        console.print(f"\n[bold]{name}[/bold]")
+        console.print(frame.head(14))
+
+    for name, path in write_pitfall_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @app.command("summary")
 def summary() -> None:
     """Row counts per year in the canonical store."""
