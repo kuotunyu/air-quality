@@ -12,7 +12,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from twair.models.evaluate import (
+from twair.models.evaluate import (  # type: ignore[import-untyped]
     climatology_baseline,
     evaluate_predictions,
     leave_one_station_out,
@@ -22,7 +22,7 @@ from twair.models.evaluate import (
 )
 
 
-def _series(stations: list[str], start: datetime, hours: int, value: float = 20.0):  # type: ignore[no-untyped-def]
+def _series(stations: list[str], start: datetime, hours: int, value: float = 20.0) -> pl.DataFrame:
     rows = []
     for station in stations:
         for h in range(hours):

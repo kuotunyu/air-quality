@@ -6,22 +6,24 @@ was a defect in the original, so a regression here would quietly restore it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import polars as pl
 import pytest
 
-from twair.analysis.drivers import (
+from twair.analysis.drivers import (  # type: ignore[import-untyped]
     FEATURE_SETS,
     POLLUTANTS,
     TARGET,
     build_modelling_frame,
 )
-from twair.qc.flags import Flag
+from twair.qc.flags import Flag  # type: ignore[import-untyped]
 
 
-def _store(tmp_path, hours: int = 48, stations=("二林", "關山")):  # type: ignore[no-untyped-def]
-    from twair.store.writer import write_observations
+def _store(tmp_path: Path, hours: int = 48, stations: Sequence[str] = ("二林", "關山")) -> Path:
+    from twair.store.writer import write_observations  # type: ignore[import-untyped]
 
     start = datetime(2015, 6, 1)
     rows = []
@@ -88,7 +90,7 @@ class TestFeatureSets:
 
 
 class TestModellingFrame:
-    def test_frame_is_hourly_not_aggregated(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_frame_is_hourly_not_aggregated(self, tmp_path: Path) -> None:
         """The single biggest difference from the original."""
         root = _store(tmp_path, hours=48)
 
@@ -97,7 +99,7 @@ class TestModellingFrame:
         assert frame.height == 96, "2 stations x 48 hours"
         assert frame["ts_local"].dt.hour().n_unique() > 1
 
-    def test_every_declared_feature_exists(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_every_declared_feature_exists(self, tmp_path: Path) -> None:
         root = _store(tmp_path)
 
         frame = build_modelling_frame(root, period=(2015, 2015))
@@ -106,7 +108,7 @@ class TestModellingFrame:
             missing = [f for f in features if f not in frame.columns]
             assert not missing, f"{name} needs {missing}"
 
-    def test_rows_without_the_target_are_dropped(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_rows_without_the_target_are_dropped(self, tmp_path: Path) -> None:
         from twair.store.writer import write_observations
 
         root = tmp_path
@@ -128,7 +130,7 @@ class TestModellingFrame:
 
         assert build_modelling_frame(root, period=(2015, 2015)).is_empty()
 
-    def test_period_defaults_to_the_original_window(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_period_defaults_to_the_original_window(self, tmp_path: Path) -> None:
         """M1 and M2 must be compared on the same years, not different data."""
         import inspect
 
@@ -136,14 +138,14 @@ class TestModellingFrame:
 
         assert default == (2010, 2017)
 
-    def test_station_filter(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_station_filter(self, tmp_path: Path) -> None:
         root = _store(tmp_path)
 
         frame = build_modelling_frame(root, period=(2015, 2015), stations=["二林"])
 
         assert frame["station_name"].unique().to_list() == ["二林"]
 
-    def test_chemistry_ratios_are_computed(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_chemistry_ratios_are_computed(self, tmp_path: Path) -> None:
         root = _store(tmp_path)
 
         frame = build_modelling_frame(root, period=(2015, 2015))
@@ -151,7 +153,7 @@ class TestModellingFrame:
         assert frame["ox"].null_count() == 0
         assert frame["no2_nox_ratio"].null_count() == 0
 
-    def test_wind_features_are_finite(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_wind_features_are_finite(self, tmp_path: Path) -> None:
         root = _store(tmp_path)
 
         frame = build_modelling_frame(root, period=(2015, 2015))
@@ -159,7 +161,9 @@ class TestModellingFrame:
         for column in ("wd_sin", "wd_cos", "u", "v"):
             assert frame[column].is_finite().all()
 
-    def test_pm_ratio_is_available_even_though_pm10_is_not_a_predictor(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_pm_ratio_is_available_even_though_pm10_is_not_a_predictor(
+        self, tmp_path: Path
+    ) -> None:
         """The ratio is a source fingerprint, not a leak."""
         root = _store(tmp_path)
 

@@ -8,18 +8,23 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+from typing import Any
 
 import polars as pl
 import pytest
 
-from twair.features.chem import add_chem_features
-from twair.features.met import add_wind_features
-from twair.features.temporal import TREND_ORIGIN, add_temporal_features, cyclic_encoding
+from twair.features.chem import add_chem_features  # type: ignore[import-untyped]
+from twair.features.met import add_wind_features  # type: ignore[import-untyped]
+from twair.features.temporal import (  # type: ignore[import-untyped]
+    TREND_ORIGIN,
+    add_temporal_features,
+    cyclic_encoding,
+)
 
 
-def _wind(direction: float, speed: float = 1.0) -> dict[str, float]:
+def _wind(direction: float, speed: float = 1.0) -> dict[str, Any]:
     frame = add_wind_features(pl.DataFrame({"WD_HR": [direction], "WS_HR": [speed]}))
-    return frame.row(0, named=True)
+    return frame.row(0, named=True)  # type: ignore[no-any-return]
 
 
 class TestWindDirectionEncoding:
@@ -95,7 +100,7 @@ class TestWindVector:
 
 class TestTemporalFeatures:
     def _frame(self, moments: list[datetime]) -> pl.DataFrame:
-        return add_temporal_features(pl.DataFrame({"ts_local": moments}))
+        return add_temporal_features(pl.DataFrame({"ts_local": moments}))  # type: ignore[no-any-return]
 
     def test_midnight_and_23h_are_adjacent(self) -> None:
         rows = self._frame([datetime(2015, 6, 1, 23), datetime(2015, 6, 2, 0)]).to_dicts()

@@ -9,7 +9,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from twair.qc.flags import Flag, parse_expr, parse_token
+from twair.qc.flags import Flag, parse_expr, parse_token  # type: ignore[import-untyped]
 
 # Tokens seen in real files, by generation.
 LEGACY_SUFFIX_TOKENS = ["15#", "0.1#", "12.3*", "4.5x", "-0.2#", ".33#"]

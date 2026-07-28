@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 
-from twair.viz import export
+from twair.viz import export  # type: ignore[import-untyped]
 
 
 @pytest.fixture
@@ -41,7 +43,7 @@ def monthly() -> pl.DataFrame:
 
 
 @pytest.fixture
-def pollutant_conf() -> dict:
+def pollutant_conf() -> dict[str, Any]:
     return {
         "pollutants": {
             "PM2.5": {"name_zh": "細懸浮微粒", "unit": "ug/m3", "valid_range": [0, 1000]},
@@ -53,7 +55,11 @@ class TestNullSemantics:
     """The distinction the whole project turns on, at the last hop."""
 
     def test_a_withheld_mean_arrives_as_null_not_zero(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         monkeypatch.setattr(
             export, "documented_pollutants", lambda config=None: pollutant_conf["pollutants"]
@@ -72,7 +78,11 @@ class TestNullSemantics:
         )
 
     def test_a_station_that_never_reported_is_distinguishable_from_one_that_did(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         monkeypatch.setattr(
             export, "documented_pollutants", lambda config=None: pollutant_conf["pollutants"]
@@ -91,7 +101,11 @@ class TestNullSemantics:
         )
 
     def test_the_two_null_cases_are_documented_in_the_payload(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         """A consumer should not have to read this repo to decode a null."""
         monkeypatch.setattr(
@@ -106,7 +120,11 @@ class TestNullSemantics:
 
 class TestShape:
     def test_the_month_axis_is_dense_and_covers_every_month_in_range(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         monkeypatch.setattr(
             export, "documented_pollutants", lambda config=None: pollutant_conf["pollutants"]
@@ -126,7 +144,11 @@ class TestShape:
         ]
 
     def test_every_row_of_the_rectangle_is_the_same_length(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         monkeypatch.setattr(
             export, "documented_pollutants", lambda config=None: pollutant_conf["pollutants"]
@@ -143,7 +165,11 @@ class TestShape:
 
 class TestPrecision:
     def test_values_are_rounded_to_the_unit_s_precision(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         monkeypatch.setattr(
             export, "documented_pollutants", lambda config=None: pollutant_conf["pollutants"]
@@ -165,7 +191,11 @@ class TestPrecision:
 
 class TestAllowList:
     def test_undocumented_channels_do_not_reach_the_site(
-        self, tmp_path, monkeypatch, monthly, pollutant_conf
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        monthly: pl.DataFrame,
+        pollutant_conf: dict[str, Any],
     ) -> None:
         """The store carries commissioning artefacts such as SO2-test."""
         monkeypatch.setattr(
@@ -183,7 +213,9 @@ class TestAllowList:
         names = {path.name for path in result.files}
         assert names == {"pm25.json", "index.json"}
 
-    def test_an_empty_allow_list_fails_loudly(self, tmp_path, monkeypatch, monthly) -> None:
+    def test_an_empty_allow_list_fails_loudly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, monthly: pl.DataFrame
+    ) -> None:
         monkeypatch.setattr(export, "documented_pollutants", lambda config=None: {"NOTHING": {}})
 
         with pytest.raises(RuntimeError, match="nothing to export"):
@@ -191,24 +223,26 @@ class TestAllowList:
 
 
 class TestJsonEncoding:
-    def test_dates_serialise_as_iso_strings_not_epoch_numbers(self, tmp_path) -> None:
+    def test_dates_serialise_as_iso_strings_not_epoch_numbers(self, tmp_path: Path) -> None:
         """An ISO string reads correctly on a chart axis in any timezone."""
         path = export.write_json(tmp_path / "x.json", {"d": date(2015, 3, 1)})
 
         assert json.loads(path.read_text(encoding="utf-8")) == {"d": "2015-03-01"}
 
-    def test_an_unserialisable_type_raises_rather_than_being_stringified(self, tmp_path) -> None:
+    def test_an_unserialisable_type_raises_rather_than_being_stringified(
+        self, tmp_path: Path
+    ) -> None:
         with pytest.raises(TypeError):
             export.write_json(tmp_path / "x.json", {"s": {1, 2}})
 
-    def test_output_carries_no_wasted_whitespace(self, tmp_path) -> None:
+    def test_output_carries_no_wasted_whitespace(self, tmp_path: Path) -> None:
         path = export.write_json(tmp_path / "x.json", {"a": [1, 2, 3]})
 
         assert path.read_text(encoding="utf-8") == '{"a":[1,2,3]}'
 
 
 class TestManifest:
-    def test_every_exported_file_is_checksummed(self, tmp_path) -> None:
+    def test_every_exported_file_is_checksummed(self, tmp_path: Path) -> None:
         export.write_json(tmp_path / "a.json", {"x": 1})
         export.write_json(tmp_path / "nested" / "b.json", {"y": 2})
 
@@ -217,7 +251,7 @@ class TestManifest:
         assert {entry["file"] for entry in manifest["files"]} == {"a.json", "nested/b.json"}
         assert all(len(entry["sha256"]) == 64 for entry in manifest["files"])
 
-    def test_the_manifest_does_not_checksum_itself(self, tmp_path) -> None:
+    def test_the_manifest_does_not_checksum_itself(self, tmp_path: Path) -> None:
         export.write_json(tmp_path / "a.json", {"x": 1})
         export.write_manifest(tmp_path)
 

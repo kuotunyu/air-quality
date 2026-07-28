@@ -7,21 +7,23 @@ produces an honest gap rather than an invented one.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import polars as pl
 import pytest
 
-from twair import reporting
+from twair import reporting  # type: ignore[import-untyped]
 
 
 @pytest.fixture
-def outputs(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
+def outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect the report's inputs to a temporary tree."""
     monkeypatch.setattr(reporting, "outputs_dir", lambda module=None: tmp_path / module)
     monkeypatch.setattr(reporting, "REPORTS_DIR", tmp_path / "reports")
     return tmp_path
 
 
-def _write(root, module: str, name: str, frame: pl.DataFrame) -> None:  # type: ignore[no-untyped-def]
+def _write(root: Path, module: str, name: str, frame: pl.DataFrame) -> None:
     directory = root / module
     directory.mkdir(parents=True, exist_ok=True)
     frame.write_parquet(directory / f"{name}.parquet")
@@ -55,19 +57,19 @@ class TestTableRendering:
 
 
 class TestGracefulDegradation:
-    def test_missing_m1_is_reported_not_faked(self, outputs) -> None:  # type: ignore[no-untyped-def]
+    def test_missing_m1_is_reported_not_faked(self, outputs: Path) -> None:
         section = reporting._m1_section()
 
         assert "尚未執行" in section
         assert "analyze m1" in section
 
-    def test_missing_m2_is_reported_not_faked(self, outputs) -> None:  # type: ignore[no-untyped-def]
+    def test_missing_m2_is_reported_not_faked(self, outputs: Path) -> None:
         assert "尚未執行" in reporting._m2_section()
 
-    def test_missing_m3_is_reported_not_faked(self, outputs) -> None:  # type: ignore[no-untyped-def]
+    def test_missing_m3_is_reported_not_faked(self, outputs: Path) -> None:
         assert "尚未執行" in reporting._m3_section()
 
-    def test_a_report_builds_with_no_inputs_at_all(self, outputs) -> None:  # type: ignore[no-untyped-def]
+    def test_a_report_builds_with_no_inputs_at_all(self, outputs: Path) -> None:
         """A partial run must still produce a readable document."""
         path = reporting.build_core_report()
 
@@ -114,7 +116,7 @@ class TestLeakPricing:
 
 
 class TestNumbersComeFromFiles:
-    def test_sample_size_is_read_not_hardcoded(self, outputs) -> None:  # type: ignore[no-untyped-def]
+    def test_sample_size_is_read_not_hardcoded(self, outputs: Path) -> None:
         _write(
             outputs,
             "m1_replication",
@@ -135,7 +137,7 @@ class TestNumbersComeFromFiles:
 
         assert "1,234" in section
 
-    def test_m2_summary_aggregates_the_scores_file(self, outputs) -> None:  # type: ignore[no-untyped-def]
+    def test_m2_summary_aggregates_the_scores_file(self, outputs: Path) -> None:
         _write(
             outputs,
             "m2_drivers",

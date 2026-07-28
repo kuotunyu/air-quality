@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime
+from pathlib import Path
 
 import polars as pl
 import pytest
 
-from twair.store.aggregate import (
+from twair.store.aggregate import (  # type: ignore[import-untyped]
     aggregate_daily,
     aggregate_monthly,
     circular_mean_expr,
@@ -35,12 +36,12 @@ QC_CONFIG = {
 
 def _mean(values: list[float]) -> float:
     frame = pl.DataFrame({"value": values})
-    return frame.select(circular_mean_expr().alias("m"))["m"][0]
+    return frame.select(circular_mean_expr().alias("m"))["m"][0]  # type: ignore[no-any-return]
 
 
 def _resultant(values: list[float]) -> float:
     frame = pl.DataFrame({"value": values})
-    return frame.select(circular_resultant_expr().alias("r"))["r"][0]
+    return frame.select(circular_resultant_expr().alias("r"))["r"][0]  # type: ignore[no-any-return]
 
 
 class TestCircularMean:
@@ -96,9 +97,9 @@ def _hourly(rows: list[tuple[str, str, datetime, float]]) -> pl.DataFrame:
     )
 
 
-def _write_store(tmp_path, frame: pl.DataFrame):  # type: ignore[no-untyped-def]
+def _write_store(tmp_path: Path, frame: pl.DataFrame) -> Path:
     """Persist a minimal store the aggregation functions can scan."""
-    from twair.store.writer import write_observations
+    from twair.store.writer import write_observations  # type: ignore[import-untyped]
 
     complete = frame.with_columns(
         pl.lit(False).alias("value_retained"),
@@ -110,7 +111,7 @@ def _write_store(tmp_path, frame: pl.DataFrame):  # type: ignore[no-untyped-def]
 
 
 class TestDailyAggregation:
-    def test_sparse_days_lose_their_mean_but_keep_their_counts(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_sparse_days_lose_their_mean_but_keep_their_counts(self, tmp_path: Path) -> None:
         """The 2018 project averaged regardless of how many hours contributed."""
         rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0 + h) for h in range(5)]
         root = _write_store(tmp_path, _hourly(rows))
@@ -122,7 +123,7 @@ class TestDailyAggregation:
         assert row["mean"] is None, "5 of 24 hours must not yield a daily mean"
         assert row["meets_threshold"] is False
 
-    def test_well_covered_days_produce_a_mean(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_well_covered_days_produce_a_mean(self, tmp_path: Path) -> None:
         rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0) for h in range(20)]
         root = _write_store(tmp_path, _hourly(rows))
 
@@ -133,7 +134,7 @@ class TestDailyAggregation:
         assert row["meets_threshold"] is True
         assert row["coverage_ratio"] == pytest.approx(20 / 24)
 
-    def test_wind_direction_uses_the_circular_mean(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_wind_direction_uses_the_circular_mean(self, tmp_path: Path) -> None:
         values = [350.0, 10.0] * 10  # 20 hours straddling north
         rows = [("二林", "WD_HR", datetime(2015, 6, 1, h), v) for h, v in enumerate(values)]
         root = _write_store(tmp_path, _hourly(rows))
@@ -145,7 +146,7 @@ class TestDailyAggregation:
         assert row["mean"] == pytest.approx(0.0, abs=1e-6)
         assert row["mean"] != pytest.approx(180.0)
 
-    def test_circular_rows_carry_a_consistency_score(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_circular_rows_carry_a_consistency_score(self, tmp_path: Path) -> None:
         rows = [("二林", "WD_HR", datetime(2015, 6, 1, h), 45.0) for h in range(20)]
         root = _write_store(tmp_path, _hourly(rows))
 
@@ -153,7 +154,7 @@ class TestDailyAggregation:
 
         assert daily.to_dicts()[0]["consistency"] == pytest.approx(1.0)
 
-    def test_linear_rows_have_no_consistency_score(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_linear_rows_have_no_consistency_score(self, tmp_path: Path) -> None:
         rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0) for h in range(20)]
         root = _write_store(tmp_path, _hourly(rows))
 
@@ -163,7 +164,7 @@ class TestDailyAggregation:
 
 
 class TestMonthlyAggregation:
-    def _daily(self, days: int, *, pollutant: str = "PM2.5", value: float = 20.0):  # type: ignore[no-untyped-def]
+    def _daily(self, days: int, *, pollutant: str = "PM2.5", value: float = 20.0) -> pl.DataFrame:
         return pl.DataFrame(
             {
                 "station_name": ["二林"] * days,
@@ -217,13 +218,15 @@ class TestMonthlyAggregation:
         assert row["consistency"] is not None
 
 
-def test_build_aggregates_creates_its_output_directories(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_build_aggregates_creates_its_output_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A full aggregation must not run to completion and then die on the write.
 
     processed_dir resolves a path without creating it, so the daily/monthly
     directories have to be made before writing.
     """
-    from twair.store import aggregate as agg
+    from twair.store import aggregate as agg  # type: ignore[import-untyped]
 
     store = tmp_path / "store"
     rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0) for h in range(20)]

@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import polars as pl
 
-from twair.qc.flags import Flag
-from twair.store.wide import modelling_columns, valid_only, wide_year
+from twair.qc.flags import Flag  # type: ignore[import-untyped]
+from twair.store.wide import (  # type: ignore[import-untyped]
+    modelling_columns,
+    valid_only,
+    wide_year,
+)
 
 
-def _store(tmp_path, rows: list[tuple[str, str, datetime, float | None, str]]):  # type: ignore[no-untyped-def]
-    from twair.store.writer import write_observations
+def _store(tmp_path: Path, rows: list[tuple[str, str, datetime, float | None, str]]) -> Path:
+    from twair.store.writer import write_observations  # type: ignore[import-untyped]
 
     frame = pl.DataFrame(
         {
@@ -32,7 +37,7 @@ def _store(tmp_path, rows: list[tuple[str, str, datetime, float | None, str]]): 
 TS = datetime(2015, 6, 1, 0)
 
 
-def test_pivot_produces_one_row_per_station_hour(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_pivot_produces_one_row_per_station_hour(tmp_path: Path) -> None:
     root = _store(
         tmp_path,
         [
@@ -49,7 +54,7 @@ def test_pivot_produces_one_row_per_station_hour(tmp_path) -> None:  # type: ign
     assert wide.row(0, named=True)["PM10"] == 45.0
 
 
-def test_flag_columns_accompany_each_pollutant(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_flag_columns_accompany_each_pollutant(tmp_path: Path) -> None:
     """Distinguishing "absent" from "rejected" is the point of keeping flags."""
     root = _store(
         tmp_path,
@@ -68,7 +73,7 @@ def test_flag_columns_accompany_each_pollutant(tmp_path) -> None:  # type: ignor
     assert row["O3_flag"] == Flag.MISSING.value
 
 
-def test_pm10_is_excluded_from_default_predictors(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_pm10_is_excluded_from_default_predictors(tmp_path: Path) -> None:
     """PM2.5 is a subset of PM10; using one to predict the other is leakage."""
     root = _store(
         tmp_path,
@@ -113,7 +118,7 @@ def test_valid_only_is_a_no_op_without_a_flag_column() -> None:
     assert valid_only(frame, "PM2.5")["PM2.5"].to_list() == [20.0]
 
 
-def test_missing_year_returns_empty(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_missing_year_returns_empty(tmp_path: Path) -> None:
     root = _store(tmp_path, [("二林", "PM2.5", TS, 20.0, Flag.VALID.value)])
 
     assert wide_year(1999, root).is_empty()

@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import polars as pl
+import pytest
 
-from twair.qc.consistency import check_consistency, check_ranges, range_report
-from twair.qc.flags import Flag
+from twair.qc.consistency import (  # type: ignore[import-untyped]
+    check_consistency,
+    check_ranges,
+    range_report,
+)
+from twair.qc.flags import Flag  # type: ignore[import-untyped]
 
 CONFIG = {
     "pollutants": {
@@ -160,10 +166,12 @@ class TestConsistency:
 class TestBuildSummaryMerge:
     """Rebuilding one year must not erase the record of the others."""
 
-    def test_existing_years_survive_a_single_year_rebuild(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def test_existing_years_survive_a_single_year_rebuild(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import polars as pl
 
-        from twair import build as build_module
+        from twair import build as build_module  # type: ignore[import-untyped]
 
         outputs = tmp_path / "build"
         outputs.mkdir(parents=True)

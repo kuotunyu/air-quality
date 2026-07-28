@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import polars as pl
 
-from twair.qc.flags import Flag
-from twair.qc.rainfall import (
+from twair.qc.flags import Flag  # type: ignore[import-untyped]
+from twair.qc.rainfall import (  # type: ignore[import-untyped]
     USABLE_FLAGS,
     apply_no_rain_zero,
     no_rain_zero_pollutants,

@@ -9,23 +9,26 @@ worth nothing.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 
-from twair.analysis.pitfalls import (
+from twair.analysis.pitfalls import (  # type: ignore[import-untyped]
     collinearity_instability,
     diurnal_cycle_lost_to_monthly_means,
     normality_remedy_does_not_work_on_its_own_numbers,
     normality_test_fallacy,
     wind_direction_linearisation,
 )
-from twair.qc.flags import Flag
+from twair.qc.flags import Flag  # type: ignore[import-untyped]
 
 
-def _store(tmp_path, rows):  # type: ignore[no-untyped-def]
-    from twair.store.writer import write_observations
+def _store(tmp_path: Path, rows: Sequence[tuple[str, str, datetime, Any]]) -> Path:
+    from twair.store.writer import write_observations  # type: ignore[import-untyped]
 
     write_observations(
         pl.DataFrame(
@@ -106,7 +109,7 @@ class TestNormalityRemedyAgainstThePublishedTable:
 
 
 class TestDiurnalCycle:
-    def test_monthly_averaging_destroys_a_daily_cycle(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_monthly_averaging_destroys_a_daily_cycle(self, tmp_path: Path) -> None:
         """A pure daily sine averages to a constant over whole months."""
         start = datetime(2010, 1, 1)
         rows = [
@@ -127,7 +130,7 @@ class TestDiurnalCycle:
         ][0]
         assert retained < 0.01, "a daily cycle must not survive monthly averaging"
 
-    def test_the_diurnal_profile_recovers_the_cycle(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_the_diurnal_profile_recovers_the_cycle(self, tmp_path: Path) -> None:
         start = datetime(2010, 1, 1)
         rows = [
             (
@@ -148,7 +151,9 @@ class TestDiurnalCycle:
 
 
 class TestWindLinearisation:
-    def test_a_strong_directional_effect_yields_a_tiny_linear_correlation(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_a_strong_directional_effect_yields_a_tiny_linear_correlation(
+        self, tmp_path: Path
+    ) -> None:
         """Pollution from the north only: large sector effect, no linear signal.
 
         Bearings near 0 and near 360 are the same direction, so a linear
@@ -176,7 +181,7 @@ class TestWindLinearisation:
         assert abs(summary["pearson_r_with_raw_bearing"]) < 0.15, "linear method sees nothing"
         assert summary["sector_mean_range"] > 40.0, "sector view sees the whole effect"
 
-    def test_sectors_cover_the_compass(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_sectors_cover_the_compass(self, tmp_path: Path) -> None:
         start = datetime(2010, 1, 1)
         rows = []
         for h in range(24 * 200):
@@ -192,7 +197,7 @@ class TestWindLinearisation:
 
         assert by_sector["sector"].to_list() == list(range(0, 360, 30))
 
-    def test_a_bearing_of_exactly_360_lands_in_the_north_sector(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_a_bearing_of_exactly_360_lands_in_the_north_sector(self, tmp_path: Path) -> None:
         """360 and 0 are one direction, and must share one bin.
 
         `bearing // 30 * 30` gives 360 its own thirteenth sector. On the real
@@ -218,7 +223,7 @@ class TestWindLinearisation:
 
 
 class TestCollinearityInstability:
-    def _store_with_identity(self, tmp_path, n: int = 3000):  # type: ignore[no-untyped-def]
+    def _store_with_identity(self, tmp_path: Path, n: int = 3000) -> Path:
         import numpy as np
 
         rng = np.random.default_rng(0)
@@ -240,7 +245,7 @@ class TestCollinearityInstability:
             ]
         return _store(tmp_path, rows)
 
-    def test_the_identity_holds_in_the_data(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_the_identity_holds_in_the_data(self, tmp_path: Path) -> None:
         root = self._store_with_identity(tmp_path)
 
         result = collinearity_instability(root, period=(2010, 2010), n_bootstrap=15)
@@ -254,7 +259,9 @@ class TestCollinearityInstability:
 
         assert errors["mean"] < 1e-6, "NO + NO2 = NOx by construction here"
 
-    def test_collinear_coefficients_swing_and_the_identified_one_does_not(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_collinear_coefficients_swing_and_the_identified_one_does_not(
+        self, tmp_path: Path
+    ) -> None:
         """The instability the original read as a finding about nitrogen."""
         root = self._store_with_identity(tmp_path)
 
@@ -264,7 +271,7 @@ class TestCollinearityInstability:
         assert cv["O3"] < 0.1, "a well-identified predictor is stable across resamples"
         assert max(cv["NO"], cv["NO2"], cv["NOx"]) > cv["O3"] * 5
 
-    def test_predictions_stay_good_while_coefficients_wander(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    def test_predictions_stay_good_while_coefficients_wander(self, tmp_path: Path) -> None:
         """The fit is fine; only the interpretation of individual terms is not."""
         root = self._store_with_identity(tmp_path)
 
@@ -276,9 +283,11 @@ class TestCollinearityInstability:
 
 
 class TestLeakagePrice:
-    def test_reads_the_m2_scores_rather_than_refitting(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def test_reads_the_m2_scores_rather_than_refitting(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """The number quoted must be the one the comparison produced."""
-        from twair.analysis import pitfalls
+        from twair.analysis import pitfalls  # type: ignore[import-untyped]
 
         outputs = tmp_path / "m2_drivers"
         outputs.mkdir(parents=True)
@@ -303,7 +312,9 @@ class TestLeakagePrice:
 
         assert share == pytest.approx(0.5), "half the leaking model's R² comes from PM10"
 
-    def test_missing_m2_output_is_reported_clearly(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def test_missing_m2_output_is_reported_clearly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr("twair.paths.outputs_dir", lambda m=None: tmp_path / m)
 
         from twair.analysis.pitfalls import pm10_leakage_price
@@ -314,8 +325,8 @@ class TestLeakagePrice:
 
 class TestAllPitfallsRunner:
     def test_the_four_self_contained_demonstrations_survive_missing_m2(
-        self, tmp_path, monkeypatch
-    ) -> None:  # type: ignore[no-untyped-def]
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """One demonstration failing must not take the others with it."""
         monkeypatch.setattr("twair.paths.outputs_dir", lambda m=None: tmp_path / m)
 
