@@ -348,6 +348,67 @@ def analyze_m4(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m5")
+def analyze_m5(
+    years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),
+    stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
+    max_stations: int = typer.Option(None, "--max-stations", help="Cap, for a quick run."),
+) -> None:
+    """M5 — did the policy do anything? Counterfactuals, checked against placebos."""
+    from twair.analysis.causal import run_causal, write_causal_report
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2006, 2025)
+    subset = [s.strip() for s in stations.split(",")] if stations else None
+
+    tables = run_causal(period=period, stations=subset, max_stations=max_stations)
+    effects = tables["effects"]
+
+    for name, group in effects.group_by("event", maintain_order=True):
+        credible = group.filter(pl.col("credible"))
+        console.print(
+            f"\n[bold]{name[0]}[/bold] — {group.height} station(s), "
+            f"median effect {group['effect'].median():+.2f} µg/m³"
+        )
+        # The placebo spread is the honest yardstick: it is what this method
+        # finds in years when nothing happened.
+        console.print(
+            f"  placebo spread (median SD) {group['placebo_sd'].median():.2f} µg/m³; "
+            f"[bold]{credible.height}[/bold] station(s) clear it by 2 SD"
+        )
+        if credible.is_empty():
+            console.print(
+                "  [yellow]no station shows an effect distinguishable from the method's "
+                "own noise — reported as not detected, not as zero[/yellow]"
+            )
+
+    # Open-ended policies are regime changes, not windows: what they should
+    # alter is the slope, not the level. Those are tested against M4's
+    # normalised series instead.
+    from twair.analysis.causal import run_trend_breaks
+
+    breaks = run_trend_breaks()
+    if not breaks.is_empty():
+        tables["trend_breaks"] = breaks
+        for name, group in breaks.group_by("event", maintain_order=True):
+            credible = int(group["credible"].sum())
+            # At two SD, roughly 5% of stations clear the bar by chance alone.
+            expected = 0.046 * group.height
+            console.print(
+                f"\n[bold]{name[0]}[/bold] (trend break) — {group.height} station(s), "
+                f"median slope change {group['delta'].median():+.3f} µg/m³/yr²"
+            )
+            console.print(
+                f"  [bold]{credible}[/bold] station(s) clear 2 SD; "
+                f"~{expected:.1f} expected by chance at this many stations"
+            )
+            if credible <= expected:
+                console.print("  [yellow]at or below the chance rate — no break detected[/yellow]")
+
+    for name, path in write_causal_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m3")
 def analyze_m3(
     years: str = typer.Option("2010:2017", "--years", "-y", help="Period to analyse."),
