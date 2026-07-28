@@ -77,7 +77,7 @@ flowchart TD
         G -->|Range & Consistency Check| I[Physical Consistency]
         I_check["PM2.5 <= PM10, NO+NO2 ~ NOx"] --> I
         G -->|Sentinel Handling| J[Circular Sentinels]
-        J_set["888 (calm), 999 (fault)"] --> J
+        J_set["888 (variable dir), 999 (calm)"] --> J
     end
 
     subgraph Storage [Canonical Parquet Store]

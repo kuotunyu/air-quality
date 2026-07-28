@@ -42,6 +42,28 @@ def test_config_maps_only_circular_pollutants() -> None:
     assert mapping["WD_HR"][999.0] is Flag.INSTRUMENT_FAULT
 
 
+def test_the_shipped_config_uses_the_definition_the_data_supports() -> None:
+    """999 is calm and 888 is a direction the vane could not resolve.
+
+    The two official ReadMe editions contradict each other — 2017 says
+    888=calm/999=fault, 2001 says 888=variable/999=calm — and neither was
+    written at the time the data was collected. The tie was broken by
+    measurement: across 1993-2004, hours flagged 999 have a **median wind
+    speed of exactly 0.00 m/s** (81.3% below 0.5) against 0.43 m/s for 888 and
+    1.84 m/s for ordinary bearings. A broken direction sensor has no reason to
+    coincide with a still anemometer.
+
+    Since these codes appear only in 1993-2004, the 2001 edition governs every
+    occurrence in the store. This test guards the mapping in the shipped
+    config, which the fixtures above deliberately do not use.
+    """
+    mapping = sentinel_columns()
+
+    assert mapping["WD_HR"][999.0] is Flag.CALM, "999 = 靜風, per the wind-speed evidence"
+    assert mapping["WD_HR"][888.0] is Flag.VARIABLE_DIRECTION, "888 = 風向不定"
+    assert mapping["WIND_DIREC"] == mapping["WD_HR"], "both wind channels share the convention"
+
+
 def test_sentinels_become_null_with_a_flag() -> None:
     frame = _frame(
         [

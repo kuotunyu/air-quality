@@ -61,8 +61,13 @@ class Flag(StrEnum):
     BELOW_DETECTION_LIMIT = "below_detection_limit"  # 'ND'
 
     # Wind-direction sentinel codes, applied in twair.qc.sentinels.
-    CALM = "calm"  # 888 無風 — direction is undefined, not missing
-    INSTRUMENT_FAULT = "instrument_fault"  # 999 儀器故障
+    #
+    # Which code means what is era-dependent and the two official ReadMe
+    # editions disagree — see twair.qc.sentinels for the measurement that
+    # settles it for the years these codes actually occur in.
+    CALM = "calm"  # 靜風 — there was no wind, so direction is undefined
+    VARIABLE_DIRECTION = "variable_direction"  # 風向不定 — wind too light/shifting to resolve
+    INSTRUMENT_FAULT = "instrument_fault"  # 儀器故障
 
     OUT_OF_RANGE = "out_of_range"  # outside the physically plausible domain
 

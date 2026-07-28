@@ -1,17 +1,46 @@
 """Replace in-band sentinel codes with explicit flags.
 
 MOENV encodes two non-measurements inside the wind-direction value itself.
-From ``ReadMe_普通測站20170301.odt``:
-
-    風向資料888代表無風，999則代表儀器故障
-
 These are not bearings. Left in place they are silently averaged as if the wind
 blew from 888°, which is exactly what happens when wind direction is fed into a
 regression as an ordinary continuous variable.
 
-Empirically the practice is era-dependent — see :func:`sentinel_report` and
-docs/archive-formats.md for measured rates — so this pass is applied
-unconditionally rather than gated on a year range.
+**The two official ReadMe editions define them the opposite way round**, and
+the archives ship whichever edition was current when they were packaged:
+
+===========================  ===================  ====================
+Edition                      888                  999
+===========================  ===================  ====================
+2017 (``…20170301.odt``)     無風 (calm)          儀器故障 (fault)
+2001 (``…_20090901.txt``)    風向不定 (variable)  靜風 (calm)
+===========================  ===================  ====================
+
+Neither document is contemporaneous with the data it ships beside, so the
+disagreement cannot be settled by picking the more authoritative one. It can be
+settled by measurement. Taking every hour in 1993–2004 where a wind-direction
+sentinel fired, and reading the *separately valid* wind speed recorded at the
+same station and hour:
+
+======================  =======  ==============  =================
+Sentinel                n        median speed    share < 0.5 m/s
+======================  =======  ==============  =================
+999                     77,448   **0.00 m/s**    81.3%
+888                     230,138  0.43 m/s        53.3%
+(ordinary bearings)     5.38 M   1.84 m/s        11.0%
+======================  =======  ==============  =================
+
+A failed direction sensor has no reason to coincide with a still anemometer.
+999 is calm; 888 is wind too light or shifting for the vane to resolve. **The
+2001 edition is the correct one**, and since these codes occur only in
+1993–2004 — the era that edition covers — it governs every occurrence in the
+store. `conf/pollutants.yaml` carries the corrected mapping.
+
+The residual uncertainty is worth stating: both codes cluster at low speeds
+because most vanes cannot resolve direction below a starting threshold of
+roughly 0.5 m/s. What separates them is that 999's median is exactly zero.
+
+This pass is applied unconditionally rather than gated on a year range —
+see :func:`sentinel_report` and docs/data-quality.md for the measured rates.
 """
 
 from __future__ import annotations
@@ -27,6 +56,7 @@ __all__ = ["apply_sentinels", "sentinel_columns", "sentinel_report"]
 
 _FLAG_BY_NAME = {
     "calm": Flag.CALM,
+    "variable_direction": Flag.VARIABLE_DIRECTION,
     "instrument_fault": Flag.INSTRUMENT_FAULT,
 }
 
@@ -90,7 +120,11 @@ def sentinel_report(frame: pl.DataFrame) -> pl.DataFrame:
     Answers the question the 2018 project could not: how often were 888/999
     actually present in the years it analysed?
     """
-    wind = frame.filter(pl.col("flag").is_in([Flag.CALM.value, Flag.INSTRUMENT_FAULT.value]))
+    wind = frame.filter(
+        pl.col("flag").is_in(
+            [Flag.CALM.value, Flag.VARIABLE_DIRECTION.value, Flag.INSTRUMENT_FAULT.value]
+        )
+    )
     if wind.is_empty():
         return pl.DataFrame(
             schema={"year": pl.Int32, "pollutant": pl.Utf8, "flag": pl.Utf8, "n": pl.UInt32}

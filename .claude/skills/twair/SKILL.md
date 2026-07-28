@@ -118,13 +118,30 @@ Arithmetic mean of 350° and 10° is 180° — due south, when the answer is nor
 Use `circular_mean_expr`. Circular pollutants are marked `circular: true` in
 `conf/pollutants.yaml`.
 
-Sentinels 888 (calm) / 999 (fault) are handled by `twair.qc.sentinels`, but
-measured over all 44 years they exist **only in 1993–2004** (2.6–6.4%), and are
-completely absent in 1982–1992 and 2005–2025.
+Sentinels 888 / 999 are handled by `twair.qc.sentinels`, but measured over all
+44 years they exist **only in 1993–2004** (2.6–6.4%), and are completely absent
+in 1982–1992 and 2005–2025.
 
 **The 2018 project's 2010–2017 window contains zero of them.** Phase 0 listed
 this as a defect of that work; the full data disproved it. Do not reintroduce
 the claim. The circular-mean objection is separate and still stands.
+
+### The two ReadMe editions define 888/999 the opposite way round
+
+2017 says 888=calm, 999=fault. The 2001 edition says 888=風向不定, 999=靜風.
+Neither was written when the data was collected, so the tie was broken by
+measurement: over 1993–2004, hours flagged 999 have a **median wind speed of
+exactly 0.00 m/s** (81.3% under 0.5) against 0.43 for 888 and 1.84 for ordinary
+bearings. A broken vane does not coincide with a still anemometer.
+
+**999 is calm; 888 is `variable_direction`.** The store was migrated
+(`scripts/migrate_sentinel_flags.py`, 311,593 rows). Pinned by
+`test_the_shipped_config_uses_the_definition_the_data_supports`.
+
+**`twair repair` could not fix this**, and that generalises: the sentinel pass
+nulls the value and keeps only the flag, so the 888/999 that would let repair
+reclassify is gone. Any correction to what a *destructive* QC pass means needs
+a migration over the flag, not a repair over the value.
 
 ### `NR` is a measured zero, not a missing value
 

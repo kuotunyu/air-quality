@@ -142,6 +142,17 @@ def retention_asymmetry(root: Path | None = None) -> pl.DataFrame:
     )
 
 
+# Every flag the sentinel pass can emit. Derived from the enum rather than
+# listed by hand: the set changed once already, when 888/999 were relabelled,
+# and the hand-written list here silently undercounted by 75% until it was
+# noticed in the regenerated report.
+SENTINEL_FLAGS = (
+    Flag.CALM.value,
+    Flag.VARIABLE_DIRECTION.value,
+    Flag.INSTRUMENT_FAULT.value,
+)
+
+
 def sentinel_rates(root: Path | None = None) -> pl.DataFrame:
     """Wind-direction sentinel occurrence per year.
 
@@ -150,7 +161,7 @@ def sentinel_rates(root: Path | None = None) -> pl.DataFrame:
     """
     return (
         _base(root)
-        .filter(pl.col("flag").is_in([Flag.CALM.value, Flag.INSTRUMENT_FAULT.value]))
+        .filter(pl.col("flag").is_in(list(SENTINEL_FLAGS)))
         .group_by("obs_year", "pollutant", "flag")
         .agg(pl.len().alias("n"))
         .sort("obs_year", "pollutant", "flag")
