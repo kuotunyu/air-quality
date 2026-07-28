@@ -142,7 +142,15 @@ disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["gdown.*", "selectolax.*", "duckdb.*", "shap.*", "lightgbm.*", "pykrige.*", "esda.*", "libpysal.*"]
+module = [
+    "gdown", "gdown.*", "selectolax", "selectolax.*", "duckdb", "duckdb.*",
+    "shap", "shap.*", "lightgbm", "lightgbm.*", "pykrige", "pykrige.*",
+    "esda", "esda.*", "libpysal", "libpysal.*", "ee", "ee.*", "scipy", "scipy.*",
+    "statsmodels", "statsmodels.*", "matplotlib", "matplotlib.*", "pandas", "pandas.*",
+    "geopandas", "geopandas.*", "xarray", "xarray.*", "netCDF4", "netCDF4.*",
+    "cdsapi", "cdsapi.*", "statsforecast", "statsforecast.*", "neuralforecast", "neuralforecast.*",
+    "datasets", "datasets.*", "huggingface_hub", "huggingface_hub.*", "py7zr", "py7zr.*"
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -154,9 +154,7 @@ def wind_direction_linearisation(
     # wraparound mistake this module exists to document, and it was in this
     # module. Fold 360 onto 0 before binning.
     by_sector = (
-        paired.with_columns(
-            (((pl.col("WD_HR") % 360) // 30) * 30).cast(pl.Int32).alias("sector")
-        )
+        paired.with_columns((((pl.col("WD_HR") % 360) // 30) * 30).cast(pl.Int32).alias("sector"))
         .group_by("sector")
         .agg(
             pl.col("PM2.5").mean().alias("mean"),

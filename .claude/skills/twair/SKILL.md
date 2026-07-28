@@ -336,13 +336,32 @@ Earth Engine is **optional** and deferred: it only affects the satellite half
 of Phase 6, and Copernicus Data Space or NASA Earthdata can replace it. Do not
 treat its absence as a blocker.
 
+## The anonymity rule — settled, and not negotiable
+
+**No person is named anywhere in this project.** Not the 2018 project's
+authors, not its supervisor, not in prose, code comments, alt text, commit
+messages, or exported JSON. **No figure, screenshot or layout from the original
+is reproduced** — every chart in chapter 5 is recomputed here from the raw data.
+
+Only two kinds of material are used, and neither requires naming anyone:
+
+* **method choices** (monthly means, PM10 as a predictor, linearised wind) —
+  methodological facts, discussable on their own terms;
+* **published numbers** (β=0.4133, t=92.75, r=0.8865, the VIFs) — facts, not
+  expression, and independently recomputable here.
+
+Frame the comparison as *a method* against *a better method*, never as a person
+against a better person. The recurring phrasing is "一份 2018 年的大學畢業專題"
+and "當年的做法" — never "我的專題" in a way that drags a co-author along, and
+never anything that would let a reader identify the people involved.
+
+Before any publish step, grep for names. `docs/legal.md` records the reasoning.
+
 ## Open decisions (do not decide unilaterally)
 
 1. **Raw-data redistribution licensing.** `docs/legal.md` documents a conflict
    between the open-data terms and the archive ReadMe. Until the owner rules,
    **do not publish a full copy of the raw hourly records** to HuggingFace.
-2. **Publishing the original PDF.** It carries author and advisor names, is
-   gitignored, and needs co-author consent before any figure is reproduced.
 
 ## Close-out ritual — run this before ending a work session
 

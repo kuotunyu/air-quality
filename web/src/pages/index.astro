@@ -64,7 +64,7 @@ const airzoneSeries = (trendByAirzone.series as {
 
 <Base
   title="AirLens Taiwan — 台灣空氣品質的四十四年"
-  description="1982–2025 年、3.41 億筆環境部逐時觀測的重新分析。含我 2018 年畢業專題的錯誤對照。"
+  description="1982–2025 年、3.41 億筆環境部逐時觀測的開放重新分析：完整品管、逐時解析度，以及一章方法學對照。"
 >
   <!-- ═══════════ 0. Hero ═══════════ -->
   <section id="hero" class="page">
@@ -103,9 +103,10 @@ const airzoneSeries = (trendByAirzone.series as {
     </div>
 
     <p class="note">
-      這個網站是我 2018 年大學畢業專題的重做。當年用了 8 年的月平均資料、
-      7,286 個觀測值；現在用 44 年的逐時資料、3.41 億筆。
-      <a href="#mistakes">第五章</a>逐項列出當年錯在哪裡，以及修正之後結論怎麼變。
+      這份資料的品管與管線全部開源，每個數字都可以自己重算。
+      <a href="#mistakes">第五章</a>拿一份 2018 年的大學畢業專題當對照組——
+      它用 8 年的月平均、7,286 個觀測值；這裡用 44 年的逐時資料、3.41 億筆——
+      逐項比較兩種做法會得到多不一樣的結論。
     </p>
   </section>
 
@@ -196,7 +197,7 @@ const airzoneSeries = (trendByAirzone.series as {
     <StationPicker cards={cards} caveat={cigaretteCaveat} />
   </section>
 
-  <!-- ═══════════ 5. 我當年錯在哪 ═══════════ -->
+  <!-- ═══════════ 5. 方法學對照 ═══════════ -->
   <Chapter5 />
 
   <!-- ═══════════ 6. 資料探索器 ═══════════ -->

@@ -106,7 +106,10 @@ def _cell_text(node: Node) -> str:
 
 def _cell_link(node: Node) -> str:
     anchor = node.css_first("a[href]")
-    return anchor.attributes.get("href", "") if anchor else ""
+    if not anchor:
+        return ""
+    val = anchor.attributes.get("href")
+    return val if val is not None else ""
 
 
 def _parse_table(tree: HTMLParser, *, fallback_year: int) -> list[AirtwFile]:
