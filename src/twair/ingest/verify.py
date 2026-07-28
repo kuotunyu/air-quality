@@ -12,39 +12,19 @@ the cause is actionable.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
 from twair.config import get_settings
+from twair.net import quiet_http as _quiet_http
 
 log = logging.getLogger(__name__)
 
 __all__ = ["CheckResult", "verify_all"]
 
 TIMEOUT = 30.0
-
-
-@contextmanager
-def _quiet_http() -> Iterator[None]:
-    """Silence httpx request logging for the duration of a check.
-
-    httpx logs the full request URL at INFO. Some providers — CWA among them —
-    take their credential as a query parameter, so that log line writes the key
-    into the terminal and into any file the run is piped to. Verification is
-    exactly the moment credentials are in hand, so it is exactly the moment
-    this must not happen.
-    """
-    httpx_logger = logging.getLogger("httpx")
-    previous = httpx_logger.level
-    httpx_logger.setLevel(logging.WARNING)
-    try:
-        yield
-    finally:
-        httpx_logger.setLevel(previous)
 
 
 @dataclass(frozen=True, slots=True)

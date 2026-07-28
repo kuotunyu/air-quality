@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+import polars as pl
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
@@ -203,11 +204,22 @@ def aggregate() -> None:
         )
 
 
-@app.command("stations")
+stations_app = typer.Typer(
+    help="Station identity, air-quality zone, type and geography.",
+    invoke_without_command=True,
+)
+app.add_typer(stations_app, name="stations")
+
+
+@stations_app.callback(invoke_without_command=True)
 def stations(
+    ctx: typer.Context,
     save: bool = typer.Option(True, "--save/--no-save", help="Write to data/outputs/qc/."),
 ) -> None:
-    """Resolve station identity, air-quality zone and type from the store."""
+    """Resolve station identity, air-quality zone, type and coordinates."""
+    if ctx.invoked_subcommand is not None:
+        return
+
     from twair.paths import outputs_dir
     from twair.store.stations import build_station_table
 
@@ -221,12 +233,52 @@ def stations(
             f"{missing['station_name'].to_list()}"
         )
 
+    unplaced = table.filter(table["lat"].is_null())
+    if not unplaced.is_empty():
+        console.print(
+            f"[yellow]{unplaced.height} station(s) with no coordinates[/yellow] "
+            f"(in the archives, not in MOENV's current register): "
+            f"{unplaced['station_name'].to_list()}"
+        )
+
     if save:
         destination = outputs_dir("qc")
         destination.mkdir(parents=True, exist_ok=True)
         path = destination / "stations.parquet"
         table.write_parquet(path)
         console.print(f"wrote {path}")
+
+
+@stations_app.command("geo")
+def stations_geo(
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Re-fetch from MOENV (needs MOENV_API_KEY) and rewrite the cache."
+    ),
+) -> None:
+    """Show — or refresh — the cached MOENV station register."""
+    from twair.ingest.station_meta import (
+        load_station_geo,
+        reconcile_with_store,
+        refresh_station_geo,
+    )
+    from twair.store.stations import build_station_table
+
+    geo = refresh_station_geo() if refresh else load_station_geo()
+    console.print(geo.select("station_name", "county", "lon", "lat", "station_type_official"))
+    console.print(f"{geo.height} station(s) in the register")
+
+    table = build_station_table(geography=False)
+    presence = reconcile_with_store(table, geo)
+    counts = presence.group_by("presence").len().sort("presence")
+    console.print(counts)
+
+    for kind, note in (
+        ("archive_only", "measured, but not in the current register — no coordinates"),
+        ("register_only", "in the register, but absent from every annual archive"),
+    ):
+        names = presence.filter(pl.col("presence") == kind)["station_name"].to_list()
+        if names:
+            console.print(f"[yellow]{kind}[/yellow] ({note}): {names}")
 
 
 analysis_app = typer.Typer(help="Phase 2+: analysis modules.")
@@ -282,6 +334,43 @@ def report_core() -> None:
 
     path = build_core_report()
     console.print(f"wrote {path}")
+
+
+export_app = typer.Typer(help="Phase 3: build the data layers the website reads.")
+app.add_typer(export_app, name="export")
+
+
+@export_app.command("web")
+def export_web(
+    levels: str = typer.Option(
+        "L0,L1", "--levels", help="Which tiers to build. L2 is HuggingFace-only, never local."
+    ),
+    story: bool = typer.Option(True, "--story/--no-story", help="Also build chapter payloads."),
+) -> None:
+    """Export meta, L0 (station-month JSON) and L1 (station-day Parquet)."""
+    from twair.viz.export import export_all, write_manifest
+    from twair.viz.story import export_story
+
+    selected = tuple(part.strip().upper() for part in levels.split(",") if part.strip())
+    if "L2" in selected:
+        raise typer.BadParameter(
+            "L2 is the full hourly record. It is published to HuggingFace, not to the site, "
+            "and is blocked pending the MOENV licensing answer — see docs/legal.md."
+        )
+
+    results = export_all(levels=selected)
+    for name, result in results.items():
+        console.print(f"{name}: [green]{result.summary()}[/green]")
+
+    if story:
+        paths = export_story()
+        total = sum(p.stat().st_size for p in paths)
+        console.print(f"story: [green]{len(paths)} file(s), {total / 1e6:.1f} MB[/green]")
+        write_manifest()
+
+    from twair.viz.export import web_data_dir
+
+    console.print(f"wrote {web_data_dir()}")
 
 
 @app.command("summary")

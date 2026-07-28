@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "airzone_pattern",
     "alias_map",
+    "attach_geography",
     "build_station_table",
     "derive_airzones",
     "normalise_name_expr",
@@ -152,12 +153,21 @@ def derive_airzones(
     )
 
 
-def build_station_table(root: Path | None = None) -> pl.DataFrame:
-    """Assemble everything known about each station from the store itself.
+def build_station_table(root: Path | None = None, *, geography: bool = True) -> pl.DataFrame:
+    """Assemble everything known about each station.
 
-    Coordinates are not here: they come from MOENV dataset ``AQX_P_07``, which
-    needs an API key. Everything in this table is derivable from the archives
-    alone, so Phase 1 does not block on credentials.
+    The activity, zone and type columns are derived from the archives alone, so
+    this runs without credentials. Geography is joined from the cached MOENV
+    station register (``conf/station_geo.yaml``) when it is present, and left
+    null when it is not — a station whose coordinates are unknown says so
+    rather than disappearing.
+
+    The register's own ``airzone_official`` and ``station_type_official`` are
+    carried alongside this project's values rather than replacing them. The
+    register describes stations as they are classified today; the archive paths
+    and the 1994 ReadMe describe how they were classified while most of the
+    data was being recorded. Where the two disagree, the disagreement is the
+    interesting part.
     """
     conf = load_conf("stations")
     lazy = scan_observations(root)
@@ -181,7 +191,7 @@ def build_station_table(root: Path | None = None) -> pl.DataFrame:
     default_type = conf.get("default_station_type", "general")
     dual = set(conf.get("dual_role", []) or [])
 
-    return (
+    table = (
         activity.join(zones, on="station_name", how="left")
         .with_columns(
             pl.col("station_name")
@@ -203,5 +213,31 @@ def build_station_table(root: Path | None = None) -> pl.DataFrame:
             "span",
             "has_gap",
         )
-        .sort("airzone", "station_name")
     )
+
+    if geography:
+        table = attach_geography(table)
+
+    return table.sort("airzone", "station_name")
+
+
+def attach_geography(table: pl.DataFrame) -> pl.DataFrame:
+    """Left-join the cached station register onto a station table.
+
+    Imported lazily because ``ingest.station_meta`` normalises names with this
+    module, and a module-level import in both directions is a cycle.
+    """
+    from twair.ingest.station_meta import load_station_geo
+
+    geo = load_station_geo().drop("address")
+    joined = table.join(geo, on="station_name", how="left")
+
+    unplaced = joined.filter(pl.col("lat").is_null())["station_name"].to_list()
+    if unplaced:
+        log.info(
+            "%d station(s) present in the archives but absent from the MOENV register, "
+            "so without coordinates: %s",
+            len(unplaced),
+            unplaced,
+        )
+    return joined

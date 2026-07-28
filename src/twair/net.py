@@ -13,6 +13,7 @@ import logging
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,28 @@ from twair.paths import manifest_path
 log = logging.getLogger(__name__)
 
 RETRYABLE = (httpx.TransportError, httpx.HTTPStatusError)
+
+
+@contextmanager
+def quiet_http() -> Iterator[None]:
+    """Silence httpx request logging for the duration of a block.
+
+    httpx logs the full request URL at INFO. Several providers here — CWA and
+    MOENV among them — take their credential as a *query parameter*, so that
+    log line writes the key into the terminal and into any file the run is
+    piped to. It happened once, to a real key.
+
+    Wrap every request that carries a secret in the URL. This lives in
+    ``net`` rather than in one caller so that the next module to need it
+    does not have to rediscover the problem.
+    """
+    httpx_logger = logging.getLogger("httpx")
+    previous = httpx_logger.level
+    httpx_logger.setLevel(logging.WARNING)
+    try:
+        yield
+    finally:
+        httpx_logger.setLevel(previous)
 
 
 class _HostThrottle:
