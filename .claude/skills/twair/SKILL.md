@@ -377,8 +377,11 @@ Rules for any text touching this:
 - No party names, no officials, no wording that assigns blame.
 - No policy recommendations. This project does not make them.
 
-The chapter is titled 「測不到，不等於沒發生」 for this reason, and PLAN.md
-carries the full drafting note.
+The chapter is titled 「事件效應的偵測極限」 — deliberately the same concept
+the data already uses one level down, where `ND` marks a reading below the
+instrument's detection limit. The instrument has one for concentration; the
+method has one for effects, and this chapter measures it. PLAN.md carries the
+full drafting note.
 
 ## The anonymity rule — settled, and not negotiable
 
