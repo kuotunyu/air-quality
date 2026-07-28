@@ -363,6 +363,26 @@ Before any publish step, grep for names. `docs/legal.md` records the reasoning.
    between the open-data terms and the archive ReadMe. Until the owner rules,
    **do not publish a full copy of the raw hourly records** to HuggingFace.
 
+## Delegating to a cheaper agent
+
+Simple, well-specified work goes to GitHub Copilot / Antigravity (Gemini Flash).
+The test is **not** difficulty — it is whether verifying the result requires
+re-deriving the answer. Type annotations across 300 errors are a fine delegation
+(mypy verifies them); a one-line docstring explaining a design choice is not.
+
+`AGENTS.md` and `.github/copilot-instructions.md` carry the rules those agents
+see. **They are mirrors — edit both together.** Regenerate the copy with the
+header intact:
+
+```bash
+python -c "import pathlib; s=pathlib.Path('AGENTS.md').read_text(encoding='utf-8'); h='<!-- MIRROR OF AGENTS.md — edit both together, or neither. -->\n<!-- GitHub Copilot reads this file automatically for repository custom instructions. -->\n\n'; pathlib.Path('.github/copilot-instructions.md').write_text(h+s, encoding='utf-8', newline='\n')"
+```
+
+Never delegate: anything touching null semantics, QC flag meaning, statistical
+method choice, existing comments and docstrings, or prose that makes a claim.
+**Always verify delegated work yourself** — run the checks, read the diff, and
+grep for `fill_null`, `drop_nulls` and `interpolate` before accepting it.
+
 ## Close-out ritual — run this before ending a work session
 
 1. `uv run --no-sync pytest -q` and `ruff check src tests` — both clean.
