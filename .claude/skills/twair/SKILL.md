@@ -46,8 +46,15 @@ qc/       flags, sentinels, ranges, consistency, reporting
 store/    schema, Parquet writer, stations, aggregates, wide view
 analysis/ M1-M10 (Phase 2+)
 models/   forecasting (Phase 7)
-viz/      website export layers
+viz/      export.py  = the data layers (L0/L1/meta/manifest)
+          story.py   = per-chapter payloads, where editorial choices live
+web/      Astro site; charts are SVG in frontmatter, no charting library
 ```
+
+The split between `export.py` and `story.py` is deliberate: the layers carry
+data, the story carries *arguments* — which baseline, which threshold, which
+comparison. Every such choice is written into the payload beside the numbers it
+produced, so a reader sees the assumption without reading the source.
 
 Data flow: `raw archives → long observations (Parquet, Hive year/month) →
 {daily, monthly, hourly_wide} → analysis → web export`.
@@ -170,6 +177,45 @@ The models here are **explanatory, not forecasting**. Any forecasting work
 (Phase 7) must add lag features, and persistence is the bar to clear rather
 than a peer to compare against.
 
+### The site must be able to tell two nulls apart
+
+Every L0 cell carries `mean` **and** `n_days`. `n_days == 0` means the station
+was not measuring; `n_days > 0` with a null mean means the aggregate was
+withheld for insufficient coverage. Both render as a break in the line.
+
+Anything new that ships data to the browser needs the same treatment. A chart
+that interpolates across a gap is the exact failure this project documents.
+
+### The wraparound bug was in the wraparound module
+
+`WD_HR // 30 * 30` gave a bearing of exactly 360 its own thirteenth sector —
+3,341 rows split from the 285,527 at 0 degrees — inside `pitfalls.py`, the
+module written to expose that mistake. Fixed with `% 360` before binning.
+
+**Any new binning of a circular quantity takes the modulo first**, and gets a
+test with an exact-360 input.
+
+### `.gitignore` patterns without a leading slash match at every level
+
+A bare `data/` also matched `web/public/data/` and silently kept the whole
+website export out of git. It is now `/data/`. Check `git check-ignore -v`
+after adding any pattern that names a common directory.
+
+### Astro's parser reads `<=` in a template expression as a fragment
+
+`{items.filter(x => x.v <= max).map(...)}` fails to compile with a confusing
+"Unable to assign attributes when using <> Fragment shorthand" error. Compute
+the filtered list in the frontmatter instead.
+
+### Grid and flex tracks size to min-content unless told otherwise
+
+One chart with `min-width: 480px` inside a single-column grid widened its track
+to 490px on a 375px phone and pushed the whole page sideways. `min-width: 0` on
+grid/flex children is in `global.css`; keep it there.
+
+Verify with `document.documentElement.scrollWidth - clientWidth === 0` at
+375px, in both colour schemes.
+
 ### Polars: do not group_by a Hive partition key
 
 Grouping directly on `year`/`month` from `scan_parquet(hive_partitioning=True)`
@@ -191,7 +237,20 @@ uv run twair aggregate       # daily + monthly with coverage gating
 uv run twair stations        # station identity / zone / type
 uv run twair qc report       # data-quality measurement -> docs/data-quality.md
 uv run twair summary         # row counts per year
+uv run twair stations geo    # cached MOENV register; --refresh to re-fetch
+uv run twair export web      # L0 + L1 + story payloads -> web/public/data/
 ```
+
+The site itself:
+
+```bash
+cd web && npm install && npm run dev    # http://localhost:4321
+npm run build && npm run check          # check must be 0 errors
+```
+
+CI cannot regenerate the site's data — it has no copy of the store. **Exporting
+is a local step followed by a commit.** L0 and the story payloads are
+committed; L1 (55 MB) is gitignored; L2 never leaves HuggingFace.
 
 Long runs (`ingest`, `build`) belong in the background — a full build is hours.
 `build_year` catches every exception and records it in the summary, so one bad

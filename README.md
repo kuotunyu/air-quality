@@ -80,15 +80,28 @@ uv run twair probe sources
 |---|---|---|
 | Phase 0 | 專案骨架、資料源盤點 | ✅ 完成 |
 | Phase 1 | 資料取得、QA/QC、Canonical Parquet | ✅ 完成 |
-| Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ⬜ 下一步 |
-| Phase 3 | 互動網站首波上線 | ⬜ |
-| Phase 4 | 氣象正規化、政策因果推論 | ⬜ |
+| Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ✅ 完成 |
+| Phase 3 | 互動網站首波上線 | ✅ 章節 0/1/2/5/7 完成 |
+| Phase 4 | 氣象正規化、政策因果推論 | ⬜ 下一步 |
 | Phase 5 | 空間分析、境外傳輸軌跡 | ⬜ |
 | Phase 6 | 衛星與微型感測器融合 | ⬜ |
 | Phase 7 | 預測模型、HuggingFace Space | ⬜ |
 | Phase 8 | 健康衝擊、自動更新、發布 | ⬜ |
 
 完整計畫見 [PLAN.md](PLAN.md)。
+
+## 網站
+
+```bash
+uv run twair export web                 # 從 Parquet 產生網站的資料層
+cd web && npm install && npm run dev    # http://localhost:4321
+```
+
+Astro 靜態網站，深淺兩色主題，沒有繪圖套件——圖表在建置時產生 SVG，
+所以沒有 JavaScript 也看得到、可以列印。細節見 [web/README.md](web/README.md)。
+
+尚未部署：需要先建立 GitHub repository，並在 Settings → Pages
+把來源設為 GitHub Actions。工作流程已備妥於 `.github/workflows/pages.yml`。
 
 ## 授權
 

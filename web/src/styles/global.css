@@ -7,7 +7,7 @@
  */
 
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
 
   --bg: #0b0e13;
   --bg-raised: #131820;
@@ -17,7 +17,9 @@
 
   --text: #e6ebf2;
   --text-muted: #9aa7b8;
-  --text-faint: #67748a;
+  /* Measured 4.09 against --bg at #67748a, below the 4.5 WCAG AA wants for
+     body-size text, and --text-faint carries the captions and the units. */
+  --text-faint: #78859a;
 
   /* Concentration ramp, low to high. Perceptually ordered, and distinguishable
      under the common forms of colour blindness — deuteranopes see the blue-to-
@@ -28,7 +30,10 @@
   --c3: #fbbf24;
   --c4: #fb923c;
   --c5: #ef4444;
-  --c6: #a21caf;
+  /* The top of the ramp is the only colour that reads worse on dark than on
+     light, so it is lightened here rather than kept identical to the light
+     theme's #86198f, which measures 3.06 against this background. */
+  --c6: #e879f9;
 
   /* Reference lines are deliberately not part of the ramp. */
   --who: #22d3ee;
@@ -44,6 +49,44 @@
   --measure: 34rem;
   --page: 68rem;
   --radius: 10px;
+}
+
+/*
+ * Light theme.
+ *
+ * Not a filter over the dark one. The chart ramp is redefined rather than
+ * reused, because a colour that carries on near-black is often too light to
+ * read on near-white — #a3e635 against #0b0e13 has a contrast ratio around 12,
+ * against #fbfcfd it is under 2. The hue ordering is preserved so the two
+ * themes encode the same thing; only the luminance moves.
+ */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #fbfcfd;
+    --bg-raised: #ffffff;
+    --bg-sunken: #f2f5f8;
+    --line: #d5dce5;
+    --line-soft: #e6ebf1;
+
+    --text: #10161f;
+    --text-muted: #4a5768;
+    /* Darker than it looks like it needs to be: #6f7d8f measures 4.08 against
+       this background, under the 4.5 WCAG AA needs for body-size text, and
+       most of what uses --text-faint is small. */
+    --text-faint: #5f6c7d;
+
+    --c0: #1d4ed8;
+    --c1: #0e7490;
+    --c2: #4d7c0f;
+    --c3: #b45309;
+    --c4: #c2410c;
+    --c5: #b91c1c;
+    --c6: #86198f;
+
+    --who: #0e7490;
+    --taiwan: #b45309;
+    --accent: #0369a1;
+  }
 }
 
 * {
@@ -164,6 +207,19 @@ section:first-of-type {
   gap: 1rem;
 }
 
+/*
+ * Grid and flex tracks size to their content's min-content width unless told
+ * otherwise, so a chart with `min-width: 480px` inside a one-column grid on a
+ * 375px phone widens its track to 490px and pushes the whole page sideways.
+ * Wide content is meant to scroll inside its own container; the page body
+ * never scrolls horizontally.
+ */
+.grid > *,
+.two-up > *,
+.compare > * {
+  min-width: 0;
+}
+
 @media (min-width: 40rem) {
   .grid-2 {
     grid-template-columns: repeat(2, 1fr);
@@ -228,6 +284,7 @@ figcaption {
   border-radius: var(--radius);
   padding: 0.9rem;
   overflow-x: auto;
+  max-width: 100%;
 }
 
 /* ---------- tables ---------- */
