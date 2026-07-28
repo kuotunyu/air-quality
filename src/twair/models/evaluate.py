@@ -219,9 +219,7 @@ def climatology_baseline(
         pl.col(time_column).dt.hour().alias("_hour"),
     )
 
-    lookup = (
-        with_keys(train).group_by(keys).agg(pl.col(target).mean().alias("_clim"))
-    )
+    lookup = with_keys(train).group_by(keys).agg(pl.col(target).mean().alias("_clim"))
     fallback = float(train[target].mean())
 
     return (

@@ -110,9 +110,7 @@ def naive_monthly_panel(
     start, end = period
     needed = [RESPONSE, *ORIGINAL_PREDICTORS]
 
-    in_period = scan_observations(root).filter(
-        pl.col("ts_local").dt.year().is_between(start, end)
-    )
+    in_period = scan_observations(root).filter(pl.col("ts_local").dt.year().is_between(start, end))
 
     # A store that never recorded a required pollutant is a broken input and
     # must say so. A store where quality filtering happens to remove every row

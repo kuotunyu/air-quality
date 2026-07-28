@@ -174,6 +174,12 @@ def _prepare(frame: pl.DataFrame, features: list[str]) -> tuple[np.ndarray, np.n
     return x, y
 
 
+# TreeSHAP costs roughly (trees x leaves) per row, so computing it over a
+# multi-hundred-thousand-row test set dominates the whole fit. A sample of this
+# size pins mean |SHAP| to well within the spread across splits.
+SHAP_SAMPLE = 20_000
+
+
 def _fit_predict_gbdt(
     train: pl.DataFrame,
     test: pl.DataFrame,
@@ -184,7 +190,8 @@ def _fit_predict_gbdt(
     """Fit LightGBM and return (truth, prediction, mean |SHAP| per feature).
 
     SHAP comes from LightGBM's own ``pred_contrib``, which is exact TreeSHAP —
-    no separate explainability dependency.
+    no separate explainability dependency — computed on a sample of the test
+    set rather than all of it.
     """
     import lightgbm as lgb
 
@@ -211,8 +218,14 @@ def _fit_predict_gbdt(
     model.fit(x_train, y_train)
 
     prediction = model.predict(x_test)
+
+    rng = np.random.default_rng(seed)
+    if x_test.shape[0] > SHAP_SAMPLE:
+        sample = x_test[rng.choice(x_test.shape[0], SHAP_SAMPLE, replace=False)]
+    else:
+        sample = x_test
     # Last column is the base value, so it is dropped.
-    contributions = model.predict(x_test, pred_contrib=True)[:, :-1]
+    contributions = model.predict(sample, pred_contrib=True)[:, :-1]
     return y_test, np.asarray(prediction), np.abs(contributions).mean(axis=0)
 
 
@@ -223,8 +236,14 @@ def run_drivers(
     split_kind: str = "rolling",
     n_splits: int = 4,
     seed: int = 0,
+    stations: list[str] | None = None,
 ) -> DriverResult:
-    """Fit and score one feature set under one split strategy."""
+    """Fit and score one feature set under one split strategy.
+
+    ``stations`` restricts leave-one-station-out to a subset. Holding out all
+    77 stations in turn is 77 fits for an answer a spread of eight gives just
+    as well.
+    """
     features = list(FEATURE_SETS[feature_set])
     missing = [f for f in features if f not in frame.columns]
     if missing:
@@ -232,7 +251,7 @@ def run_drivers(
 
     splitters = {
         "rolling": lambda f: rolling_origin(f, n_splits=n_splits),
-        "station": leave_one_station_out,
+        "station": lambda f: leave_one_station_out(f, stations=stations),
         "year": leave_one_year_out,
     }
     if split_kind not in splitters:
