@@ -1,0 +1,98 @@
+# ==============================================================================
+# Taiwan Air Quality Events Timeline (conf/events.yaml)
+# ==============================================================================
+# Compiled on: 2026-07-28
+# Sources: National Regulations Database (law.moj.gov.tw), Taichung City Law System
+#          (law.taichung.gov.tw), Ministry of Health and Welfare (mohw.gov.tw),
+#          Taiwan Centers for Disease Control (cdc.gov.tw), Executive Yuan.
+#
+# IMPORTANT NOTICE:
+# 1. Event dates represent official announcement, legal effective, or policy status dates
+#    as recorded in official databases and public records.
+# 2. Observed ambient air quality effects may exhibit time lags or delayed response
+#    relative to official policy start/end dates due to atmospheric transport and inventory
+#    turnover dynamics.
+# 3. Sourcing Attempt Disclosures:
+#    - 六輕（麥寮）歲修: Unit-specific overhaul log dates for individual chemical crackers
+#      are proprietary commercial information. The general summer overhaul window is recorded
+#      with low confidence.
+# ==============================================================================
+
+"events":
+  - "name": "2018 空氣污染防制法修正"
+    "name_en": "2018 Air Pollution Control Act Amendment"
+    "kind": "policy"
+    "start": 2018-08-01
+    "end": null
+    "scope": "national"
+    "where": "全國"
+    "expected_effect": "decrease"
+    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
+    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
+    "confidence": "high"
+    "note": "立法院於 2018 年 6 月 25 日三讀通過空污法全文修正案，總統於 8 月 1 日公布施行，加重違規罰則並劃設空氣品質維護區。"
+
+  - "name": "COVID-19 三級警戒"
+    "name_en": "COVID-19 Level 3 Epidemic Alert"
+    "kind": "disruption"
+    "start": 2021-05-19
+    "end": 2021-07-26
+    "scope": "national"
+    "where": "全國"
+    "expected_effect": "decrease"
+    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=L0050039"
+    "source_title": "嚴重特殊傳染性肺炎防治及紓困振興特別條例 沿革-全國法規資料庫"
+    "confidence": "high"
+    "note": "因應本土疫情升溫，指揮中心宣布自 2021 年 5 月 19 日起全國進入三級警戒，至 7 月 26 日止降為二級，顯著減少社會移動與人流。"
+
+  - "name": "台中電廠燃煤機組降載與生煤許可爭議"
+    "name_en": "Taichung Power Plant Load Reduction and Raw Coal Permit Dispute"
+    "kind": "shutdown"
+    "start": 2019-12-25
+    "end": 2020-02-25
+    "scope": "facility"
+    "where": "台中電廠"
+    "expected_effect": "decrease"
+    "source_url": "https://law.taichung.gov.tw/GLRSNewsout/NewsContent.aspx?id=1255"
+    "source_title": "臺中市政府主管法規共用系統-最新訊息內容"
+    "confidence": "high"
+    "note": "台中市政府於 2019 年 12 月 25 日認定台中電廠生煤使用超量，廢止 2 部燃煤機組許可證；環保署後於 2020 年 2 月 25 日撤銷該處分。"
+
+  - "name": "深澳電廠停建"
+    "name_en": "Shenao Power Plant Expansion Cancellation"
+    "kind": "policy"
+    "start": 2018-10-12
+    "end": null
+    "scope": "facility"
+    "where": "深澳電廠"
+    "expected_effect": "decrease"
+    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
+    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
+    "confidence": "medium"
+    "note": "行政院長於 2018 年 10 月 12 日宣布停止興建深澳燃煤電廠擴建計畫，消除北部新增大型燃煤發電廠之潛在排放源。"
+
+  - "name": "老舊二行程機車汰換補助"
+    "name_en": "Subsidy for Phasing Out Old Two-Stroke Motorcycles"
+    "kind": "policy"
+    "start": 2015-07-20
+    "end": 2019-12-31
+    "scope": "national"
+    "where": "全國"
+    "expected_effect": "decrease"
+    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
+    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
+    "confidence": "high"
+    "note": "環保署於 2015 年 7 月 20 日發布補助辦法推動二行程機車淘汰，採階梯式退場補助至 2019 年 12 月 31 日正式截止專案報廢補助。"
+
+  - "name": "六輕（麥寮）歲修"
+    "name_en": "Formosa Plastics Mailiao Petrochemical Complex Annual Maintenance"
+    "kind": "shutdown"
+    "start": 2021-08-01
+    "end": 2021-09-15
+    "scope": "facility"
+    "where": "六輕"
+    "expected_effect": "decrease"
+    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
+    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
+    "confidence": "low"
+    "note": "六輕石化園區機組於第三季排定例行保養與歲修，因廠區各單元具體停工紀錄屬商業機密，故以低信心度標記預期降載期間。"
