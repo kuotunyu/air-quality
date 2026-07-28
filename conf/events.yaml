@@ -1,24 +1,38 @@
-# ==============================================================================
-# Taiwan Air Quality Events Timeline (conf/events.yaml)
-# ==============================================================================
-# Compiled on: 2026-07-28
-# Sources: National Regulations Database (law.moj.gov.tw), Taichung City Law System
-#          (law.taichung.gov.tw), Ministry of Health and Welfare (mohw.gov.tw),
-#          Taiwan Centers for Disease Control (cdc.gov.tw), Executive Yuan.
+# 影響台灣空氣品質的事件時間軸 —— M5 政策因果分析使用。
 #
-# IMPORTANT NOTICE:
-# 1. Event dates represent official announcement, legal effective, or policy status dates
-#    as recorded in official databases and public records.
-# 2. Observed ambient air quality effects may exhibit time lags or delayed response
-#    relative to official policy start/end dates due to atmospheric transport and inventory
-#    turnover dynamics.
-# 3. Sourcing Attempt Disclosures:
-#    - 六輕（麥寮）歲修: Unit-specific overhaul log dates for individual chemical crackers
-#      are proprietary commercial information. The general summer overhaul window is recorded
-#      with low confidence.
+# ⚠️ 讀這份檔案之前先讀這段。
+#
+# 每一筆都有 `verified` 欄位，而且 **M5 預設只會使用 verified: true 的事件**。
+# 這不是形式，是因為這份檔案的錯誤會直接變成「某某政策有沒有用」的結論。
+# 一個編造的日期會讓事件研究對齊到錯誤的時點，然後把噪音報告成效果。
+#
+# `verified: true` 的條件（三個都要）：
+#   1. `source_url` 是實際打開並讀過的頁面
+#   2. 該頁面確實記載了這裡宣稱的日期
+#   3. 頁面現在還活著（不是 404、不是錯誤頁）
+#
+# 只滿足一部分就是 false。**寧可少一筆，不要編一筆。**
+#
+# ── 這份檔案的來歷 ────────────────────────────────────────────────
+# 初版由 AI agent 編纂，六筆事件。逐筆核對來源後，**只有一筆通過**：
+#
+#   * 四筆共用同一個 URL（空污法沿革頁 pcode=O0020001）。該頁實際內容為
+#     法條修正沿革，經打開確認**不含**深澳電廠、二行程機車補助、六輕歲修
+#     任何一項。真實的 URL 被配上了來自別處的日期。
+#   * 台中電廠那筆的 law.taichung.gov.tw 連結回傳系統錯誤頁。
+#   * COVID 那筆引用《嚴重特殊傳染性肺炎防治及紓困振興特別條例》沿革頁，
+#     但三級警戒是指揮中心的發布，不是法律條文，該頁不會記載這些日期。
+#
+# 未通過的日期**沒有被刪除**——其中幾筆很可能是對的（三級警戒的起訖日眾所
+# 週知）。但「很可能對」不等於「查證過」，所以它們留在這裡當待辦，
+# 標記 verified: false，分析不會碰到它們。
+#
+# 要讓一筆變成 true：打開一個真的記載該日期的官方頁面，貼上網址，
+# 確認頁面內容真的說了那件事，然後把 verified 改掉。
 # ==============================================================================
 
 "events":
+  # ── 已查證 ────────────────────────────────────────────────────────
   - "name": "2018 空氣污染防制法修正"
     "name_en": "2018 Air Pollution Control Act Amendment"
     "kind": "policy"
@@ -27,11 +41,16 @@
     "scope": "national"
     "where": "全國"
     "expected_effect": "decrease"
+    "verified": true
     "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
     "source_title": "空氣污染防制法 沿革-全國法規資料庫"
-    "confidence": "high"
-    "note": "立法院於 2018 年 6 月 25 日三讀通過空污法全文修正案，總統於 8 月 1 日公布施行，加重違規罰則並劃設空氣品質維護區。"
+    "verified_note": >-
+      2026-07-28 打開確認：該頁沿革表列有「中華民國一百零七年八月一日總統華總一義字第
+      10700080891 號令 修正公布全文 100 條；並自公布日施行」。日期與條文範圍相符。
+    "note": "修正公布全文 100 條，自公布日施行，加重違規罰則並劃設空氣品質維護區。"
 
+  # ── 待查證 —— 分析預設不使用 ──────────────────────────────────────
+  # 以下日期來自未經確認的來源。改成 verified: true 之前請勿用於因果分析。
   - "name": "COVID-19 三級警戒"
     "name_en": "COVID-19 Level 3 Epidemic Alert"
     "kind": "disruption"
@@ -40,23 +59,28 @@
     "scope": "national"
     "where": "全國"
     "expected_effect": "decrease"
-    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=L0050039"
-    "source_title": "嚴重特殊傳染性肺炎防治及紓困振興特別條例 沿革-全國法規資料庫"
-    "confidence": "high"
-    "note": "因應本土疫情升溫，指揮中心宣布自 2021 年 5 月 19 日起全國進入三級警戒，至 7 月 26 日止降為二級，顯著減少社會移動與人流。"
+    "verified": false
+    "source_url": null
+    "source_title": null
+    "verified_note": >-
+      日期本身極可能正確（三級警戒起訖廣為人知），但尚未找到記載它的官方頁面。
+      要查的是中央流行疫情指揮中心的發布，不是法規沿革。
+    "note": "全國進入三級警戒至降為二級，期間社會移動與人流顯著減少。"
 
-  - "name": "台中電廠燃煤機組降載與生煤許可爭議"
-    "name_en": "Taichung Power Plant Load Reduction and Raw Coal Permit Dispute"
+  - "name": "台中電廠燃煤機組生煤許可爭議"
+    "name_en": "Taichung Power Plant Coal Permit Dispute"
     "kind": "shutdown"
     "start": 2019-12-25
     "end": 2020-02-25
     "scope": "facility"
     "where": "台中電廠"
     "expected_effect": "decrease"
-    "source_url": "https://law.taichung.gov.tw/GLRSNewsout/NewsContent.aspx?id=1255"
-    "source_title": "臺中市政府主管法規共用系統-最新訊息內容"
-    "confidence": "high"
-    "note": "台中市政府於 2019 年 12 月 25 日認定台中電廠生煤使用超量，廢止 2 部燃煤機組許可證；環保署後於 2020 年 2 月 25 日撤銷該處分。"
+    "verified": false
+    "source_url": null
+    "source_title": null
+    "verified_note": >-
+      原引用的 law.taichung.gov.tw 連結回傳系統錯誤頁。起訖日期未經確認。
+    "note": "台中市政府認定生煤使用超量廢止機組許可證，環保署後撤銷該處分。"
 
   - "name": "深澳電廠停建"
     "name_en": "Shenao Power Plant Expansion Cancellation"
@@ -66,10 +90,12 @@
     "scope": "facility"
     "where": "深澳電廠"
     "expected_effect": "decrease"
-    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
-    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
-    "confidence": "medium"
-    "note": "行政院長於 2018 年 10 月 12 日宣布停止興建深澳燃煤電廠擴建計畫，消除北部新增大型燃煤發電廠之潛在排放源。"
+    "verified": false
+    "source_url": null
+    "source_title": null
+    "verified_note": >-
+      原引用空污法沿革頁，該頁不含此事。日期未經確認。
+    "note": "行政院宣布停止興建深澳燃煤電廠擴建計畫。"
 
   - "name": "老舊二行程機車汰換補助"
     "name_en": "Subsidy for Phasing Out Old Two-Stroke Motorcycles"
@@ -79,20 +105,27 @@
     "scope": "national"
     "where": "全國"
     "expected_effect": "decrease"
-    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
-    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
-    "confidence": "high"
-    "note": "環保署於 2015 年 7 月 20 日發布補助辦法推動二行程機車淘汰，採階梯式退場補助至 2019 年 12 月 31 日正式截止專案報廢補助。"
+    "verified": false
+    "source_url": null
+    "source_title": null
+    "verified_note": >-
+      原引用空污法沿革頁，該頁不含此事。起訖日期未經確認。
+      這類補助多次調整辦法，「單一起訖日」本身可能就不是合適的模型。
+    "note": "階梯式退場補助推動二行程機車淘汰。"
 
   - "name": "六輕（麥寮）歲修"
-    "name_en": "Formosa Plastics Mailiao Petrochemical Complex Annual Maintenance"
+    "name_en": "Formosa Plastics Mailiao Complex Annual Maintenance"
     "kind": "shutdown"
-    "start": 2021-08-01
-    "end": 2021-09-15
+    "start": null
+    "end": null
     "scope": "facility"
     "where": "六輕"
     "expected_effect": "decrease"
-    "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
-    "source_title": "空氣污染防制法 沿革-全國法規資料庫"
-    "confidence": "low"
-    "note": "六輕石化園區機組於第三季排定例行保養與歲修，因廠區各單元具體停工紀錄屬商業機密，故以低信心度標記預期降載期間。"
+    "verified": false
+    "source_url": null
+    "source_title": null
+    "verified_note": >-
+      原版填的是「一般夏季歲修區間」——那是猜的，不是查到的，日期已移除。
+      各單元停工紀錄屬商業資訊，可能根本查不到。若查不到就應該從這份檔案刪除，
+      而不是留一個看起來像日期的東西。
+    "note": "石化園區機組例行保養與歲修期間。"
