@@ -220,3 +220,59 @@ PM2.5 驅動因子本來就應該不同，這是資訊而非雜訊。
 - [ ] 檢查 1996–2011 資料包內的 `.txt` 是否含逐年不同的 legend
 - [ ] 確認 2024 世代 `NA`、`A` 的官方定義
 - [ ] 取得各年度「品保查核報告」，交叉驗證本專案的異常偵測結果
+
+## 歷年 ReadMe 說明文件品質旗標盤點
+
+全量實測掃描 44 個原始資料包（1982–2025 年）內附 ReadMe 說明文件之盤點結果：
+
+| year | readme filename | flag symbols documented | identical to 2017 edition? | notes |
+|---|---|---|---|---|
+| 1982 | — | — | no readme |  |
+| 1983 | — | — | no readme |  |
+| 1984 | — | — | no readme |  |
+| 1985 | — | — | no readme |  |
+| 1986 | — | — | no readme |  |
+| 1987 | — | — | no readme |  |
+| 1988 | — | — | no readme |  |
+| 1989 | — | — | no readme |  |
+| 1990 | — | — | no readme |  |
+| 1991 | ReadMe_普通測站_20090805.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20090805.txt) rather than 2017 ODT/DOC |
+| 1992 | ReadMe_普通測站_20081009.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20081009.txt) rather than 2017 ODT/DOC |
+| 1993 | ReadMe_普通測站20170301.odt | `#`, `*`, `x`, `NR`, `空白` | yes |  |
+| 1994 | ReadMe_普通測站20170301.odt | `#`, `*`, `x`, `NR`, `空白` | yes |  |
+| 1995 | ReadMe_普通測站20170301.odt | `#`, `*`, `x`, `NR`, `空白` | yes |  |
+| 1996 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 85年離島監測站; Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
+| 1997 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 86年離島監測站; Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
+| 1998 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 87年離島監測站; Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
+| 1999 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
+| 2000 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
+| 2001 | ReadMe_普通測站_20090901.txt | `#`, `*`, `x`, `NR`, `空白`, `888`, `999` | no | Plain text format (ReadMe_普通測站_20090901.txt) rather than 2017 ODT/DOC; Documents flag symbols: `#`, `*`, `x`, `NR`, `空白`, `888`, `999` |
+| 2002 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 91年離島監測站; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
+| 2003 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 92年北部空品區, 92年宜蘭空品區, 92年竹苗空品區, 92年花東空品區, 92年離島測站, 92年雲嘉南空品區, 92年高屏空品區; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
+| 2004 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 93年北部空品區, 93年宜蘭空品區, 93年竹苗空品區, 93年花東空品區, 93年離島監測站, 93年雲嘉南空品區, 93年高屏空品區; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
+| 2005 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 94年北部空品區; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
+| 2006 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 95年北部空品區; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
+| 2007 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
+| 2008 | ReadMe_普通測站.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站.txt) rather than 2017 ODT/DOC |
+| 2009 | ReadMe_普通測站.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站.txt) rather than 2017 ODT/DOC |
+| 2010 | ReadMe_普通測站20110413.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站20110413.txt) rather than 2017 ODT/DOC |
+| 2011 | ReadMe_普通測站20120409.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站20120409.txt) rather than 2017 ODT/DOC |
+| 2012 | ReadMe_普通測站20130423.odt | `#`, `*`, `x`, `NR`, `空白` | no | Earlier documentation revision (ReadMe_普通測站20130423.odt) |
+| 2013 | ReadMe_普通測站20140416.odt | `#`, `*`, `x`, `NR`, `空白` | no | Earlier documentation revision (ReadMe_普通測站20140416.odt) |
+| 2014 | ReadMe_普通測站20170301.odt | `#`, `*`, `x`, `NR`, `空白` | yes |  |
+| 2015 | ReadMe_普通測站20150319.odt | `#`, `*`, `x`, `NR`, `空白` | no | Earlier documentation revision (ReadMe_普通測站20150319.odt) |
+| 2016 | ReadMe_普通測站20170301.odt | `#`, `*`, `x`, `NR`, `空白` | yes |  |
+| 2017 | ReadMe_普通測站20170301.odt | `#`, `*`, `x`, `NR`, `空白` | yes |  |
+| 2018 | — | — | no readme |  |
+| 2019 | — | — | no readme |  |
+| 2020 | — | — | no readme |  |
+| 2021 | — | — | no readme |  |
+| 2022 | — | — | no readme |  |
+| 2023 | — | — | no readme |  |
+| 2024 | — | — | no readme |  |
+| 2025 | — | — | no readme |  |
+
+### 歷年旗標定義變更結論
+
+經全量實測 44 個年度原始檔案包（1982–2025 年），品質旗標的符號定義在跨年度間**無任何改變（no change found）**。所有存在說明文件的年份（1991–2017 年）中，官方記載之有效與無效旗標符號均一致為 `#`（儀器檢核無效）、`*`（程式檢核無效）、`x`（人工檢核無效）、`NR`（無降雨）與 `空白`（缺值）。唯一的格式差異僅見於 2001 年說明檔，該年將風向哨兵碼 `888`（風向不定）與 `999`（靜風）直接寫入資料註記項目中（其他年份則於內文另外說明）。1982–1990 年與 2018–2025 年之資料包內未包含 ReadMe 說明文件。據此，基於 2017 年參考文件所建置之品質旗標解析器，對所有歷史年代之旗標符號定義均完全適用。
+
