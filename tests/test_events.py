@@ -29,7 +29,9 @@ VERIFIED = {
     "where": "全國",
     "expected_effect": "decrease",
     "verified": True,
+    "source_quality": "official",
     "source_url": "https://example.gov.tw/real-page",
+    "source_url_end": None,
     "note": "",
 }
 
@@ -63,6 +65,25 @@ class TestVerificationGate:
 
         with pytest.raises(ConfigError, match="verified but has no source_url"):
             load_events(config={"events": [liar]})
+
+    def test_an_end_date_needs_its_own_source(self) -> None:
+        """The end of an event is a separate factual claim from its start.
+
+        Taiwan's Level 3 alert began in one CECC announcement and ended in a
+        different one issued seven weeks later. Citing only the first would
+        source the start and leave the end unevidenced.
+        """
+        half_sourced = {**VERIFIED, "end": date(2021, 7, 26), "source_url_end": None}
+
+        with pytest.raises(ConfigError, match="end of an event is its own claim"):
+            load_events(config={"events": [half_sourced]})
+
+    def test_a_verified_entry_must_declare_how_good_its_source_is(self) -> None:
+        """ "I checked it" and "it is authoritative" are different claims."""
+        unlabelled = {**VERIFIED, "source_quality": "probably fine"}
+
+        with pytest.raises(ConfigError, match="source_quality"):
+            load_events(config={"events": [unlabelled]})
 
     def test_an_entry_without_a_verified_field_is_rejected(self) -> None:
         """Absent must not default to usable."""

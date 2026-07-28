@@ -39,9 +39,16 @@ EVENT_FIELDS = (
     "where",
     "expected_effect",
     "verified",
+    "source_quality",
     "source_url",
+    "source_url_end",
     "note",
 )
+
+# How authoritative the citation is. Kept separate from `verified` because
+# "I checked it" and "it is authoritative" are different claims, and collapsing
+# them would hide which events rest on a secondary account.
+SOURCE_QUALITY = ("official", "news", "tertiary")
 
 
 def load_events(
@@ -64,10 +71,28 @@ def load_events(
         missing = [f for f in ("name", "verified") if f not in entry]
         if missing:
             raise ConfigError(f"conf/events.yaml entry {i} is missing {missing}")
-        if entry["verified"] and not entry.get("source_url"):
+        if not entry["verified"]:
+            continue
+
+        name = entry["name"]
+        if not entry.get("source_url"):
             raise ConfigError(
-                f"conf/events.yaml: {entry['name']!r} is marked verified but has no source_url. "
+                f"conf/events.yaml: {name!r} is marked verified but has no source_url. "
                 f"Verified means a page was opened and confirmed to record this date."
+            )
+        # An end date is a separate factual claim from a start date and usually
+        # comes from a different announcement — the extension notice, not the
+        # one that began the thing. It needs its own citation.
+        if entry.get("end") is not None and not entry.get("source_url_end"):
+            raise ConfigError(
+                f"conf/events.yaml: {name!r} is verified and has an end date but no "
+                f"source_url_end. The end of an event is its own claim."
+            )
+        quality = entry.get("source_quality")
+        if quality not in SOURCE_QUALITY:
+            raise ConfigError(
+                f"conf/events.yaml: {name!r} is verified but source_quality is {quality!r}; "
+                f"expected one of {SOURCE_QUALITY}."
             )
 
     frame = pl.DataFrame(
@@ -82,7 +107,9 @@ def load_events(
             "where": pl.Utf8,
             "expected_effect": pl.Utf8,
             "verified": pl.Boolean,
+            "source_quality": pl.Utf8,
             "source_url": pl.Utf8,
+            "source_url_end": pl.Utf8,
             "note": pl.Utf8,
         },
     )

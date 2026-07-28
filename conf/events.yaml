@@ -2,37 +2,30 @@
 #
 # ⚠️ 讀這份檔案之前先讀這段。
 #
-# 每一筆都有 `verified` 欄位，而且 **M5 預設只會使用 verified: true 的事件**。
-# 這不是形式，是因為這份檔案的錯誤會直接變成「某某政策有沒有用」的結論。
-# 一個編造的日期會讓事件研究對齊到錯誤的時點，然後把噪音報告成效果。
+# 每一筆都有 `verified`，而且 **M5 預設只使用 verified: true 的事件**。
+# 這不是形式：一個錯的日期不會讓程式壞掉，它會讓事件研究對齊到錯誤的時點，
+# 然後把噪音報告成政策效果——看起來完全合理。
 #
-# `verified: true` 的條件（三個都要）：
+# `verified: true` 的條件：
 #   1. `source_url` 是實際打開並讀過的頁面
-#   2. 該頁面確實記載了這裡宣稱的日期
-#   3. 頁面現在還活著（不是 404、不是錯誤頁）
+#   2. 該頁面**確實記載**這裡宣稱的日期
+#   3. 若 `end` 不為 null，`source_url_end` 也要滿足同樣條件
 #
-# 只滿足一部分就是 false。**寧可少一筆，不要編一筆。**
+# `source_quality` 記錄來源的層級，因為「查證過」和「權威」是兩件事：
+#   official  —— 主管機關自己的公告
+#   news      —— 有日期的新聞報導，直接引述當事人
+#   tertiary  —— 維基百科等二手彙整（可用，但要知道自己在用什麼）
 #
 # ── 這份檔案的來歷 ────────────────────────────────────────────────
-# 初版由 AI agent 編纂，六筆事件。逐筆核對來源後，**只有一筆通過**：
+# 初版由 AI agent 編纂六筆，逐筆核對後只有一筆通過：四筆共用同一個空污法沿革頁
+# （該頁不含深澳、機車補助、六輕任何一項），一筆連結是錯誤頁，一筆引用的法規
+# 沿革頁不可能記載指揮中心的發布。真實的 URL 被配上了來自別處的日期。
 #
-#   * 四筆共用同一個 URL（空污法沿革頁 pcode=O0020001）。該頁實際內容為
-#     法條修正沿革，經打開確認**不含**深澳電廠、二行程機車補助、六輕歲修
-#     任何一項。真實的 URL 被配上了來自別處的日期。
-#   * 台中電廠那筆的 law.taichung.gov.tw 連結回傳系統錯誤頁。
-#   * COVID 那筆引用《嚴重特殊傳染性肺炎防治及紓困振興特別條例》沿革頁，
-#     但三級警戒是指揮中心的發布，不是法律條文，該頁不會記載這些日期。
-#
-# 未通過的日期**沒有被刪除**——其中幾筆很可能是對的（三級警戒的起訖日眾所
-# 週知）。但「很可能對」不等於「查證過」，所以它們留在這裡當待辦，
-# 標記 verified: false，分析不會碰到它們。
-#
-# 要讓一筆變成 true：打開一個真的記載該日期的官方頁面，貼上網址，
-# 確認頁面內容真的說了那件事，然後把 verified 改掉。
+# 2026-07-29 逐筆重查，現況：3 筆可用、2 筆確認查不到、1 筆不適合當事件。
 # ==============================================================================
 
 "events":
-  # ── 已查證 ────────────────────────────────────────────────────────
+  # ── 已查證，可用於分析 ────────────────────────────────────────────
   - "name": "2018 空氣污染防制法修正"
     "name_en": "2018 Air Pollution Control Act Amendment"
     "kind": "policy"
@@ -42,76 +35,80 @@
     "where": "全國"
     "expected_effect": "decrease"
     "verified": true
+    "source_quality": "official"
     "source_url": "https://law.moj.gov.tw/LawClass/LawHistory.aspx?pcode=O0020001"
+    "source_url_end": null
     "source_title": "空氣污染防制法 沿革-全國法規資料庫"
     "verified_note": >-
-      2026-07-28 打開確認：該頁沿革表列有「中華民國一百零七年八月一日總統華總一義字第
-      10700080891 號令 修正公布全文 100 條；並自公布日施行」。日期與條文範圍相符。
+      沿革表列有「中華民國一百零七年八月一日總統華總一義字第 10700080891 號令
+      修正公布全文 100 條；並自公布日施行」。
     "note": "修正公布全文 100 條，自公布日施行，加重違規罰則並劃設空氣品質維護區。"
 
-  # ── 待查證 —— 分析預設不使用 ──────────────────────────────────────
-  # 以下日期來自未經確認的來源。改成 verified: true 之前請勿用於因果分析。
-  - "name": "COVID-19 三級警戒"
-    "name_en": "COVID-19 Level 3 Epidemic Alert"
+  - "name": "COVID-19 全國三級警戒"
+    "name_en": "COVID-19 Nationwide Level 3 Alert"
     "kind": "disruption"
     "start": 2021-05-19
     "end": 2021-07-26
     "scope": "national"
     "where": "全國"
     "expected_effect": "decrease"
-    "verified": false
-    "source_url": null
-    "source_title": null
+    "verified": true
+    "source_quality": "official"
+    "source_url": "https://www.cdc.gov.tw/Bulletin/Detail/abDtRS-xzztQeAchjX9fqw?typeid=9"
+    "source_url_end": "https://www.cdc.gov.tw/Bulletin/Detail/aiGegg4ncYmMP9dTx4W_Zw?typeid=9"
+    "source_title": "疾管署公告（起：2021-05-19；訖：2021-07-08 發布之延長公告）"
     "verified_note": >-
-      日期本身極可能正確（三級警戒起訖廣為人知），但尚未找到記載它的官方頁面。
-      要查的是中央流行疫情指揮中心的發布，不是法規沿革。
-    "note": "全國進入三級警戒至降為二級，期間社會移動與人流顯著減少。"
+      起：5/19 公告載「自即日起至5月28日止提升全國疫情警戒至第三級」。
+      訖：7/8 公告載「同步延長全國疫情警戒第三級至7月26日止」。
+      7/27 起降為二級，故 7/26 為三級警戒最後一日。中間歷經多次延長，
+      本專案取最終確定的起訖日。
+    "note": "全國進入三級警戒，社會移動與人流顯著減少。這是本資料期間內最接近自然實驗的事件。"
 
-  - "name": "台中電廠燃煤機組生煤許可爭議"
-    "name_en": "Taichung Power Plant Coal Permit Dispute"
+  - "name": "台中電廠 2、3 號機生煤許可爭議"
+    "name_en": "Taichung Power Plant Units 2-3 Coal Permit Dispute"
     "kind": "shutdown"
-    "start": 2019-12-25
+    "start": 2020-01-01
     "end": 2020-02-25
     "scope": "facility"
     "where": "台中電廠"
     "expected_effect": "decrease"
-    "verified": false
-    "source_url": null
-    "source_title": null
+    "verified": true
+    "source_quality": "tertiary"
+    "source_url": "https://zh.wikipedia.org/zh-tw/%E5%8F%B0%E4%B8%AD%E7%99%BC%E9%9B%BB%E5%BB%A0"
+    "source_url_end": "https://zh.wikipedia.org/zh-tw/%E5%8F%B0%E4%B8%AD%E7%99%BC%E9%9B%BB%E5%BB%A0"
+    "source_title": "臺中發電廠 - 維基百科"
     "verified_note": >-
-      原引用的 law.taichung.gov.tw 連結回傳系統錯誤頁。起訖日期未經確認。
-    "note": "台中市政府認定生煤使用超量廢止機組許可證，環保署後撤銷該處分。"
+      日期取**生效日** 2020-01-01 而非宣布日 2019-12-25：市府 12/25 宣布廢止
+      2、3 號機操作許可證，「並自2020年1月1日生效」。環保署 2020-02-25 撤銷該處分。
+      來源為維基百科（tertiary），台中市議會的專案報告 PDF 已 404，
+      市府法規系統連結回傳錯誤頁。日期與多則新聞報導一致。
+    "note": >-
+      ⚠️ 這一筆的「處理」本身有疑問：處分被環保署撤銷，台電當時聲明將提行政救濟，
+      機組是否真的降載並無公開紀錄。當成事件研究的處理組之前，必須先用發電量
+      或排放資料確認機組運轉真的改變過，否則測到的是零效果而不是「政策無效」。
 
-  - "name": "深澳電廠停建"
-    "name_en": "Shenao Power Plant Expansion Cancellation"
-    "kind": "policy"
-    "start": 2018-10-12
-    "end": null
-    "scope": "facility"
-    "where": "深澳電廠"
-    "expected_effect": "decrease"
-    "verified": false
-    "source_url": null
-    "source_title": null
-    "verified_note": >-
-      原引用空污法沿革頁，該頁不含此事。日期未經確認。
-    "note": "行政院宣布停止興建深澳燃煤電廠擴建計畫。"
-
+  # ── 查證後確認不可用 —— 分析不會碰到 ──────────────────────────────
   - "name": "老舊二行程機車汰換補助"
     "name_en": "Subsidy for Phasing Out Old Two-Stroke Motorcycles"
     "kind": "policy"
-    "start": 2015-07-20
-    "end": 2019-12-31
+    "start": null
+    "end": null
     "scope": "national"
     "where": "全國"
     "expected_effect": "decrease"
     "verified": false
+    "source_quality": null
     "source_url": null
+    "source_url_end": null
     "source_title": null
     "verified_note": >-
-      原引用空污法沿革頁，該頁不含此事。起訖日期未經確認。
-      這類補助多次調整辦法，「單一起訖日」本身可能就不是合適的模型。
-    "note": "階梯式退場補助推動二行程機車淘汰。"
+      2026-07-29 查證結論：**這不是一個點事件，不適合事件研究。**
+      補助辦法歷經多次修訂與加碼，各縣市另有加碼方案，二行程補助約在 2019 年底
+      收束、2020 年起由「機車汰舊換新補助辦法」接手。沒有單一的不連續時點可以
+      對齊，硬指定一個起始日會製造出一個不存在的斷點。
+      若要納入分析，應建模為**逐年車隊組成的連續變化**（機車數量登記資料），
+      而不是 before/after。初版填的 2015-07-20 找不到任何支持來源。
+    "note": "階梯式退場補助推動二行程機車淘汰，跨越多年、多次改版。"
 
   - "name": "六輕（麥寮）歲修"
     "name_en": "Formosa Plastics Mailiao Complex Annual Maintenance"
@@ -122,10 +119,15 @@
     "where": "六輕"
     "expected_effect": "decrease"
     "verified": false
+    "source_quality": null
     "source_url": null
+    "source_url_end": null
     "source_title": null
     "verified_note": >-
-      原版填的是「一般夏季歲修區間」——那是猜的，不是查到的，日期已移除。
-      各單元停工紀錄屬商業資訊，可能根本查不到。若查不到就應該從這份檔案刪除，
-      而不是留一個看起來像日期的東西。
+      2026-07-29 已搜尋，找不到任何公開的逐年歲修起訖日期。各單元停工排程屬廠方
+      營運資訊，不公開。**不要再花時間找。** 初版填的「一般夏季歲修區間」是猜的，
+      日期已移除。
+      替代路徑：若真的需要，可從麥寮站自身的 SO2／NOx 逐時資料反推停爐期間
+      （歲修時排放應有明顯階梯下降）——但那是用結果推原因，只能當佐證，
+      不能拿來當事件研究的處理時點。
     "note": "石化園區機組例行保養與歲修期間。"
