@@ -1,0 +1,330 @@
+---
+/**
+ * Chapter 6 — SQL over 44 years, in the reader's own browser.
+ *
+ * No query server. DuckDB compiled to WebAssembly reads the L1 Parquet files
+ * over HTTP range requests, so a question about one station and one year
+ * fetches kilobytes rather than the whole file. Nothing is logged, nothing is
+ * sent anywhere, and the reader can ask questions this site's author never
+ * anticipated — which is the difference between publishing findings and
+ * publishing data.
+ *
+ * The table list is filled in after probing what is actually deployed, not
+ * from what happened to exist on the machine that built the page.
+ */
+import { pollutantIndex } from "../lib/data";
+
+const EXAMPLES = [
+  {
+    // n_valid is in the SELECT on purpose. The worst day in the record is a
+    // reading of exactly 1000, the top of this project's plausible range for
+    // PM2.5 — a number that deserves scepticism, and the hour count is the
+    // first thing to look at. Out-of-range values are flagged upstream, never
+    // deleted, so they are still here to be argued with.
+    label: "十大最髒的日子（PM2.5）",
+    sql: `SELECT station_name, date, mean AS pm25, n_valid AS hours
+FROM "PM2.5"
+WHERE mean IS NOT NULL
+ORDER BY mean DESC
+LIMIT 10;`,
+  },
+  {
+    label: "各站年均，2024 年，由高至低",
+    sql: `SELECT station_name,
+       round(avg(mean), 2) AS annual_mean,
+       count(*) AS days
+FROM "PM2.5"
+WHERE date >= '2024-01-01' AND date < '2025-01-01'
+  AND mean IS NOT NULL
+GROUP BY station_name
+HAVING days >= 274          -- 至少 75% 的天數，否則不可比較
+ORDER BY annual_mean DESC;`,
+  },
+  {
+    label: "髒空氣集中在哪幾個月",
+    sql: `SELECT month(date) AS month,
+       count(*) FILTER (WHERE mean > 35) AS days_over_standard,
+       count(*) AS days_measured,
+       round(100.0 * count(*) FILTER (WHERE mean > 35) / count(*), 1) AS pct
+FROM "PM2.5"
+WHERE mean IS NOT NULL
+GROUP BY month
+ORDER BY month;`,
+  },
+  {
+    label: "PM2.5 佔 PM10 的比例，逐年",
+    sql: `SELECT year(a.date) AS year,
+       round(avg(a.mean / b.mean), 3) AS pm25_over_pm10,
+       count(*) AS pairs
+FROM "PM2.5" a
+JOIN "PM10" b USING (station_name, date)
+WHERE a.mean IS NOT NULL AND b.mean > 0
+GROUP BY year
+ORDER BY year;`,
+  },
+  {
+    label: "PM2.5 大於 PM10 的比率（物理上不可能）",
+    sql: `SELECT year(a.date) AS year,
+       count(*) FILTER (WHERE a.mean > b.mean) AS impossible,
+       count(*) AS pairs,
+       round(100.0 * count(*) FILTER (WHERE a.mean > b.mean) / count(*), 2) AS pct
+FROM "PM2.5" a
+JOIN "PM10" b USING (station_name, date)
+WHERE a.mean IS NOT NULL AND b.mean IS NOT NULL
+GROUP BY year
+ORDER BY year;`,
+  },
+  {
+    label: "覆蓋率不足而被扣住的日均值",
+    sql: `SELECT year(date) AS year,
+       count(*) FILTER (WHERE mean IS NULL) AS withheld,
+       count(*) AS station_days,
+       round(100.0 * count(*) FILTER (WHERE mean IS NULL) / count(*), 2) AS pct
+FROM "PM2.5"
+GROUP BY year
+ORDER BY year;`,
+  },
+];
+
+// Everything the export *can* produce. Which of these is actually served is
+// settled at runtime by a HEAD request per file.
+const candidates = pollutantIndex.map((p) => ({
+  code: p.pollutant,
+  name: p.name_zh,
+  file: `l1/${p.file.slice(3).replace(/\.json$/, ".parquet")}`,
+}));
+---
+
+<section id="explore" class="page">
+  <p class="eyebrow">第六章</p>
+  <h2>自己查</h2>
+
+  <p class="lede">
+    下面是一個真的資料庫，跑在你的瀏覽器裡。沒有查詢伺服器，沒有 API 金鑰，
+    沒有任何東西被送到別的地方。按下執行才會開始下載查詢引擎（約 30 MB）。
+  </p>
+
+  <p>
+    資料是站-日層級。每個測項一張表，表名就是測項代碼；
+    另有一張 <code>daily</code> 把全部測項疊成長表。欄位是
+    <code>station_name</code>、<code>date</code>、<code>mean</code>、
+    <code>n_valid</code>——最後一欄是這個日均值由幾個有效小時算出來的。
+    <code>mean</code> 為 NULL 表示覆蓋率不足、平均值被扣住，<strong>不是零</strong>。
+  </p>
+
+  <div class="controls">
+    <label>
+      範例
+      <select id="example-select">
+        {EXAMPLES.map((example, i) => <option value={i}>{example.label}</option>)}
+      </select>
+    </label>
+    <button id="run" type="button">執行查詢</button>
+    <span id="status" class="status" role="status" aria-live="polite"></span>
+  </div>
+
+  <textarea id="sql" spellcheck="false" aria-label="SQL 查詢" rows="10">{EXAMPLES[0].sql}</textarea>
+
+  <div id="result" class="result"></div>
+
+  <p id="tables" class="small dim">按下執行之後，這裡會列出實際可以查的表。</p>
+
+  <div class="note caveat">
+    <strong>查得到哪些測項，取決於這個站台放了哪些檔案。</strong>
+    完整的 21 個測項共 54.6 MB，沒有全部進版本庫。
+    要在本機拿到全部：<code>uv run twair export web</code>。
+    逐時原始資料另有授權問題待確認，見 <code>docs/legal.md</code>。
+  </div>
+</section>
+
+<script
+  type="application/json"
+  id="explorer-candidates"
+  is:inline
+  set:html={JSON.stringify(candidates)}
+/>
+<script
+  type="application/json"
+  id="explorer-examples"
+  is:inline
+  set:html={JSON.stringify(EXAMPLES.map((example) => example.sql))}
+/>
+
+<script>
+  import type { Candidate } from "../lib/duck";
+
+  const runButton = document.getElementById("run") as HTMLButtonElement;
+  const sqlBox = document.getElementById("sql") as HTMLTextAreaElement;
+  const statusEl = document.getElementById("status") as HTMLElement;
+  const resultEl = document.getElementById("result") as HTMLElement;
+  const tablesEl = document.getElementById("tables") as HTMLElement;
+  const exampleSelect = document.getElementById("example-select") as HTMLSelectElement;
+
+  function json<T>(id: string, fallback: T): T {
+    const node = document.getElementById(id);
+    return node?.textContent ? (JSON.parse(node.textContent) as T) : fallback;
+  }
+
+  const examples = json<string[]>("explorer-examples", []);
+  const candidates = json<Candidate[]>("explorer-candidates", []);
+  const base = new URL("data/", document.baseURI).href;
+
+  exampleSelect.addEventListener("change", () => {
+    const sql = examples[Number(exampleSelect.value)];
+    if (sql) sqlBox.value = sql;
+  });
+
+  function setStatus(text: string, busy = false) {
+    statusEl.textContent = text;
+    statusEl.dataset.busy = busy ? "true" : "false";
+  }
+
+  // The whole DuckDB module tree is behind this dynamic import, so a reader
+  // who never presses the button never downloads any of it.
+  const duck = () => import("../lib/duck");
+
+  type Prepared = { db: Awaited<ReturnType<Awaited<ReturnType<typeof duck>>["getDb"]>> };
+  let attached: Promise<Prepared> | null = null;
+
+  function prepare(): Promise<Prepared> {
+    attached ??= (async () => {
+      const { getDb, attachTables } = await duck();
+      const db = await getDb((message) => setStatus(message, true));
+
+      setStatus("檢查有哪些資料檔在線上", true);
+      const available = await attachTables(db, base, candidates);
+      showTables(available);
+
+      if (available.length === 0) {
+        throw new Error(
+          `這個站台沒有提供任何 L1 資料檔（找過 ${base}l1/）。\n` +
+            "在本機執行 uv run twair export web 可以產生它們。",
+        );
+      }
+      return { db };
+    })();
+    return attached;
+  }
+
+  function showTables(available: Candidate[]) {
+    if (available.length === 0) {
+      tablesEl.textContent = "沒有找到任何可查詢的資料檔。";
+      return;
+    }
+    tablesEl.textContent =
+      `可以查的表（${available.length}）：` +
+      available.map((t) => `"${t.code}"（${t.name}）`).join("、") +
+      "，以及 daily。";
+  }
+
+  runButton.addEventListener("click", async () => {
+    runButton.disabled = true;
+    resultEl.innerHTML = "";
+    try {
+      const { db } = await prepare();
+      const { runQuery } = await duck();
+      setStatus("查詢中", true);
+      const { columns, rows, ms } = await runQuery(db, sqlBox.value);
+      setStatus(`${rows.length} 列 · ${ms.toFixed(0)} ms`);
+      resultEl.appendChild(renderTable(columns, rows));
+    } catch (error) {
+      setStatus("");
+      // A failed preparation must not be cached, or every later attempt
+      // returns the same error without retrying.
+      attached = null;
+      const pre = document.createElement("pre");
+      pre.className = "error";
+      pre.textContent = error instanceof Error ? error.message : String(error);
+      resultEl.appendChild(pre);
+    } finally {
+      runButton.disabled = false;
+    }
+  });
+
+  function renderTable(columns: string[], rows: unknown[][]): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    const table = document.createElement("table");
+
+    const head = table.createTHead().insertRow();
+    for (const name of columns) {
+      const th = document.createElement("th");
+      th.textContent = name;
+      head.appendChild(th);
+    }
+
+    const body = table.createTBody();
+    for (const row of rows) {
+      const tr = body.insertRow();
+      for (const value of row) {
+        const td = tr.insertCell();
+        // A null here means what it means everywhere else on this site: no
+        // measurement, or one withheld. It is never zero.
+        td.textContent = value == null ? "—" : String(value);
+        if (typeof value === "number") td.className = "num";
+      }
+    }
+
+    wrap.appendChild(table);
+    return wrap;
+  }
+</script>
+
+<style>
+  textarea {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    line-height: 1.6;
+    tab-size: 2;
+    color: var(--text);
+    background: var(--bg-sunken);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0.9rem 1rem;
+    resize: vertical;
+  }
+  textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .status {
+    font-size: 0.85rem;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+  .status[data-busy="true"]::after {
+    content: "…";
+  }
+  .result {
+    margin-top: 1.2rem;
+  }
+  .result :global(.table-wrap) {
+    max-height: 26rem;
+    overflow: auto;
+  }
+  .error {
+    color: var(--c5);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    background: var(--bg-sunken);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin: 0;
+  }
+  .small {
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    margin-top: 1rem;
+  }
+  .dim {
+    color: var(--text-faint);
+  }
+  code {
+    background: var(--bg-sunken);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+</style>

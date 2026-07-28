@@ -207,6 +207,29 @@ after adding any pattern that names a common directory.
 "Unable to assign attributes when using <> Fragment shorthand" error. Compute
 the filtered list in the frontmatter instead.
 
+### Arrow's declared date unit lies
+
+A DuckDB `DATE` comes back as Arrow `Date32<DAY>`, but `Table.toArray()` has
+already scaled it to epoch **milliseconds**. Trusting the unit and multiplying
+by 86,400,000 again lands the row around 45,000 BC. `duck.ts` reads the scale
+from the magnitude instead, because Arrow has changed this between versions.
+
+Float32 is the other one: L1 rounds to two decimals then casts, so 328.59 comes
+back as 328.5899963378906. Format to 7 significant digits at display time —
+past that is representation noise, not measurement.
+
+### DuckDB-WASM: `eh`, not `coi`, and behind a dynamic import
+
+The threaded (`coi`) build needs cross-origin isolation headers and GitHub
+Pages cannot set headers. Use the single-threaded `eh` bundle.
+
+A static `import * as duckdb` puts ~190 KB in the page's initial bundle for
+every reader. Dynamic import inside the handler drops the eager chunk to 3 KB.
+
+The explorer **probes** which L1 files are served (one HEAD each) rather than
+trusting the build-time listing, because only PM2.5 and PM10 are committed and
+the rest exist only locally. It therefore cannot advertise a table that 404s.
+
 ### Grid and flex tracks size to min-content unless told otherwise
 
 One chart with `min-width: 480px` inside a single-column grid widened its track

@@ -397,8 +397,8 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 **驗收**
 - [x] 本地可跑 —— `cd web && npm run dev`
 - [ ] GitHub Actions 部署到 GitHub Pages 成功 —— 工作流已備妥，**等 repo 建立**
-- [x] 章節 0/1/2/5 上線（外加第 7 章資料與方法）
-- [ ] 第 6 章 DuckDB-WASM 資料探索器 —— L1 已備妥，前端未做
+- [x] 章節 0/1/2/5/6/7 上線
+- [x] 第 6 章 DuckDB-WASM 資料探索器 —— 瀏覽器內跑 SQL，無查詢伺服器
 - [x] 行動裝置可用 —— 375px 無橫向溢出，全部文字達 WCAG AA
 - [x] 深/淺色主題都正常 —— 兩套色階分別定義，非濾鏡
 

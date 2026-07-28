@@ -4,6 +4,7 @@ import TrendChart from "../components/TrendChart.astro";
 import StationMap from "../components/StationMap.astro";
 import Chapter5 from "../components/Chapter5.astro";
 import StationPicker from "../components/StationPicker.astro";
+import Explorer from "../components/Explorer.astro";
 import {
   stations,
   cards,
@@ -197,6 +198,9 @@ const airzoneSeries = (trendByAirzone.series as {
 
   <!-- ═══════════ 5. 我當年錯在哪 ═══════════ -->
   <Chapter5 />
+
+  <!-- ═══════════ 6. 資料探索器 ═══════════ -->
+  <Explorer />
 
   <!-- ═══════════ 7. 資料與方法 ═══════════ -->
   <section id="data" class="page">
