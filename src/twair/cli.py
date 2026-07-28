@@ -304,6 +304,50 @@ def analyze_m1(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m4")
+def analyze_m4(
+    years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),
+    stations: str = typer.Option(
+        None, "--stations", help="Comma-separated subset. Omit for every eligible station."
+    ),
+    samples: int = typer.Option(
+        None, "--samples", help="Resampling iterations per station. Default is measured, not 300."
+    ),
+) -> None:
+    """M4 — meteorological normalisation, and the trend that survives it."""
+    from twair.analysis.deweather import DEFAULT_SAMPLES, run_deweather, write_deweather_report
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2006, 2025)
+    subset = [s.strip() for s in stations.split(",")] if stations else None
+
+    tables = run_deweather(
+        period=period,
+        stations=subset,
+        n_samples=samples or DEFAULT_SAMPLES,
+    )
+
+    summary = tables["summary"]
+    console.print(
+        summary.select(
+            "station_name", "holdout_r2", "observed_slope", "normalised_slope", "weather_share"
+        )
+    )
+
+    # The headline: how much of the observed change was the weather rather than
+    # the emissions. Reported over stations whose normalised trend is
+    # distinguishable from zero, because a share of nothing is not a number.
+    real = summary.filter(pl.col("normalised_significant"))
+    if not real.is_empty():
+        console.print(
+            f"\n[bold]{real.height}[/bold] station(s) with a significant normalised trend; "
+            f"median weather share [bold]{real['weather_share'].median():.1%}[/bold]"
+        )
+
+    for name, path in write_deweather_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m3")
 def analyze_m3(
     years: str = typer.Option("2010:2017", "--years", "-y", help="Period to analyse."),

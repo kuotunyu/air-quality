@@ -90,11 +90,21 @@ NORMALISE_FEATURES: tuple[str, ...] = (
 # in the trend, under average conditions".
 DEFAULT_HELD_FIXED: tuple[str, ...] = ("trend_days",)
 
-# 300 is Grange's default and is generous; the mean of the resampled
-# predictions is stable well before then. `convergence` reports how much moving
-# from half to all of them changes the answer, so the choice is checkable
-# rather than inherited.
-DEFAULT_SAMPLES = 300
+# Grange's default is 300. Measured on 忠明, 2006-2025, the number this module
+# actually reports — the trend of the normalised series — does not move:
+#
+#     n_samples=30    slope -0.8595/yr   block CI [-0.973, -0.832]   22 s
+#     n_samples=100   slope -0.8603/yr   block CI [-0.972, -0.832]   85 s
+#     n_samples=300   slope -0.8604/yr   block CI [-0.972, -0.832]  283 s
+#
+# The resampling noise is averaged away twice over, first by the monthly means
+# and then by the slope through them, so 300 buys a tenth of a percent for ten
+# times the runtime. 100 is the default here: comfortably past the point where
+# the answer settles, without pretending 30 is a safe place to stop.
+#
+# The per-station `convergence` figure still travels with every result, so a
+# station where this does not hold would be visible rather than assumed.
+DEFAULT_SAMPLES = 100
 
 HOURS_PER_YEAR = 8_766.0
 
@@ -144,6 +154,8 @@ class DeweatherResult:
     station: str
     series: pl.DataFrame
     """One row per timestamp: observed, normalised."""
+    monthly: pl.DataFrame
+    """The same pair aggregated to months — what the trends were fitted on."""
     observed_trend: TrendEstimate
     normalised_trend: TrendEstimate
     holdout_r2: float
@@ -308,19 +320,31 @@ def theil_sen(
     x: np.ndarray,
     y: np.ndarray,
     *,
-    block_hours: int = 24 * 30,
+    block: int = 12,
     n_boot: int = 500,
     seed: int = 20260728,
 ) -> TrendEstimate:
     """Theil–Sen slope, with both the textbook interval and an honest one.
 
-    ``scipy.stats.theilslopes`` assumes independent observations. Hourly PM2.5
-    is nothing of the kind — today's value is most of tomorrow's — so that
-    interval is far narrower than the data supports. The block bootstrap
-    resamples contiguous blocks, preserving autocorrelation within a block and
-    breaking it between, and typically widens the interval by a large factor.
+    ``x`` is expected in **years** and ``y`` in monthly means, one point per
+    month. Two reasons the input is monthly rather than hourly, and both matter:
 
-    ``x`` is expected in hours; the slope is returned per year.
+    *Feasibility.* Theil–Sen compares every pair of points, so it is O(n²) in
+    both time and memory. On one station's 155,816 hourly values scipy tries to
+    allocate a 155,816 × 155,816 matrix — 181 GiB — and dies. Monthly means
+    over twenty years are 240 points.
+
+    *Meaning.* Even if it fit in memory, a slope fitted through hourly values
+    is dominated by the diurnal and synoptic variation this analysis has just
+    finished normalising away. Monthly aggregation before trend estimation is
+    the standard practice (openair's ``TheilSen`` does the same).
+
+    ``scipy.stats.theilslopes`` then assumes independent observations. Monthly
+    air-quality series are still autocorrelated — a bad winter spans several
+    months — so that interval remains too narrow. The block bootstrap resamples
+    contiguous runs of ``block`` months, preserving correlation within a block
+    and breaking it between. Both intervals are reported; the gap is the price
+    of pretending the months were independent.
     """
     from scipy import stats
 
@@ -330,17 +354,15 @@ def theil_sen(
         raise ValueError(f"need at least 3 points for a trend, got {x.size}")
 
     slope, intercept, low, high = stats.theilslopes(y, x, alpha=0.95)
-    block_low, block_high = block_bootstrap_slope(
-        x, y, block_hours=block_hours, n_boot=n_boot, seed=seed
-    )
+    block_low, block_high = block_bootstrap_slope(x, y, block=block, n_boot=n_boot, seed=seed)
 
     return TrendEstimate(
-        slope_per_year=float(slope) * HOURS_PER_YEAR,
+        slope_per_year=float(slope),
         intercept=float(intercept),
-        naive_low=float(low) * HOURS_PER_YEAR,
-        naive_high=float(high) * HOURS_PER_YEAR,
-        block_low=block_low * HOURS_PER_YEAR,
-        block_high=block_high * HOURS_PER_YEAR,
+        naive_low=float(low),
+        naive_high=float(high),
+        block_low=block_low,
+        block_high=block_high,
         n=int(x.size),
     )
 
@@ -349,7 +371,7 @@ def block_bootstrap_slope(
     x: np.ndarray,
     y: np.ndarray,
     *,
-    block_hours: int = 24 * 30,
+    block: int = 12,
     n_boot: int = 500,
     seed: int = 20260728,
 ) -> tuple[float, float]:
@@ -359,10 +381,13 @@ def block_bootstrap_slope(
     O(n²) in the number of points and this runs hundreds of times. The interval
     describes the sampling variability of a linear trend under the series'
     own correlation structure, which is what the naive interval gets wrong.
+
+    ``block`` is a number of consecutive points — twelve months by default, so
+    a whole seasonal cycle stays intact inside each resampled run.
     """
     rng = np.random.default_rng(seed)
     n = x.size
-    block = min(max(int(block_hours), 2), n)
+    block = min(max(int(block), 2), n)
     n_blocks = int(np.ceil(n / block))
 
     slopes = np.empty(n_boot, dtype=float)
@@ -416,22 +441,43 @@ def deweather_station(
         pl.Series("normalised", normalised)
     )
 
-    hours = (
-        (series["ts_local"].cast(pl.Datetime("us")).to_numpy().astype("datetime64[h]"))
-        .astype("int64")
-        .astype(float)
-    )
-    hours -= hours[0]
+    # Trends are estimated on monthly means, never on the hourly series — see
+    # `theil_sen` for why (181 GiB, and the wrong question besides). The hourly
+    # series is still returned in full; only the trend step aggregates.
+    monthly = monthly_means(series)
+    years = _years_since_start(monthly["month"])
 
     return DeweatherResult(
         station=station,
         series=series,
-        observed_trend=theil_sen(hours, series["observed"].to_numpy(), n_boot=n_boot, seed=seed),
-        normalised_trend=theil_sen(hours, normalised, n_boot=n_boot, seed=seed),
+        monthly=monthly,
+        observed_trend=theil_sen(years, monthly["observed"].to_numpy(), n_boot=n_boot, seed=seed),
+        normalised_trend=theil_sen(
+            years, monthly["normalised"].to_numpy(), n_boot=n_boot, seed=seed
+        ),
         holdout_r2=r2,
         n_samples=n_samples,
         convergence=convergence,
     )
+
+
+def monthly_means(series: pl.DataFrame) -> pl.DataFrame:
+    """Collapse the hourly observed/normalised pair to one row per month."""
+    return (
+        series.group_by(pl.col("ts_local").dt.truncate("1mo").alias("month"))
+        .agg(
+            pl.col("observed").mean(),
+            pl.col("normalised").mean(),
+            pl.len().alias("hours"),
+        )
+        .sort("month")
+    )
+
+
+def _years_since_start(months: pl.Series) -> np.ndarray:
+    """Month starts as a float number of years from the first one."""
+    days = months.cast(pl.Date).to_numpy().astype("datetime64[D]").astype("int64").astype(float)
+    return (days - days[0]) / 365.25
 
 
 def run_deweather(
@@ -484,16 +530,10 @@ def run_deweather(
             continue
 
         summaries.append(result.summary_row())
-        monthly.append(
-            result.series.group_by(pl.col("ts_local").dt.truncate("1mo").alias("month"))
-            .agg(
-                pl.col("observed").mean(),
-                pl.col("normalised").mean(),
-                pl.len().alias("hours"),
-            )
-            .with_columns(pl.lit(station).alias("station_name"))
-            .sort("month")
-        )
+        # Reuse the frame the trend was fitted on rather than re-aggregating:
+        # a chart drawn from a second, separately computed monthly series could
+        # drift from the slope printed beside it.
+        monthly.append(result.monthly.with_columns(pl.lit(station).alias("station_name")))
 
     if not summaries:
         raise RuntimeError("no station had enough data to deweather")
