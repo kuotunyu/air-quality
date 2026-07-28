@@ -353,6 +353,33 @@ Earth Engine is **optional** and deferred: it only affects the satellite half
 of Phase 6, and Copernicus Data Space or NASA Earthdata can replace it. Do not
 treat its absence as a blocker.
 
+## Politically charged material — the subject is the method
+
+The events M5 tests — the 2018 Act, the Taichung plant permits, the COVID
+alert — are all partisan flashpoints in Taiwan. This project has no position on
+any of them, no competence to evaluate policy, and **no findings that would
+support such an evaluation anyway**: all three come back not detected, at fewer
+stations than chance alone would produce.
+
+So the question asked, in the site copy and in every write-up, is
+methodological: *how large a signal can this data and this method detect?*
+Measured answer: the placebo spread is 2.5–3.5 µg/m³ against effects of
+0.5–1.6. The noise floor sits above the signal.
+
+Rules for any text touching this:
+
+- **The subject is the method, never the government.** "This method cannot
+  detect it", not "the policy did not work".
+- **"Not detected" is not "zero".** Say so every time it appears.
+- The Taichung null means **the policy may never have taken effect** — the
+  revocation was overturned and the eight nearest stations did not move.
+  Without that sentence a reader converts "did not happen" into "failed".
+- No party names, no officials, no wording that assigns blame.
+- No policy recommendations. This project does not make them.
+
+The chapter is titled 「測不到，不等於沒發生」 for this reason, and PLAN.md
+carries the full drafting note.
+
 ## The anonymity rule — settled, and not negotiable
 
 **No person is named anywhere in this project.** Not the 2018 project's
