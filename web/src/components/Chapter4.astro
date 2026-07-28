@@ -1,0 +1,315 @@
+---
+/**
+ * Chapter 4 — the detection limit for event effects.
+ *
+ * The subject of this chapter is the method, not the government. Three events
+ * are tested; none produces an effect distinguishable from what the same
+ * procedure finds in years when nothing happened. That is a statement about
+ * how large a signal this data can resolve, and it is written that way
+ * throughout — see PLAN.md's drafting note.
+ *
+ * The chart is the argument: each event's estimate is drawn inside the cloud
+ * of its own placebos. Without that cloud, -0.96 µg/m³ looks like a finding.
+ */
+import detection from "../../public/data/story/detection-limit.json";
+import { linear, n } from "../lib/chart";
+
+const events = detection.events as {
+  event: string;
+  kind: string;
+  n_stations: number;
+  median_effect: number;
+  median_placebo_mean: number;
+  median_placebo_sd: number;
+  n_credible: number;
+  n_expected_by_chance: number;
+  credible_stations: string[];
+  placebo_effects: number[];
+  station_effects: { station: string; effect: number }[];
+}[];
+
+const spatial = detection.spatial_check as {
+  label: string;
+  why: string;
+  stations: { station: string; effect: number; z: number }[];
+};
+
+const windowed = events.filter((e) => e.kind === "window");
+const breaks = events.filter((e) => e.kind === "trend_break");
+
+// One strip per event: placebos as faint marks, the real estimates on top.
+const W = 720;
+const H = 92;
+const M = { top: 10, right: 14, bottom: 26, left: 14 };
+const PW = W - M.left - M.right;
+
+function strip(e: (typeof events)[number]) {
+  const pool = e.placebo_effects.length ? e.placebo_effects : [];
+  const values = pool.concat(e.station_effects.map((s) => s.effect));
+  const lo = Math.min(...values, -1);
+  const hi = Math.max(...values, 1);
+  const pad = (hi - lo) * 0.05;
+  const x = linear([lo - pad, hi + pad], [0, PW]);
+  return { x, lo: lo - pad, hi: hi + pad, pool };
+}
+
+const shortName = (name: string) =>
+  name.replace("COVID-19 ", "").replace("2、3 號機生煤許可爭議", "生煤許可").replace("2018 ", "");
+---
+
+<section id="detection" class="page">
+  <p class="eyebrow">第四章</p>
+  <h2>事件效應的偵測極限</h2>
+
+  <p class="lede">
+    這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」——
+    測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
+    <strong>分析方法也有偵測極限。</strong>這一章量的就是它。
+  </p>
+
+  <p>
+    測了三個事件：2018 年空氣污染防制法修正、台中電廠 2、3 號機的生煤許可爭議、
+    以及 2021 年的 COVID-19 三級警戒。做法是<strong>反事實</strong>——
+    用事件視窗以外的日子訓練模型，再用視窗當時的<strong>實際天氣</strong>去預測，
+    觀測值與預測值的差額就是天氣與季節解釋不掉的部分。
+  </p>
+
+  <div class="note">
+    <strong>然後，同一套程序再跑一次沒有事件的年份。</strong>
+    同樣的日曆窗口、同樣的模型、同樣的計算——只是那些年什麼都沒發生。
+    這叫安慰劑檢定，它問的是：這個方法在應該找不到東西的時候，會找到多少？
+  </div>
+
+  <h3>結果</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>事件</th>
+          <th class="num">測站</th>
+          <th class="num">效應中位數</th>
+          <th class="num">安慰劑均值</th>
+          <th class="num">安慰劑 SD</th>
+          <th class="num">通過門檻</th>
+          <th class="num">機率預期</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          events.map((e) => (
+            <tr>
+              <td>{shortName(e.event)}</td>
+              <td class="num">{e.n_stations}</td>
+              <td class="num">{n(e.median_effect, 2)}</td>
+              <td class="num dim">{n(e.median_placebo_mean, 2)}</td>
+              <td class="num dim">{n(e.median_placebo_sd, 2)}</td>
+              <td class="num strong">{e.n_credible}</td>
+              <td class="num dim">~{n(e.n_expected_by_chance, 1)}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small">
+    「通過門檻」是效應距離該站自己的安慰劑均值 2 個標準差以上的測站數。
+    「機率預期」是純粹靠運氣就會通過的站數（2 個標準差在常態分布下約留 4.55% 在雙尾）。
+    <strong>三個事件的實際通過數都低於機率預期。</strong>
+  </p>
+
+  <h3>把估計值放回它自己的安慰劑雲裡</h3>
+
+  <p>
+    下面每一條帶狀圖是一個事件。<span class="k-pl">淡色的短線</span>是安慰劑——
+    同一個方法在沒有事件的年份算出來的「效應」。
+    <span class="k-real">亮色的點</span>是各測站的實際估計值。
+  </p>
+
+  {
+    windowed.map((e) => {
+      const s = strip(e);
+      const zero = s.x(0);
+      return (
+        <figure>
+          <div class="chart">
+            <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${e.event} 的效應與安慰劑分布`}>
+              <g transform={`translate(${M.left},${M.top})`}>
+                <line x1={zero} x2={zero} y1="0" y2="52" class="zero" />
+                <text x={zero} y="68" class="tick">0</text>
+                {s.pool.map((v) => (
+                  <line x1={s.x(v)} x2={s.x(v)} y1="4" y2="30" class="placebo" />
+                ))}
+                {e.station_effects.map((st) => (
+                  <circle cx={s.x(st.effect)} cy="40" r="3.2" class="real">
+                    <title>{st.station}: {n(st.effect, 2)} μg/m³</title>
+                  </circle>
+                ))}
+                <text x="0" y="68" class="tick start">{n(s.lo, 1)}</text>
+                <text x={PW} y="68" class="tick end">{n(s.hi, 1)}</text>
+              </g>
+            </svg>
+          </div>
+          <figcaption>
+            <strong>{shortName(e.event)}</strong> —— {e.n_stations} 站的估計值
+            （{e.station_effects.length} 個亮點）落在 {s.pool.length} 個安慰劑估計值
+            （淡線）構成的散布之中。單位 μg/m³。
+          </figcaption>
+        </figure>
+      );
+    })
+  }
+
+  <div class="note caveat">
+    <strong>安慰劑的均值幾乎從不是零，這件事本身就是重點。</strong>
+    COVID 那個日曆窗口的安慰劑均值是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)} μg/m³——
+    模型在五到七月系統性高估。所以看到某站「下降 0.96」時，
+    真正該問的是：這個方法在沒有封城的年份，平均也會給出多少？
+    答案是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)}。
+  </div>
+
+  <h3>看起來很戲劇性，但不是</h3>
+
+  <p>
+    封城期間的都會測站：前金 −23.4%、左營 −18.5%、古亭 −9.9%。
+    這些數字放進新聞標題毫無問題。它們對應的 z 分數是
+    <strong>−0.24、−0.52、−0.12</strong>——全部深深落在安慰劑散布之內。
+  </p>
+
+  <h3>空間檢定</h3>
+
+  <p>{spatial.why}</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>測站</th>
+          <th class="num">效應 μg/m³</th>
+          <th class="num">z</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          spatial.stations.map((s) => (
+            <tr>
+              <td>{s.station}</td>
+              <td class={`num ${s.effect > 0 ? "worse" : ""}`}>{n(s.effect, 2)}</td>
+              <td class="num dim">{n(s.z, 2)}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small">
+    而三個事件裡唯一通過門檻的測站，都不在該有效應的地方：
+    COVID 是潮州（屏東鄉村，但封城效應該在交通主導的都會站最明顯）；
+    台中電廠是麥寮（雲林的石化園區，離台中電廠約 50 公里的另一個設施）。
+  </p>
+
+  {
+    breaks.length > 0 && (
+      <>
+        <h3>開放式政策要問的是斜率，不是水準</h3>
+        <p>
+          一條法規生效之後就一直生效，它不是一個有前後的視窗，而是一次制度轉變。
+          該改變的是下降的<strong>速率</strong>。所以空污法修正改用分段迴歸，
+          跑在第一章那條氣象正規化後的月序列上——
+          那條線平滑，解析不出十週的封城，卻正好適合問一個多年的下降有沒有轉折。
+        </p>
+        <p class="small">
+          結果：{breaks[0].n_stations} 站中 {breaks[0].n_credible} 站通過門檻，
+          機率預期約 {n(breaks[0].n_expected_by_chance, 1)} 站。
+          斜率變化的中位數是 {n(breaks[0].median_effect, 3)} μg/m³/年²。
+          <strong>普遍的減速幾乎確定是邊際報酬遞減</strong>——
+          濃度從 30 降到 15 之後，不可能維持同樣的絕對降速。
+        </p>
+      </>
+    )
+  }
+
+  <div class="note caveat">
+    <strong>「測不到」不等於「等於零」。</strong>
+    這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，
+    而待測的效應量是 0.5–1.6 μg/m³。<strong>噪音底線高於訊號。</strong>
+    真正的結論是：<strong>這批資料與這個方法，無法分辨這種大小的效應</strong>——
+    不是「這些事件沒有影響」。
+  </div>
+
+  <div class="note">
+    <strong>台中電廠那一筆還要再加一句。</strong>
+    市府的處分後來被環保署撤銷，台電當時聲明將提行政救濟，
+    而機組是否真的降載並沒有公開紀錄——周邊 8 站也確實毫無反應。
+    最合理的解讀是<strong>機組從未真的停止燃煤</strong>。
+    也就是說，這裡的「測不到」比較可能是「事情沒發生」，而不是「事情發生了但沒效果」。
+    這兩件事必須分開。
+  </div>
+</section>
+
+<style>
+  svg {
+    width: 100%;
+    height: auto;
+    min-width: 460px;
+    display: block;
+  }
+  .zero {
+    stroke: var(--line);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+  }
+  .placebo {
+    stroke: var(--text-faint);
+    stroke-width: 1;
+    opacity: 0.28;
+  }
+  .real {
+    fill: var(--c3);
+    opacity: 0.75;
+  }
+  .tick {
+    fill: var(--text-faint);
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+    text-anchor: middle;
+  }
+  .tick.start {
+    text-anchor: start;
+  }
+  .tick.end {
+    text-anchor: end;
+  }
+  .k-pl {
+    color: var(--text-faint);
+    font-weight: 600;
+  }
+  .k-real {
+    color: var(--c3);
+    font-weight: 600;
+  }
+  td.dim,
+  .dim {
+    color: var(--text-faint);
+  }
+  td.strong {
+    font-weight: 600;
+  }
+  td.worse {
+    color: var(--c4);
+  }
+  .small {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+  }
+  figure {
+    margin: 1.4rem 0;
+  }
+  code {
+    background: var(--bg-sunken);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+</style>

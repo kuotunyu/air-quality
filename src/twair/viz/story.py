@@ -443,7 +443,190 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
 
     written.extend(_export_pitfalls(root))
     written.extend(_export_replication(root))
+    written.extend(_export_deweather(root))
+    written.extend(_export_detection_limit(root))
     return written
+
+
+def _export_deweather(root: Path) -> list[Path]:
+    """Chapter 1's second line: how much of the trend was the weather."""
+    source = outputs_dir("m4_deweather") / "summary.parquet"
+    if not source.exists():
+        log.warning("no M4 output — run `twair analyze m4`")
+        return []
+
+    summary = pl.read_parquet(source)
+    significant = summary.filter(pl.col("normalised_significant"))
+    stations = _stations()
+
+    # The zone breakdown is a bonus, not the payload. A stations table without
+    # airzone still produces the national figures rather than failing the whole
+    # export — same degradation as `trend_by_group`.
+    by_zone = pl.DataFrame()
+    if "airzone" in stations.columns:
+        by_zone = (
+            significant.join(
+                stations.select("station_name", "airzone"), on="station_name", how="left"
+            )
+            .filter(pl.col("airzone").is_not_null())
+            .group_by("airzone")
+            .agg(
+                pl.len().alias("n"),
+                pl.col("observed_slope").median().alias("observed"),
+                pl.col("normalised_slope").median().alias("normalised"),
+                pl.col("weather_share").median().alias("weather_share"),
+            )
+            .sort("normalised")
+        )
+    else:
+        log.warning("stations table has no column 'airzone' — skipping the zone breakdown")
+
+    return [
+        write_json(
+            root / "deweather.json",
+            {
+                "method": "Grange et al. (2018), random-forest meteorological normalisation",
+                "period": [2006, 2025],
+                "n_stations": summary.height,
+                "n_significant": significant.height,
+                "median_observed_slope": _round(significant["observed_slope"].median(), 3),
+                "median_normalised_slope": _round(significant["normalised_slope"].median(), 3),
+                "median_weather_share": _round(significant["weather_share"].median(), 3),
+                # The spread matters as much as the median: 73 independently
+                # fitted models landing on the same share is the finding.
+                "weather_share_p10": _round(significant["weather_share"].quantile(0.1), 3),
+                "weather_share_p90": _round(significant["weather_share"].quantile(0.9), 3),
+                "median_holdout_r2": _round(summary["holdout_r2"].median(), 3),
+                "caveat": (
+                    "正規化移除的是模型看得見的氣象影響。holdout R² 中位數 0.445，"
+                    "代表逐時變異有一半以上不是本地氣象能解釋的——境外傳輸就在其中，"
+                    "而它會被算進「排放改變」。這不是因果歸因。"
+                ),
+                "by_zone": [
+                    {
+                        "airzone": row["airzone"],
+                        "n": row["n"],
+                        "observed": _round(row["observed"], 3),
+                        "normalised": _round(row["normalised"], 3),
+                        "weather_share": _round(row["weather_share"], 3),
+                    }
+                    for row in by_zone.iter_rows(named=True)
+                ]
+                if not by_zone.is_empty()
+                else [],
+                "unresolved": summary.filter(~pl.col("normalised_significant"))
+                .select("station_name", "normalised_slope", "normalised_low", "normalised_high")
+                .to_dicts(),
+            },
+        )
+    ]
+
+
+def _export_detection_limit(root: Path) -> list[Path]:
+    """Chapter 4: how large an effect this method could have found.
+
+    The payload leads with the placebo spread rather than the estimates,
+    because that ordering is the argument. An effect of -0.96 µg/m³ is only
+    interesting once you know the same procedure returns -0.69 in years when
+    nothing happened.
+    """
+    source = outputs_dir("m5_causal")
+    effects_path = source / "effects.parquet"
+    if not effects_path.exists():
+        log.warning("no M5 output — run `twair analyze m5`")
+        return []
+
+    effects = pl.read_parquet(effects_path)
+    placebos = pl.read_parquet(source / "placebos.parquet")
+    breaks_path = source / "trend_breaks.parquet"
+    breaks = pl.read_parquet(breaks_path) if breaks_path.exists() else pl.DataFrame()
+
+    # Two SD on a normal distribution leaves ~4.55% in the tails, so this many
+    # stations clear the bar by chance alone. Printing it beside the count is
+    # what stops one survivor out of seventy reading as a discovery.
+    chance_rate = 0.0455
+
+    windowed = []
+    for (name,), group in effects.group_by("event", maintain_order=True):
+        pool = placebos.filter(pl.col("event") == name)["placebo_effect"]
+        windowed.append(
+            {
+                "event": name,
+                "kind": "window",
+                "n_stations": group.height,
+                "median_effect": _round(group["effect"].median(), 3),
+                "median_placebo_mean": _round(group["placebo_mean"].median(), 3),
+                "median_placebo_sd": _round(group["placebo_sd"].median(), 3),
+                "n_credible": int(group["credible"].sum()),
+                "n_expected_by_chance": _round(chance_rate * group.height, 1),
+                "credible_stations": group.filter(pl.col("credible"))["station"].to_list(),
+                # Every placebo estimate, so the chart can show the real result
+                # inside the cloud it has to be distinguished from.
+                "placebo_effects": [_round(v, 2) for v in pool.to_list()],
+                "station_effects": [
+                    {"station": r["station"], "effect": _round(r["effect"], 2)}
+                    for r in group.select("station", "effect").iter_rows(named=True)
+                ],
+            }
+        )
+
+    if not breaks.is_empty():
+        for (name,), group in breaks.group_by("event", maintain_order=True):
+            windowed.append(
+                {
+                    "event": name,
+                    "kind": "trend_break",
+                    "n_stations": group.height,
+                    "median_effect": _round(group["delta"].median(), 3),
+                    "median_placebo_mean": _round(group["placebo_mean"].median(), 3),
+                    "median_placebo_sd": _round(group["placebo_sd"].median(), 3),
+                    "n_credible": int(group["credible"].sum()),
+                    "n_expected_by_chance": _round(chance_rate * group.height, 1),
+                    "credible_stations": group.filter(pl.col("credible"))["station"].to_list(),
+                    "placebo_effects": [],
+                    "station_effects": [
+                        {"station": r["station"], "effect": _round(r["delta"], 2)}
+                        for r in group.select("station", "delta").iter_rows(named=True)
+                    ],
+                }
+            )
+
+    # The spatial falsification: if the plant's units really stopped, the
+    # stations around the plant are where it would show.
+    near_taichung = ["沙鹿", "線西", "忠明", "西屯", "大里", "豐原", "彰化", "二林"]
+    taichung = effects.filter(
+        pl.col("event").str.contains("台中電廠") & pl.col("station").is_in(near_taichung)
+    ).sort("effect")
+
+    return [
+        write_json(
+            root / "detection-limit.json",
+            {
+                "method": {
+                    "window": "視窗外訓練，用視窗當時的實際天氣預測視窗，差額即效應",
+                    "trend_break": "在氣象正規化後的月序列上做分段迴歸，比較斜率",
+                    "placebo": "同一套程序，跑在沒有事件的年份／其他候選斷點上",
+                    "threshold": "效應要距離安慰劑均值 2 個標準差才算偵測到",
+                },
+                "events": windowed,
+                "spatial_check": {
+                    "label": "台中電廠周邊測站",
+                    "why": (
+                        "若機組真的停止燃煤，最近的測站是效應該出現的地方。"
+                        "8 站全部落在安慰劑散布之內，其中 4 站效應為正。"
+                    ),
+                    "stations": [
+                        {
+                            "station": r["station"],
+                            "effect": _round(r["effect"], 2),
+                            "z": _round(r["z_against_placebo"], 2),
+                        }
+                        for r in taichung.iter_rows(named=True)
+                    ],
+                },
+            },
+        )
+    ]
 
 
 def _export_pitfalls(root: Path) -> list[Path]:
