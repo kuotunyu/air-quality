@@ -148,8 +148,15 @@ def wind_direction_linearisation(
 
     linear_r = float(paired.select(pl.corr("PM2.5", "WD_HR")).item())
 
+    # The modulo is not decoration. `WD_HR // 30 * 30` sends a reading of
+    # exactly 360° to a thirteenth sector holding 3,341 rows, separate from the
+    # 285,527 rows at 0° — the same bearing, split in two. It is precisely the
+    # wraparound mistake this module exists to document, and it was in this
+    # module. Fold 360 onto 0 before binning.
     by_sector = (
-        paired.with_columns(((pl.col("WD_HR") // 30) * 30).cast(pl.Int32).alias("sector"))
+        paired.with_columns(
+            (((pl.col("WD_HR") % 360) // 30) * 30).cast(pl.Int32).alias("sector")
+        )
         .group_by("sector")
         .agg(
             pl.col("PM2.5").mean().alias("mean"),

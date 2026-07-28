@@ -1,0 +1,171 @@
+---
+import { linear, linePath, ticks, padded, n } from "../lib/chart";
+
+interface Props {
+  years: number[];
+  series: { key: string; label: string; values: (number | null)[]; colour: string; dash?: string }[];
+  guides?: { value: number; label: string; colour: string }[];
+  unit: string;
+  height?: number;
+}
+
+const { years, series, guides = [], unit, height = 320 } = Astro.props;
+
+const width = 760;
+const margin = { top: 18, right: 16, bottom: 34, left: 46 };
+const plotWidth = width - margin.left - margin.right;
+const plotHeight = height - margin.top - margin.bottom;
+
+const allValues = series.flatMap((s) => s.values).concat(guides.map((g) => g.value));
+const yDomain = padded(allValues, { zero: true });
+const x = linear([0, Math.max(years.length - 1, 1)], [0, plotWidth]);
+const y = linear(yDomain, [plotHeight, 0]);
+
+const yTicks = ticks(yDomain[0], yDomain[1], 5).filter((t) => t >= 0);
+
+// Filtered here rather than in the template: Astro's parser reads a `<=` in a
+// JSX expression as the start of a fragment and fails to compile.
+const visibleGuides = guides.filter(
+  (guide) => guide.value >= yDomain[0] && guide.value <= yDomain[1],
+);
+// One label roughly every five years, always including the last.
+const step = Math.max(1, Math.round(years.length / 8));
+const xTicks = years
+  .map((year, index) => ({ year, index }))
+  .filter(({ index }) => index % step === 0 || index === years.length - 1);
+---
+
+<div class="chart">
+  <svg
+    viewBox={`0 0 ${width} ${height}`}
+    role="img"
+    aria-label={`趨勢圖，單位 ${unit}`}
+    preserveAspectRatio="xMidYMid meet"
+  >
+    <g transform={`translate(${margin.left},${margin.top})`}>
+      {
+        yTicks.map((tick) => (
+          <g>
+            <line x1="0" x2={plotWidth} y1={y(tick)} y2={y(tick)} class="gridline" />
+            <text x="-8" y={y(tick)} class="tick tick-y">
+              {n(tick, 0)}
+            </text>
+          </g>
+        ))
+      }
+
+      {
+        visibleGuides.map((guide) => (
+            <g>
+              <line
+                x1="0"
+                x2={plotWidth}
+                y1={y(guide.value)}
+                y2={y(guide.value)}
+                stroke={guide.colour}
+                stroke-width="1"
+                stroke-dasharray="4 4"
+                opacity="0.75"
+              />
+              <text
+                x={plotWidth - 4}
+                y={y(guide.value) - 5}
+                fill={guide.colour}
+                class="guide-label"
+              >
+                {guide.label}
+              </text>
+            </g>
+          ))
+      }
+
+      {
+        xTicks.map(({ year, index }) => (
+          <text x={x(index)} y={plotHeight + 20} class="tick tick-x">
+            {year}
+          </text>
+        ))
+      }
+
+      <line x1="0" x2={plotWidth} y1={plotHeight} y2={plotHeight} class="axis" />
+
+      {
+        series.map((s) => (
+          <path
+            d={linePath(s.values, (i) => x(i), (v) => y(v))}
+            fill="none"
+            stroke={s.colour}
+            stroke-width="2"
+            stroke-dasharray={s.dash}
+            stroke-linejoin="round"
+            stroke-linecap="round"
+          />
+        ))
+      }
+    </g>
+  </svg>
+
+  <div class="legend">
+    {
+      series.map((s) => (
+        <span class="legend-item">
+          <span class="swatch" style={`background:${s.colour}`} />
+          {s.label}
+        </span>
+      ))
+    }
+    {
+      guides.map((g) => (
+        <span class="legend-item">
+          <span class="swatch dashed" style={`border-color:${g.colour}`} />
+          {g.label}
+        </span>
+      ))
+    }
+    <span class="legend-item unit">{unit}</span>
+  </div>
+</div>
+
+<style>
+  svg {
+    width: 100%;
+    height: auto;
+    min-width: 480px;
+    display: block;
+  }
+  .gridline {
+    stroke: var(--line-soft);
+    stroke-width: 1;
+  }
+  .axis {
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+  .tick {
+    fill: var(--text-faint);
+    font-size: 11px;
+    font-family: var(--font-mono);
+  }
+  .tick-y {
+    text-anchor: end;
+    dominant-baseline: middle;
+  }
+  .tick-x {
+    text-anchor: middle;
+  }
+  .guide-label {
+    font-size: 10.5px;
+    text-anchor: end;
+    font-family: var(--font-mono);
+  }
+  .swatch.dashed {
+    background: transparent;
+    border-bottom: 2px dashed;
+    height: 0;
+    border-radius: 0;
+  }
+  .unit {
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+</style>

@@ -1,0 +1,168 @@
+---
+/**
+ * Stations positioned by their own coordinates, with no basemap.
+ *
+ * There is no coastline behind these points, and that is a deliberate choice
+ * rather than a missing feature: Taiwan's monitoring network traces the
+ * populated western plain so densely that the island's shape emerges from the
+ * stations themselves. Shipping a boundary file would add an external
+ * dependency and a licence to track, for decoration.
+ *
+ * The stations MOENV's register cannot place are listed beneath the map
+ * instead of being dropped. They have decades of measurements; what is missing
+ * is a coordinate, and hiding them would misrepresent the record.
+ */
+import { concentrationColour, concentrationLegend } from "../lib/chart";
+import type { Station, StationCard } from "../lib/data";
+
+interface Props {
+  stations: Station[];
+  cards: StationCard[];
+  unplaced: string[];
+}
+
+const { stations, cards, unplaced } = Astro.props;
+
+const cardByStation = new Map(cards.map((c) => [c.station_name, c]));
+const placed = stations.filter((s) => s.lat != null && s.lon != null);
+
+// Taiwan spans roughly 21.9-25.3N on the main island; the offshore stations
+// (Matsu at 26.15N, Kinmen at 118.3E) stretch the frame a long way, so they
+// are drawn in their own inset rather than flattening the main island.
+const MAIN = { lonMin: 119.9, lonMax: 122.1, latMin: 21.8, latMax: 25.4 };
+const isMain = (s: Station) =>
+  (s.lon as number) >= MAIN.lonMin &&
+  (s.lon as number) <= MAIN.lonMax &&
+  (s.lat as number) >= MAIN.latMin &&
+  (s.lat as number) <= MAIN.latMax;
+
+const main = placed.filter(isMain);
+const offshore = placed.filter((s) => !isMain(s));
+
+const width = 300;
+const height = 460;
+const pad = 26;
+
+// Equirectangular with a cos(latitude) correction, which at this scale is
+// visually indistinguishable from a proper projection and needs no library.
+const midLat = ((MAIN.latMin + MAIN.latMax) / 2) * (Math.PI / 180);
+const lonSpan = (MAIN.lonMax - MAIN.lonMin) * Math.cos(midLat);
+const latSpan = MAIN.latMax - MAIN.latMin;
+const scale = Math.min((width - pad * 2) / lonSpan, (height - pad * 2) / latSpan);
+
+const project = (lon: number, lat: number) => ({
+  x: width / 2 + (lon - (MAIN.lonMin + MAIN.lonMax) / 2) * Math.cos(midLat) * scale,
+  y: height / 2 - (lat - (MAIN.latMin + MAIN.latMax) / 2) * scale,
+});
+
+const dots = main.map((s) => {
+  const card = cardByStation.get(s.station_name);
+  const { x, y } = project(s.lon as number, s.lat as number);
+  return {
+    name: s.station_name,
+    county: s.county ?? "",
+    x,
+    y,
+    value: card?.annual_mean ?? null,
+    year: card?.year ?? null,
+    colour: concentrationColour(card?.annual_mean),
+  };
+});
+---
+
+<div class="map-wrap">
+  <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="全台測站分布與 PM2.5 年均值">
+    <defs>
+      <radialGradient id="glow">
+        <stop offset="0%" stop-color="currentColor" stop-opacity="0.35" />
+        <stop offset="100%" stop-color="currentColor" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+
+    {
+      dots.map((d) => (
+        <g class="dot" data-station={d.name} tabindex="0" role="button" aria-label={`${d.name}站`}>
+          <circle cx={d.x} cy={d.y} r="13" fill="url(#glow)" style={`color:${d.colour}`} />
+          <circle cx={d.x} cy={d.y} r="4.4" fill={d.colour} class="core" />
+          <title>
+            {d.name}
+            {d.county ? `（${d.county}）` : ""}
+            {d.value != null ? ` ${d.value} μg/m³（${d.year}）` : " 無可比較的年份"}
+          </title>
+        </g>
+      ))
+    }
+  </svg>
+
+  <div class="legend">
+    {
+      concentrationLegend.map((entry) => (
+        <span class="legend-item">
+          <span class="swatch" style={`background:${entry.colour}`} />
+          {entry.label}
+        </span>
+      ))
+    }
+    <span class="legend-item unit">μg/m³ 年均</span>
+  </div>
+
+  {
+    offshore.length > 0 && (
+      <p class="aside">
+        離島測站另計：
+        {offshore.map((s) => s.station_name).join("、")}
+        —— 位置遠離本島，未畫在同一張圖上。
+      </p>
+    )
+  }
+
+  {
+    unplaced.length > 0 && (
+      <p class="aside">
+        <strong>{unplaced.length} 個測站畫不出來</strong>：{unplaced.join("、")}。
+        它們在歷史資料裡有數十年的觀測，但已停用，不在環境部現行的測站清單中，因此沒有座標。
+        缺的是位置，不是資料。
+      </p>
+    )
+  }
+</div>
+
+<style>
+  .map-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  svg {
+    width: 100%;
+    max-width: 300px;
+    height: auto;
+    display: block;
+  }
+  .dot {
+    cursor: pointer;
+  }
+  .dot .core {
+    transition: r 120ms ease;
+  }
+  .dot:hover .core,
+  .dot:focus-visible .core {
+    r: 7;
+    stroke: var(--text);
+    stroke-width: 1.5;
+  }
+  .aside {
+    font-size: 0.82rem;
+    color: var(--text-faint);
+    max-width: 34rem;
+    margin: 1rem 0 0;
+    text-align: left;
+  }
+  .aside strong {
+    color: var(--text-muted);
+  }
+  .unit {
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+</style>

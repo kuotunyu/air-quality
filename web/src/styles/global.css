@@ -1,0 +1,359 @@
+/*
+ * Dark, dense, restrained.
+ *
+ * The palette is built around one decision: colour encodes concentration, so
+ * nothing else may use saturated colour. Chrome, structure and text stay in
+ * greys, and the only bright things on a page are the data.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0b0e13;
+  --bg-raised: #131820;
+  --bg-sunken: #080a0e;
+  --line: #232b38;
+  --line-soft: #1a212b;
+
+  --text: #e6ebf2;
+  --text-muted: #9aa7b8;
+  --text-faint: #67748a;
+
+  /* Concentration ramp, low to high. Perceptually ordered, and distinguishable
+     under the common forms of colour blindness — deuteranopes see the blue-to-
+     yellow axis, so the ramp never relies on red-versus-green alone. */
+  --c0: #3b82f6;
+  --c1: #22d3ee;
+  --c2: #a3e635;
+  --c3: #fbbf24;
+  --c4: #fb923c;
+  --c5: #ef4444;
+  --c6: #a21caf;
+
+  /* Reference lines are deliberately not part of the ramp. */
+  --who: #22d3ee;
+  --taiwan: #fbbf24;
+  --accent: #7dd3fc;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
+    "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+
+  --measure: 34rem;
+  --page: 68rem;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0 0 0.6em;
+}
+
+h1 {
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  font-weight: 700;
+}
+h2 {
+  font-size: clamp(1.5rem, 3.6vw, 2.1rem);
+  font-weight: 650;
+}
+h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0 0 1.1em;
+  max-width: var(--measure);
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- layout ---------- */
+
+.page {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
+}
+
+section {
+  padding: clamp(3.5rem, 9vw, 7rem) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+section:first-of-type {
+  border-top: 0;
+}
+
+.eyebrow {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 0.9rem;
+}
+
+.lede {
+  font-size: 1.16rem;
+  color: var(--text-muted);
+  max-width: var(--measure);
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 40rem) {
+  .grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ---------- surfaces ---------- */
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.15rem 1.3rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: clamp(1.7rem, 4.5vw, 2.4rem);
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.stat-note {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+/* ---------- figures ---------- */
+
+figure {
+  margin: 2rem 0;
+}
+
+figcaption {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  margin-top: 0.7rem;
+  max-width: var(--measure);
+}
+
+.chart {
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.9rem;
+  overflow-x: auto;
+}
+
+/* ---------- tables ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  padding: 0.5rem 0.8rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+th {
+  background: var(--bg-raised);
+  font-weight: 600;
+  color: var(--text-muted);
+  position: sticky;
+  top: 0;
+}
+
+td.num,
+th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---------- controls ---------- */
+
+select,
+button {
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0.42rem 0.7rem;
+  cursor: pointer;
+}
+
+select:hover,
+button:hover {
+  border-color: var(--text-faint);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.controls label {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ---------- callouts ---------- */
+
+.note {
+  border-left: 2px solid var(--line);
+  padding: 0.1rem 0 0.1rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  max-width: var(--measure);
+}
+
+.note strong {
+  color: var(--text);
+}
+
+.caveat {
+  border-left-color: var(--taiwan);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 0.7rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

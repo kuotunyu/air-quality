@@ -1,0 +1,692 @@
+---
+/**
+ * Chapter 5 — what I got wrong in 2018.
+ *
+ * Every number on this page comes from `story/pitfalls.json`, which is copied
+ * verbatim from the M3 evidence tables. Nothing is retyped, so the chapter
+ * cannot drift away from the analysis it describes.
+ */
+import { pitfallTables, replicationRows } from "../lib/data";
+import { linear, linePath, ticks, padded, n } from "../lib/chart";
+import { compass, SYNTHETIC_DATA } from "../lib/labels";
+
+type Row = Record<string, any>;
+const t = (name: string) => (pitfallTables[name] ?? []) as Row[];
+
+// --- 1. the diurnal cycle a monthly mean cannot see -------------------------
+const diurnal = t("diurnal_diurnal");
+const weekly = t("diurnal_weekly");
+const variance = t("diurnal_variance");
+const retained = (variance.find((r) => r.scale === "monthly_mean")?.variance_retained ?? 0) as number;
+const hourlySd = (variance.find((r) => r.scale === "hourly")?.sd ?? 0) as number;
+const monthlySd = (variance.find((r) => r.scale === "monthly_mean")?.sd ?? 0) as number;
+
+const diurnalValues = diurnal.map((r) => r.mean as number);
+const diurnalPeak = diurnal.reduce((a, b) => (a.mean > b.mean ? a : b), diurnal[0]);
+const diurnalTrough = diurnal.reduce((a, b) => (a.mean < b.mean ? a : b), diurnal[0]);
+
+// --- 2. the PM10 leak -------------------------------------------------------
+const leak = t("leakage_price");
+const withPm10 = leak.find((r) => r.feature_set === "full_with_pm10");
+const withoutPm10 = leak.find((r) => r.feature_set === "full");
+const leakShare = leak.find((r) => r.feature_set === "leak_share_of_r2");
+
+// --- 3. wind direction ------------------------------------------------------
+const windEncoding = t("wind_linear_model_encoding");
+const sinCos = windEncoding.find((r) => r.encoding === "sin_cos");
+const bySector = t("wind_by_sector");
+const sectorHigh = bySector.reduce((a, b) => (a.mean > b.mean ? a : b), bySector[0]);
+const sectorLow = bySector.reduce((a, b) => (a.mean < b.mean ? a : b), bySector[0]);
+const windSummary = Object.fromEntries(
+  t("wind_summary").map((r) => [r.measure as string, r.value as number]),
+);
+
+// --- 4. the normality test --------------------------------------------------
+const normality = t("normality_by_sample_size");
+const published = t("normality_published_table");
+
+// --- 5. collinearity --------------------------------------------------------
+const stability = t("collinearity_stability");
+const collinearR2 = t("collinearity_r_squared");
+
+// --- 6. in-sample vs out-of-sample -----------------------------------------
+const validation = t("validation_in_vs_out_of_sample");
+const inSample = validation.find((r) => r.evaluated_on === "in_sample");
+const outSample = validation.find((r) => r.evaluated_on === "out_of_sample");
+const optimism = validation.find((r) => r.evaluated_on === "optimism_r2");
+
+// The replication table, filtered to the comparisons worth showing.
+const keyCoefficients = replicationRows.filter(
+  (r) => r.kind === "correlation" && r.published_2018 != null,
+);
+
+// --- small inline chart for the diurnal cycle -------------------------------
+const w = 700;
+const h = 240;
+const m = { top: 14, right: 14, bottom: 30, left: 42 };
+const pw = w - m.left - m.right;
+const ph = h - m.top - m.bottom;
+const dDomain = padded(diurnalValues, { zero: false });
+const dx = linear([0, 23], [0, pw]);
+const dy = linear(dDomain, [ph, 0]);
+const dTicks = ticks(dDomain[0], dDomain[1], 4);
+---
+
+<section id="mistakes" class="page">
+  <p class="eyebrow">第五章 · 這一章是重點</p>
+  <h2>我當年錯在哪</h2>
+
+  <p class="lede">
+    2018 年，我和同組同學交出了《台灣地區之 PM2.5 之影響分析》。
+    方法是：取 2010–2017 年的<strong>月平均</strong>、12 個解釋變數、
+    Pearson 相關、逐步剔除的 OLS，再加一個 AR(1) 混合模型，N = 7,286。
+  </p>
+
+  <p>
+    這一章不是自我批評的表演。每一項都用<strong>同一份資料</strong>做兩次——
+    一次照當年的做法，一次照正確的做法——然後看結論差多少。
+    先說結論：有些錯誤無關痛癢，有些讓整個模型的解釋力虛胖了三分之一。
+  </p>
+
+  <div class="note">
+    <strong>先證明能重現，再說它錯。</strong>
+    復刻 2018 年的流程，13 個敘述統計中 10 個誤差在 2% 以內，
+    PM10 的相關係數復刻為 0.8893（原文 0.8865）。
+    共線性病理也完全重現。沒有這一步，後面所有「我改進了」的宣稱都沒有基準。
+  </div>
+
+  <!-- ─── 錯誤一 ─── -->
+  <article class="mistake">
+    <h3><span class="num">01</span> 月平均抹掉了八成的變異</h3>
+
+    <p>
+      2010–2017 年逐時 PM2.5 的標準差是 {n(hourlySd)} μg/m³。
+      壓成月平均之後只剩 {n(monthlySd)} μg/m³——
+      變異保留了 <strong>{n(retained * 100, 1)}%</strong>。
+      當年的模型不管怎麼調，能解釋的上限就是這剩下的兩成。
+    </p>
+
+    <p>
+      被丟掉的是什麼？下圖是日內節律，一個看得見、也最容易講的成分。
+    </p>
+
+    <div class="two-up">
+      <figure>
+        <div class="chart">
+          <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label="PM2.5 的日內變化">
+            <g transform={`translate(${m.left},${m.top})`}>
+              {
+                dTicks.map((tick) => (
+                  <g>
+                    <line x1="0" x2={pw} y1={dy(tick)} y2={dy(tick)} class="gridline" />
+                    <text x="-8" y={dy(tick)} class="tick tick-y">
+                      {n(tick, 0)}
+                    </text>
+                  </g>
+                ))
+              }
+              {
+                [0, 6, 12, 18, 23].map((hour) => (
+                  <text x={dx(hour)} y={ph + 20} class="tick tick-x">
+                    {hour}時
+                  </text>
+                ))
+              }
+              <path
+                d={linePath(diurnalValues, (i) => dx(i), (v) => dy(v))}
+                fill="none"
+                stroke="var(--c3)"
+                stroke-width="2.5"
+                stroke-linejoin="round"
+              />
+              <line
+                x1="0"
+                x2={pw}
+                y1={dy(diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length)}
+                y2={dy(diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length)}
+                stroke="var(--text-faint)"
+                stroke-width="1.5"
+                stroke-dasharray="5 4"
+              />
+              <text x={pw - 4} y={dy(diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length) - 6} class="guide-label">
+                月平均看到的只有這條線
+              </text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>
+          2010–2017 年逐時 PM2.5 的日內平均。峰值在 {diurnalPeak.hour} 時
+          （{n(diurnalPeak.mean)} μg/m³），谷底在 {diurnalTrough.hour} 時
+          （{n(diurnalTrough.mean)} μg/m³）。月平均把整條曲線壓成一個點。
+        </figcaption>
+      </figure>
+
+      <div class="verdict">
+        <div class="stat">
+          <span class="stat-value" style="color:var(--c5)">{n(retained * 100, 1)}%</span>
+          <span class="stat-label">月平均保留的變異比例</span>
+          <span class="stat-note">
+            標準差 {n(hourlySd)} → {n(monthlySd)} μg/m³
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>把話說準：日夜節律只是被丟掉的一小部分。</strong>
+      日內振幅是 {n(diurnalPeak.mean - diurnalTrough.mean)} μg/m³，
+      相對於 {n(hourlySd)} 的整體標準差並不大。
+      消失的大宗是<strong>逐日到綜觀尺度</strong>的變化——
+      境外傳輸的高濃度事件、鋒面過境、逆溫累積。
+      一個 40 μg/m³ 的污染日和一個 10 μg/m³ 的乾淨日落在同一個月，
+      月平均只留下 25，兩者都不見了。
+      日內節律好講、好畫，但它不是主要的損失來源，這裡不把它當成主要證據。
+    </div>
+
+    {
+      weekly.length > 0 && (
+        <details>
+          <summary>週間變化（月平均同樣看不到）</summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>星期</th>
+                  <th class="num">PM2.5 平均</th>
+                  <th class="num">小時數</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekly.map((row) => (
+                  <tr>
+                    <td>{row.weekday}</td>
+                    <td class="num">{n(row.mean)}</td>
+                    <td class="num">{(row.n as number).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )
+    }
+  </article>
+
+  <!-- ─── 錯誤二 ─── -->
+  <article class="mistake">
+    <h3><span class="num">02</span> 拿 PM10 預測 PM2.5</h3>
+
+    <p>
+      當年模型裡最顯著的變數是 PM10，β = 0.413、t = 92.75。
+      問題是 <strong>PM2.5 在定義上就是 PM10 的一部分</strong>——
+      PM10 是直徑 10 微米以下的顆粒，PM2.5 是 2.5 微米以下的，後者被前者包含。
+      這不是預測，是把答案的一部分放進題目。
+    </p>
+
+    <p>
+      要量化它的代價，只需要把同一個模型跑兩次：一次讓 PM10 進去，一次不讓。
+    </p>
+
+    <div class="compare">
+      <div class="card">
+        <span class="tag bad">含 PM10（當年的做法）</span>
+        <span class="stat-value">{n(withPm10?.r2 as number, 3)}</span>
+        <span class="stat-label">R²</span>
+        <span class="stat-note">RMSE {n(withPm10?.rmse as number, 2)}</span>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="card">
+        <span class="tag good">不含 PM10</span>
+        <span class="stat-value">{n(withoutPm10?.r2 as number, 3)}</span>
+        <span class="stat-label">R²</span>
+        <span class="stat-note">RMSE {n(withoutPm10?.rmse as number, 2)}</span>
+      </div>
+    </div>
+
+    <div class="note caveat">
+      <strong>{n((leakShare?.r2 as number) * 100, 1)}%</strong> ——
+      含 PM10 的模型有三分之一的解釋力，來自這個定義上的重疊。
+      當年那個 t = 92.75 撐起來的就是這一塊。
+    </div>
+  </article>
+
+  <!-- ─── 錯誤三 ─── -->
+  <article class="mistake">
+    <h3><span class="num">03</span> 把風向當成 0 到 360 的普通數字</h3>
+
+    <p>
+      風向是<strong>圓形變數</strong>：359° 和 1° 相差 2 度，不是 358 度。
+      當年把 WD_HR 直接丟進相關分析與迴歸，得到相關係數 0.089，
+      結論寫「風向與 PM2.5 無相關」。本專案復刻出
+      {n(windSummary.pearson_r_with_raw_bearing, 3)}，數量級一致。
+    </p>
+
+    <p>
+      但把同一份資料按 30° 分組，最高的 {compass(sectorHigh?.sector as number)}
+      是 {n(sectorHigh?.mean as number)} μg/m³，最低的
+      {compass(sectorLow?.sector as number)} 是 {n(sectorLow?.mean as number)} μg/m³——
+      相差 {n(windSummary.sector_mean_range)} μg/m³，
+      是整體平均的 {n(windSummary.sector_range_as_pct_of_mean, 0)}%。
+      方向依賴一直都在，是線性相關係數看不見它。
+    </p>
+
+    <p class="small">
+      風向採氣象慣例，指的是風<strong>來的方向</strong>。
+      濃度最高的幾個扇區集中在西北到北，正是東北季風把大陸沿海的空氣
+      沿著台灣海峽帶下來的方向；最低的在南方。
+      這個模式一個線性係數表達不出來，因為它不是單調的。
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>編碼方式</th>
+            <th class="num">項數</th>
+            <th class="num">R²</th>
+            <th class="num">相對於原始方位角</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            windEncoding.map((row) => (
+              <tr class={row.encoding === "raw_bearing" ? "row-bad" : ""}>
+                <td>
+                  {row.encoding === "raw_bearing"
+                    ? "原始方位角（當年的做法）"
+                    : row.encoding === "sin_cos"
+                      ? "sin/cos"
+                      : "sin/cos + u/v 分量"}
+                </td>
+                <td class="num">{row.n_terms}</td>
+                <td class="num">{n(row.r_squared as number, 4)}</td>
+                <td class="num">{n(row.r2_relative_to_raw_bearing as number, 2)}×</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <strong>但這裡有個我原本猜錯的地方。</strong>
+      在 LightGBM 這類樹模型裡，原始方位角的表現<strong>反而略好</strong>
+      （R² 0.537 對 0.524）——樹可以反覆切分同一個變數，
+      把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎沒有代價。
+      <br /><br />
+      所以「sin/cos 編碼比較好」這句話必須帶著適用範圍：
+      在<strong>線性模型</strong>裡它是 {n(sinCos?.r2_relative_to_raw_bearing as number, 2)} 倍，
+      而當年用的正是線性模型（Pearson、OLS、線性混合模型）。
+      在樹模型裡它不重要。這個區分是我跑完才知道的，不是一開始就知道。
+    </div>
+  </article>
+
+  <!-- ─── 錯誤四 ─── -->
+  <article class="mistake">
+    <h3><span class="num">04</span> 用常態檢定證明資料常態</h3>
+
+    <p>
+      當年做了 Kolmogorov–Smirnov 檢定，13 個變數的 p 值全部是 .000，
+      然後把顯著水準從 0.05 調到 0.01，宣稱「不拒絕常態假設」。
+    </p>
+
+    <p>
+      這裡有兩個獨立的問題。第一個是<strong>算術</strong>：
+      p &lt; 0.001 在 α = 0.01 之下同樣被拒絕。調低 α 不會救回來。
+    </p>
+
+    <p>
+      第二個更根本：<strong>樣本夠大時，常態檢定必然顯著</strong>。
+      下表是用<strong>已知真相</strong>的合成資料做的——
+      一組真的來自常態分布，一組有輕微偏態。
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>樣本數</th>
+            <th>資料真相</th>
+            <th class="num">偏態</th>
+            <th class="num">p 值</th>
+            <th>α=0.05 判定</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            normality.map((row) => (
+              <tr>
+                <td class="num">{(row.n as number).toLocaleString()}</td>
+                <td>{SYNTHETIC_DATA[row.data as string] ?? row.data}</td>
+                <td class="num">{n(row.skewness as number, 3)}</td>
+                <td class="num">
+                  {(row.p_value as number) < 0.0001 ? "< .0001" : n(row.p_value as number, 4)}
+                </td>
+                <td class={row["rejected_at_0.05"] ? "bad" : "good"}>
+                  {row["rejected_at_0.05"] ? "拒絕常態" : "不拒絕"}
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      真常態的資料在任何樣本數下都不被拒絕；輕微偏態的資料在 N=100 時「通過」了，
+      N ≥ 1,000 時全部被拒絕。<strong>同一份資料，答案取決於你抽了幾筆。</strong>
+      當年 N = 7,286，檢定拒絕是必然的，那個 .000 沒有告訴你任何關於分布形狀的事。
+    </p>
+
+    <details>
+      <summary>原文那張表的 13 個變數（p 值全為 .000）</summary>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>變數</th>
+              <th class="num">K-S 統計量</th>
+              <th class="num">p（原文）</th>
+              <th>α=0.01 實際判定</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              published.map((row) => (
+                <tr>
+                  <td>{row.variable}</td>
+                  <td class="num">{n(row.ks_statistic_published as number, 3)}</td>
+                  <td class="num">&lt; .001</td>
+                  <td class="bad">拒絕</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </article>
+
+  <!-- ─── 錯誤五 ─── -->
+  <article class="mistake">
+    <h3><span class="num">05</span> NO、NO₂、NOx 一起放進迴歸</h3>
+
+    <p>
+      NOx = NO + NO₂ 是一個恆等式。三個變數同時進入線性模型，
+      設計矩陣接近奇異，個別係數在數值上是任意的。
+      當年的逐步剔除來回震盪，原因就在這裡。
+    </p>
+
+    <p>
+      復刻結果的 VIF 是 7,764 / 25,377 / 53,452（原文 15,716 / 10,273 / 42,622）——
+      量級一致。VIF 超過 10 通常就被視為嚴重共線性。
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>係數</th>
+            <th class="num">平均</th>
+            <th class="num">標準差</th>
+            <th class="num">最小</th>
+            <th class="num">最大</th>
+            <th class="num">變異係數</th>
+            <th class="num">為正的比例</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            stability.map((row) => (
+              <tr>
+                <td>{row.term}</td>
+                <td class="num">{n(row.mean as number, 3)}</td>
+                <td class="num">{n(row.sd as number, 3)}</td>
+                <td class="num">{n(row.min as number, 3)}</td>
+                <td class="num">{n(row.max as number, 3)}</td>
+                <td class="num">{n(row.coefficient_of_variation as number, 2)}</td>
+                <td class="num">{n((row.share_positive as number) * 100, 0)}%</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      重抽樣之下，同一個係數可以是正的也可以是負的。
+      {
+        collinearR2.length > 0 && (
+          <>
+            而整體 R² 幾乎不動（
+            {collinearR2.map((r) => `${r.measure} ${n(r.value as number, 4)}`).join("、")}
+            ）——<strong>模型整體有解釋力，個別係數沒有意義</strong>。
+          </>
+        )
+      }
+      當年逐項解讀那些係數的方向與大小，是在解讀雜訊。
+    </p>
+  </article>
+
+  <!-- ─── 錯誤六 ─── -->
+  <article class="mistake">
+    <h3><span class="num">06</span> 用 AIC/BIC 當作模型好壞的證據</h3>
+
+    <p>
+      當年沒有留測試集。模型在訓練資料上評估，用 AIC/BIC 比較。
+      這兩個指標會懲罰參數數量，但<strong>看不到樣本外的表現</strong>。
+    </p>
+
+    <div class="compare">
+      <div class="card">
+        <span class="tag bad">樣本內</span>
+        <span class="stat-value">{n(inSample?.r2 as number, 3)}</span>
+        <span class="stat-label">R²</span>
+        <span class="stat-note">N = {(inSample?.n as number)?.toLocaleString()}</span>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="card">
+        <span class="tag good">樣本外</span>
+        <span class="stat-value">{n(outSample?.r2 as number, 3)}</span>
+        <span class="stat-label">R²</span>
+        <span class="stat-note">N = {(outSample?.n as number)?.toLocaleString()}</span>
+      </div>
+    </div>
+
+    <div class="note caveat">
+      落差 <strong>{n(optimism?.r2 as number, 3)}</strong> 的 R²，
+      就是樣本內評估看不到的樂觀偏誤。這不是模型壞掉，
+      是<strong>評估方式本身會系統性高估</strong>。
+    </div>
+  </article>
+
+  <!-- ─── 誠實的收尾 ─── -->
+  <article class="mistake epilogue">
+    <h3>兩件我原本以為是錯的，結果不是</h3>
+
+    <p>
+      Phase 0 我列了 11 項缺陷。跑完全量資料之後，其中兩項被自己的資料否證，
+      這裡照樣列出來——只留對自己有利的檢查結果，就是另一種形式的同樣毛病。
+    </p>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h4>風向哨兵碼</h4>
+        <p class="small">
+          我原本主張當年的風向資料被 888（無風）與 999（儀器故障）污染。
+          全量掃描結果：這些代碼只出現在 1993–2004 年，
+          <strong>2010–2017 年出現次數為零</strong>。
+          當年的資料沒有這個問題，是我過度推論。
+        </p>
+      </div>
+      <div class="card">
+        <h4>無效值保留率分世代</h4>
+        <p class="small">
+          我原本以為舊格式一律保留原值、新格式一律丟棄。
+          實測：1997 與 2001 年的保留率是 0.000，1998 年 0.340，
+          <strong>而這些都是「舊格式」年份</strong>。
+          慣例是逐年變的，不能從世代推論。
+        </p>
+      </div>
+    </div>
+  </article>
+
+  {
+    keyCoefficients.length > 0 && (
+      <details class="replication">
+        <summary>完整復刻對照表（原文數值 vs 本專案復刻）</summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>變數</th>
+                <th class="num">原文 2018</th>
+                <th class="num">復刻</th>
+                <th class="num">差異</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keyCoefficients.map((row) => (
+                <tr>
+                  <td>{row.item}</td>
+                  <td class="num">{n(row.published_2018 as number, 4)}</td>
+                  <td class="num">{row.reproduced == null ? "—" : n(row.reproduced, 4)}</td>
+                  <td class="num">
+                    {row.pct_difference == null ? "—" : `${n(row.pct_difference, 1)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    )
+  }
+</section>
+
+<style>
+  .mistake {
+    margin: 3.5rem 0;
+    padding-top: 2.5rem;
+    border-top: 1px solid var(--line-soft);
+  }
+  .mistake h3 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+    font-size: 1.35rem;
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+  .two-up {
+    display: grid;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  @media (min-width: 56rem) {
+    .two-up {
+      grid-template-columns: 1fr minmax(200px, 260px);
+    }
+  }
+  .two-up figure {
+    margin: 0;
+  }
+  .verdict .stat {
+    margin-bottom: 1rem;
+  }
+  .compare {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.6rem 0;
+  }
+  .compare .card {
+    flex: 1 1 190px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .arrow {
+    color: var(--text-faint);
+    font-size: 1.5rem;
+    flex: none;
+  }
+  .tag {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+  }
+  .tag.bad {
+    color: var(--c5);
+  }
+  .tag.good {
+    color: var(--c1);
+  }
+  td.bad,
+  .row-bad td {
+    color: var(--c5);
+  }
+  td.good {
+    color: var(--c2);
+  }
+  .small {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+  details {
+    margin: 1.4rem 0;
+  }
+  summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    padding: 0.4rem 0;
+  }
+  summary:hover {
+    color: var(--text);
+  }
+  .epilogue {
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.8rem;
+    border-top: 1px solid var(--line);
+  }
+  .epilogue h4 {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+  }
+  .gridline {
+    stroke: var(--line-soft);
+    stroke-width: 1;
+  }
+  .tick {
+    fill: var(--text-faint);
+    font-size: 11px;
+    font-family: var(--font-mono);
+  }
+  .tick-y {
+    text-anchor: end;
+    dominant-baseline: middle;
+  }
+  .tick-x {
+    text-anchor: middle;
+  }
+  .guide-label {
+    fill: var(--text-faint);
+    font-size: 10.5px;
+    text-anchor: end;
+  }
+  svg {
+    width: 100%;
+    height: auto;
+    min-width: 460px;
+    display: block;
+  }
+</style>

@@ -192,6 +192,30 @@ class TestWindLinearisation:
 
         assert by_sector["sector"].to_list() == list(range(0, 360, 30))
 
+    def test_a_bearing_of_exactly_360_lands_in_the_north_sector(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """360 and 0 are one direction, and must share one bin.
+
+        `bearing // 30 * 30` gives 360 its own thirteenth sector. On the real
+        store that split 3,341 readings away from the 285,527 at due north —
+        the wraparound error this module was written to expose, committed
+        inside it.
+        """
+        start = datetime(2010, 1, 1)
+        rows = []
+        for h in range(500):
+            ts = start + timedelta(hours=h)
+            rows += [
+                ("二林", "WD_HR", ts, 360.0 if h % 2 else 0.0),
+                ("二林", "WS_HR", ts, 2.0),
+                ("二林", "PM2.5", ts, 20.0),
+            ]
+        root = _store(tmp_path, rows)
+
+        by_sector = wind_direction_linearisation(root, period=(2010, 2010))["by_sector"]
+
+        assert by_sector["sector"].to_list() == [0]
+        assert by_sector["n"][0] == 500
+
 
 class TestCollinearityInstability:
     def _store_with_identity(self, tmp_path, n: int = 3000):  # type: ignore[no-untyped-def]

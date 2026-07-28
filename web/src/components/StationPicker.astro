@@ -1,0 +1,192 @@
+---
+/**
+ * Chapter 2: pick a station, get its record.
+ *
+ * Every card ships in the HTML and the client script only toggles which is
+ * visible. With 79 stations that is a few kilobytes, and it means the page
+ * works without JavaScript, is fully searchable, and has no loading state.
+ */
+import { n } from "../lib/chart";
+import { stationType } from "../lib/labels";
+import type { StationCard } from "../lib/data";
+
+interface Props {
+  cards: StationCard[];
+  caveat: string;
+}
+
+const { cards, caveat } = Astro.props;
+
+const byCounty = new Map<string, StationCard[]>();
+for (const card of cards) {
+  const county = card.county ?? "（已停用，無行政區資料）";
+  if (!byCounty.has(county)) byCounty.set(county, []);
+  byCounty.get(county)!.push(card);
+}
+const counties = [...byCounty.entries()].sort(([a], [b]) => a.localeCompare(b, "zh-Hant"));
+
+const initial = cards.find((c) => c.station_name === "鳳山") ?? cards[0];
+---
+
+<div class="picker">
+  <div class="controls">
+    <label>
+      測站
+      <select id="station-select">
+        {
+          counties.map(([county, group]) => (
+            <optgroup label={county}>
+              {group
+                .sort((a, b) => a.station_name.localeCompare(b.station_name, "zh-Hant"))
+                .map((card) => (
+                  <option value={card.station_name} selected={card.station_name === initial.station_name}>
+                    {card.station_name}
+                  </option>
+                ))}
+            </optgroup>
+          ))
+        }
+      </select>
+    </label>
+  </div>
+
+  {
+    cards.map((card) => (
+      <article
+        class="report"
+        data-station={card.station_name}
+        hidden={card.station_name !== initial.station_name}
+      >
+        <header>
+          <h3>
+            {card.station_name}
+            <span class="place">
+              {card.county}
+              {card.township ? ` ${card.township}` : ""}
+              {card.station_type ? ` · ${stationType(card.station_type)}` : ""}
+            </span>
+          </h3>
+          <span class="year mono">{card.year} 年</span>
+        </header>
+
+        <div class="grid grid-4">
+          <div class="stat">
+            <span class="stat-value">{n(card.annual_mean)}</span>
+            <span class="stat-label">年均 PM2.5</span>
+            <span class="stat-note">μg/m³</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{card.times_who_annual}×</span>
+            <span class="stat-label">WHO 年均指引的倍數</span>
+            <span class="stat-note">指引值 5 μg/m³</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{card.days_over_who ?? "—"}</span>
+            <span class="stat-label">超過 WHO 日均指引的天數</span>
+            <span class="stat-note">
+              15 μg/m³ · 共 {card.days_with_data} 天有資料
+            </span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{card.days_over_taiwan ?? "—"}</span>
+            <span class="stat-label">超過台灣日均標準的天數</span>
+            <span class="stat-note">35 μg/m³</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <p class="line">
+            <span class="mono big">{card.cigarettes_per_day}</span> 支菸／天
+            <span class="dim">—— 粗略等效換算</span>
+          </p>
+          {
+            card.rank != null && card.stations_ranked != null && (
+              <p class="line">
+                全台排名 <span class="mono big">{card.rank}</span>
+                <span class="dim">／{card.stations_ranked} 站（1 = 最乾淨）</span>
+              </p>
+            )
+          }
+          <p class="line">
+            當年最糟的一天 <span class="mono big">{n(card.worst_day)}</span>
+            <span class="dim">μg/m³</span>
+          </p>
+        </div>
+      </article>
+    ))
+  }
+
+  <p class="note caveat">{caveat}</p>
+</div>
+
+<script>
+  const select = document.getElementById("station-select") as HTMLSelectElement | null;
+  const reports = Array.from(document.querySelectorAll<HTMLElement>(".report[data-station]"));
+
+  select?.addEventListener("change", () => {
+    for (const report of reports) {
+      report.hidden = report.dataset.station !== select.value;
+    }
+  });
+</script>
+
+<style>
+  .picker {
+    margin-top: 1.5rem;
+  }
+  .report {
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.4rem 1.5rem;
+  }
+  .report header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.4rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .report h3 {
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+  }
+  .place {
+    font-size: 0.86rem;
+    font-weight: 400;
+    color: var(--text-faint);
+  }
+  .year {
+    color: var(--text-faint);
+    font-size: 0.9rem;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 2.2rem;
+    margin-top: 1.5rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line-soft);
+  }
+  .line {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    max-width: none;
+  }
+  .big {
+    font-size: 1.25rem;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .dim {
+    color: var(--text-faint);
+    font-size: 0.85rem;
+  }
+</style>
