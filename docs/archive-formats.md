@@ -246,7 +246,7 @@ PM2.5 驅動因子本來就應該不同，這是資訊而非雜訊。
 | 1998 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 87年離島監測站; Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
 | 1999 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
 | 2000 | ReadMe_普通測站_20080818.txt | `#`, `*`, `x`, `NR`, `空白` | no | Plain text format (ReadMe_普通測站_20080818.txt) rather than 2017 ODT/DOC |
-| 2001 | ReadMe_普通測站_20090901.txt | `#`, `*`, `x`, `NR`, `空白`, `888`, `999` | no | Plain text format (ReadMe_普通測站_20090901.txt) rather than 2017 ODT/DOC; Documents flag symbols: `#`, `*`, `x`, `NR`, `空白`, `888`, `999` |
+| 2001 | ReadMe_普通測站_20090901.txt | `#`, `*`, `x`, `NR`, `空白`, `888`, `999` | no | Plain text format; 旗標欄位額外列出 `888`（風向不定）與 `999`（靜風），語意與 2017 版不同（2017：888=無風，999=儀器故障） |
 | 2002 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 91年離島監測站; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
 | 2003 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 92年北部空品區, 92年宜蘭空品區, 92年竹苗空品區, 92年花東空品區, 92年離島測站, 92年雲嘉南空品區, 92年高屏空品區; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
 | 2004 | ReadMe_普通測站_20080801.txt | `#`, `*`, `x`, `NR`, `空白` | no | Readmes across zone folders (.txt) differ in text for 93年北部空品區, 93年宜蘭空品區, 93年竹苗空品區, 93年花東空品區, 93年離島監測站, 93年雲嘉南空品區, 93年高屏空品區; Plain text format (ReadMe_普通測站_20080801.txt) rather than 2017 ODT/DOC |
@@ -274,5 +274,7 @@ PM2.5 驅動因子本來就應該不同，這是資訊而非雜訊。
 
 ### 歷年旗標定義變更結論
 
-經全量實測 44 個年度原始檔案包（1982–2025 年），品質旗標的符號定義在跨年度間**無任何改變（no change found）**。所有存在說明文件的年份（1991–2017 年）中，官方記載之有效與無效旗標符號均一致為 `#`（儀器檢核無效）、`*`（程式檢核無效）、`x`（人工檢核無效）、`NR`（無降雨）與 `空白`（缺值）。唯一的格式差異僅見於 2001 年說明檔，該年將風向哨兵碼 `888`（風向不定）與 `999`（靜風）直接寫入資料註記項目中（其他年份則於內文另外說明）。1982–1990 年與 2018–2025 年之資料包內未包含 ReadMe 說明文件。據此，基於 2017 年參考文件所建置之品質旗標解析器，對所有歷史年代之旗標符號定義均完全適用。
+經全量實測 44 個年度原始檔案包（1982–2025 年），品質旗標的符號定義在跨年度間**無任何改變（no change found）**。所有存在說明文件的年份（1991–2017 年）中，官方記載之有效與無效旗標符號均一致為 `#`（儀器檢核無效）、`*`（程式檢核無效）、`x`（人工檢核無效）、`NR`（無降雨）與 `空白`（缺值）。1982–1990 年與 2018–2025 年之資料包內未包含 ReadMe 說明文件。據此，基於 2017 年參考文件所建置之品質旗標解析器，對所有歷史年代之旗標符號定義均完全適用。
+
+**但風向哨兵碼的語意存在一處跨年差異。** 2001 年說明檔將 `888`（風向不定）與 `999`（靜風）直接寫入「普通測站資料註記說明」欄位中；2017 版（及 2012–2017 ODT）則於內文記載 `888` 代表無風、`999` 代表儀器故障。兩者對 `999` 的定義不同（靜風 vs. 儀器故障）。本專案現行哨兵處理（`twair.qc.sentinels`）採用 2017 版定義（888→calm、999→instrument_fault），此處記錄差異供日後評估。
 
