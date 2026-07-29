@@ -371,6 +371,7 @@ uv run twair summary         # row counts per year
 uv run twair stations geo    # cached MOENV register; --refresh to re-fetch
 uv run twair export web      # L0 + L1 + story payloads -> web/public/data/
 uv run twair export space    # HuggingFace Space bundle; does NOT publish
+uv run python spaces/forecast/app.py   # run that demo locally (needs the `space` extra)
 ```
 
 The site itself:
@@ -396,6 +397,10 @@ forty-three. Anything written per-run needs the same treatment.
 
 - **Python 3.12, uv.** `uv run --no-sync ...` when a background job holds
   `twair.exe` open on Windows.
+- **Sync with `uv sync --all-extras --group dev`**, which is what CI does. A
+  bare `uv sync` *removes* the optional extras, and the next `pytest` fails
+  with eight collection errors that look like broken imports rather than a
+  stripped environment. Nothing warns you.
 - **Polars** for data, **pandas** only where a library demands it.
 - **Config over constants**: paths, URLs, thresholds, station lists all live in
   `conf/*.yaml`.

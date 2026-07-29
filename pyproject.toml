@@ -78,6 +78,13 @@ publish = [
     "huggingface-hub>=0.27",
     "datasets>=3.2",
 ]
+# Running the forecast demo locally. Kept out of the default install because
+# gradio is large and nothing in the pipeline imports it — the Space installs
+# from its own spaces/forecast/requirements.txt, which is the file that has to
+# stay authoritative. The bound here matches it.
+space = [
+    "gradio>=5.9,<6",
+]
 
 [dependency-groups]
 dev = [
