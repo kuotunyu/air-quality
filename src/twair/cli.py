@@ -372,15 +372,24 @@ def analyze_m9(
         )
     )
 
-    # R² and skill disagree on purpose. R² tracks how predictable the target
-    # happens to be; skill tracks whether the model added anything.
-    beaten = by_horizon.filter(pl.col("skill_vs_persistence") > 0)
-    console.print(f"\n[bold]{beaten.height}/{by_horizon.height}[/bold] horizon(s) beat persistence")
+    # Three columns because each one alone misleads. R² tracks how predictable
+    # the target happens to be, not whether the model helped. Skill against
+    # persistence rises with horizon even as the model decays toward the
+    # long-run mean, which only the climatology column reveals. And the mean
+    # over splits once reported "4/4 beat persistence" while one split sat at
+    # -0.111, so the worst split is printed beside every mean.
+    total_splits = int(by_horizon["splits"].sum())
+    losing = int(by_horizon["splits_not_beating_persistence"].sum())
+    console.print(
+        f"\n[bold]{total_splits - losing}/{total_splits}[/bold] horizon-split cells beat persistence"
+    )
     for row in by_horizon.iter_rows(named=True):
-        verdict = "green" if row["skill_vs_persistence"] > 0 else "yellow"
+        verdict = "green" if row["skill_worst_split"] > 0 else "yellow"
         console.print(
             f"  {row['horizon']:>3}h  R² {row['model_r2']:.3f}  "
-            f"[{verdict}]skill {row['skill_vs_persistence']:+.3f}[/{verdict}]"
+            f"[{verdict}]skill {row['skill_vs_persistence']:+.3f} "
+            f"(worst split {row['skill_worst_split']:+.3f})[/{verdict}]  "
+            f"vs climatology {row['skill_vs_climatology']:+.3f}"
         )
 
     for name, path in write_forecast_report(tables).items():
@@ -566,6 +575,22 @@ def summary() -> None:
     frame = partition_summary()
     console.print(frame)
     console.print(f"total rows: {frame['rows'].sum():,}")
+
+
+@app.command("status")
+def status(
+    rows: bool = typer.Option(True, "--rows/--no-rows", help="Count store rows (~0.5s)."),
+) -> None:
+    """Where the project stands on disk: what has run, what is stale, what next.
+
+    The measured half of the handoff. PROGRESS.md carries the reasoning; this
+    carries the timestamps, because a note that has gone out of date reads
+    exactly like one that has not.
+    """
+    from twair.status import collect_status, render
+
+    for line in render(collect_status(count_rows=rows)):
+        console.print(line, highlight=False)
 
 
 if __name__ == "__main__":

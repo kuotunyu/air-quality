@@ -8,9 +8,10 @@ visible rather than hiding it behind a number that looks good.
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 import pytest
 
-from twair.models.forecast import ForecastScore, skill_score
+from twair.models.forecast import ForecastScore, skill_score, summarise_scores
 
 
 def _score(**overrides: object) -> ForecastScore:
@@ -90,3 +91,56 @@ class TestHorizons:
     def test_scores_are_keyed_by_horizon_so_they_cannot_be_averaged_away(self) -> None:
         """Collapsing horizons would hide that R² and skill move oppositely."""
         assert "horizon" in _score().as_dict()
+
+
+def _splits(*skills: float, horizon: int = 6) -> pl.DataFrame:
+    """Four splits at one horizon, differing only in skill."""
+    return pl.DataFrame(
+        [
+            {
+                **_score(horizon=horizon, split=f"rolling_{i}", skill_vs_persistence=s).as_dict(),
+            }
+            for i, s in enumerate(skills, start=1)
+        ]
+    )
+
+
+class TestTheMeanDoesNotHideALosingSplit:
+    """The real backtest's first summary said "4/4 beat persistence" while
+    `rolling_1` sat at -0.111 at six hours. A mean over splits hides a losing
+    split exactly the way an R² hides a losing model — one level up, same
+    mistake, so it gets the same treatment."""
+
+    def test_the_worst_split_survives_the_aggregation(self) -> None:
+        summary = summarise_scores(_splits(-0.111, 0.271, 0.298, 0.303))
+
+        assert summary["skill_vs_persistence"][0] == pytest.approx(0.19025)
+        assert summary["skill_worst_split"][0] == pytest.approx(-0.111)
+
+    def test_a_positive_mean_still_reports_the_losing_split(self) -> None:
+        summary = summarise_scores(_splits(-0.111, 0.271, 0.298, 0.303))
+
+        assert summary["skill_vs_persistence"][0] > 0, "the mean looks fine"
+        assert summary["splits_not_beating_persistence"][0] == 1, "and one split did not"
+
+    def test_all_splits_winning_counts_none(self) -> None:
+        summary = summarise_scores(_splits(0.131, 0.188, 0.179, 0.201))
+
+        assert summary["splits_not_beating_persistence"][0] == 0
+        assert summary["skill_worst_split"][0] == pytest.approx(0.131)
+
+    def test_the_climatology_baseline_is_summarised_too(self) -> None:
+        """Skill against persistence rises with horizon while skill against
+        climatology falls. Reporting only the first reads as "better the
+        further out you go", which is the opposite of what happens."""
+        summary = summarise_scores(_splits(0.243))
+
+        assert "skill_vs_climatology" in summary.columns
+        assert "skill_vs_climatology_worst" in summary.columns
+
+    def test_horizons_stay_separate_rows(self) -> None:
+        both = pl.concat([_splits(0.175, horizon=1), _splits(0.243, horizon=48)])
+
+        summary = summarise_scores(both)
+
+        assert summary["horizon"].to_list() == [1, 48]

@@ -15,18 +15,49 @@ Zero means the model matched a one-line rule. Positive means it beat it, and by
 how much. Negative means it lost.
 
 I expected negative skill at one hour and was wrong, which is worth recording
-rather than quietly deleting. Measured on three stations over 2018-2025, the
-model beats persistence at **both** horizons tested — +0.165 at one hour and
-+0.180 at twenty-four. The reason is visible in the feature set: persistence
-assumes the concentration is flat, while `delta1` and `delta3` let the model
-see that it is currently rising or falling and carry that motion forward. An
-hour ahead, extrapolating the trajectory beats assuming there is none.
+rather than quietly deleting. The reason is visible in the feature set:
+persistence assumes the concentration is flat, while `delta1` and `delta3` let
+the model see that it is currently rising or falling and carry that motion
+forward. An hour ahead, extrapolating the trajectory beats assuming there is
+none.
 
-What the reversal argument does still buy is a warning about R². The same model
-scores R² = 0.87 at one hour and 0.32 at twenty-four, which reads as a
-collapse; its *skill* barely moves. R² is dominated by how predictable the
-target happens to be, and PM2.5 an hour out is very predictable by anyone. So
-horizon is never averaged over, and skill leads.
+Full backtest, 74 stations over 2015-2025, four rolling splits, ~1.78M test
+rows per horizon:
+
+===== ======= ============= ============= =================
+  h      R²    skill vs      skill vs      worst split vs
+                persistence   climatology   persistence
+===== ======= ============= ============= =================
+   1    0.859       +0.175        +0.839          +0.131
+   6    0.550       +0.190        +0.480          **-0.111**
+  24    0.351       +0.238        +0.249          +0.189
+  48    0.217       +0.243        +0.088          +0.055
+===== ======= ============= ============= =================
+
+Three things to read off that, in descending order of how easy they are to get
+wrong:
+
+**R² and skill move in opposite directions.** R² falls by a factor of four
+across the horizons while skill *rises*. R² is dominated by how predictable the
+target happens to be, and PM2.5 an hour out is very predictable by anyone —
+including a one-line rule. Skill asks the different question of whether the
+model added anything, and the answer improves with distance because persistence
+degrades faster than the model does. So horizon is never averaged over.
+
+**The useful range ends around 24 hours, and only the climatology column says
+so.** Skill against persistence keeps climbing to 48h, which on its own reads
+as "better the further out you go". Skill against climatology collapses over
+the same span, +0.839 to +0.088: by two days the model has nearly decayed to
+"the average for this station, this month, this hour". Beating persistence at
+48h is not an achievement when persistence is beaten by the long-run mean.
+**Two baselines are needed because either one alone flatters the model.**
+
+**The mean over splits hid a losing split.** At six hours `rolling_1` scores
+-0.111 — the one trained on the least data, since rolling-origin gives split 1
+the shortest history. The first summary line printed here said "4/4 horizons
+beat persistence", which was true of the means and false of 1 of the 16
+horizon-split cells. `summarise_scores` now carries `skill_worst_split`
+alongside every mean for that reason.
 
 Validation is rolling-origin: train on everything before a cut, test on what
 follows, walk the cut forward. Random splits would let the model train on
@@ -59,6 +90,7 @@ __all__ = [
     "build_forecast_frame",
     "run_forecast",
     "skill_score",
+    "summarise_scores",
 ]
 
 TARGET = "PM2.5"
@@ -282,7 +314,22 @@ def run_forecast(
         raise RuntimeError("no horizon had enough data to backtest")
 
     scores = pl.DataFrame(rows)
-    by_horizon = (
+    return {"scores": scores.sort("horizon", "split"), "by_horizon": summarise_scores(scores)}
+
+
+def summarise_scores(scores: pl.DataFrame) -> pl.DataFrame:
+    """Collapse splits to one row per horizon — carrying the worst, not just the mean.
+
+    The mean alone reproduces the exact failure this module was written about,
+    one level up. The first full backtest averaged to +0.190 at six hours and
+    the summary line read "4/4 horizons beat persistence" — while `rolling_1`,
+    the split with the least training data, sat at **-0.111**. A mean over four
+    splits hid a losing one just as an R² hides a losing model.
+
+    So `skill_worst_split` and `splits_not_beating_persistence` travel with
+    every mean, and `tests/test_forecast.py` pins that they do.
+    """
+    return (
         scores.group_by("horizon")
         .agg(
             pl.len().alias("splits"),
@@ -292,11 +339,13 @@ def run_forecast(
             pl.col("climatology_rmse").mean(),
             pl.col("model_r2").mean(),
             pl.col("skill_vs_persistence").mean(),
+            pl.col("skill_vs_persistence").min().alias("skill_worst_split"),
+            (pl.col("skill_vs_persistence") <= 0).sum().alias("splits_not_beating_persistence"),
             pl.col("skill_vs_climatology").mean(),
+            pl.col("skill_vs_climatology").min().alias("skill_vs_climatology_worst"),
         )
         .sort("horizon")
     )
-    return {"scores": scores.sort("horizon", "split"), "by_horizon": by_horizon}
 
 
 def write_forecast_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
