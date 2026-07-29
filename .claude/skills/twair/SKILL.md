@@ -253,6 +253,41 @@ A bare `data/` also matched `web/public/data/` and silently kept the whole
 website export out of git. It is now `/data/`. Check `git check-ignore -v`
 after adding any pattern that names a common directory.
 
+### The Space bundle: `uv run twair export space`
+
+Rebuilds `spaces/forecast/` from the store — four LightGBM models, a demo slice,
+a climatology table and a manifest. It is **not** published by that command;
+pushing anywhere is manual and needs the owner's say-so.
+
+Four things it does deliberately, each of which cost a debugging round:
+
+- **LightGBM's text format, never pickle**, and written with `Path.write_text`
+  rather than `save_model`. The C library resolves paths through the platform
+  ANSI code page and cannot write to a non-ASCII directory — which is what this
+  repository is called. Load with `model_str=`, not `model_file=`.
+- **The manifest owns the feature order.** A tree model takes a bare array and
+  cannot tell that column 12 became humidity. Both the trainer and the app read
+  the order from one place.
+- **A declared station that produces no rows is an error, not a smaller
+  bundle.** 陽明 reports PM2.5 all year and has no anemometer, so every row died
+  on the wind features and the bundle shipped five stations while the README
+  described six. `MODEL_PARAMS` lives in `forecast.py` and is imported, for the
+  same class of reason.
+- **`BundleReport.summary()` avoids square brackets** because it is printed
+  through rich, which reads `[...]` as a style tag and silently drops what is
+  inside. It swallowed the row counts whole.
+
+### Six hours is this model's weak horizon
+
+Two independent samples agree, which is what makes it worth writing down. The
+backtest's four splits at 6h span −0.111 to +0.303 (0.41, the widest of any
+horizon; 1h spans 0.07). A separate fit — train 2015–2024, hold out 2025, six
+stations — puts 6h skill at **−0.043**, with no station clearly positive, while
+1h, 24h and 48h stay solidly positive.
+
+The likely reason: 6 hours falls between two signals. Too far for the current
+rise or fall to still carry, too near for the same hour tomorrow to help.
+
 ### Chapter components are named by content, never by number
 
 `Chapter3.astro`, `Chapter4.astro`, `Chapter5.astro` was fine until a chapter
@@ -335,6 +370,7 @@ uv run twair qc report       # data-quality measurement -> docs/data-quality.md
 uv run twair summary         # row counts per year
 uv run twair stations geo    # cached MOENV register; --refresh to re-fetch
 uv run twair export web      # L0 + L1 + story payloads -> web/public/data/
+uv run twair export space    # HuggingFace Space bundle; does NOT publish
 ```
 
 The site itself:

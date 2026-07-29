@@ -54,3 +54,11 @@ docs/report/
 # --- original graduation project source PDF ---
 # Contains author names. Decide explicitly before publishing (see docs/legal.md).
 懸浮微粒.pdf
+
+# --- HuggingFace Space bundle: source committed, artefacts not ---
+# `uv run twair export space` rebuilds these from the store in a few minutes.
+# Same call as L1: 14 MB of regenerable output does not belong in history, and
+# the Space is its own git repo when it is pushed. app.py, requirements.txt
+# and README.md ARE committed — they are written, not generated.
+/spaces/forecast/model/
+/spaces/forecast/data/

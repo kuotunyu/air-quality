@@ -568,6 +568,30 @@ def export_web(
     console.print(f"wrote {web_data_dir()}")
 
 
+@export_app.command("space")
+def export_space(
+    demo_year: int = typer.Option(2025, "--demo-year", help="Year held out for the demo."),
+    horizons: str = typer.Option("1,6,24,48", "--horizons", help="Hours ahead to fit."),
+) -> None:
+    """Build the HuggingFace Space bundle: models, demo slice, manifest.
+
+    Writes into spaces/forecast/. Pushing it anywhere is a separate, manual
+    step — this only assembles the directory.
+    """
+    from twair.models.deploy import build_space_bundle, space_dir
+
+    hours = tuple(int(h) for h in horizons.split(",") if h.strip())
+    report = build_space_bundle(demo_year=demo_year, horizons=hours)
+
+    console.print(f"[green]{report.summary()}[/green]")
+    console.print(f"stations: {', '.join(report.stations)}")
+    console.print(f"wrote {space_dir()}")
+    console.print(
+        "\n[yellow]Not published.[/yellow] The bundle embeds a sample of hourly "
+        "observations; see docs/legal.md before pushing it anywhere."
+    )
+
+
 @app.command("summary")
 def summary() -> None:
     """Row counts per year in the canonical store."""

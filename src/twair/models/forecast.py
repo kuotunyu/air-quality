@@ -87,6 +87,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "HORIZONS",
     "ForecastScore",
+    "build_feature_frame",
     "build_forecast_frame",
     "run_forecast",
     "skill_score",
@@ -105,6 +106,21 @@ HORIZONS: tuple[int, ...] = (1, 6, 24, 48)
 # to predict, and a forecaster standing at time t genuinely knows the NOx
 # reading at time t.
 _POLLUTANTS = ("PM2.5", "PM10", "NOx", "O3", "SO2", "CO", "AMB_TEMP", "RH", "WS_HR", "WD_HR")
+
+# One definition, because the Space deploys a model whose skill this module
+# measures. Two copies that happen to agree today is a claim with a shelf life;
+# `twair.models.deploy` imports this rather than restating it.
+MODEL_PARAMS: dict[str, Any] = {
+    "n_estimators": 600,
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "min_child_samples": 40,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "n_jobs": -1,
+    "verbose": -1,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,18 +168,19 @@ def skill_score(model_error: np.ndarray, baseline_error: np.ndarray) -> float:
     return 1.0 - float(np.mean(model_error**2)) / baseline_mse
 
 
-def build_forecast_frame(
+def build_feature_frame(
     root: Path | None = None,
     *,
     period: tuple[int, int] = (2015, 2025),
     stations: list[str] | None = None,
-    horizon: int = 24,
 ) -> tuple[pl.DataFrame, list[str]]:
-    """Hourly matrix with lag features and a target ``horizon`` hours ahead.
+    """Hourly matrix with every lag feature, and no target at all.
 
-    Returns the frame and the feature names, so the caller cannot accidentally
-    train on a column that leaks. ``target`` and the raw pollutant are
-    deliberately not among them.
+    Split out from :func:`build_forecast_frame` because the features do not
+    depend on the horizon — only the target does. Backtesting four horizons
+    rebuilt this four times, which is four full scans of the store for an
+    identical result, and the deployment bundle needs one feature frame with
+    four targets rather than four frames.
     """
     from twair.features.met import add_wind_features
     from twair.features.temporal import TEMPORAL_FEATURES, add_temporal_features
@@ -203,7 +220,6 @@ def build_forecast_frame(
     featured = add_temporal_features(add_wind_features(full))
     featured = add_lag_features(featured, column=TARGET)
     featured = add_lag_features(featured, column="PM10", lags=(1, 24), windows=(24,))
-    featured = add_target(featured, column=TARGET, horizon=horizon)
 
     features = (
         lag_feature_names(TARGET)
@@ -214,7 +230,25 @@ def build_forecast_frame(
     )
     features = [f for f in features if f in featured.columns]
 
-    return featured.drop_nulls(["target", *features]).sort("station_name", "ts_local"), features
+    return featured.sort("station_name", "ts_local"), features
+
+
+def build_forecast_frame(
+    root: Path | None = None,
+    *,
+    period: tuple[int, int] = (2015, 2025),
+    stations: list[str] | None = None,
+    horizon: int = 24,
+) -> tuple[pl.DataFrame, list[str]]:
+    """Feature matrix plus a target ``horizon`` hours ahead, rows complete.
+
+    Returns the frame and the feature names, so the caller cannot accidentally
+    train on a column that leaks. ``target`` and the raw pollutant are
+    deliberately not among them.
+    """
+    featured, features = build_feature_frame(root, period=period, stations=stations)
+    with_target = add_target(featured, column=TARGET, horizon=horizon)
+    return with_target.drop_nulls(["target", *features]), features
 
 
 def _fit_predict(
@@ -222,18 +256,7 @@ def _fit_predict(
 ) -> np.ndarray:
     import lightgbm as lgb
 
-    model = lgb.LGBMRegressor(
-        n_estimators=600,
-        learning_rate=0.05,
-        num_leaves=63,
-        min_child_samples=40,
-        subsample=0.8,
-        subsample_freq=1,
-        colsample_bytree=0.8,
-        n_jobs=-1,
-        random_state=seed,
-        verbose=-1,
-    )
+    model = lgb.LGBMRegressor(random_state=seed, **MODEL_PARAMS)
     model.fit(train.select(features).to_numpy(), train["target"].to_numpy())
     return np.asarray(model.predict(test.select(features).to_numpy()))
 

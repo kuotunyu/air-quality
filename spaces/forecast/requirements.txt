@@ -1,0 +1,9 @@
+# Pinned to majors the bundle was built and tested against. LightGBM's text
+# model format is stable across versions, so the floor matters more than the
+# ceiling — but a Space that silently upgrades under you is a Space that breaks
+# on a Tuesday for no visible reason.
+gradio>=5.9,<6
+lightgbm>=4.5,<5
+polars>=1.17,<2
+numpy>=2.0,<3
+pyarrow>=18.0
