@@ -53,6 +53,7 @@
 | 📦 **開源資料集** | 1982–今 全測站逐時空品觀測 + 氣象，含原始品質旗標，發布於 HuggingFace |
 | 📊 **可重現研究** | 從復刻 2018 年結果開始，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、污染來源方位、事件偵測極限、方法學對照 |
+| 🔮 **預測 demo** | [HuggingFace Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
 | 🔧 **Python 套件** | `twair` — 資料管線與分析工具 |
 
 ## 資料來源
@@ -105,7 +106,7 @@ uv run twair probe sources
 | Phase 4 | 氣象正規化、事件效應偵測 | ✅ 完成 |
 | Phase 5 | 境外傳輸（CBPF）✅ ／ 空間自相關 ⬜ | 🔄 部分完成 |
 | Phase 6 | 衛星與微型感測器融合 | ⬜ |
-| Phase 7 | 預測模型（M9）✅ ／ HuggingFace Space ⬜ | 🔄 部分完成 |
+| Phase 7 | 預測模型（M9）✅ ／ HuggingFace Space ✅ | ✅ 完成 |
 | Phase 8 | 健康衝擊、自動更新、發布 | ⬜ |
 
 完整計畫見 [PLAN.md](PLAN.md)。磁碟上的實際狀態用 `uv run twair status` 看——

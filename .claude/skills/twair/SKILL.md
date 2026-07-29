@@ -256,8 +256,29 @@ after adding any pattern that names a common directory.
 ### The Space bundle: `uv run twair export space`
 
 Rebuilds `spaces/forecast/` from the store — four LightGBM models, a demo slice,
-a climatology table and a manifest. It is **not** published by that command;
-pushing anywhere is manual and needs the owner's say-so.
+a climatology table and a manifest. That command does **not** publish anything.
+
+Live at <https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast>
+(pushed 2026-07-29, confirmed `RUNNING`). To push an update after changing the
+bundle or `app.py`:
+
+```python
+from huggingface_hub import HfApi
+from twair.config import get_settings
+
+s = get_settings()
+api = HfApi(token=s.hf_token)
+api.upload_folder(
+    repo_id=f"{s.hf_namespace}/airlens-taiwan-forecast",
+    repo_type="space",
+    folder_path="spaces/forecast",
+    ignore_patterns=["__pycache__/*", "*.pyc"],
+)
+```
+
+`HF_TOKEN` comes from `.env`, verified without logging by `uv run twair doctor`.
+Still needs the owner's go-ahead — this repo publishing to a repo they own is
+not standing authorisation for future pushes without asking.
 
 Four things it does deliberately, each of which cost a debugging round:
 
@@ -370,7 +391,7 @@ uv run twair qc report       # data-quality measurement -> docs/data-quality.md
 uv run twair summary         # row counts per year
 uv run twair stations geo    # cached MOENV register; --refresh to re-fetch
 uv run twair export web      # L0 + L1 + story payloads -> web/public/data/
-uv run twair export space    # HuggingFace Space bundle; does NOT publish
+uv run twair export space    # HuggingFace Space bundle; rebuild only, does not push
 uv run python spaces/forecast/app.py   # run that demo locally (needs the `space` extra)
 ```
 
