@@ -42,11 +42,16 @@ uv run twair doctor
 3. **API 金鑰會寄到註冊信箱**，不在網站上顯示 —— 請保留該封信件
 4. 填入 `.env` 的 `MOENV_API_KEY`
 
-驗證方式（把 `YOUR_KEY` 換掉）：
+驗證方式：
 
 ```bash
-curl "https://data.moenv.gov.tw/api/v2/aqx_p_432?limit=1&api_key=YOUR_KEY"
+uv run twair doctor
 ```
+
+> 別用 `curl` 手動測。MOENV 跟 CWA 一樣把金鑰放在網址參數裡，
+> 打在命令列上就會留在 shell 歷史，而那正是上面那段警告講的事——
+> 這份文件以前自己在這裡給了一個 `curl` 範例。`doctor` 會實際連線驗證，
+> 並且把請求包在 `net.quiet_http` 裡，金鑰不會進終端機或記錄檔。
 
 ## 2. 中央氣象署 開放資料平臺 — `CWA_API_KEY`
 
