@@ -461,6 +461,54 @@ def analyze_m10() -> None:
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m11")
+def analyze_m11(
+    sample: int = typer.Option(12, "--sample", help="Stations used for the costly comparisons."),
+    fraction: float = typer.Option(0.05, "--fraction", help="Share of known readings to hide."),
+) -> None:
+    """M11 — what the 2018 project's one sentence about missing values cost."""
+    import polars as pl
+
+    from twair.analysis.imputation import run_imputation
+
+    written = run_imputation(sample=sample, fraction=fraction)
+
+    distribution = pl.read_parquet(written["gap_distribution"])
+    console.print("\n[bold]how much is missing, and in what shape[/bold]")
+    console.print(distribution.select("gap_bucket", "gaps", "hours", "share_of_missing_hours"))
+
+    scores = pl.read_parquet(written["reconstruction"])
+    pooled = scores.filter(pl.col("gap_bucket") == "all")
+    console.print("\n[bold]reconstruction error against readings that were hidden[/bold]")
+    console.print(pooled.select("strategy", "recovered", "recovery_rate", "mae", "rmse", "bias"))
+
+    console.print("\n[bold]by gap length[/bold]")
+    console.print(
+        scores.filter(pl.col("gap_bucket") != "all")
+        .select("strategy", "gap_bucket", "n", "mae")
+        .sort("strategy", "gap_bucket")
+    )
+
+    # The comparison the whole module exists for: the original's method against
+    # the alternatives, on its own window, with an error attached at last.
+    rows = {row["strategy"]: row for row in pooled.iter_rows(named=True)}
+    neighbour, interpolation = rows.get("neighbor"), rows.get("interpolate")
+    if neighbour and interpolation and neighbour["mae"] and interpolation["mae"]:
+        console.print(
+            f"\nthe 2018 method reaches [bold]{neighbour['recovery_rate']:.0%}[/bold] of the "
+            f"hidden readings at [bold]{neighbour['mae']:.2f}[/bold] µg/m³ mean absolute error; "
+            f"interpolation reaches {interpolation['recovery_rate']:.0%} at "
+            f"{interpolation['mae']:.2f}"
+        )
+        console.print(
+            "[dim]  neither is free: the first invents more values less accurately, "
+            "the second declines most of the problem[/dim]"
+        )
+
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m7")
 def analyze_m7(
     years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),

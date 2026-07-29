@@ -152,6 +152,7 @@ plugins = ["pydantic.mypy"]
 module = [
     "gdown", "gdown.*", "selectolax", "selectolax.*", "duckdb", "duckdb.*",
     "shap", "shap.*", "lightgbm", "lightgbm.*", "pykrige", "pykrige.*",
+    "sklearn", "sklearn.*",
     "esda", "esda.*", "libpysal", "libpysal.*", "ee", "ee.*", "scipy", "scipy.*",
     "statsmodels", "statsmodels.*", "matplotlib", "matplotlib.*", "pandas", "pandas.*",
     "geopandas", "geopandas.*", "xarray", "xarray.*", "netCDF4", "netCDF4.*",

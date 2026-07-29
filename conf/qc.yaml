@@ -44,6 +44,13 @@ flag_placement:
 
 # 缺漏填補策略。預設不填補 —— 原始畢業專題「以鄰近測站之資料代替」
 # 是一句話帶過的黑盒，本專案把它變成可切換、可稽核、可比較的選項。
+#
+# 實作在 src/twair/qc/gapfill.py，比較在 src/twair/analysis/imputation.py
+# （`uv run twair analyze m11`）。這裡的參數是那兩支唯一的來源：
+# 一個填補率若不附上產生它的設定就無法被檢驗，所以參數不寫死在函式簽名裡。
+#
+# ⚠️ 這一整段都是**明示才會發生的事**。填補永遠不寫回資料庫，
+# 每一個被發明出來的值都帶著 `<欄位>_imputed` 回來。
 gapfill:
   default_strategy: none
   strategies:

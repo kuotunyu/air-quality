@@ -406,6 +406,49 @@ makes Polars report per-file totals as global. Derive the year from `ts_local`.
 Use `--patient` (60/180/420/900s backoff). Drive returns an HTML interstitial
 rather than an error status, so downloads are verified by magic bytes.
 
+### Gap filling is opt-in, marked, and never near the store
+
+`qc/gapfill.py` implements the 2018 project's own method (`neighbor`) beside
+three alternatives so it can be priced, not so it can be used. `none` is the
+shipped strategy. Every filled column gains `<column>_imputed`, and `_mark`
+derives that flag by comparing against the pre-fill frame rather than trusting
+each strategy to report honestly — which also catches a strategy overwriting a
+value it should have left alone.
+
+Measured over 2010–2017 (`twair analyze m11`): the neighbour method reconstructs
+hidden readings at **7.41 µg/m³ MAE** against interpolation's **2.88**, and on
+the *same* one-hour gaps it is 7.31 against 2.59 — 2.8x worse on the easiest
+case there is. Borrowing from 30 km away loses to a straight line between the
+two adjacent hours.
+
+**Its error barely grows with gap length** (7.07 at 2-3h to 8.96 at >48h, over a
+20x change). That reads as robustness and is the opposite: the method cannot
+tell how hard the problem is, so it fills a three-week outage as confidently as
+a one-hour one and says nothing about which is which.
+
+### A fill rate without the gap-length distribution says nothing
+
+72.5% of gaps are one hour, but those are only 20.7% of missing hours; 0.8% of
+gaps are longer than 48h and they are **43.4%** of missing hours. "How much is
+missing" has two answers pointing opposite ways, and the strategies are each
+best at one end. Always report the distribution beside the rate.
+
+The same reasoning governs the evaluation: hiding isolated cells would hand
+interpolation a problem it cannot fail. `mask_like_reality` draws run lengths
+from the observed distribution, and scores are reported per bucket — a pooled
+number hides the effect being measured.
+
+### Downstream R² cannot compare imputation strategies
+
+Filling only changes rows the baseline could not use, so each strategy ends up
+scored on a different test set. The "more usable rows" explanation does not
+rescue it either: the baseline already uses 95.2% of station-hours and the
+neighbour strategy 95.9%, yet the neighbour strategy gains the most R².
+
+A well-posed version fixes the evaluation set across strategies while letting
+the training set vary, which `run_drivers` does not support. The number was
+computed, found confounded, and **removed** — see `analysis/imputation.py`.
+
 ### The suite passed for months in an environment nobody else has
 
 The first CI run this repository ever had — 2026-07-29, the day it got a remote

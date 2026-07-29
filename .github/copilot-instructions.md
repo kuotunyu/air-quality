@@ -102,7 +102,7 @@ Run all three. All three must pass.
 ```bash
 uv run pytest -q
 ```
-Currently **470 passed, 3 deselected**. This number must **not go down**.
+Currently **509 passed, 3 deselected**. This number must **not go down**.
 
 > Raise it in the same commit that adds tests. This line said 299 for long
 > enough that the real figure reached 470 — a floor 171 tests below reality,
