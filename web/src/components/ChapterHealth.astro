@@ -1,0 +1,357 @@
+---
+/**
+ * Chapter 6 — the health number and the assumption inside it.
+ *
+ * The third chapter in a row about a limit, and the first where the signal
+ * wins. Chapter 4 found the method could not resolve the policy effects it
+ * was pointed at; chapter 5 found the forecast decays to climatology by two
+ * days. Here the improvement is real at every assumption — and the *level*
+ * still is not, because the counterfactual is never stated when a figure like
+ * this is quoted.
+ *
+ * The chart is four lines that never cross and never converge. They are the
+ * same data under four counterfactuals, and the gap between the top and
+ * bottom is what a single headline number silently picks one of.
+ *
+ * No death counts anywhere, deliberately. See the module docstring in
+ * analysis/health.py: a count needs a population this project does not have,
+ * and that term would dominate the error while reading as the solid part.
+ */
+import health from "../../public/data/story/health.json";
+import { linear, n, spreadLabels, ticks } from "../lib/chart";
+
+const series = health.series as {
+  name: string;
+  label: string;
+  value: number;
+  why: string;
+  years: number[];
+  paf: number[];
+}[];
+
+const headline = health.headline as {
+  first_year: number;
+  last_year: number;
+  first_share: number;
+  last_share: number;
+  first_range: number[];
+  last_range: number[];
+};
+
+const panel = health.panel as {
+  start_year: number;
+  stations: number;
+  station_years: number;
+  why: string;
+};
+
+const functions = health.functions as {
+  name: string;
+  rr_per_10: number;
+  rr_per_10_low: number;
+  rr_per_10_high: number;
+  outcome: string;
+  source: string;
+  source_url: string;
+  caveat: string;
+}[];
+
+const extrapolation = health.extrapolation as {
+  ceiling_ugm3: number;
+  share_above: number;
+  why: string;
+};
+
+const notReported = health.not_reported as { deaths: string; exposure: string };
+
+const years = health.years as number[];
+const spreadShare = health.spread_share as number[];
+
+const W = 720;
+const H = 320;
+const M = { top: 16, right: 104, bottom: 40, left: 52 };
+const PW = W - M.left - M.right;
+const PH = H - M.top - M.bottom;
+
+const allPaf = series.flatMap((s) => s.paf);
+const yPaf = linear([0, Math.max(...allPaf) * 1.1], [PH, 0]);
+const xYear = linear([Math.min(...years), Math.max(...years)], [0, PW]);
+const pafTicks = ticks(0, Math.max(...allPaf) * 1.1, 5);
+const yearTicks = years.filter((y) => y % 5 === 0 || y === years[years.length - 1]);
+
+// Darkest for the strictest counterfactual (0), lightest for the most lenient
+// (5.9). The ordering is the point: a reader should see that "how much is
+// attributable" is a stack of choices, not a measurement.
+const COLOURS = ["var(--c5)", "var(--c4)", "var(--c3)", "var(--c2)"];
+
+const labelY = spreadLabels(series.map((s) => yPaf(s.paf[s.paf.length - 1]) + 3.5), 12);
+
+const path = (values: number[], xs: number[]) =>
+  values.map((v, i) => `${i ? "L" : "M"}${n(xYear(xs[i]), 2)} ${n(yPaf(v), 2)}`).join(" ");
+
+// The second panel: the same spread as a share of the estimate it sits on.
+const H2 = 200;
+const PH2 = H2 - M.top - M.bottom;
+const yShare = linear([0, Math.max(...spreadShare) * 1.15], [PH2, 0]);
+const shareTicks = ticks(0, Math.max(...spreadShare) * 1.15, 4);
+const sharePath = spreadShare
+  .map((v, i) => `${i ? "L" : "M"}${n(xYear(years[i]), 2)} ${n(yShare(v), 2)}`)
+  .join(" ");
+
+const fn = functions[0];
+---
+
+<section id="health" class="page">
+  <p class="eyebrow">第六章</p>
+  <h2>健康負擔的數字裡有多少是假設</h2>
+
+  <p class="lede">
+    「空污每年造成 N 人死亡」這種句子裡藏著三個選擇：用哪條暴露反應函數、
+    以什麼濃度當作比較基準、以及誰暴露在裡面。
+    第三個這個專案沒有資料回答，前兩個有——這一章量的是**它們把答案推動多少**。
+  </p>
+
+  <p>
+    報的是<strong>可歸因比例</strong>（attributable fraction），不是人數。
+    比例只需要濃度和一條反應函數；人數還要乘上人口與基礎死亡率，
+    而這個專案只有測站觀測，沒有人口資料。
+    那一項會是誤差最大的來源，卻剛好看起來像整句話裡最紮實的部分。
+  </p>
+
+  <div class="note">
+    <code>{health.formula}</code>
+    <br /><br />
+    反事實濃度就是「拿什麼當比較基準」。它幾乎從來不會跟著結論一起被講出來。
+  </div>
+
+  <h3>四條線，同一批資料</h3>
+
+  <figure>
+    <div class="chart">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="不同反事實濃度下的可歸因比例">
+        <g transform={`translate(${M.left},${M.top})`}>
+          {
+            pafTicks.map((t) => (
+              <>
+                <line x1="0" x2={PW} y1={yPaf(t)} y2={yPaf(t)} class="grid" />
+                <text x="-8" y={yPaf(t) + 3.5} class="tick right">
+                  {n(t * 100, 0)}%
+                </text>
+              </>
+            ))
+          }
+          {
+            yearTicks.map((y) => (
+              <text x={xYear(y)} y={PH + 24} class="tick">
+                {y}
+              </text>
+            ))
+          }
+          {
+            series.map((s, i) => (
+              <>
+                <path
+                  d={path(s.paf, s.years)}
+                  class="line"
+                  style={`stroke:${COLOURS[i % COLOURS.length]}`}
+                />
+                <text
+                  x={PW + 8}
+                  y={labelY[i]}
+                  class="key"
+                  style={`fill:${COLOURS[i % COLOURS.length]}`}
+                >
+                  {s.label}
+                </text>
+              </>
+            ))
+          }
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      可歸因比例，{panel.stations} 個固定測站、{panel.start_year}–{
+        years[years.length - 1]
+      } 年。四條線是<strong>同一批濃度資料</strong>，只差在拿哪個濃度當比較基準。
+      標籤上的數字就是那個基準。
+    </figcaption>
+  </figure>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>下降是穩健的</h3>
+      <p class="small">
+        {headline.first_year} 年是 {n(headline.first_range[0] * 100, 1)}–{
+          n(headline.first_range[1] * 100, 1)
+        }%，{headline.last_year} 年是 {n(headline.last_range[0] * 100, 1)}–{
+          n(headline.last_range[1] * 100, 1)
+        }%。<strong>不管選哪個基準，都掉了大約一半到三分之二。</strong>
+        這一點跟第四章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。
+      </p>
+    </div>
+    <div class="card">
+      <h3>但「現在是多少」不穩健</h3>
+      <p class="small">
+        {headline.last_year} 年的答案是 {n(headline.last_range[0] * 100, 1)}% 還是
+        {" "}{n(headline.last_range[1] * 100, 1)}%，
+        <strong>差了將近一倍</strong>，而唯一的差別是把 2.4 還是 5.9 μg/m³
+        當作比較基準——這兩個數字是<strong>同一份published TMREL 區間的兩端</strong>。
+      </p>
+    </div>
+  </div>
+
+  <h3>而且空氣越乾淨，假設佔的比重越大</h3>
+
+  <p>
+    上面那個範圍的<strong>絕對寬度</strong>幾乎沒動（大約 3.6 到 4.2 個百分點）。
+    但它佔估計值的<strong>比例</strong>幾乎翻了三倍。
+  </p>
+
+  <figure>
+    <div class="chart">
+      <svg viewBox={`0 0 ${W} ${H2}`} role="img" aria-label="假設造成的範圍佔估計值的比例逐年上升">
+        <g transform={`translate(${M.left},${M.top})`}>
+          {
+            shareTicks.map((t) => (
+              <>
+                <line x1="0" x2={PW} y1={yShare(t)} y2={yShare(t)} class="grid" />
+                <text x="-8" y={yShare(t) + 3.5} class="tick right">
+                  {n(t * 100, 0)}%
+                </text>
+              </>
+            ))
+          }
+          {
+            yearTicks.map((y) => (
+              <text x={xYear(y)} y={PH2 + 24} class="tick">
+                {y}
+              </text>
+            ))
+          }
+          <path d={sharePath} class="line" style="stroke:var(--c6)" />
+          {
+            spreadShare.map((v, i) => (
+              <circle cx={xYear(years[i])} cy={yShare(v)} r="3" style="fill:var(--c6)">
+                <title>
+                  {years[i]}: {n(v * 100, 1)}%
+                </title>
+              </circle>
+            ))
+          }
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      基準選擇造成的範圍，除以估計值本身。從 {n(headline.first_share * 100, 0)}% 上升到
+      {" "}{n(headline.last_share * 100, 0)}%。
+    </figcaption>
+  </figure>
+
+  <div class="note caveat">
+    <strong>這是必然的，只是不直覺。</strong>
+    可歸因的部分是「濃度超出基準的那一截」。濃度從 32 降到 13，那一截就跟基準本身
+    越來越接近——於是「基準要放哪」佔掉的比重越來越大。
+    <br /><br />
+    也就是說：<strong>空氣越乾淨，健康負擔的數字就越取決於一個沒人說出口的選擇。</strong>
+    這跟「資料變好、估計就變準」的直覺剛好相反。
+  </div>
+
+  <h3>用的是哪條函數</h3>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>結果變數</th>
+          <th class="num">每 10 μg/m³ 的相對風險</th>
+          <th>來源</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          functions.map((f) => (
+            <tr>
+              <td>{f.outcome}</td>
+              <td class="num">
+                {n(f.rr_per_10, 3)}
+                <span class="dim">
+                  {" "}
+                  ({n(f.rr_per_10_low, 2)}–{n(f.rr_per_10_high, 2)})
+                </span>
+              </td>
+              <td class="small">
+                <a href={f.source_url} target="_blank" rel="noopener">
+                  {f.source}
+                </a>
+              </td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small">{fn.caveat}</p>
+
+  <div class="note caveat">
+    <strong>{n(extrapolation.share_above * 100, 1)}%</strong> 的測站-年落在
+    {" "}{n(extrapolation.ceiling_ugm3, 0)} μg/m³ 以上。{extrapolation.why}
+  </div>
+
+  <h3>固定樣本，不是「當年有在測的」</h3>
+
+  <p class="small">{panel.why}</p>
+
+  <h3>兩件刻意不做的事</h3>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>不報死亡人數</h3>
+      <p class="small">{notReported.deaths}</p>
+    </div>
+    <div class="card">
+      <h3>不宣稱這是誰的暴露</h3>
+      <p class="small">{notReported.exposure}</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  svg {
+    width: 100%;
+    height: auto;
+    min-width: 460px;
+    display: block;
+  }
+  .grid {
+    stroke: var(--line-soft);
+    stroke-width: 1;
+  }
+  .line {
+    fill: none;
+    stroke-width: 2.2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .tick {
+    fill: var(--text-faint);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    text-anchor: middle;
+  }
+  .tick.right {
+    text-anchor: end;
+  }
+  .key {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .dim {
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+  code {
+    font-size: 0.95em;
+  }
+</style>

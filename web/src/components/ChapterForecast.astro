@@ -13,7 +13,7 @@
  * data as three scores, which is where the contradiction lives.
  */
 import forecast from "../../public/data/story/forecast.json";
-import { linear, n, ticks } from "../lib/chart";
+import { linear, n, spreadLabels, ticks } from "../lib/chart";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -59,23 +59,6 @@ const xAt = (index: number) =>
 const path = (values: number[], y: (v: number) => number) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(xAt(i), 2)} ${n(y(v), 2)}`).join(" ");
 
-/**
- * Push inline series labels apart so they stay readable where lines converge.
- *
- * Needed because convergence is the finding. At 48h R² is 0.217 and skill is
- * 0.243, which put two labels 5px apart at an 11.5px font size — the chart was
- * illegible in exactly the spot it was drawn to show.
- */
-function spreadLabels(values: number[], gap = 13): number[] {
-  const order = values.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
-  for (let k = 1; k < order.length; k += 1) {
-    const overlap = order[k - 1].y + gap - order[k].y;
-    if (overlap > 0) order[k].y += overlap;
-  }
-  const out = new Array<number>(values.length);
-  order.forEach(({ y, i }) => (out[i] = y));
-  return out;
-}
 
 // --- Figure 1: error in µg/m³ -------------------------------------------
 const rmseAll = horizons.flatMap((h) => [h.model_rmse, h.persistence_rmse, h.climatology_rmse]);

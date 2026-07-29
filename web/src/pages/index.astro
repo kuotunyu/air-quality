@@ -5,6 +5,7 @@ import StationMap from "../components/StationMap.astro";
 import ChapterSources from "../components/ChapterSources.astro";
 import ChapterDetection from "../components/ChapterDetection.astro";
 import ChapterForecast from "../components/ChapterForecast.astro";
+import ChapterHealth from "../components/ChapterHealth.astro";
 import ChapterMethods from "../components/ChapterMethods.astro";
 import StationPicker from "../components/StationPicker.astro";
 import Explorer from "../components/Explorer.astro";
@@ -107,7 +108,7 @@ const airzoneSeries = (trendByAirzone.series as {
 
     <p class="note">
       這份資料的品管與管線全部開源，每個數字都可以自己重算。
-      <a href="#mistakes">第六章</a>拿一份 2018 年的大學畢業專題當對照組——
+      <a href="#mistakes">第七章</a>拿一份 2018 年的大學畢業專題當對照組——
       它用 8 年的月平均、7,286 個觀測值；這裡用 44 年的逐時資料、3.41 億筆——
       逐項比較兩種做法會得到多不一樣的結論。
     </p>
@@ -209,15 +210,18 @@ const airzoneSeries = (trendByAirzone.series as {
   <!-- ═══════════ 5. 預測範圍 ═══════════ -->
   <ChapterForecast />
 
-  <!-- ═══════════ 6. 方法學對照 ═══════════ -->
+  <!-- ═══════════ 6. 健康負擔 ═══════════ -->
+  <ChapterHealth />
+
+  <!-- ═══════════ 7. 方法學對照 ═══════════ -->
   <ChapterMethods />
 
-  <!-- ═══════════ 7. 資料探索器 ═══════════ -->
+  <!-- ═══════════ 8. 資料探索器 ═══════════ -->
   <Explorer />
 
-  <!-- ═══════════ 8. 資料與方法 ═══════════ -->
+  <!-- ═══════════ 9. 資料與方法 ═══════════ -->
   <section id="data" class="page">
-    <p class="eyebrow">第八章</p>
+    <p class="eyebrow">第九章</p>
     <h2>資料與方法</h2>
 
     <p class="lede">

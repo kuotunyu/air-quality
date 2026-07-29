@@ -1,0 +1,80 @@
+# Exposure-response parameters for M10.
+#
+# Every function here carries a `source`. `load_response_functions` refuses an
+# entry without one, for the same reason `conf/events.yaml` refuses an
+# unsourced event: a coefficient with no provenance is indistinguishable from
+# one that was invented, and this project already caught a delegated agent
+# fabricating five of six citations.
+#
+# NOTE ON WHAT IS DELIBERATELY ABSENT.
+#
+# There is no GEMM here, and no attributable death counts anywhere in M10.
+#
+# GEMM (Burnett et al. 2018) is cause- and age-specific. Applying it needs an
+# age-stratified population and cause-specific baseline mortality, and this
+# project has neither — it has station observations. Coding GEMM against a
+# population this repository does not hold would add decimal places without
+# adding information, which is the failure mode the whole project is written
+# against.
+#
+# The same argument rules out death counts. A count is a rate multiplied by a
+# population, and the population term would be the largest source of error
+# while looking like the most solid part of the sentence. M10 reports the
+# **fraction** of risk attributable to exposure, which needs concentration and
+# a response function and nothing else.
+
+# Counterfactual concentrations. The attributable fraction is defined relative
+# to *something*, and the choice is rarely stated when the resulting number is
+# quoted. M10's headline is how much the answer moves across this list.
+counterfactuals:
+  zero:
+    value: 0.0
+    label: "0 μg/m³"
+    why: >-
+      No safe threshold assumed. Simple, and almost certainly wrong at the
+      bottom of the range where the epidemiology has no observations.
+  gbd_low:
+    value: 2.4
+    label: "2.4 μg/m³"
+    why: >-
+      Lower bound of the GBD 2019 theoretical-minimum-risk exposure level,
+      drawn as a uniform distribution over 2.4–5.9 μg/m³.
+  gbd_high:
+    value: 5.9
+    label: "5.9 μg/m³"
+    why: >-
+      Upper bound of the same TMREL distribution. The gap between this and
+      gbd_low is not a rounding detail: over Taiwan's recent concentrations it
+      moves the attributable fraction by roughly a third.
+  who_guideline:
+    value: 5.0
+    label: "5 μg/m³（WHO 2021）"
+    why: >-
+      The WHO 2021 annual guideline. Not a TMREL — it is a policy target — but
+      it is what a reader assumes when a report says "above the guideline".
+
+# Relative risk per 10 μg/m³ of annual-mean PM2.5, all-cause mortality, adults.
+# Applied log-linearly above the counterfactual.
+response_functions:
+  who_2021_allcause:
+    rr_per_10: 1.08
+    rr_per_10_low: 1.06
+    rr_per_10_high: 1.09
+    outcome: "all-cause mortality, adults"
+    source: >-
+      Chen J, Hoek G (2020), Environment International 143:105974 — systematic
+      review and meta-analysis of long-term PM2.5 exposure and mortality. This
+      is the pooled estimate the WHO 2021 global air quality guidelines cite
+      for the annual PM2.5 recommendation.
+    source_url: "https://doi.org/10.1016/j.envint.2020.105974"
+    caveat: >-
+      Log-linear extrapolation. The cohorts behind this estimate are mostly
+      North American and European at concentrations below about 30 μg/m³, so
+      applying it to Taiwan's 1990s levels extrapolates well beyond the
+      observed range. Every result carries the fraction of station-years that
+      sit outside it.
+
+# Above this, the log-linear form is outside the range most cohorts observed.
+# Not a hard error — the 1990s data is real and worth showing — but the share
+# of station-years above it travels with every result.
+extrapolation_ceiling_ugm3: 30.0

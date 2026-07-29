@@ -16,6 +16,7 @@ from typing import Any
 import polars as pl
 import pytest
 
+from twair import panels
 from twair.viz import story
 
 
@@ -140,7 +141,7 @@ class TestBalancedPanel:
             }
         )
 
-        options = story.balanced_panel_options(annual)
+        options = panels.balanced_panel_options(annual)
 
         assert options.filter(pl.col("start_year") == 2000)["n_stations"][0] == 1
         assert options.filter(pl.col("start_year") == 2003)["n_stations"][0] == 3
@@ -154,10 +155,10 @@ class TestBalancedPanel:
             }
         )
 
-        options = story.balanced_panel_options(annual)
+        options = panels.balanced_panel_options(annual)
 
         # 2000: 1 station x 5 years = 5.  2003: 3 stations x 2 years = 6.
-        assert story.choose_balanced_start(options) == 2003
+        assert panels.choose_balanced_start(options) == 2003
 
     def test_a_tie_goes_to_the_longer_record(self) -> None:
         options = pl.DataFrame(
@@ -169,7 +170,7 @@ class TestBalancedPanel:
             }
         )
 
-        assert story.choose_balanced_start(options) == 2000
+        assert panels.choose_balanced_start(options) == 2000
 
     def test_the_balanced_series_is_null_before_the_window_starts(
         self, daily: Callable[[pl.DataFrame], None]

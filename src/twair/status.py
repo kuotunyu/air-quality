@@ -72,6 +72,7 @@ MODULES: tuple[Module, ...] = (
     Module("m5_causal", "twair analyze m5", "event studies with placebo controls"),
     Module("m7_sources", "twair analyze m7", "CBPF source direction"),
     Module("m9_forecast", "twair analyze m9", "forecasting scored against persistence"),
+    Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
 )
 
 

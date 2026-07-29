@@ -19,11 +19,15 @@ export interface Scale {
   range: [number, number];
 }
 
-export function linear(domain: [number, number], range: [number, number]): Scale {
+export function linear(
+  domain: [number, number],
+  range: [number, number],
+): Scale {
   const [d0, d1] = domain;
   const [r0, r1] = range;
   const span = d1 - d0 || 1;
-  const scale = ((value: number) => r0 + ((value - d0) / span) * (r1 - r0)) as Scale;
+  const scale = ((value: number) =>
+    r0 + ((value - d0) / span) * (r1 - r0)) as Scale;
   scale.domain = domain;
   scale.range = range;
   return scale;
@@ -78,15 +82,26 @@ export function points(
 
 /** "Nice" tick values covering a domain, at roughly `count` intervals. */
 export function ticks(min: number, max: number, count = 5): number[] {
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return [min];
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max)
+    return [min];
   const raw = (max - min) / count;
   const magnitude = 10 ** Math.floor(Math.log10(raw));
   const normalised = raw / magnitude;
   const step =
-    (normalised >= 7.5 ? 10 : normalised >= 3.5 ? 5 : normalised >= 1.5 ? 2 : 1) * magnitude;
+    (normalised >= 7.5
+      ? 10
+      : normalised >= 3.5
+        ? 5
+        : normalised >= 1.5
+          ? 2
+          : 1) * magnitude;
 
   const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) {
+  for (
+    let v = Math.ceil(min / step) * step;
+    v <= max + step * 1e-9;
+    v += step
+  ) {
     out.push(Number(v.toFixed(10)));
   }
   return out;
@@ -97,7 +112,9 @@ export function padded(
   values: (number | null | undefined)[],
   { zero = false, pad = 0.08 }: { zero?: boolean; pad?: number } = {},
 ): [number, number] {
-  const finite = values.filter((v): v is number => v != null && Number.isFinite(v));
+  const finite = values.filter(
+    (v): v is number => v != null && Number.isFinite(v),
+  );
   if (finite.length === 0) return [0, 1];
 
   let min = Math.min(...finite);
@@ -129,10 +146,33 @@ export function concentrationColour(value: number | null | undefined): string {
 
 export const concentrationLegend = PM25_BREAKS.map((breakpoint, index) => ({
   colour: `var(${RAMP[index]})`,
-  label: index === 0 ? `< ${breakpoint}` : `${PM25_BREAKS[index - 1]}–${breakpoint}`,
+  label:
+    index === 0 ? `< ${breakpoint}` : `${PM25_BREAKS[index - 1]}–${breakpoint}`,
 })).concat([
   {
     colour: `var(${RAMP[RAMP.length - 1]})`,
     label: `≥ ${PM25_BREAKS[PM25_BREAKS.length - 1]}`,
   },
 ]);
+
+/**
+ * Push inline series labels apart so they stay readable where lines converge.
+ *
+ * Needed because convergence is usually the finding. In chapter 5 R² and skill
+ * end 5px apart at 48h at an 11.5px font; in chapter 6 two counterfactual
+ * labels end 7px apart. Both charts exist to show lines approaching each
+ * other, so the collision is the normal case rather than an edge one.
+ *
+ * Takes and returns y positions in SVG user units, in the caller's series
+ * order.
+ */
+export function spreadLabels(values: number[], gap = 13): number[] {
+  const order = values.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < order.length; k += 1) {
+    const overlap = order[k - 1].y + gap - order[k].y;
+    if (overlap > 0) order[k].y += overlap;
+  }
+  const out = new Array<number>(values.length);
+  order.forEach(({ y, i }) => (out[i] = y));
+  return out;
+}

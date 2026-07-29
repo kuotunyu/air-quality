@@ -397,6 +397,70 @@ def analyze_m9(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m10")
+def analyze_m10() -> None:
+    """M10 — attributable fraction, and how much the assumption sets it."""
+    from twair.analysis.health import run_health, write_health_report
+
+    tables = run_health()
+    spread = tables["spread"]
+    coverage = tables["coverage"]
+
+    console.print(
+        spread.select(
+            "year",
+            "mean_median",
+            "paf_lowest_assumption",
+            "paf_highest_assumption",
+            "assumption_spread",
+        ).tail(10)
+    )
+
+    first, latest = spread.head(1).to_dicts()[0], spread.tail(1).to_dicts()[0]
+    row = coverage.to_dicts()[0]
+
+    console.print(
+        f"\npanel: [bold]{row['panel_stations']}[/bold] stations balanced from "
+        f"{row['panel_start_year']} ({row['station_years_total']:,} station-years)"
+    )
+    console.print(
+        f"[bold]{latest['year']}[/bold]: median station {latest['mean_median']:.1f} µg/m³, "
+        f"attributable fraction [bold]{latest['paf_lowest_assumption']:.1%} to "
+        f"{latest['paf_highest_assumption']:.1%}[/bold] — the whole range comes from "
+        f"which counterfactual is chosen"
+    )
+
+    # Two findings that point opposite ways, so both get printed. The fall is
+    # robust: it happens at every counterfactual. The level is not: today it is
+    # 5% or 9% depending on a choice that is almost never stated. And the
+    # second gets worse as the first succeeds, which is the non-obvious part.
+    fall_lo = first["paf_lowest_assumption"] - latest["paf_lowest_assumption"]
+    fall_hi = first["paf_highest_assumption"] - latest["paf_highest_assumption"]
+    console.print(
+        f"  the [green]fall[/green] survives every assumption: "
+        f"{fall_lo:.1%} to {fall_hi:.1%} since {first['year']}"
+    )
+    console.print(
+        f"  the [yellow]level[/yellow] does not: assumption is "
+        f"[bold]{first['spread_as_share_of_estimate']:.0%}[/bold] of the {first['year']} estimate "
+        f"and [bold]{latest['spread_as_share_of_estimate']:.0%}[/bold] of the "
+        f"{latest['year']} one"
+    )
+    console.print(
+        "  [dim]cleaner air makes the counterfactual choice matter more, not less — "
+        "the excess shrinks toward it[/dim]"
+    )
+    console.print(
+        f"  [yellow]{row['share_above_ceiling']:.1%}[/yellow] of station-years sit above "
+        f"{row['extrapolation_ceiling_ugm3']:.0f} µg/m³, outside the cohorts the "
+        f"coefficient came from"
+    )
+    console.print("[dim]  fractions, not death counts — see the module docstring[/dim]")
+
+    for name, path in write_health_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m7")
 def analyze_m7(
     years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),

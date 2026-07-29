@@ -17,6 +17,7 @@ from typing import Any
 
 import polars as pl
 
+from twair.panels import balanced_panel_options, choose_balanced_start
 from twair.paths import outputs_dir, processed_dir
 from twair.scalars import as_int, opt_float
 from twair.viz.export import web_data_dir, write_json
@@ -164,69 +165,6 @@ def annual_by_station(pollutant: str = "PM2.5", root: Path | None = None) -> pl.
         .join(stations_ranked, on="year", how="left")
         .sort("year", "station_name")
     )
-
-
-def balanced_panel_options(annual: pl.DataFrame) -> pl.DataFrame:
-    """The trade-off between how far back a balanced panel reaches and how wide it is.
-
-    For every candidate start year, how many stations reported comparably in
-    *every* year from then to the end of the record, and how many station-years
-    that panel therefore contains.
-
-    This exists because the obvious choice — "balance across the whole record"
-    — is a trap. PM2.5 measurement began at a handful of experimental sites in
-    1998 and only became a national network in 2005, so a panel balanced back
-    to 1998 contains **two stations**, and its "national trend" is really the
-    trend at two places. Starting later buys breadth at the cost of length, and
-    there is no answer that is right in the abstract. The curve is published so
-    the reader can see the choice that was made and what the alternatives were.
-    """
-    if annual.is_empty():
-        return pl.DataFrame(
-            schema={
-                "start_year": pl.Int32,
-                "n_stations": pl.UInt32,
-                "n_years": pl.Int32,
-                "station_years": pl.Int32,
-            }
-        )
-
-    last = as_int(annual["year"].max())
-    rows = []
-    for start in sorted({int(y) for y in annual["year"].unique()}):
-        window = annual.filter(pl.col("year") >= start)
-        n_years = last - start + 1
-        complete = (
-            window.group_by("station_name")
-            .agg(pl.col("year").n_unique().alias("years"))
-            .filter(pl.col("years") == n_years)
-        )
-        rows.append(
-            {
-                "start_year": start,
-                "n_stations": complete.height,
-                "n_years": n_years,
-                "station_years": complete.height * n_years,
-            }
-        )
-    return pl.DataFrame(rows).with_columns(
-        pl.col("start_year").cast(pl.Int32),
-        pl.col("n_stations").cast(pl.UInt32),
-        pl.col("n_years").cast(pl.Int32),
-        pl.col("station_years").cast(pl.Int32),
-    )
-
-
-def choose_balanced_start(options: pl.DataFrame) -> int | None:
-    """Pick the window with the most station-years, ties going to the longer record.
-
-    A stated, computable rule rather than a judgement call, so that the same
-    data always yields the same window and the choice can be argued with.
-    """
-    if options.is_empty():
-        return None
-    best = options.sort(["station_years", "n_years"], descending=[True, True]).row(0, named=True)
-    return int(best["start_year"]) if best["n_stations"] > 0 else None
 
 
 def national_trend(
@@ -452,7 +390,116 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     written.extend(_export_detection_limit(root))
     written.extend(_export_sources(root))
     written.extend(_export_forecast(root))
+    written.extend(_export_health(root))
     return written
+
+
+def _export_health(root: Path) -> list[Path]:
+    """Chapter 6: the attributable fraction, and how much of it is the assumption.
+
+    The payload leads with the *relative* spread rather than the fraction,
+    because that is the finding. The absolute gap between counterfactuals
+    barely moves across twenty years; its share of the estimate nearly triples,
+    and only the second framing shows that cleaner air makes the number more
+    assumption-dependent rather than less.
+    """
+    source = outputs_dir("m10_health")
+    spread_path = source / "spread.parquet"
+    if not spread_path.exists():
+        log.warning("no M10 output — run `twair analyze m10`")
+        return []
+
+    from twair.analysis.health import load_counterfactuals, load_response_functions
+
+    spread = pl.read_parquet(spread_path)
+    national = pl.read_parquet(source / "national.parquet").filter(pl.col("bound") == "central")
+    coverage = pl.read_parquet(source / "coverage.parquet").to_dicts()[0]
+
+    functions = load_response_functions()
+    counterfactuals = load_counterfactuals()
+    first, last = spread.head(1).to_dicts()[0], spread.tail(1).to_dicts()[0]
+
+    series = [
+        {
+            "name": cf.name,
+            "label": cf.label,
+            "value": cf.value,
+            "why": cf.why,
+            "years": part["year"].to_list(),
+            "paf": [_round(v, 4) for v in part["paf_median"]],
+        }
+        for cf in sorted(counterfactuals.values(), key=lambda c: c.value)
+        for part in [national.filter(pl.col("counterfactual") == cf.name).sort("year")]
+        if not part.is_empty()
+    ]
+
+    return [
+        write_json(
+            root / "health.json",
+            {
+                "panel": {
+                    "start_year": coverage["panel_start_year"],
+                    "stations": coverage["panel_stations"],
+                    "station_years": coverage["station_years_total"],
+                    "why": (
+                        "PM2.5 監測從少數實驗測站開始，1998 年只有 5 站有足夠涵蓋率、"
+                        "2025 年有 77 站。不固定樣本的話，趨勢有一部分是測站網在長大，"
+                        "不是空氣在變化。這裡用的固定樣本規則與第 1 章相同。"
+                    ),
+                },
+                "formula": "PAF = (RR − 1) ÷ RR，RR = exp(β × max(0, C − 反事實濃度))",
+                "functions": [
+                    {
+                        "name": f.name,
+                        "rr_per_10": f.rr_per_10,
+                        "rr_per_10_low": f.rr_per_10_low,
+                        "rr_per_10_high": f.rr_per_10_high,
+                        "outcome": f.outcome,
+                        "source": f.source,
+                        "source_url": f.source_url,
+                        "caveat": f.caveat,
+                    }
+                    for f in functions.values()
+                ],
+                "series": series,
+                "years": spread["year"].to_list(),
+                "mean_median": [_round(v, 2) for v in spread["mean_median"]],
+                "spread_share": [_round(v, 4) for v in spread["spread_as_share_of_estimate"]],
+                "headline": {
+                    "first_year": first["year"],
+                    "last_year": last["year"],
+                    "first_share": _round(first["spread_as_share_of_estimate"], 4),
+                    "last_share": _round(last["spread_as_share_of_estimate"], 4),
+                    "first_range": [
+                        _round(first["paf_lowest_assumption"], 4),
+                        _round(first["paf_highest_assumption"], 4),
+                    ],
+                    "last_range": [
+                        _round(last["paf_lowest_assumption"], 4),
+                        _round(last["paf_highest_assumption"], 4),
+                    ],
+                },
+                "extrapolation": {
+                    "ceiling_ugm3": coverage["extrapolation_ceiling_ugm3"],
+                    "share_above": _round(coverage["share_above_ceiling"], 4),
+                    "why": (
+                        "係數來自的世代研究多半觀測在 30 μg/m³ 以下。高於這個值是外推，不是內插。"
+                    ),
+                },
+                "not_reported": {
+                    "deaths": (
+                        "沒有死亡人數。人數 = 比例 × 人口 × 基礎死亡率，"
+                        "而本專案只有測站觀測，沒有人口資料。"
+                        "人口那一項會是誤差最大的來源，卻看起來像句子裡最紮實的部分。"
+                    ),
+                    "exposure": (
+                        "測站平均不是人口加權暴露。全國數字是「各測站的中位數」，"
+                        "那是關於監測網的陳述，不是關於任何人呼吸到什麼的陳述。"
+                    ),
+                },
+            },
+        )
+    ]
 
 
 def _export_forecast(root: Path) -> list[Path]:

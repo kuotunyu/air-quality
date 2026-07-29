@@ -309,6 +309,35 @@ stations — puts 6h skill at **−0.043**, with no station clearly positive, wh
 The likely reason: 6 hours falls between two signals. Too far for the current
 rise or fall to still carry, too near for the same hour tomorrow to help.
 
+### Health numbers: fractions, never counts
+
+`analysis/health.py` reports the **attributable fraction**, which needs a
+concentration and a response function. A death count additionally needs a
+population and a baseline mortality rate, and this repository holds station
+observations, not people — that term would dominate the error while reading as
+the solid part of the sentence. Same argument rules out GEMM: it is cause- and
+age-specific and there is no age-stratified population to apply it to.
+
+Response functions live in `conf/health.yaml` and **must carry a resolvable
+`source_url`**, the same gate `conf/events.yaml` has.
+
+The measured finding is counter-intuitive and worth keeping: the counterfactual
+choice takes a *larger* share of the answer as air improves — 17% of the
+estimate in 2006, 45% in 2025 — because the excess over the counterfactual is
+shrinking toward the counterfactual. Cleaner air makes a health-burden number
+more assumption-dependent, not less.
+
+### One panel rule, in `twair/panels.py`
+
+`balanced_panel_options` / `choose_balanced_start` were in `viz/story.py` and
+are now shared, because M10 needed the same thing and a second copy would
+drift. Anything comparing across years must use them: PM2.5 coverage goes from
+5 stations in 1998 to 77 in 2025, so an unbalanced series partly measures the
+network. Both callers independently land on 2006 / 68 stations.
+
+`web/src/lib/chart.ts` has `spreadLabels` for the same reason — chapters 5 and
+6 both draw converging lines, and converging lines collide their end labels.
+
 ### Chapter components are named by content, never by number
 
 `Chapter3.astro`, `Chapter4.astro`, `Chapter5.astro` was fine until a chapter
