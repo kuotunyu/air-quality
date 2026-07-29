@@ -406,6 +406,32 @@ makes Polars report per-file totals as global. Derive the year from `ts_local`.
 Use `--patient` (60/180/420/900s backoff). Drive returns an HTML interstitial
 rather than an error status, so downloads are verified by magic bytes.
 
+### The suite passed for months in an environment nobody else has
+
+The first CI run this repository ever had — 2026-07-29, the day it got a remote
+— failed. One test, `test_a_closed_station_gets_the_card_for_its_last_good_year`,
+reached `story._stations()`, which reads `data/outputs/qc/stations.parquet`.
+That file is produced by `twair stations` and is gitignored, so it exists here
+and nowhere else. The test next to it already stubbed `_stations` for the same
+reason; this one just never had to.
+
+Nothing was wrong with the test suite as a description of the code. What was
+wrong is that "green" had only ever been measured on a machine holding 1.5 GB
+of gitignored artefacts. **Before pushing, reproduce a clean checkout:**
+
+```bash
+TWAIR_DATA_DIR="$TEMP/twair-empty" uv run pytest -q
+```
+
+`paths.data_root()` reads the variable at call time, so pointing it at an empty
+directory makes every local artefact look absent — which is exactly what CI
+sees. Same count as the ordinary run, or something is reaching data a fresh
+clone does not have.
+
+The general shape is worth keeping: a check that has never run in the
+environment it is supposed to protect has not been passing, it has been
+untested.
+
 ### A credential in a URL leaks by two routes, not one
 
 `net.quiet_http` was written after httpx logged a real CWA key at INFO. Its

@@ -107,6 +107,18 @@ Currently **470 passed, 3 deselected**. This number must **not go down**.
 > rule as written. A guardrail nobody updates is a guardrail that quietly stops
 > guarding.
 
+**A green suite on this machine is not the same as a green suite.** Most of
+`data/` is gitignored, so a test can reach a local artefact and pass here while
+failing for everyone else. Reproduce a clean checkout by pointing the data root
+at an empty directory:
+
+```bash
+TWAIR_DATA_DIR="$TEMP/twair-empty" uv run pytest -q
+```
+
+Same count as above, or something depends on data a fresh clone does not have.
+`paths.data_root()` reads the variable at call time, so this needs no fixture.
+
 ```bash
 uv run ruff check .
 ```

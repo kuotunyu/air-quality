@@ -210,12 +210,18 @@ class TestBalancedPanel:
 
 class TestStationCards:
     def test_a_closed_station_gets_the_card_for_its_last_good_year(
-        self, daily: Callable[[pl.DataFrame], None]
+        self, daily: Callable[[pl.DataFrame], None], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         rows = _year_of_days("已停用", 2003, 40.0, days=365) + _year_of_days(
             "已停用", 2004, 40.0, days=50
         )
         daily(_daily_frame(rows))
+        # The station register is a local artefact of `twair stations` and is
+        # gitignored, so reaching the real one made this the only test in the
+        # suite that could not run on a clean checkout. Which year the card
+        # describes does not depend on the register, so it is stubbed the same
+        # way the cigarette test already stubs it.
+        monkeypatch.setattr(story, "_stations", lambda: pl.DataFrame({"station_name": ["已停用"]}))
 
         cards = story.station_cards("PM2.5")
 
