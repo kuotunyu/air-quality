@@ -63,7 +63,7 @@ does it explicitly.
 
 ## Deployment
 
-`.github/workflows/pages.yml` builds and publishes to GitHub Pages. It is inert
-until the repository has a remote and Pages is set to "GitHub Actions" in
-Settings. `PUBLIC_SITE_URL` and `PUBLIC_BASE_PATH` are derived from the
+`.github/workflows/pages.yml` builds and publishes to GitHub Pages. Live at
+<https://kuotunyu.github.io/air-quality/>; it runs on any push to `master` that
+touches `web/`. `PUBLIC_SITE_URL` and `PUBLIC_BASE_PATH` are derived from the
 repository name in CI; set them yourself for a custom domain.

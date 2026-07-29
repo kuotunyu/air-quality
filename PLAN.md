@@ -427,7 +427,7 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 
 **驗收**
 - [x] 本地可跑 —— `cd web && npm run dev`
-- [ ] GitHub Actions 部署到 GitHub Pages 成功 —— 工作流已備妥，**等 repo 建立**
+- [x] GitHub Actions 部署到 GitHub Pages 成功 —— <https://kuotunyu.github.io/air-quality/>
 - [x] 章節 0/1/2/5/6/7 上線
 - [x] 第 6 章 DuckDB-WASM 資料探索器 —— 瀏覽器內跑 SQL，無查詢伺服器
 - [x] 行動裝置可用 —— 375px 無橫向溢出，全部文字達 WCAG AA

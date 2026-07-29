@@ -5,7 +5,7 @@
 > with an open pipeline and an interactive site on top.
 
 [繁體中文](README.md) ·
-Interactive site — *not yet deployed* ·
+[Interactive site](https://kuotunyu.github.io/air-quality/) ·
 Dataset — *not yet uploaded* ·
 [Forecast demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
 [Methodology](docs/methodology.md)

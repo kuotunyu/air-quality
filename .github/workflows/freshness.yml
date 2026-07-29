@@ -9,7 +9,7 @@
 # already names that failure mode: a green obtained by switching the check off
 # is worse than a red one.
 #
-# Like pages.yml, this is inert until the repository has a GitHub remote.
+# Scheduled runs only fire from the default branch.
 # Scheduled workflows also run only from the default branch, and GitHub disables
 # them after 60 days with no repository activity — which this repo will hit
 # between refreshes. Re-enabling is one button on the Actions tab.

@@ -5,7 +5,7 @@
 > 附上完整開源的管線與一個互動網站。
 
 [English](README.en.md) ·
-互動網站 —— *尚未部署* ·
+[互動網站](https://kuotunyu.github.io/air-quality/) ·
 [預測 demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
 資料集 —— *尚未上架* ·
 [方法論](docs/methodology.md)
@@ -129,8 +129,11 @@ cd web && npm install && npm run dev    # http://localhost:4321
 Astro 靜態網站，深淺兩色主題，沒有繪圖套件——圖表在建置時產生 SVG，
 所以沒有 JavaScript 也看得到、可以列印。細節見 [web/README.md](web/README.md)。
 
-尚未部署：需要先建立 GitHub repository，並在 Settings → Pages
-把來源設為 GitHub Actions。工作流程已備妥於 `.github/workflows/pages.yml`。
+已上線：**<https://kuotunyu.github.io/air-quality/>**，由 `.github/workflows/pages.yml` 在推送到 `master`
+且動到 `web/` 時自動建置部署。
+
+CI 沒有那 3.41 億列資料庫的複本，所以**更新網站的資料是本機步驟加一次 commit**——
+`uv run twair export web` 之後把 `web/public/data/` 一起提交。
 
 ## 授權
 
