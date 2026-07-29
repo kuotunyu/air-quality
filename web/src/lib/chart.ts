@@ -166,7 +166,7 @@ export const concentrationLegend = PM25_BREAKS.map((breakpoint, index) => ({
  * Takes and returns y positions in SVG user units, in the caller's series
  * order.
  */
-export function spreadLabels(values: number[], gap = 13): number[] {
+export function spreadLabels(values: number[], gap = 17): number[] {
   const order = values.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
   for (let k = 1; k < order.length; k += 1) {
     const overlap = order[k - 1].y + gap - order[k].y;

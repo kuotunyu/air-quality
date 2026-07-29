@@ -9,6 +9,22 @@
 :root {
   color-scheme: dark light;
 
+  /*
+   * The document's base size, and the anchor for every other size on the page.
+   *
+   * This used to live on `body` as a flat `17px` while every other rule was a
+   * rem multiple — and `rem` resolves against the *root*, not against body. So
+   * the 17px lifted paragraphs and nothing else: captions, legends, table cells
+   * and labels all stayed multiples of the browser's untouched 16px, which is
+   * how a caption ended up at 13.8px and a legend at 13.1px. Setting it here
+   * means one number moves the whole document, which is what a type scale is
+   * for.
+   *
+   * Media queries are unaffected: `rem` inside a media query always resolves
+   * against the initial 16px, never against this, so `40rem` stays 640px.
+   */
+  font-size: clamp(17px, 16.1px + 0.3vw, 19.5px);
+
   --bg: #0b0e13;
   --bg-raised: #131820;
   --bg-sunken: #080a0e;
@@ -40,15 +56,51 @@
   --taiwan: #fbbf24;
   --accent: #7dd3fc;
 
+  /*
+   * Surfaces that carry a caveat or a withheld result. Tinted rather than
+   * outlined: a coloured left border is the thing every generated interface
+   * reaches for, and it reads as decoration rather than as meaning. A tint of
+   * the surface's own hue says "this block is different" without adding a
+   * shape that carries no information.
+   */
+  --tint-neutral: #141a24;
+  --tint-caution: #1c1a12;
+  --tint-caution-edge: #3d3316;
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
     "PingFang TC", "Microsoft JhengHei", sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
 
-  --measure: 34rem;
-  --page: 68rem;
+  /*
+   * Modular scale, ratio ~1.26. The previous scale ran from 0.78 to 1.15 around
+   * a body of 1 — every step within 15% of its neighbour, which is why nothing
+   * read as a level. `h3` at 1.15rem sat 1.4px above body text.
+   */
+  --text-xs: 0.84rem;
+  --text-sm: 0.93rem;
+  --text-base: 1rem;
+  --text-lg: 1.2rem;
+  --text-xl: 1.44rem;
+  --text-2xl: 1.95rem;
+
+  /* Spacing rhythm. Related things sit one step apart, unrelated things three;
+     using the same gap everywhere is what makes a page read as undifferentiated. */
+  --space-1: 0.35rem;
+  --space-2: 0.6rem;
+  --space-3: 1rem;
+  --space-4: 1.6rem;
+  --space-5: 2.6rem;
+  --space-6: 4rem;
+
+  --measure: 36rem;
+  --page: 72rem;
   --radius: 10px;
+
+  /* Named so a stacking order is a decision rather than an escalating number. */
+  --z-sticky: 100;
+  --z-overlay: 200;
 }
 
 /*
@@ -86,6 +138,10 @@
     --who: #0e7490;
     --taiwan: #b45309;
     --accent: #0369a1;
+
+    --tint-neutral: #f1f4f8;
+    --tint-caution: #fdf6e7;
+    --tint-caution-edge: #e5cf9a;
   }
 }
 
@@ -114,8 +170,11 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 17px;
-  line-height: 1.7;
+  /* Size comes from :root. Setting it here again is what broke the scale. */
+  font-size: var(--text-base);
+  /* Light type on a dark ground reads lighter than it is and needs more room;
+     CJK needs more again, having no ascender/descender rhythm to rest on. */
+  line-height: 1.78;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -123,27 +182,47 @@ body {
 h1,
 h2,
 h3 {
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  line-height: 1.28;
   text-wrap: balance;
-  margin: 0 0 0.6em;
+  margin: 0 0 var(--space-3);
 }
 
 h1 {
-  font-size: clamp(2rem, 6vw, 3.4rem);
+  font-size: clamp(2.1rem, 5.4vw, 3.1rem);
   font-weight: 700;
+  /* Floor is -0.04em; CJK needs less negative tracking than Latin display, and
+     below about -0.02em the glyphs start to collide rather than tighten. */
+  letter-spacing: -0.018em;
 }
 h2 {
-  font-size: clamp(1.5rem, 3.6vw, 2.1rem);
+  font-size: var(--text-2xl);
   font-weight: 650;
+  letter-spacing: -0.012em;
 }
 h3 {
-  font-size: 1.15rem;
+  font-size: var(--text-xl);
   font-weight: 600;
+  letter-spacing: -0.006em;
+  /* A subheading needs the space above it to belong to the section it opens,
+     not to the paragraph it follows. */
+  margin-top: var(--space-5);
+}
+
+/* Two headings in a row is a group, not a new section. */
+h2 + h3,
+h3 + h4 {
+  margin-top: var(--space-3);
+}
+
+h4 {
+  font-size: var(--text-base);
+  font-weight: 650;
+  line-height: 1.4;
+  margin: 0 0 var(--space-2);
 }
 
 p {
-  margin: 0 0 1.1em;
+  margin: 0 0 var(--space-3);
   max-width: var(--measure);
   text-wrap: pretty;
 }
@@ -152,6 +231,10 @@ a {
   color: var(--accent);
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
 }
 
 a:focus-visible,
@@ -166,7 +249,7 @@ select:focus-visible,
 code,
 .mono {
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: 0.94em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -175,11 +258,11 @@ code,
 .page {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 0 clamp(1rem, 4vw, 2.5rem);
+  padding: 0 clamp(1.15rem, 4vw, 2.75rem);
 }
 
 section {
-  padding: clamp(3.5rem, 9vw, 7rem) 0;
+  padding: clamp(4rem, 9vw, 7.5rem) 0;
   border-top: 1px solid var(--line-soft);
 }
 
@@ -187,24 +270,42 @@ section:first-of-type {
   border-top: 0;
 }
 
+/*
+ * Chapter number. This is a nine-part document read in order, so the number
+ * carries real information — but the tiny all-caps tracked treatment it used to
+ * have is the generated-interface tell, and `text-transform: uppercase` does
+ * nothing at all to Chinese. It is now a legible label with a rule, which is
+ * what a chapter marker in a report looks like.
+ */
 .eyebrow {
-  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--text-faint);
-  margin-bottom: 0.9rem;
+  margin: 0 0 var(--space-2);
+}
+
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }
 
 .lede {
-  font-size: 1.16rem;
+  font-size: var(--text-lg);
+  line-height: 1.65;
   color: var(--text-muted);
   max-width: var(--measure);
+  margin-bottom: var(--space-4);
 }
 
 .grid {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-3);
 }
 
 /*
@@ -238,43 +339,50 @@ section:first-of-type {
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 1.15rem 1.3rem;
+  padding: var(--space-3) var(--space-4);
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: var(--space-1);
 }
 
 .stat-value {
   font-family: var(--font-mono);
-  font-size: clamp(1.7rem, 4.5vw, 2.4rem);
+  font-size: clamp(1.8rem, 4.2vw, 2.5rem);
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
-  font-size: 0.86rem;
+  font-size: var(--text-sm);
+  line-height: 1.45;
   color: var(--text-muted);
 }
 
+/* Units, periods and sample sizes. Small, but never below the size at which a
+   reader has to lean in — a number without its denominator is the defect this
+   project is about, so the denominator has to be readable. */
 .stat-note {
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- figures ---------- */
 
 figure {
-  margin: 2rem 0;
+  margin: var(--space-5) 0;
 }
 
 figcaption {
-  font-size: 0.86rem;
+  font-size: var(--text-sm);
+  line-height: 1.6;
   color: var(--text-muted);
-  margin-top: 0.7rem;
+  margin-top: var(--space-3);
   max-width: var(--measure);
 }
 
@@ -282,9 +390,45 @@ figcaption {
   background: var(--bg-sunken);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0.9rem;
+  padding: var(--space-3);
   overflow-x: auto;
   max-width: 100%;
+}
+
+/*
+ * Charts never scale. This is the fix for the single worst thing about the old
+ * type on this site.
+ *
+ * A `viewBox` scales its *text* along with its geometry, and these SVGs had no
+ * width, so each one stretched to fill whatever column it landed in. Measured:
+ * the same axis tick rendered at 8.5px on a 375px phone and 19.9px on a 1265px
+ * desktop — illegible in one place and larger than the caption beneath it in
+ * the other. No font-size can be right under those conditions, because there is
+ * no font size; there is a ratio.
+ *
+ * Pinning the element to the width its geometry was laid out for makes the
+ * declared sizes mean what they say everywhere. When the column is narrower,
+ * `.chart` scrolls — which is what its `overflow-x` was always for, and what
+ * the `min-width: 0` rule on grid children exists to permit.
+ */
+.chart svg {
+  width: calc(var(--vb, 700) * 1px);
+  max-width: none;
+  height: auto;
+  display: block;
+  /* The centring rule below makes `.chart` a flex container, and a flex item
+     shrinks by default — which silently undid the pin and put this chart back
+     at 0.73 scale. */
+  flex: none;
+}
+
+/* Wide viewports: a research figure at a fixed comfortable width, not a chart
+   stretched across a 1200px column because the column happened to be there. */
+@media (min-width: 60rem) {
+  .chart {
+    display: flex;
+    justify-content: center;
+  }
 }
 
 /* ---------- tables ---------- */
@@ -293,17 +437,18 @@ figcaption {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  margin: var(--space-4) 0;
 }
 
 table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 th,
 td {
-  padding: 0.5rem 0.8rem;
+  padding: 0.6rem 0.9rem;
   text-align: left;
   border-bottom: 1px solid var(--line-soft);
   white-space: nowrap;
@@ -315,6 +460,7 @@ th {
   color: var(--text-muted);
   position: sticky;
   top: 0;
+  z-index: var(--z-sticky);
 }
 
 td.num,
@@ -322,6 +468,12 @@ th.num {
   text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* A row is easier to track across a wide table when the eye has something to
+   rest on; at this opacity it reads as texture rather than as stripes. */
+tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--bg-raised) 45%, transparent);
 }
 
 tbody tr:last-child td {
@@ -333,13 +485,19 @@ tbody tr:last-child td {
 select,
 button {
   font: inherit;
-  font-size: 0.92rem;
+  /* A select sizes itself to its longest option, and this one lists station
+     names. Left alone it is 403px wide on a 375px phone and takes the page
+     sideways with it — which is exactly what happened when the control font
+     size went up. */
+  max-width: 100%;
+  font-size: var(--text-sm);
   color: var(--text);
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: 7px;
-  padding: 0.42rem 0.7rem;
+  padding: 0.5rem 0.8rem;
   cursor: pointer;
+  transition: border-color 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 select:hover,
@@ -350,26 +508,51 @@ button:hover {
 .controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: var(--space-2);
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-3);
 }
 
 .controls label {
-  font-size: 0.86rem;
+  /* Flex items refuse to shrink below their content unless told; the same rule
+     the grid children already have, for the same reason. */
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--text-sm);
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-1);
+}
+
+/* A select's `max-width: 100%` resolves against its containing block, which
+   here is the label — and a label sized to its own content is not a constraint.
+   Letting the control shrink inside the label is what actually bounds it. */
+.controls label > select {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* ---------- callouts ---------- */
 
+/*
+ * A caveat block. Tinted surface, full hairline border, no side stripe.
+ *
+ * The side stripe (a 2px coloured `border-left`) is the reflex every generated
+ * interface reaches for, and it carries no information: the reader cannot tell
+ * a warning from an aside from a quote by the fact that a line is there. A
+ * tinted surface says "this block is set apart" and the tint's hue says which
+ * kind — which is the job the stripe was pretending to do.
+ */
 .note {
-  border-left: 2px solid var(--line);
-  padding: 0.1rem 0 0.1rem 1rem;
+  background: var(--tint-neutral);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-4) 0;
   color: var(--text-muted);
-  font-size: 0.92rem;
+  font-size: var(--text-base);
+  line-height: 1.7;
   max-width: var(--measure);
 }
 
@@ -377,28 +560,33 @@ button:hover {
   color: var(--text);
 }
 
+.note :last-child {
+  margin-bottom: 0;
+}
+
 .caveat {
-  border-left-color: var(--taiwan);
+  background: var(--tint-caution);
+  border-color: var(--tint-caution-edge);
 }
 
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 1rem;
-  font-size: 0.82rem;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
   color: var(--text-muted);
-  margin-top: 0.7rem;
+  margin-top: var(--space-3);
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
 .swatch {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
   flex: none;
 }

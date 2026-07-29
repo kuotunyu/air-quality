@@ -137,7 +137,7 @@ const legend = BREAKS.map((b, i) => ({
 
   <div class="plot-row">
     <div class="chart polar">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-labelledby="cbpf-caption">
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={`--vb:${SIZE}`} role="img" aria-labelledby="cbpf-caption">
         <defs>
           <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="6" class="hatch-line" />
@@ -352,12 +352,12 @@ const legend = BREAKS.map((b, i) => ({
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.86rem;
+    font-size: var(--text-sm);
     color: var(--text-muted);
   }
   .badge {
     font-family: var(--font-mono);
-    font-size: 0.78rem;
+    font-size: var(--text-xs);
     padding: 0.18rem 0.55rem;
     border-radius: 999px;
     border: 1px solid var(--line);
@@ -377,12 +377,10 @@ const legend = BREAKS.map((b, i) => ({
     min-width: 0;
   }
   .polar svg {
-    width: 100%;
-    max-width: 400px;
-    height: auto;
-    display: block;
+    /* Width, and therefore text size, comes from the global `.chart svg` pin.
+       Overriding it here is what left this one chart at 0.83 scale while the
+       other four sat at 1.00. */
     margin: 0 auto;
-    min-width: 0;
   }
   .cell {
     stroke: var(--bg-sunken);
@@ -400,7 +398,7 @@ const legend = BREAKS.map((b, i) => ({
   }
   .bearing {
     fill: var(--text-faint);
-    font-size: 10px;
+    font-size: 12.5px;
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -410,12 +408,12 @@ const legend = BREAKS.map((b, i) => ({
   }
   .hub-label {
     fill: var(--text-faint);
-    font-size: 9px;
+    font-size: 12px;
     text-anchor: middle;
   }
   .hub-value {
     fill: var(--text-muted);
-    font-size: 11px;
+    font-size: 13.5px;
     font-family: var(--font-mono);
     text-anchor: middle;
   }

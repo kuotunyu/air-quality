@@ -38,6 +38,7 @@ const xTicks = years
 <div class="chart">
   <svg
     viewBox={`0 0 ${width} ${height}`}
+    style={`--vb:${width}`}
     role="img"
     aria-label={`趨勢圖，單位 ${unit}`}
     preserveAspectRatio="xMidYMid meet"
@@ -127,12 +128,6 @@ const xTicks = years
 </div>
 
 <style>
-  svg {
-    width: 100%;
-    height: auto;
-    min-width: 480px;
-    display: block;
-  }
   .gridline {
     stroke: var(--line-soft);
     stroke-width: 1;
@@ -143,7 +138,7 @@ const xTicks = years
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 11px;
+    font-size: 13.5px;
     font-family: var(--font-mono);
   }
   .tick-y {
@@ -154,7 +149,7 @@ const xTicks = years
     text-anchor: middle;
   }
   .guide-label {
-    font-size: 10.5px;
+    font-size: 13px;
     text-anchor: end;
     font-family: var(--font-mono);
   }

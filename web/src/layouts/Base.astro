@@ -117,7 +117,7 @@ const sections = [
       .topbar a {
         color: var(--text-muted);
         text-decoration: none;
-        font-size: 0.9rem;
+        font-size: var(--text-sm);
         white-space: nowrap;
       }
       .topbar a:hover {
@@ -127,14 +127,18 @@ const sections = [
         border-top: 1px solid var(--line-soft);
         padding: 2.5rem 0 4rem;
         color: var(--text-faint);
-        font-size: 0.82rem;
+        font-size: var(--text-sm);
       }
       footer p {
         margin: 0 0 0.4rem;
         max-width: none;
       }
       footer .dim {
-        color: color-mix(in srgb, var(--text-faint) 70%, transparent);
+        /* No alpha. `--text-faint` is already tuned to clear 4.5:1 against the
+           page; knocking 30% off it composited to 3.10, and this line carries
+           the export time and the commit the figures came from — the one thing
+           on the page a reader might need to quote. */
+        color: var(--text-faint);
       }
     </style>
   </body>

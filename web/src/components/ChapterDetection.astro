@@ -134,7 +134,7 @@ const shortName = (name: string) =>
       return (
         <figure>
           <div class="chart">
-            <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${e.event} 的效應與安慰劑分布`}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label={`${e.event} 的效應與安慰劑分布`}>
               <g transform={`translate(${M.left},${M.top})`}>
                 <line x1={zero} x2={zero} y1="0" y2="52" class="zero" />
                 <text x={zero} y="68" class="tick">0</text>
@@ -251,12 +251,6 @@ const shortName = (name: string) =>
 </section>
 
 <style>
-  svg {
-    width: 100%;
-    height: auto;
-    min-width: 460px;
-    display: block;
-  }
   .zero {
     stroke: var(--line);
     stroke-width: 1;
@@ -273,7 +267,7 @@ const shortName = (name: string) =>
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 10.5px;
+    font-size: 13px;
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -302,7 +296,7 @@ const shortName = (name: string) =>
     color: var(--c4);
   }
   .small {
-    font-size: 0.88rem;
+    font-size: var(--text-sm);
     color: var(--text-muted);
   }
   figure {

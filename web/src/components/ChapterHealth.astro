@@ -128,7 +128,7 @@ const fn = functions[0];
 
   <figure>
     <div class="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="不同反事實濃度下的可歸因比例">
+      <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="不同反事實濃度下的可歸因比例">
         <g transform={`translate(${M.left},${M.top})`}>
           {
             pafTicks.map((t) => (
@@ -209,7 +209,7 @@ const fn = functions[0];
 
   <figure>
     <div class="chart">
-      <svg viewBox={`0 0 ${W} ${H2}`} role="img" aria-label="假設造成的範圍佔估計值的比例逐年上升">
+      <svg viewBox={`0 0 ${W} ${H2}`} style={`--vb:${W}`} role="img" aria-label="假設造成的範圍佔估計值的比例逐年上升">
         <g transform={`translate(${M.left},${M.top})`}>
           {
             shareTicks.map((t) => (
@@ -317,12 +317,6 @@ const fn = functions[0];
 </section>
 
 <style>
-  svg {
-    width: 100%;
-    height: auto;
-    min-width: 460px;
-    display: block;
-  }
   .grid {
     stroke: var(--line-soft);
     stroke-width: 1;
@@ -335,7 +329,7 @@ const fn = functions[0];
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 11px;
+    font-size: 13.5px;
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -343,7 +337,7 @@ const fn = functions[0];
     text-anchor: end;
   }
   .key {
-    font-size: 11px;
+    font-size: 13.5px;
     font-family: var(--font-mono);
     font-weight: 600;
   }

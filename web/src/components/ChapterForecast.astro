@@ -148,7 +148,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
   <figure>
     <div class="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="三種方法的預測誤差隨期距變化">
+      <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="三種方法的預測誤差隨期距變化">
         <g transform={`translate(${M.left},${M.top})`}>
           {
             rmseTicks.map((t) => (
@@ -212,7 +212,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
   <figure>
     <div class="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="R² 與兩種 skill 隨期距的變化方向相反">
+      <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="R² 與兩種 skill 隨期距的變化方向相反">
         <g transform={`translate(${M.left},${M.top})`}>
           {
             metricTicks.map((t) => (
@@ -378,12 +378,6 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 </section>
 
 <style>
-  svg {
-    width: 100%;
-    height: auto;
-    min-width: 460px;
-    display: block;
-  }
   .grid {
     stroke: var(--line-soft);
     stroke-width: 1;
@@ -404,7 +398,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 11px;
+    font-size: 13.5px;
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -412,7 +406,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     text-anchor: end;
   }
   .key {
-    font-size: 11.5px;
+    font-size: 14px;
     font-family: var(--font-mono);
     font-weight: 600;
   }

@@ -158,13 +158,13 @@ const initial = cards.find((c) => c.station_name === "鳳山") ?? cards[0];
     flex-wrap: wrap;
   }
   .place {
-    font-size: 0.86rem;
+    font-size: var(--text-sm);
     font-weight: 400;
     color: var(--text-faint);
   }
   .year {
     color: var(--text-faint);
-    font-size: 0.9rem;
+    font-size: var(--text-sm);
   }
   .row {
     display: flex;
@@ -176,17 +176,17 @@ const initial = cards.find((c) => c.station_name === "鳳山") ?? cards[0];
   }
   .line {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: var(--text-base);
     color: var(--text-muted);
     max-width: none;
   }
   .big {
-    font-size: 1.25rem;
+    font-size: var(--text-lg);
     color: var(--text);
     font-weight: 600;
   }
   .dim {
     color: var(--text-faint);
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
   }
 </style>
