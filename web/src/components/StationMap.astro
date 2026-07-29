@@ -13,6 +13,13 @@
  * the licence) rather than anything drawn by hand, and they carry county lines
  * because "which county is that" is the first question a reader asks of a dot.
  *
+ * Counties fill `evenodd`, and that is load-bearing rather than tidy. 臺北市 is
+ * a landlocked enclave of 新北市 and 嘉義市 of 嘉義縣, so the surrounding
+ * county's ring list carries a hole. Filled `nonzero` the hole depends on
+ * winding and the enclave gets painted over: 嘉義市 was invisible on this map
+ * for exactly that reason, saved from being obvious only because 臺北市 happens
+ * to sort after 新北市 and so survived by paint order.
+ *
  * The basemap is deliberately almost invisible: one fill, hairline borders, no
  * hue. It is context, not measurement, and colour on this site is reserved for
  * concentration. The only saturated things here remain the dots.
@@ -159,7 +166,12 @@ const dots = main.map((s) => {
     >
       {
         counties.map((county) => (
-          <path d={county.d} class="county" vector-effect="non-scaling-stroke">
+          <path
+            d={county.d}
+            class="county"
+            fill-rule="evenodd"
+            vector-effect="non-scaling-stroke"
+          >
             <title>{county.name}</title>
           </path>
         ))

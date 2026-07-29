@@ -34,6 +34,8 @@ import struct
 import sys
 from typing import Any
 
+Ring = list[tuple[float, float]]
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "web" / "src" / "lib" / "taiwan.ts"
 
@@ -53,13 +55,25 @@ MIN_RING_AREA = 1.0e-4
 # --------------------------------------------------------------------------
 # WKB
 # --------------------------------------------------------------------------
-def parse_wkb(blob: bytes) -> list[list[tuple[float, float]]]:
-    """Return every exterior ring in a (Multi)Polygon. Holes are dropped.
+def parse_wkb(blob: bytes) -> list[tuple[Ring, list[Ring]]]:
+    """Return each polygon as ``(exterior ring, [interior rings])``.
 
-    Taiwan's county polygons contain no true holes — an enclave would be a
-    separate feature — and a hole at this scale would be smaller than a pixel.
+    Interior rings are kept, and that is not a formality on this dataset. An
+    earlier version dropped them on the reasoning that "an enclave would be a
+    separate feature, and a hole at this scale would be smaller than a pixel".
+    Both halves are false here, and they are false in a way that is invisible in
+    the output: 臺北市 is a separate feature *and* a hole in 新北市, because a
+    landlocked enclave cannot be expressed by an exterior ring alone. The same
+    goes for 嘉義市 inside 嘉義縣. The source has exactly two interior rings and
+    those are they — 0.0242 and 0.0053 square degrees, 240x and 53x the
+    threshold below, and about 39x51 px on the map rather than sub-pixel.
+
+    Dropping them shipped two counties whose polygons *overlap* their
+    neighbours: Taipei City Hall tested inside both 臺北市 and 新北市. It also
+    inflated 新北市's area by 13%, which is the sort key the label placement
+    uses, and left 嘉義市 painted over completely by 嘉義縣's opaque fill.
     """
-    rings: list[list[tuple[float, float]]] = []
+    polygons: list[tuple[Ring, list[Ring]]] = []
     pos = 0
 
     def take(fmt: str) -> tuple[Any, ...]:
@@ -71,11 +85,17 @@ def parse_wkb(blob: bytes) -> list[list[tuple[float, float]]]:
 
     def read_polygon(endian: str) -> None:
         (n_rings,) = take(endian + "I")
-        for index in range(n_rings):
+        exterior: Ring = []
+        interiors: list[Ring] = []
+        for index in range(int(n_rings)):
             (n_points,) = take(endian + "I")
-            coords = take(endian + f"{n_points * 2}d")
+            coords = take(endian + f"{int(n_points) * 2}d")
+            ring = list(zip(coords[0::2], coords[1::2], strict=True))
             if index == 0:
-                rings.append(list(zip(coords[0::2], coords[1::2], strict=True)))
+                exterior = ring
+            else:
+                interiors.append(ring)
+        polygons.append((exterior, interiors))
 
     (byte_order,) = take("B")
     endian = "<" if byte_order == 1 else ">"
@@ -93,7 +113,7 @@ def parse_wkb(blob: bytes) -> list[list[tuple[float, float]]]:
     else:
         raise ValueError(f"unexpected WKB geometry type {geom_type}")
 
-    return rings
+    return polygons
 
 
 # --------------------------------------------------------------------------
@@ -147,18 +167,31 @@ def simplify(points: list[tuple[float, float]], tol: float) -> list[tuple[float,
     return [p for p, k in zip(points, keep, strict=True) if k]
 
 
-def inside(px: float, py: float, ring: list[tuple[float, float]]) -> bool:
+def inside(px: float, py: float, rings: list[Ring]) -> bool:
+    """Even-odd containment across *all* of a county's rings at once.
+
+    Accumulating the crossings over every ring rather than asking each one
+    separately is what makes a hole behave like a hole: a point in 臺北市
+    crosses 新北市's exterior once and its interior ring once, and comes out
+    even, which is "outside". Testing ring by ring and OR-ing the answers —
+    which is what the first version of the validator did — reports such a point
+    as inside both counties and can never notice the overlap.
+
+    This is also exactly the rule the map paints with (`fill-rule: evenodd`), so
+    the check and the drawing cannot disagree.
+    """
     hit = False
-    for i in range(len(ring)):
-        x1, y1 = ring[i]
-        x2, y2 = ring[(i + 1) % len(ring)]
-        straddles = (y1 > py) != (y2 > py)
-        if straddles and px < x1 + (py - y1) * (x2 - x1) / (y2 - y1):
-            hit = not hit
+    for ring in rings:
+        for i in range(len(ring)):
+            x1, y1 = ring[i]
+            x2, y2 = ring[(i + 1) % len(ring)]
+            straddles = (y1 > py) != (y2 > py)
+            if straddles and px < x1 + (py - y1) * (x2 - x1) / (y2 - y1):
+                hit = not hit
     return hit
 
 
-def label_anchors(ring: list[tuple[float, float]], k: int = 4) -> list[tuple[float, float]]:
+def label_anchors(ring: Ring, holes: list[Ring], k: int = 4) -> list[tuple[float, float]]:
     """Several places a name could go, roomiest first.
 
     One anchor is not enough. The centroid is no good to begin with — Chiayi
@@ -170,6 +203,12 @@ def label_anchors(ring: list[tuple[float, float]], k: int = 4) -> list[tuple[flo
 
     Offering the caller a short list of well-separated candidates lets it fall
     back to the county's second-roomiest spot instead of giving up.
+
+    ``holes`` matters for exactly two counties and would be invisible without
+    it. The chord scan runs on the exterior ring, so for 新北市 the roomiest
+    interval it finds runs straight through 臺北市 — the third candidate the
+    earlier version emitted, [121.4648, 25.1172], is in 北投區. A label there
+    names the wrong county.
     """
     lats = [p[1] for p in ring]
     lo, hi = min(lats), max(lats)
@@ -194,6 +233,8 @@ def label_anchors(ring: list[tuple[float, float]], k: int = 4) -> list[tuple[flo
     spread = (hi - lo) / 6
     picked: list[tuple[float, float]] = []
     for _, x, y in chords:
+        if holes and any(inside(x, y, [hole]) for hole in holes):
+            continue
         if all(abs(y - py) > spread or abs(x - px) > spread for px, py in picked):
             picked.append((x, y))
         if len(picked) == k:
@@ -216,40 +257,66 @@ def main(argv: list[str]) -> int:
     codes = table.column("行政區域代碼").to_pylist()
     blobs = table.column(geom_column).to_pylist()
 
+    def keep(ring: Ring) -> Ring | None:
+        xs = [p[0] for p in ring]
+        ys = [p[1] for p in ring]
+        on_screen = (
+            max(xs) >= MAIN[0] and min(xs) <= MAIN[1] and max(ys) >= MAIN[2] and min(ys) <= MAIN[3]
+        )
+        if not on_screen or ring_area(ring) < MIN_RING_AREA:
+            return None
+        thin = simplify(ring, TOLERANCE)
+        return thin if len(thin) >= 4 else None
+
     counties = []
     for name, code, blob in zip(names, codes, blobs, strict=True):
-        rings = []
-        for ring in parse_wkb(bytes(blob)):
-            xs = [p[0] for p in ring]
-            ys = [p[1] for p in ring]
-            on_screen = (
-                max(xs) >= MAIN[0]
-                and min(xs) <= MAIN[1]
-                and max(ys) >= MAIN[2]
-                and min(ys) <= MAIN[3]
-            )
-            if not on_screen or ring_area(ring) < MIN_RING_AREA:
+        outer: list[Ring] = []
+        holes: list[Ring] = []
+        for exterior, interiors in parse_wkb(bytes(blob)):
+            thin = keep(exterior)
+            if thin is None:
                 continue
-            thin = simplify(ring, TOLERANCE)
-            if len(thin) >= 4:
-                rings.append(thin)
+            outer.append(thin)
+            holes.extend(h for h in (keep(i) for i in interiors) if h is not None)
 
-        if not rings:
+        if not outer:
             print(f"  offshore, not drawn: {name}")
             continue
 
-        rings.sort(key=ring_area, reverse=True)
+        outer.sort(key=ring_area, reverse=True)
+        # Area is what the label placement sorts on, so it has to be the land
+        # the county actually governs. Summing exteriors alone credited 新北市
+        # with all of 臺北市 — 13% too much — and moved it three places up the
+        # queue.
+        area = sum(ring_area(r) for r in outer) - sum(ring_area(r) for r in holes)
+        if holes:
+            print(f"  {name}: {len(holes)} enclave(s), area {area:.5f} after subtracting them")
         counties.append(
             {
                 "name": name,
                 "code": code,
-                "rings": rings,
-                "anchors": label_anchors(rings[0]),
-                "area": sum(ring_area(r) for r in rings),
+                # Exteriors and holes together, to be filled `evenodd`.
+                "rings": outer + holes,
+                "outer": outer,
+                "holes": holes,
+                "anchors": label_anchors(outer[0], holes),
+                "area": area,
             }
         )
 
     counties.sort(key=lambda c: c["name"])
+
+    # A label must not sit on a neighbour. The per-county hole test above cannot
+    # catch this on its own: an anchor can be genuinely inside its own county
+    # and still land where a *different* county is drawn on top, which is how
+    # the enclaves were invisible in the first place.
+    for county in counties:
+        others = [o for o in counties if o["name"] != county["name"]]
+        county["anchors"] = [
+            (x, y)
+            for x, y in county["anchors"]
+            if not any(inside(x, y, o["rings"]) for o in others)
+        ] or county["anchors"][:1]
     total_points = sum(len(r) for c in counties for r in c["rings"])
     all_x = [p[0] for c in counties for r in c["rings"] for p in r]
     all_y = [p[1] for c in counties for r in c["rings"] for p in r]
@@ -284,20 +351,28 @@ def main(argv: list[str]) -> int:
  * largest size this map is ever drawn. {len(counties)} counties, {total_points} points.
  * Do not edit by hand — re-run the generator.
  *
- * `scripts/validate_map_geometry.py` checks the result the only way that actually
- * proves anything: every monitoring station must fall inside the polygon of the
- * county its own metadata claims it is in.
+ * `scripts/validate_map_geometry.py` checks the result the only way that
+ * actually proves anything: every monitoring station must fall inside the
+ * polygon of the county its own metadata claims — and inside no other.
  */
 export interface County {{
   /** Name as it appears in the source register. */
   name: string;
   /** 行政區域代碼, stable across renames. */
   code: string;
-  /** Places a label could go inside the largest ring, roomiest first. */
+  /** Places a label could go, roomiest first; none inside a hole or a neighbour. */
   anchors: [number, number][];
-  /** Total area in square degrees; used to decide what gets a label. */
+  /** Square degrees, holes subtracted. The label placement sorts on it. */
   area: number;
-  /** Exterior rings, largest first. */
+  /**
+   * Exterior rings and holes together, largest exterior first.
+   *
+   * **Must be filled `evenodd`.** Two counties are true enclaves — 臺北市 in
+   * 新北市, 嘉義市 in 嘉義縣 — so the surrounding county's ring list contains a
+   * hole where the enclave sits. Filled `nonzero` the hole would depend on
+   * winding direction and the enclave would be painted over; there is no
+   * exterior-ring-only way to express a landlocked county.
+   */
   rings: [number, number][][];
 }}
 
@@ -321,17 +396,20 @@ export const TAIWAN_BOUNDS = [
     meta_path = ROOT / "web" / "public" / "data" / "meta.json"
     stations = json.loads(meta_path.read_text(encoding="utf-8"))["stations"]
     by_name = {c["name"]: c for c in counties}
-    checked = wrong = 0
+    checked = wrong = ambiguous = 0
     for s in stations:
         if s.get("lat") is None or s.get("county") not in by_name:
             continue
         checked += 1
-        county = by_name[s["county"]]
-        if not any(inside(s["lon"], s["lat"], r) for r in county["rings"]):
+        holding = [c["name"] for c in counties if inside(s["lon"], s["lat"], c["rings"])]
+        if s["county"] not in holding:
             wrong += 1
-            print(f"  OUTSIDE {s['station_name']} claims {s['county']}")
-    print(f"station check  : {checked - wrong}/{checked} inside their own county")
-    return 0
+            print(f"  OUTSIDE  {s['station_name']} claims {s['county']}, found in {holding}")
+        elif len(holding) > 1:
+            ambiguous += 1
+            print(f"  OVERLAP  {s['station_name']} is inside {holding}")
+    print(f"station check  : {checked - wrong - ambiguous}/{checked} in exactly their own county")
+    return 1 if (wrong or ambiguous) else 0
 
 
 if __name__ == "__main__":

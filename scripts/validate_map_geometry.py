@@ -57,17 +57,30 @@ def read_counties() -> dict[str, list[Ring]]:
     return counties
 
 
-def inside(px: float, py: float, ring: Ring) -> bool:
-    """Ray casting. True when the point lies within the ring."""
+def inside(px: float, py: float, rings: list[Ring]) -> bool:
+    """Even-odd containment across *all* of a county's rings at once.
+
+    Not one ring at a time. Two counties are true enclaves, so their neighbour's
+    ring list carries a hole: a point in 臺北市 crosses 新北市's exterior once
+    and its interior ring once and comes out even, which is "outside". The first
+    version of this file asked each ring separately and OR-ed the answers, which
+    reports that point as inside both counties — and, worse, is structurally
+    incapable of ever noticing, so it passed while the shipped map had 嘉義市
+    painted over by 嘉義縣.
+
+    This is the same rule the map fills with (`fill-rule: evenodd`), so the
+    check and the drawing cannot disagree.
+    """
     hit = False
-    for i in range(len(ring)):
-        x1, y1 = ring[i]
-        x2, y2 = ring[(i + 1) % len(ring)]
-        # The straddle test has to come first and short-circuit: without it the
-        # division is by zero on every horizontal edge.
-        straddles = (y1 > py) != (y2 > py)
-        if straddles and px < x1 + (py - y1) * (x2 - x1) / (y2 - y1):
-            hit = not hit
+    for ring in rings:
+        for i in range(len(ring)):
+            x1, y1 = ring[i]
+            x2, y2 = ring[(i + 1) % len(ring)]
+            # The straddle test has to come first and short-circuit: without it
+            # the division is by zero on every horizontal edge.
+            straddles = (y1 > py) != (y2 > py)
+            if straddles and px < x1 + (py - y1) * (x2 - x1) / (y2 - y1):
+                hit = not hit
     return hit
 
 
@@ -99,25 +112,38 @@ def main() -> int:
 
     wrong: list[str] = []
     unknown: list[str] = []
+    overlapping: list[str] = []
     for station in drawn:
         claimed = station.get("county")
         if claimed not in counties:
             unknown.append(f"{station['station_name']} claims {claimed!r}")
             continue
-        if not any(inside(station["lon"], station["lat"], r) for r in counties[claimed]):
+        holding = [
+            name
+            for name, rings in counties.items()
+            if inside(station["lon"], station["lat"], rings)
+        ]
+        if claimed not in holding:
             wrong.append(
                 f"{station['station_name']} claims {claimed} but falls outside it "
                 f"({station['lon']:.4f}E {station['lat']:.4f}N)"
+                + (f", found in {holding}" if holding else "")
             )
+        elif len(holding) > 1:
+            # The check that the enclave defect needed. Asking only "is it in
+            # its own county" can never see two counties claiming one point.
+            overlapping.append(f"{station['station_name']} is inside {len(holding)}: {holding}")
 
     print(f"counties       : {len(counties)}")
     print(f"boundary points: {len(every_point)}")
     print(f"stations drawn : {len(drawn)}")
-    print(f"in their county: {len(drawn) - len(wrong) - len(unknown)}/{len(drawn)}")
-    for line in unknown + wrong:
+    print(
+        f"exactly one    : {len(drawn) - len(wrong) - len(unknown) - len(overlapping)}/{len(drawn)}"
+    )
+    for line in unknown + wrong + overlapping:
         print(f"  {line}")
 
-    return 1 if (wrong or unknown) else 0
+    return 1 if (wrong or unknown or overlapping) else 0
 
 
 if __name__ == "__main__":
