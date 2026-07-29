@@ -348,6 +348,45 @@ def analyze_m4(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m9")
+def analyze_m9(
+    years: str = typer.Option("2015:2025", "--years", "-y", help="Period to backtest."),
+    stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
+    horizons: str = typer.Option("1,6,24,48", "--horizons", help="Hours ahead."),
+    splits: int = typer.Option(4, "--splits", help="Rolling-origin splits."),
+) -> None:
+    """M9 — forecasting, scored against persistence rather than against zero."""
+    from twair.models.forecast import run_forecast, write_forecast_report
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2015, 2025)
+    subset = [s.strip() for s in stations.split(",")] if stations else None
+    hours = tuple(int(h) for h in horizons.split(",") if h.strip())
+
+    tables = run_forecast(period=period, stations=subset, horizons=hours, n_splits=splits)
+    by_horizon = tables["by_horizon"]
+
+    console.print(
+        by_horizon.select(
+            "horizon", "n", "model_rmse", "persistence_rmse", "model_r2", "skill_vs_persistence"
+        )
+    )
+
+    # R² and skill disagree on purpose. R² tracks how predictable the target
+    # happens to be; skill tracks whether the model added anything.
+    beaten = by_horizon.filter(pl.col("skill_vs_persistence") > 0)
+    console.print(f"\n[bold]{beaten.height}/{by_horizon.height}[/bold] horizon(s) beat persistence")
+    for row in by_horizon.iter_rows(named=True):
+        verdict = "green" if row["skill_vs_persistence"] > 0 else "yellow"
+        console.print(
+            f"  {row['horizon']:>3}h  R² {row['model_r2']:.3f}  "
+            f"[{verdict}]skill {row['skill_vs_persistence']:+.3f}[/{verdict}]"
+        )
+
+    for name, path in write_forecast_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m7")
 def analyze_m7(
     years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),

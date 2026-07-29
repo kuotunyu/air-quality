@@ -1,0 +1,313 @@
+"""M9 — forecasting, scored against the baseline that already wins.
+
+Phase 2 left this module a specific instruction. Persistence — "the next hour
+looks like this one" — reached R² 0.900 while the best explanatory model
+managed 0.524, because persistence used PM2.5's own history and those models
+used none of it. The conclusion recorded then was that those were explanatory
+models, not forecasting ones, and that any forecasting work would have to treat
+persistence as **the bar to clear rather than a peer to compare against**.
+
+So the headline number here is not R². It is **skill**:
+
+    skill = 1 - MSE(model) / MSE(persistence)
+
+Zero means the model matched a one-line rule. Positive means it beat it, and by
+how much. Negative means it lost.
+
+I expected negative skill at one hour and was wrong, which is worth recording
+rather than quietly deleting. Measured on three stations over 2018-2025, the
+model beats persistence at **both** horizons tested — +0.165 at one hour and
++0.180 at twenty-four. The reason is visible in the feature set: persistence
+assumes the concentration is flat, while `delta1` and `delta3` let the model
+see that it is currently rising or falling and carry that motion forward. An
+hour ahead, extrapolating the trajectory beats assuming there is none.
+
+What the reversal argument does still buy is a warning about R². The same model
+scores R² = 0.87 at one hour and 0.32 at twenty-four, which reads as a
+collapse; its *skill* barely moves. R² is dominated by how predictable the
+target happens to be, and PM2.5 an hour out is very predictable by anyone. So
+horizon is never averaged over, and skill leads.
+
+Validation is rolling-origin: train on everything before a cut, test on what
+follows, walk the cut forward. Random splits would let the model train on
+Tuesday to predict Monday, which no forecaster can do.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import polars as pl
+
+from twair.features.lags import (
+    add_lag_features,
+    add_target,
+    complete_hourly_index,
+    lag_feature_names,
+)
+from twair.scalars import as_float
+
+log = logging.getLogger(__name__)
+
+__all__ = [
+    "HORIZONS",
+    "ForecastScore",
+    "build_forecast_frame",
+    "run_forecast",
+    "skill_score",
+]
+
+TARGET = "PM2.5"
+
+# Hours ahead. 1 is where persistence is nearly unbeatable, 24 is where a
+# forecast starts being useful to someone deciding whether to go out tomorrow,
+# 48 is where the atmosphere has largely forgotten today.
+HORIZONS: tuple[int, ...] = (1, 6, 24, 48)
+
+# Read from the store alongside the target. Chemistry is allowed here, unlike
+# in M4 and M5: this module is not trying to attribute anything, it is trying
+# to predict, and a forecaster standing at time t genuinely knows the NOx
+# reading at time t.
+_POLLUTANTS = ("PM2.5", "PM10", "NOx", "O3", "SO2", "CO", "AMB_TEMP", "RH", "WS_HR", "WD_HR")
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastScore:
+    horizon: int
+    split: str
+    n: int
+    model_rmse: float
+    persistence_rmse: float
+    climatology_rmse: float
+    model_r2: float
+    skill_vs_persistence: float
+    """1 - MSE(model)/MSE(persistence). The number that actually matters."""
+    skill_vs_climatology: float
+
+    @property
+    def beats_persistence(self) -> bool:
+        return self.skill_vs_persistence > 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "horizon": self.horizon,
+            "split": self.split,
+            "n": self.n,
+            "model_rmse": self.model_rmse,
+            "persistence_rmse": self.persistence_rmse,
+            "climatology_rmse": self.climatology_rmse,
+            "model_r2": self.model_r2,
+            "skill_vs_persistence": self.skill_vs_persistence,
+            "skill_vs_climatology": self.skill_vs_climatology,
+            "beats_persistence": self.beats_persistence,
+        }
+
+
+def skill_score(model_error: np.ndarray, baseline_error: np.ndarray) -> float:
+    """Fraction of the baseline's squared error the model removed.
+
+    Positive is better than the baseline, zero is equal to it, negative is
+    worse. Undefined when the baseline is perfect, which does not happen on
+    real data but does on a constant test fixture.
+    """
+    baseline_mse = float(np.mean(baseline_error**2))
+    if baseline_mse <= 0:
+        return float("nan")
+    return 1.0 - float(np.mean(model_error**2)) / baseline_mse
+
+
+def build_forecast_frame(
+    root: Path | None = None,
+    *,
+    period: tuple[int, int] = (2015, 2025),
+    stations: list[str] | None = None,
+    horizon: int = 24,
+) -> tuple[pl.DataFrame, list[str]]:
+    """Hourly matrix with lag features and a target ``horizon`` hours ahead.
+
+    Returns the frame and the feature names, so the caller cannot accidentally
+    train on a column that leaks. ``target`` and the raw pollutant are
+    deliberately not among them.
+    """
+    from twair.features.met import add_wind_features
+    from twair.features.temporal import TEMPORAL_FEATURES, add_temporal_features
+    from twair.qc.rainfall import usable
+    from twair.store.stations import normalise_name_expr
+    from twair.store.writer import scan_observations
+
+    start, end = period
+    lazy = scan_observations(root).filter(
+        pl.col("ts_local").dt.year().is_between(start, end)
+        & pl.col("pollutant").is_in(list(_POLLUTANTS))
+        & usable()
+    )
+    if stations:
+        lazy = lazy.filter(normalise_name_expr().is_in(stations))
+
+    tidy = lazy.select(
+        normalise_name_expr(),
+        pl.col("pollutant").cast(pl.Utf8),
+        "ts_local",
+        pl.col("value").cast(pl.Float64),
+    ).collect()
+
+    wide = tidy.pivot(
+        on="pollutant",
+        index=["station_name", "ts_local"],
+        values="value",
+        aggregate_function="first",
+    )
+    for column in _POLLUTANTS:
+        if column not in wide.columns:
+            wide = wide.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
+
+    # The complete index first: a lag taken across a gap is the bug this whole
+    # module is written to avoid.
+    full = complete_hourly_index(wide)
+    featured = add_temporal_features(add_wind_features(full))
+    featured = add_lag_features(featured, column=TARGET)
+    featured = add_lag_features(featured, column="PM10", lags=(1, 24), windows=(24,))
+    featured = add_target(featured, column=TARGET, horizon=horizon)
+
+    features = (
+        lag_feature_names(TARGET)
+        + lag_feature_names("PM10", lags=(1, 24), windows=(24,))
+        + ["NOx", "O3", "SO2", "CO", "AMB_TEMP", "RH", "WS_HR"]
+        + ["wd_sin", "wd_cos"]
+        + list(TEMPORAL_FEATURES)
+    )
+    features = [f for f in features if f in featured.columns]
+
+    return featured.drop_nulls(["target", *features]).sort("station_name", "ts_local"), features
+
+
+def _fit_predict(
+    train: pl.DataFrame, test: pl.DataFrame, features: list[str], *, seed: int
+) -> np.ndarray:
+    import lightgbm as lgb
+
+    model = lgb.LGBMRegressor(
+        n_estimators=600,
+        learning_rate=0.05,
+        num_leaves=63,
+        min_child_samples=40,
+        subsample=0.8,
+        subsample_freq=1,
+        colsample_bytree=0.8,
+        n_jobs=-1,
+        random_state=seed,
+        verbose=-1,
+    )
+    model.fit(train.select(features).to_numpy(), train["target"].to_numpy())
+    return np.asarray(model.predict(test.select(features).to_numpy()))
+
+
+def run_forecast(
+    root: Path | None = None,
+    *,
+    period: tuple[int, int] = (2015, 2025),
+    stations: list[str] | None = None,
+    horizons: tuple[int, ...] = HORIZONS,
+    n_splits: int = 4,
+    seed: int = 20260729,
+) -> dict[str, pl.DataFrame]:
+    """Rolling-origin backtest at every horizon, scored against persistence."""
+    from twair.models.evaluate import rolling_origin
+
+    rows: list[dict[str, Any]] = []
+
+    for horizon in horizons:
+        frame, features = build_forecast_frame(
+            root, period=period, stations=stations, horizon=horizon
+        )
+        if frame.height < 5000:
+            log.warning("horizon %dh: only %d rows — skipping", horizon, frame.height)
+            continue
+
+        log.info("horizon %dh: %d rows, %d features", horizon, frame.height, len(features))
+
+        for split in rolling_origin(frame, n_splits=n_splits, time_column="ts_local"):
+            predicted = _fit_predict(split.train, split.test, features, seed=seed)
+            truth = split.test["target"].to_numpy()
+
+            # Persistence at horizon h is "the value now" — which is exactly
+            # lag_1, already in the frame and already known to be leak-free.
+            persistence = split.test[f"{TARGET}_lag1"].to_numpy()
+
+            # Climatology: the training mean for this station, month and hour.
+            clim_lookup = (
+                split.train.with_columns(
+                    pl.col("ts_local").dt.month().alias("_m"),
+                    pl.col("ts_local").dt.hour().alias("_h"),
+                )
+                .group_by("station_name", "_m", "_h")
+                .agg(pl.col("target").mean().alias("_c"))
+            )
+            climatology = (
+                split.test.with_columns(
+                    pl.col("ts_local").dt.month().alias("_m"),
+                    pl.col("ts_local").dt.hour().alias("_h"),
+                )
+                .join(clim_lookup, on=["station_name", "_m", "_h"], how="left")
+                .with_columns(pl.col("_c").fill_null(as_float(split.train["target"].mean())))["_c"]
+                .to_numpy()
+            )
+
+            e_model = truth - predicted
+            e_pers = truth - persistence
+            e_clim = truth - climatology
+
+            ss_tot = float(np.sum((truth - truth.mean()) ** 2))
+            rows.append(
+                ForecastScore(
+                    horizon=horizon,
+                    split=split.name,
+                    n=int(truth.size),
+                    model_rmse=float(np.sqrt(np.mean(e_model**2))),
+                    persistence_rmse=float(np.sqrt(np.mean(e_pers**2))),
+                    climatology_rmse=float(np.sqrt(np.mean(e_clim**2))),
+                    model_r2=1.0 - float(np.sum(e_model**2)) / ss_tot
+                    if ss_tot > 0
+                    else float("nan"),
+                    skill_vs_persistence=skill_score(e_model, e_pers),
+                    skill_vs_climatology=skill_score(e_model, e_clim),
+                ).as_dict()
+            )
+
+    if not rows:
+        raise RuntimeError("no horizon had enough data to backtest")
+
+    scores = pl.DataFrame(rows)
+    by_horizon = (
+        scores.group_by("horizon")
+        .agg(
+            pl.len().alias("splits"),
+            pl.col("n").sum(),
+            pl.col("model_rmse").mean(),
+            pl.col("persistence_rmse").mean(),
+            pl.col("climatology_rmse").mean(),
+            pl.col("model_r2").mean(),
+            pl.col("skill_vs_persistence").mean(),
+            pl.col("skill_vs_climatology").mean(),
+        )
+        .sort("horizon")
+    )
+    return {"scores": scores.sort("horizon", "split"), "by_horizon": by_horizon}
+
+
+def write_forecast_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
+    from twair.paths import outputs_dir
+
+    destination = outputs_dir("m9_forecast")
+    destination.mkdir(parents=True, exist_ok=True)
+
+    written: dict[str, Path] = {}
+    for name, frame in tables.items():
+        path = destination / f"{name}.parquet"
+        frame.write_parquet(path)
+        written[name] = path
+    return written
