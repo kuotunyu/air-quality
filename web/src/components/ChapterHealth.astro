@@ -67,8 +67,8 @@ const notReported = health.not_reported as { deaths: string; exposure: string };
 const years = health.years as number[];
 const spreadShare = health.spread_share as number[];
 
-const W = 720;
-const H = 320;
+const W = 880;
+const H = 370;
 const M = { top: 16, right: 104, bottom: 40, left: 52 };
 const PW = W - M.left - M.right;
 const PH = H - M.top - M.bottom;
@@ -90,7 +90,7 @@ const path = (values: number[], xs: number[]) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(xYear(xs[i]), 2)} ${n(yPaf(v), 2)}`).join(" ");
 
 // The second panel: the same spread as a share of the estimate it sits on.
-const H2 = 200;
+const H2 = 235;
 const PH2 = H2 - M.top - M.bottom;
 const yShare = linear([0, Math.max(...spreadShare) * 1.15], [PH2, 0]);
 const shareTicks = ticks(0, Math.max(...spreadShare) * 1.15, 4);
@@ -127,7 +127,7 @@ const fn = functions[0];
   <h3>四種反事實濃度下的可歸因比例</h3>
 
   <figure>
-    <div class="chart">
+    <div class="chart" tabindex="0">
       <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="不同反事實濃度下的可歸因比例">
         <g transform={`translate(${M.left},${M.top})`}>
           {
@@ -208,7 +208,7 @@ const fn = functions[0];
   </p>
 
   <figure>
-    <div class="chart">
+    <div class="chart" tabindex="0">
       <svg viewBox={`0 0 ${W} ${H2}`} style={`--vb:${W}`} role="img" aria-label="假設造成的範圍佔估計值的比例逐年上升">
         <g transform={`translate(${M.left},${M.top})`}>
           {
@@ -329,7 +329,7 @@ const fn = functions[0];
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 13.5px;
+    font-size: var(--chart-tick);
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -337,7 +337,7 @@ const fn = functions[0];
     text-anchor: end;
   }
   .key {
-    font-size: 13.5px;
+    font-size: var(--chart-label);
     font-family: var(--font-mono);
     font-weight: 600;
   }

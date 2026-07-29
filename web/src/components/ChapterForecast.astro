@@ -47,8 +47,8 @@ const baselines = forecast.baselines as {
 // Horizons are spaced evenly rather than by their hour value. They are four
 // chosen questions, not samples of a continuous function, and a linear axis
 // would crowd 1 and 6 into the left margin for no gain.
-const W = 720;
-const H = 300;
+const W = 880;
+const H = 350;
 const M = { top: 16, right: 92, bottom: 40, left: 52 };
 const PW = W - M.left - M.right;
 const PH = H - M.top - M.bottom;
@@ -147,7 +147,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   <h3>絕對誤差（μg/m³）</h3>
 
   <figure>
-    <div class="chart">
+    <div class="chart" tabindex="0">
       <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="三種方法的預測誤差隨期距變化">
         <g transform={`translate(${M.left},${M.top})`}>
           {
@@ -211,7 +211,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   </p>
 
   <figure>
-    <div class="chart">
+    <div class="chart" tabindex="0">
       <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="R² 與兩種 skill 隨期距的變化方向相反">
         <g transform={`translate(${M.left},${M.top})`}>
           {
@@ -398,7 +398,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 13.5px;
+    font-size: var(--chart-tick);
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -406,7 +406,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     text-anchor: end;
   }
   .key {
-    font-size: 14px;
+    font-size: var(--chart-label);
     font-family: var(--font-mono);
     font-weight: 600;
   }

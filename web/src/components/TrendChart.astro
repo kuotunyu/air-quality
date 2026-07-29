@@ -9,9 +9,13 @@ interface Props {
   height?: number;
 }
 
-const { years, series, guides = [], unit, height = 320 } = Astro.props;
+const { years, series, guides = [], unit, height = 380 } = Astro.props;
 
-const width = 760;
+// The figure's intrinsic size. The SVG renders at exactly this many CSS px
+// (`.chart svg` pins it), so this is both the layout width and the scale the
+// annotation sizes were chosen against — widening one without the other is
+// what makes labels collide.
+const width = 880;
 const margin = { top: 18, right: 16, bottom: 34, left: 46 };
 const plotWidth = width - margin.left - margin.right;
 const plotHeight = height - margin.top - margin.bottom;
@@ -35,7 +39,7 @@ const xTicks = years
   .filter(({ index }) => index % step === 0 || index === years.length - 1);
 ---
 
-<div class="chart">
+<div class="chart" tabindex="0">
   <svg
     viewBox={`0 0 ${width} ${height}`}
     style={`--vb:${width}`}
@@ -138,7 +142,7 @@ const xTicks = years
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 13.5px;
+    font-size: var(--chart-tick);
     font-family: var(--font-mono);
   }
   .tick-y {
@@ -149,7 +153,7 @@ const xTicks = years
     text-anchor: middle;
   }
   .guide-label {
-    font-size: 13px;
+    font-size: var(--chart-label);
     text-anchor: end;
     font-family: var(--font-mono);
   }

@@ -87,8 +87,8 @@ const GAP_SERIES = [
   return { ...series, values, lastIndex, lastValue: values[lastIndex] ?? null };
 });
 
-const gw = 700;
-const gh = 268;
+const gw = 880;
+const gh = 315;
 const gm = { top: 16, right: 150, bottom: 34, left: 48 };
 const gpw = gw - gm.left - gm.right;
 const gph = gh - gm.top - gm.bottom;
@@ -107,8 +107,8 @@ const keyCoefficients = replicationRows.filter(
 );
 
 // --- small inline chart for the diurnal cycle -------------------------------
-const w = 700;
-const h = 240;
+const w = 780;
+const h = 275;
 const m = { top: 14, right: 14, bottom: 30, left: 42 };
 const pw = w - m.left - m.right;
 const ph = h - m.top - m.bottom;
@@ -166,7 +166,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <div class="two-up">
       <figure>
-        <div class="chart">
+        <div class="chart" tabindex="0">
           <svg viewBox={`0 0 ${w} ${h}`} style={`--vb:${w}`} role="img" aria-label="PM2.5 的日內變化">
             <g transform={`translate(${m.left},${m.top})`}>
               {
@@ -578,7 +578,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
 
     <figure>
-      <div class="chart">
+      <div class="chart" tabindex="0">
         <svg viewBox={`0 0 ${gw} ${gh}`} style={`--vb:${gw}`} role="img" aria-label="各填補策略的重建誤差隨缺口長度的變化">
           <g transform={`translate(${gm.left},${gm.top})`}>
             {
@@ -791,7 +791,10 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     gap: 1.5rem;
     align-items: center;
   }
-  @media (min-width: 56rem) {
+  /* The figure track has to hold an 821px chart card before the layout is
+     worth splitting; below this it stacks and the chart takes the full
+     column instead of scrolling inside a track too narrow for it. */
+  @media (min-width: 78rem) {
     .two-up {
       grid-template-columns: 1fr minmax(200px, 260px);
     }
@@ -873,7 +876,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   }
   .tick {
     fill: var(--text-faint);
-    font-size: 13.5px;
+    font-size: var(--chart-tick);
     font-family: var(--font-mono);
   }
   .tick-y {
@@ -885,11 +888,11 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   }
   .guide-label {
     fill: var(--text-faint);
-    font-size: 13px;
+    font-size: var(--chart-label);
     text-anchor: end;
   }
   .series-label {
-    font-size: 14px;
+    font-size: var(--chart-label);
     font-weight: 600;
     dominant-baseline: middle;
   }

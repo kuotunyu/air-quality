@@ -85,6 +85,25 @@
   --text-xl: 1.44rem;
   --text-2xl: 1.95rem;
 
+  /*
+   * Chart annotation, in px rather than rem — deliberately.
+   *
+   * The SVGs are pinned to the width their geometry was laid out for (see
+   * `.chart svg`), so the plot area is a fixed number of px and does not move
+   * with the root size. A rem here would grow the labels while the axis they
+   * sit on stayed still, and they would collide.
+   *
+   * The values were the last thing left behind by the scale rebuild. Pinning
+   * the charts made their declared sizes literal, and they had been chosen for
+   * the stretched world where a 13.5px tick rendered at ~19px on a desktop.
+   * Measured after pinning: 139 pieces of chart text between 12 and 14px, in a
+   * document whose smallest running text is 16.4px and whose captions are
+   * 18.1px — an axis label smaller than the sentence describing it.
+   */
+  --chart-tick: 16px;
+  --chart-label: 16px;
+  --chart-micro: 15px;
+
   /* Spacing rhythm. Related things sit one step apart, unrelated things three;
      using the same gap everywhere is what makes a page read as undifferentiated. */
   --space-1: 0.35rem;
@@ -94,8 +113,22 @@
   --space-5: 2.6rem;
   --space-6: 4rem;
 
-  --measure: 36rem;
-  --page: 72rem;
+  /*
+   * Measure, and the page it sits in.
+   *
+   * `--page` was 72rem — 1404px at this root size — while every prose block was
+   * capped at 36rem. Measured on a 1440px viewport: the container's content box
+   * ran 1297px and a paragraph ran 702px, so 595–1004px of every text row was
+   * empty, and the figures then jumped to the full 1297px. Two different left-
+   * to-right rhythms with a void between them, which is what reads as wasted
+   * space rather than as margin.
+   *
+   * The column is now sized to what the document actually contains: a measure
+   * wide enough for comfortable CJK (39rem ≈ 39 characters a line) and a page
+   * that a full-width figure genuinely fills.
+   */
+  --measure: 39rem;
+  --page: 64rem;
   --radius: 10px;
 
   /* Named so a stacking order is a decision rather than an escalating number. */
@@ -243,7 +276,9 @@ select:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  border-radius: 3px;
+  /* No `border-radius` here. It used to set 3px, which changed the *element's*
+     own corners on focus — visible on the chart cards, which are 10px. An
+     outline already follows whatever radius the element has. */
 }
 
 code,
@@ -255,14 +290,29 @@ code,
 
 /* ---------- layout ---------- */
 
+/*
+ * The two padding rules below are deliberately on different axes and use the
+ * longhands rather than the `padding` shorthand.
+ *
+ * Every section on this site is `<section class="page">`, and `.page` used to
+ * set `padding: 0 clamp(…)`. A class beats an element selector, so that `0`
+ * silently replaced the vertical padding `section` was asking for: computed
+ * padding came out `0px 53.625px`, and the gap between consecutive chapters
+ * measured 0–51px against the 146px the stylesheet appeared to declare. Nine
+ * chapters ran into each other with a hairline between them.
+ *
+ * `padding-inline` and `padding-block` are separate longhands and cannot
+ * overwrite one another, so the collision is now structurally impossible
+ * rather than merely fixed.
+ */
 .page {
   max-width: var(--page);
   margin: 0 auto;
-  padding: 0 clamp(1.15rem, 4vw, 2.75rem);
+  padding-inline: clamp(1.15rem, 4vw, 2.75rem);
 }
 
 section {
-  padding: clamp(4rem, 9vw, 7.5rem) 0;
+  padding-block: clamp(2.6rem, 5vw, 4.4rem);
   border-top: 1px solid var(--line-soft);
 }
 
@@ -387,12 +437,54 @@ figcaption {
 }
 
 .chart {
-  background: var(--bg-sunken);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-3);
   overflow-x: auto;
+
+  /*
+   * The card is the size of the figure inside it, not the size of the column.
+   *
+   * As a full-width block it stretched to 1141px around an 880px chart, so a
+   * quarter of a bordered, differently-shaded box was empty — space that reads
+   * as a hole in the figure rather than as margin beside it. Sized to its
+   * contents, the leftover width falls outside the border where it belongs.
+   */
+  width: fit-content;
   max-width: 100%;
+
+  /*
+   * Scroll affordance, in CSS alone.
+   *
+   * A figure laid out for 920px is 2.7 screens wide on a 375px phone, and with
+   * overlay scrollbars there is nothing to say so — the reader sees a chart
+   * that appears to end at the edge of the card. The first two layers are
+   * painted in the *content's* coordinate space (`local`), so they travel with
+   * the chart and uncover the two `scroll` layers underneath only while there
+   * is something further along in that direction. No script, and no state to
+   * keep in sync.
+   *
+   * Greyscale, like the rest of the chrome: on this site a saturated edge would
+   * read as data.
+   */
+  background-color: var(--bg-sunken);
+  background-image:
+    linear-gradient(to right, var(--bg-sunken) 35%, transparent),
+    linear-gradient(to left, var(--bg-sunken) 35%, transparent),
+    linear-gradient(to right, var(--line), transparent),
+    linear-gradient(to left, var(--line), transparent);
+  background-position:
+    left center,
+    right center,
+    left center,
+    right center;
+  background-size:
+    2.4rem 100%,
+    2.4rem 100%,
+    1.1rem 100%,
+    1.1rem 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 
 /*
@@ -422,14 +514,15 @@ figcaption {
   flex: none;
 }
 
-/* Wide viewports: a research figure at a fixed comfortable width, not a chart
-   stretched across a 1200px column because the column happened to be there. */
-@media (min-width: 60rem) {
-  .chart {
-    display: flex;
-    justify-content: center;
-  }
-}
+/*
+ * Charts align left, with the prose — they are not centred in their figure.
+ *
+ * Centring them cost the page its only vertical spine. A 920px chart centred in
+ * a 1141px figure starts 110px in, while the paragraph above it and the caption
+ * below it both start at 0, so three consecutive rows had three different left
+ * edges. Aligning them means the leftover width collects on one side as a
+ * margin instead of scattering as gaps between things that ought to line up.
+ */
 
 /* ---------- tables ---------- */
 

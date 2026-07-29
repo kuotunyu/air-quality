@@ -48,7 +48,7 @@ const data = sourcesData as {
 const names = Object.keys(data.stations).sort((a, b) => a.localeCompare(b, "zh-Hant"));
 const initial = names.includes("富貴角") ? "富貴角" : names[0];
 
-const SIZE = 360;
+const SIZE = 420;
 const CX = SIZE / 2;
 const CY = SIZE / 2;
 const R_INNER = 34;
@@ -136,7 +136,7 @@ const legend = BREAKS.map((b, i) => ({
   </div>
 
   <div class="plot-row">
-    <div class="chart polar">
+    <div class="chart polar" tabindex="0">
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={`--vb:${SIZE}`} role="img" aria-labelledby="cbpf-caption">
         <defs>
           <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -370,7 +370,7 @@ const legend = BREAKS.map((b, i) => ({
   }
   @media (min-width: 52rem) {
     .plot-row {
-      grid-template-columns: minmax(280px, 400px) 1fr;
+      grid-template-columns: minmax(280px, 480px) 1fr;
     }
   }
   .plot-row > * {
@@ -398,7 +398,7 @@ const legend = BREAKS.map((b, i) => ({
   }
   .bearing {
     fill: var(--text-faint);
-    font-size: 12.5px;
+    font-size: var(--chart-micro);
     font-family: var(--font-mono);
     text-anchor: middle;
   }
@@ -408,12 +408,12 @@ const legend = BREAKS.map((b, i) => ({
   }
   .hub-label {
     fill: var(--text-faint);
-    font-size: 12px;
+    font-size: var(--chart-micro);
     text-anchor: middle;
   }
   .hub-value {
     fill: var(--text-muted);
-    font-size: 13.5px;
+    font-size: var(--chart-label);
     font-family: var(--font-mono);
     text-anchor: middle;
   }
