@@ -62,3 +62,6 @@ docs/report/
 # and README.md ARE committed — they are written, not generated.
 /spaces/forecast/model/
 /spaces/forecast/data/
+
+# Run logs. Artefacts of a run, not part of it.
+logs/
