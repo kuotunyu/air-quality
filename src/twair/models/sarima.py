@@ -234,6 +234,7 @@ def rolling_sarima(
     values: np.ndarray,
     *,
     train_end: int,
+    test_end: int,
     horizons: tuple[int, ...] = HORIZONS,
     stride: int = ORIGIN_STRIDE,
 ) -> tuple[dict[int, list[tuple[int, float]]], SarimaFit | None]:
@@ -243,6 +244,15 @@ def rolling_sarima(
     own provenance. The origin index is into ``values``, so the caller can line
     the forecast up against the truth and against any other method scored on
     the same rows.
+
+    ``test_end`` is required, not optional. Without it the origin loop ran to
+    the end of the *series* rather than to the end of the split, which made the
+    first split forecast 803 origins where it should make 268 — straight across
+    hours the second and third splits use as training data. The head-to-head
+    stayed fair, since all three methods were still scored on identical rows,
+    but the splits were nested instead of disjoint: pooling them weighted the
+    last third of the record three times, and the run cost exactly twice what it
+    needed to.
     """
     from statsmodels.tsa.statespace.sarimax import SARIMAX
 
@@ -285,7 +295,8 @@ def rolling_sarima(
     # one hour and 7.7 at 48; even 2,000 hours is off by 2.3 and 3.2. So the
     # context is the whole training window, and the cost of that is the honest
     # cost of evaluating this model out of sample.
-    for origin in range(train_end, values.size - longest, stride):
+    last_origin = min(test_end, values.size - longest)
+    for origin in range(train_end, last_origin, stride):
         context = values[max(0, origin - TRAIN_WINDOW_HOURS) : origin]
         if np.count_nonzero(~np.isnan(context)) < 24 * 30:
             continue
@@ -374,7 +385,12 @@ def run_sarima(
         for split in rolling_origin(series, n_splits=n_splits, time_column=TIMESTAMP):
             train_end = split.train.height
             climatology = _climatology(series, train_end)
-            forecasts, fit = rolling_sarima(values, train_end=train_end, horizons=horizons)
+            forecasts, fit = rolling_sarima(
+                values,
+                train_end=train_end,
+                test_end=train_end + split.test.height,
+                horizons=horizons,
+            )
             if fit is None:
                 continue
             fits.append({**fit.as_dict(), "station_name": station, "split": split.name})

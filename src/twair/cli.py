@@ -509,6 +509,76 @@ def analyze_m11(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m12")
+def analyze_m12(
+    sample: int = typer.Option(6, "--sample", help="Stations to score. Each one costs minutes."),
+    splits: int = typer.Option(3, "--splits", help="Rolling-origin splits per station."),
+    years: str = typer.Option("2015:2025", "--years", "-y", help="Period to analyse."),
+    stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
+) -> None:
+    """M12 — SARIMA, the model the 2018 project set aside as 「實屬不便」."""
+    from twair.models.sarima import run_sarima
+    from twair.paths import outputs_dir
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2015, 2025)
+    subset = [s.strip() for s in stations.split(",")] if stations else None
+
+    tables = run_sarima(period=period, stations=subset, sample=sample, n_splits=splits)
+    cost, fits, scores = tables["selection_cost"], tables["fits"], tables["scores"]
+
+    console.print("\n[bold]what the inconvenience costs[/bold]")
+    console.print(cost)
+
+    # Convergence first, because every number below it is a claim about a fitted
+    # model, and a non-converged fit makes that claim about an optimiser instead.
+    converged = int(fits["converged"].sum())
+    console.print(
+        f"\n[bold]{converged}/{fits.height}[/bold] fits converged, "
+        f"median {as_float(fits['fit_seconds'].median()):.0f}s on "
+        f"{as_int(fits['train_observed'].median()):,} observed points"
+    )
+    if converged < fits.height:
+        console.print(
+            f"  [yellow]{fits.height - converged} did not[/yellow] — kept in the table, not dropped"
+        )
+
+    pooled = (
+        scores.group_by("method", "horizon")
+        .agg(
+            pl.col("rmse").mean().alias("rmse"),
+            pl.col("mae").mean().alias("mae"),
+            pl.col("n").sum().alias("n"),
+        )
+        .sort("horizon", "rmse")
+    )
+    console.print("\n[bold]scored on identical origins[/bold]")
+    console.print(pooled)
+
+    # The question D10 exists to answer: at each horizon, did the expensive
+    # model beat the two things that cost nothing?
+    console.print("\n[bold]did it buy anything?[/bold]")
+    for horizon in sorted(pooled["horizon"].unique().to_list()):
+        at = {
+            row["method"]: row["rmse"]
+            for row in pooled.filter(pl.col("horizon") == horizon).to_dicts()
+        }
+        sarima = at.get("sarima")
+        if sarima is None:
+            continue
+        rivals = {name: rmse for name, rmse in at.items() if name != "sarima"}
+        best = min(rivals, key=lambda name: rivals[name])
+        margin = (rivals[best] - sarima) / rivals[best]
+        verdict = "[green]beats[/green]" if margin > 0 else "[yellow]loses to[/yellow]"
+        console.print(
+            f"  {horizon:>3}h  SARIMA {sarima:.2f}  {verdict} best baseline "
+            f"({best} {rivals[best]:.2f}) by [bold]{abs(margin):.1%}[/bold]"
+        )
+
+    for name in ("selection_cost", "fits", "scores"):
+        console.print(f"wrote {name}: {outputs_dir('m12_sarima') / (name + '.parquet')}")
+
+
 @analysis_app.command("m7")
 def analyze_m7(
     years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),
