@@ -9,7 +9,7 @@ Level Grain                    Size         Delivery
 ===== ======================== ============ ==================================
 L0    station × month          ~KB/pollutant JSON, fetched up front, instant
 L1    station × day            ~MB/pollutant Parquet, DuckDB-WASM range reads
-L2    station × hour           ~GB          HuggingFace only, with query recipes
+L2    station × hour           ~GB          not published; rebuild it with the pipeline
 ===== ======================== ============ ==================================
 
 Four rules hold across all of them.
@@ -30,7 +30,8 @@ one is exactly the sin this whole project exists to document.
 
 **Rounding is one-way and declared.** Values are rounded to a per-pollutant
 precision that reflects how they were measured. The website is a viewer, not
-the archive of record — L2 on HuggingFace is, and every export names it.
+the archive of record — the store this exports from is, and every export
+names it.
 
 **Only documented measurands ship.** The store carries 48 distinct channel
 codes; 20 of them appear in MOENV's own ReadMe and the rest are artefacts of

@@ -1,8 +1,10 @@
 # Rules for AI coding agents
 
 > 給人看的說明：這份檔案是給 AI coding agent（GitHub Copilot、Antigravity、
-> Claude Code 等）讀的規則。`.github/copilot-instructions.md` 是它的鏡像副本，
-> **兩份必須一起改**。人類看的完整規劃在 `PLAN.md` 與 `PROGRESS.md`。
+> Claude Code 等）讀的規則。`.github/copilot-instructions.md` 是它的**產生物**——
+> 改這一份，然後跑 `uv run python scripts/mirror_agents.py`，絕不手改副本。
+> CI 會用 `--check` 驗，所以忘記重生是紅燈而不是兩個 agent 讀到不同規則。
+> 人類看的完整規劃在 `PLAN.md` 與 `PROGRESS.md`。
 
 Read this before changing anything. It is short on purpose.
 
@@ -97,7 +99,13 @@ Run all three. All three must pass.
 ```bash
 uv run pytest -q
 ```
-Currently **299 passed, 2 deselected**. This number must **not go down**.
+Currently **470 passed, 3 deselected**. This number must **not go down**.
+
+> Raise it in the same commit that adds tests. This line said 299 for long
+> enough that the real figure reached 470 — a floor 171 tests below reality,
+> which would have let someone delete a third of the suite and still pass the
+> rule as written. A guardrail nobody updates is a guardrail that quietly stops
+> guarding.
 
 ```bash
 uv run ruff check .
@@ -193,11 +201,12 @@ global. Derive the year from `ts_local` instead.
 ## Commit messages
 
 Explain what was **learned**, not just what changed. Plain prose, no bullet
-soup. End every commit with:
+soup.
 
-```
-Co-Authored-By: <your model name> <noreply@anthropic.com>
-```
+**Do not add a `Co-Authored-By` trailer.** Every commit is authored by the
+repository owner alone; this is the owner's decision about their own project,
+not a claim about how the work was done. Earlier commits carried one and were
+rewritten.
 
 Use `git commit -F <file>` for multi-line messages (this is Git Bash on
 Windows; PowerShell here-strings break, and apostrophes in `-m` truncate).

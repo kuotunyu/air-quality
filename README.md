@@ -6,6 +6,7 @@
 
 [English](README.en.md) ·
 互動網站 —— *尚未部署* ·
+[預測 demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
 資料集 —— *尚未上架* ·
 [方法論](docs/methodology.md)
 
@@ -60,16 +61,22 @@
 
 全部為政府公開資料，依《政府資料開放授權條款第 1 版》使用。
 
-| 來源 | 內容 | 期間 |
-|---|---|---|
-| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測（**已取得全部 44 年**） | 1982–2025 |
-| [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站基本資料、即時 AQI（每日增量） | 即時 |
-| [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 |
-| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、風場、氣壓 | 1982– |
-| [Sentinel-5P / MODIS](https://earthengine.google.com/) | 衛星柱濃度、氣膠光學厚度 | 2018– |
+| 來源 | 內容 | 期間 | 狀態 |
+|---|---|---|---|
+| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–2025 | ✅ **全部 44 年已取得**，本專案所有結果都出自這裡 |
+| [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時 | ✅ 使用中（測站登錄、資料新鮮度檢查） |
+| [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 | ⬜ **尚未取得** |
+| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、風場、氣壓 | 1982– | ⬜ **尚未取得** |
+| [Sentinel-5P / MODIS](https://earthengine.google.com/) | 衛星柱濃度、氣膠光學厚度 | 2018– | ⬜ **尚未取得**（Phase 6，建議略過） |
 
-> 邊界層高度（BLH）是原專題最關鍵的缺失變數。污染物濃度大致正比於
-> 排放量除以混合層體積——少了 BLH，任何「氣象如何影響 PM2.5」的討論都缺一塊。
+氣象變數目前**全部來自空品測站自己的儀器**（溫度、濕度、雨量、風速風向），
+不是氣象署，也不是再分析資料。
+
+> **邊界層高度（BLH）是原專題最關鍵的缺失變數——而它現在也是本專案的缺失變數。**
+> 污染物濃度大致正比於排放量除以混合層體積，少了 BLH，任何「氣象如何影響 PM2.5」
+> 的討論都缺一塊。這一塊量得出來：M4 氣象正規化的 holdout R² 中位數是 **0.445**，
+> 也就是逐時變異有一半以上不是本地氣象能解釋的。把 BLH 補進去是這個專案
+> 最有價值的下一步之一，但它還沒發生，所以這裡照實寫。
 
 ## 快速開始
 
@@ -107,7 +114,7 @@ uv run twair probe sources
 | Phase 5 | 境外傳輸（CBPF）✅ ／ 空間自相關 ⬜ | 🔄 部分完成 |
 | Phase 6 | 衛星與微型感測器融合 | ⬜ |
 | Phase 7 | 預測模型（M9）✅ ／ HuggingFace Space ✅ | ✅ 完成 |
-| Phase 8 | 健康衝擊、自動更新、發布 | ⬜ |
+| Phase 8 | 健康衝擊（M10）✅ ／ 資料新鮮度檢查 ✅ ／ 完整報告 ⬜ | 🔄 進行中 |
 
 完整計畫見 [PLAN.md](PLAN.md)。磁碟上的實際狀態用 `uv run twair status` 看——
 這份表寫的是意圖，那個指令量的是事實。

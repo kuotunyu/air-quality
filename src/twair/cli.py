@@ -602,7 +602,7 @@ app.add_typer(export_app, name="export")
 @export_app.command("web")
 def export_web(
     levels: str = typer.Option(
-        "L0,L1", "--levels", help="Which tiers to build. L2 is HuggingFace-only, never local."
+        "L0,L1", "--levels", help="Which tiers to build. L2 is not published — see docs/legal.md."
     ),
     story: bool = typer.Option(True, "--story/--no-story", help="Also build chapter payloads."),
 ) -> None:
@@ -613,8 +613,10 @@ def export_web(
     selected = tuple(part.strip().upper() for part in levels.split(",") if part.strip())
     if "L2" in selected:
         raise typer.BadParameter(
-            "L2 is the full hourly record. It is published to HuggingFace, not to the site, "
-            "and is blocked pending the MOENV licensing answer — see docs/legal.md."
+            "L2 is the full hourly record and is not published anywhere. The 2026-07-28 "
+            "decision ships the derived layers and the pipeline that rebuilds everything "
+            "else, which sidesteps the licensing conflict rather than resolving it — "
+            "see docs/legal.md."
         )
 
     results = export_all(levels=selected)

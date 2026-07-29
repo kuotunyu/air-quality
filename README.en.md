@@ -7,6 +7,7 @@
 [繁體中文](README.md) ·
 Interactive site — *not yet deployed* ·
 Dataset — *not yet uploaded* ·
+[Forecast demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
 [Methodology](docs/methodology.md)
 
 ---
@@ -119,15 +120,17 @@ flowchart TD
 
 All retrieved files originate from governmental open data portals under the *Government Data Open License, Version 1.0*.
 
-| Source | Content | Spatial/Temporal | Span |
-|---|---|---|---|
-| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | 1982–2025 |
-| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time |
-| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical |
-| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temp, surface pressure | 1982–Present |
-| [Google Earth Engine (S5P / MODIS)](https://earthengine.google.com/) | Sentinel-5P TROPOMI & MODIS | Columnar NO2, SO2, CO, and 1km AOD | 2018–Present |
+| Source | Content | Spatial/Temporal | Span | Status |
+|---|---|---|---|---|
+| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | 1982–2025 | ✅ **all 44 years held**; every result here comes from this |
+| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time | ✅ in use (station register, freshness check) |
+| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
+| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temp, surface pressure | 1982–Present | ⬜ **not yet acquired** |
+| [Google Earth Engine (S5P / MODIS)](https://earthengine.google.com/) | Sentinel-5P TROPOMI & MODIS | Columnar NO2, SO2, CO, and 1km AOD | 2018–Present | ⬜ **not yet acquired** (Phase 6) |
 
-> **Boundary Layer Height (BLH)** is the single most critical variable the original method omitted. Pollutant concentrations are roughly inversely proportional to the mixing boundary layer volume—without BLH, any study attempting to model meteorological impacts on PM2.5 suffers from immediate omitted-variable bias.
+Every meteorological variable in use today is measured by the air-quality stations' own instruments — temperature, humidity, rainfall, wind speed and bearing. Nothing comes from CWA or from a reanalysis yet.
+
+> **Boundary Layer Height (BLH)** is the single most critical variable the original method omitted — and it is missing from this project too. Pollutant concentrations are roughly inversely proportional to the mixing boundary layer volume, so without BLH any attempt to model meteorological impacts on PM2.5 carries omitted-variable bias. The size of the gap is measurable: M4's meteorological normalisation has a median holdout R² of **0.445**, meaning more than half of hourly variance is not explained by local weather as currently observed. Adding BLH is one of the most valuable things left to do, and it has not been done, so it is written here as such.
 
 ---
 
@@ -168,11 +171,11 @@ Current developmental milestones are tracked in **[PROGRESS.md](PROGRESS.md)**.
 | **Phase 1** | Data Retrieval, Core QC, and Canonical Parquet Store | ✅ Complete |
 | **Phase 2** | Method Replication (M1) & Robust Pitfall Demonstration (M3) | ✅ Complete |
 | **Phase 3** | Astro Interactive Dashboard & DuckDB-WASM Setup | ✅ Complete |
-| **Phase 4** | Weather Normalization (M4) & Policy Causal Inference (M5) | ⬜ **Up Next (Work in Progress)** |
-| **Phase 5** | Spatial Econometrics & Lagrangian Back-trajectory Tracking | ⬜ |
-| **Phase 6** | Satellite AOD & Low-Cost Micro-sensor Network Fusion | ⬜ |
-| **Phase 7** | GNN Predictors, Deep Sequence Forecasting, and HF Space Demo | ⬜ |
-| **Phase 8** | Epidemiological Health Impact Modelling & Automated Continuous CI | ⬜ |
+| **Phase 4** | Weather Normalization (M4) & Policy Causal Inference (M5) | ✅ Complete |
+| **Phase 5** | Source direction via CBPF (M7) ✅ / Spatial autocorrelation (M6) ⬜ | 🔄 **Partial** |
+| **Phase 6** | Satellite AOD & Low-Cost Micro-sensor Network Fusion | ⬜ Likely skipped |
+| **Phase 7** | Forecasting (M9) & HF Space Demo | ✅ **Complete — [Space is live](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast)** |
+| **Phase 8** | Health burden (M10) ✅ / freshness check ✅ / full report ⬜ | 🔄 **In progress** |
 
 Read the full blueprints in [PLAN.md](PLAN.md).
 

@@ -24,12 +24,18 @@ That writes four things:
 | `public/data/meta.json` | stations, measurands, provenance | yes |
 | `public/data/l0/*.json` | station-month means, one file per measurand | yes |
 | `public/data/story/*.json` | the per-chapter payloads | yes |
-| `public/data/l1/*.parquet` | station-day means, ~55 MB | **no** |
+| `public/data/l1/*.parquet` | station-day means, ~53 MB over 21 files | **PM2.5 and PM10 only** |
 
 L0 and the story payloads are committed because the site cannot render without
-them and they are small. L1 is regenerated on demand and served from a data
-host; committing it would add tens of megabytes per rebuild. L2 — the full
-hourly record — never comes here at all.
+them and they are small. L1 is the exception that needs stating: `.gitignore`
+excludes the directory and then force-includes `l1/pm25.parquet` and
+`l1/pm10.parquet`, so the explorer in chapter 8 has real tables to query on the
+deployed site while the other nineteen measurands stay local. That is why the
+explorer HEAD-probes each file before offering it — the set that is served is
+not the set that exists on the machine that built the page.
+
+L2 — the full hourly record — never comes here, and is not published anywhere
+else either; see `docs/legal.md`.
 
 CI has no copy of the 341-million-row store, so **refreshing the site's data is
 a local step followed by a commit**, not something the deploy workflow can do.

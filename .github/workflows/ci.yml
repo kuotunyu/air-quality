@@ -40,5 +40,11 @@ jobs:
       - name: Type Check (MyPy)
         run: uv run mypy src tests
 
+      # AGENTS.md and .github/copilot-instructions.md are the same rules read by
+      # different agents. Nothing enforced that until the copy was found to be
+      # unverifiable by hand — see scripts/mirror_agents.py.
+      - name: Agent instructions mirror
+        run: uv run python scripts/mirror_agents.py --check
+
       - name: Test (Pytest)
         run: uv run pytest

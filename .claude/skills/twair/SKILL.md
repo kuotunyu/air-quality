@@ -498,7 +498,8 @@ npm run build && npm run check          # check must be 0 errors
 
 CI cannot regenerate the site's data — it has no copy of the store. **Exporting
 is a local step followed by a commit.** L0 and the story payloads are
-committed; L1 (55 MB) is gitignored; L2 never leaves HuggingFace.
+committed; L1 (55 MB) is gitignored except PM2.5 and PM10, which are
+committed so the explorer has something to query; L2 is not published at all.
 
 Long runs (`ingest`, `build`) belong in the background — a full build is hours.
 `build_year` catches every exception and records it in the summary, so one bad
@@ -562,10 +563,11 @@ Explain what was *learned*, not just what changed — especially when a finding
 contradicts an earlier claim. Prior commits corrected the "three generations by
 era" story and the wind-sentinel overreach; keep doing that.
 
-End with:
-```
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-```
+**No `Co-Authored-By` trailer.** The owner wants this repository authored by
+one person, which is their call to make about their own project. The first 55
+commits carried `Co-Authored-By: Claude Opus 5` and were rewritten before the
+repo ever had a remote — free then, a force-push and a diverged history after.
+If you are about to add one, do not.
 
 Use `git commit -F <file>` — this is Git Bash, so PowerShell here-strings
 (`@'...'@`) break, and apostrophes in `-m` truncate the message.
@@ -635,11 +637,19 @@ never anything that would let a reader identify the people involved.
 
 Before any publish step, grep for names. `docs/legal.md` records the reasoning.
 
-## Open decisions (do not decide unilaterally)
+## Settled decisions — do not reopen these
 
-1. **Raw-data redistribution licensing.** `docs/legal.md` documents a conflict
-   between the open-data terms and the archive ReadMe. Until the owner rules,
-   **do not publish a full copy of the raw hourly records** to HuggingFace.
+1. **Raw-data redistribution: L2 is not published, anywhere.** `docs/legal.md`
+   documents a conflict between the open-data terms and the archive ReadMe.
+   The 2026-07-28 decision **sidesteps it rather than resolving it**: ship the
+   derived layers (L0, L1) and the pipeline that rebuilds everything else, so
+   the data stays effectively available without redistributing the raw hourly
+   record. No enquiry was sent to MOENV and none is planned — this is a side
+   project, not a submission, and it does not need a written basis.
+
+   So L2 is not "pending an answer" and not "on HuggingFace". It does not
+   exist outside this machine. `twair export web --levels L2` refuses for that
+   reason.
 
 ## Delegating to a cheaper agent
 
@@ -649,12 +659,21 @@ re-deriving the answer. Type annotations across 300 errors are a fine delegation
 (mypy verifies them); a one-line docstring explaining a design choice is not.
 
 `AGENTS.md` and `.github/copilot-instructions.md` carry the rules those agents
-see. **They are mirrors — edit both together.** Regenerate the copy with the
-header intact:
+see. **`AGENTS.md` is the source; never edit the copy.** Regenerate it:
 
 ```bash
-python -c "import pathlib; s=pathlib.Path('AGENTS.md').read_text(encoding='utf-8'); h='<!-- MIRROR OF AGENTS.md — edit both together, or neither. -->\n<!-- GitHub Copilot reads this file automatically for repository custom instructions. -->\n\n'; pathlib.Path('.github/copilot-instructions.md').write_text(h+s, encoding='utf-8', newline='\n')"
+uv run python scripts/mirror_agents.py
 ```
+
+CI runs the same script with `--check`, so a forgotten regeneration is a red
+build rather than two agents reading different rules.
+
+The old one-liner wrote the copy with `newline="\n"` while `AGENTS.md` is
+checked out CRLF, so `diff` reported all 224 lines as different *immediately
+after regenerating* — the contents were identical the whole time. That is worse
+than no check: a comparison that always fails teaches you to stop running it,
+and then real drift looks exactly like the noise you have been ignoring. The
+script copies the source's bytes verbatim so byte equality is the right test.
 
 Never delegate: anything touching null semantics, QC flag meaning, statistical
 method choice, existing comments and docstrings, or prose that makes a claim.
