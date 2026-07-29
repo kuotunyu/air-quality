@@ -101,6 +101,15 @@ def parse_wkb(blob: bytes) -> list[tuple[Ring, list[Ring]]]:
     endian = "<" if byte_order == 1 else ">"
     (geom_type,) = take(endian + "I")
 
+    # ISO WKB encodes dimensionality in the thousands digit: 1000 adds Z, 2000
+    # adds M, 3000 adds both. Every point then carries 3 or 4 doubles instead of
+    # 2. Matching on `% 1000` alone accepted all of them and went on reading
+    # pairs, which does not raise — it silently returns coordinates assembled
+    # from interleaved elevations. This dataset is 2D, and if that ever changes
+    # the run should stop rather than draw a plausible wrong island.
+    if geom_type >= 1000:
+        raise ValueError(f"WKB type {geom_type} carries Z and/or M values; this reader is 2D only")
+
     if geom_type % 1000 == 3:
         read_polygon(endian)
     elif geom_type % 1000 == 6:

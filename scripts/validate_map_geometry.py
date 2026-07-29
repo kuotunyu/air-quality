@@ -39,6 +39,12 @@ META = ROOT / "web" / "public" / "data" / "meta.json"
 # exactly as they are excluded there.
 MARGIN = 0.04
 
+# The main island's counties, and the stations the map draws on them. Both are
+# asserted exactly rather than as floors: a check that quietly runs over fewer
+# things than it should is a check that stops working without saying so.
+EXPECTED_COUNTIES = 19
+EXPECTED_STATIONS = 73
+
 Ring = list[tuple[float, float]]
 
 
@@ -86,8 +92,14 @@ def inside(px: float, py: float, rings: list[Ring]) -> bool:
 
 def main() -> int:
     counties = read_counties()
-    if len(counties) < 15:
-        print(f"county data looks truncated: {len(counties)} counties", file=sys.stderr)
+    # Exact, not a floor. `< 15` would have shrugged at losing four of nineteen,
+    # and a parser that silently returns fewer counties than exist makes every
+    # assertion below weaker without making any of them fail.
+    if len(counties) != EXPECTED_COUNTIES:
+        print(
+            f"expected {EXPECTED_COUNTIES} counties, parsed {len(counties)}: {sorted(counties)}",
+            file=sys.stderr,
+        )
         return 1
 
     every_point = [p for rings in counties.values() for r in rings for p in r]
@@ -109,6 +121,17 @@ def main() -> int:
         and frame[0] <= s["lon"] <= frame[1]
         and frame[2] <= s["lat"] <= frame[3]
     ]
+
+    # A check that checks nothing passes. If the station list ever fails to
+    # load, or the frame filter ever excludes everything, the loop below is
+    # empty and every counter stays at zero — which reads exactly like success.
+    if len(drawn) < EXPECTED_STATIONS:
+        print(
+            f"only {len(drawn)} stations to check, expected at least "
+            f"{EXPECTED_STATIONS} — the check set itself is wrong",
+            file=sys.stderr,
+        )
+        return 1
 
     wrong: list[str] = []
     unknown: list[str] = []

@@ -21,6 +21,15 @@ remain with the issuing agencies:
     Central Weather Administration, MOTC / 交通部中央氣象署
     https://opendata.cwa.gov.tw/
 
+  * County and municipality boundaries
+    National Land Surveying and Mapping Center, MOI / 內政部國土測繪中心
+    直轄市、縣市界線(TWD97經緯度), data.gov.tw dataset 7442, edition 1140318
+    Open Government Data License, Taiwan, version 1.0 (政府資料開放授權條款第1版)
+    https://data.gov.tw/license
+    A simplified derivative is committed at web/src/lib/taiwan.ts. That file is
+    third-party data under the licence above, not MIT-licensed project code —
+    see LICENSE.
+
   * ERA5 reanalysis
     Generated using Copernicus Climate Change Service information.
     Neither the European Commission nor ECMWF is responsible for any use that

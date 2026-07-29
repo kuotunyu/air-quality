@@ -63,14 +63,10 @@ class TestSplitBoundary:
     def test_a_later_split_does_not_reuse_an_earlier_ones_origins(self) -> None:
         values = _seasonal(2000)
 
-        first, _ = rolling_sarima(
-            values, train_end=800, test_end=1200, horizons=(1,), stride=50
-        )
-        second, _ = rolling_sarima(
-            values, train_end=1200, test_end=1600, horizons=(1,), stride=50
-        )
+        first, _ = rolling_sarima(values, train_end=800, test_end=1200, horizons=(1,), stride=50)
+        second, _ = rolling_sarima(values, train_end=1200, test_end=1600, horizons=(1,), stride=50)
 
-        assert not set(o for o, _ in first[1]) & set(o for o, _ in second[1])
+        assert not {o for o, _ in first[1]} & {o for o, _ in second[1]}
 
     def test_the_test_span_never_runs_past_the_series(self) -> None:
         values = _seasonal(1200)

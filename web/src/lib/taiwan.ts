@@ -10,20 +10,28 @@
  * largest size this map is ever drawn. 19 counties, 5075 points.
  * Do not edit by hand — re-run the generator.
  *
- * `scripts/validate_map_geometry.py` checks the result the only way that actually
- * proves anything: every monitoring station must fall inside the polygon of the
- * county its own metadata claims it is in.
+ * `scripts/validate_map_geometry.py` checks the result the only way that
+ * actually proves anything: every monitoring station must fall inside the
+ * polygon of the county its own metadata claims — and inside no other.
  */
 export interface County {
   /** Name as it appears in the source register. */
   name: string;
   /** 行政區域代碼, stable across renames. */
   code: string;
-  /** Places a label could go inside the largest ring, roomiest first. */
+  /** Places a label could go, roomiest first; none inside a hole or a neighbour. */
   anchors: [number, number][];
-  /** Total area in square degrees; used to decide what gets a label. */
+  /** Square degrees, holes subtracted. The label placement sorts on it. */
   area: number;
-  /** Exterior rings, largest first. */
+  /**
+   * Exterior rings and holes together, largest exterior first.
+   *
+   * **Must be filled `evenodd`.** Two counties are true enclaves — 臺北市 in
+   * 新北市, 嘉義市 in 嘉義縣 — so the surrounding county's ring list contains a
+   * hole where the enclave sits. Filled `nonzero` the hole would depend on
+   * winding direction and the enclave would be painted over; there is no
+   * exterior-ring-only way to express a landlocked county.
+   */
   rings: [number, number][][];
 }
 
