@@ -156,6 +156,27 @@ export const concentrationLegend = PM25_BREAKS.map((breakpoint, index) => ({
 ]);
 
 /**
+ * How wide the label gutters need to be, in px.
+ *
+ * The gutters hold absolutely positioned spans, and an absolutely positioned
+ * child contributes nothing to the size of an `auto` grid track — so the track
+ * collapses to zero and the labels hang outside the figure, which is what they
+ * did on the first run of this layout. The track has to be told.
+ *
+ * The estimate is deliberately crude: a CJK glyph is one em, most Latin is a
+ * bit over half. Being 10px generous costs nothing, and being short would put a
+ * label back outside the card.
+ */
+export function labelGutter(labels: (string | number)[], size = 16, pad = 12): number {
+  const width = (label: string | number) =>
+    [...String(label)].reduce(
+      (sum, ch) => sum + (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56),
+      0,
+    );
+  return Math.ceil(Math.max(0, ...labels.map(width)) * size + pad);
+}
+
+/**
  * Push inline series labels apart so they stay readable where lines converge.
  *
  * Needed because convergence is usually the finding. In chapter 5 R² and skill

@@ -52,7 +52,10 @@ const SIZE = 420;
 const CX = SIZE / 2;
 const CY = SIZE / 2;
 const R_INNER = 34;
-const R_OUTER = 165;
+const R_OUTER = 186;
+// Where the compass labels sit, as a fraction of the box. They are HTML now,
+// positioned over the square rather than drawn inside it.
+const LABEL_R = 0.455;
 
 const nSectors = data.sectors.length;
 const nRings = data.speed_bins.length;
@@ -136,8 +139,9 @@ const legend = BREAKS.map((b, i) => ({
   </div>
 
   <div class="plot-row">
-    <div class="chart polar" tabindex="0">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={`--vb:${SIZE}`} role="img" aria-labelledby="cbpf-caption">
+    <div class="chart polar">
+      <div class="polar-box">
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-labelledby="cbpf-caption">
         <defs>
           <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="6" class="hatch-line" />
@@ -155,23 +159,28 @@ const legend = BREAKS.map((b, i) => ({
             </path>
           ))
         }
-        {
-          data.sectors.map((s) => {
-            const a = ((s - 90) * Math.PI) / 180;
-            const r = R_OUTER + 15;
-            return (
-              <text x={CX + r * Math.cos(a)} y={CY + r * Math.sin(a) + 4} class="bearing">
-                {s === 0 ? "北" : s === 90 ? "東" : s === 180 ? "南" : s === 270 ? "西" : s}
-              </text>
-            );
-          })
-        }
         <circle cx={CX} cy={CY} r={R_INNER - 2} class="hub" />
-        <text x={CX} y={CY - 2} class="hub-label">靜風</text>
-        <text x={CX} y={CY + 11} class="hub-value" id="cbpf-calm">
-          {(start.calm_fraction * 100).toFixed(1)}%
-        </text>
       </svg>
+
+      {
+        data.sectors.map((s) => {
+          const a = ((s - 90) * Math.PI) / 180;
+          return (
+            <span
+              class="bearing"
+              style={`left:${(50 + LABEL_R * 100 * Math.cos(a)).toFixed(2)}%;top:${(50 + LABEL_R * 100 * Math.sin(a)).toFixed(2)}%`}
+            >
+              {s === 0 ? "北" : s === 90 ? "東" : s === 180 ? "南" : s === 270 ? "西" : s}
+            </span>
+          );
+        })
+      }
+
+      <span class="hub-text">
+        <span class="hub-label">靜風</span>
+        <span class="hub-value" id="cbpf-calm">{(start.calm_fraction * 100).toFixed(1)}%</span>
+      </span>
+      </div>
     </div>
 
     <div class="readout">
@@ -370,17 +379,48 @@ const legend = BREAKS.map((b, i) => ({
   }
   @media (min-width: 52rem) {
     .plot-row {
-      grid-template-columns: minmax(280px, 480px) 1fr;
+      grid-template-columns: minmax(260px, 26rem) 1fr;
     }
   }
   .plot-row > * {
     min-width: 0;
   }
-  .polar svg {
-    /* Width, and therefore text size, comes from the global `.chart svg` pin.
-       Overriding it here is what left this one chart at 0.83 scale while the
-       other four sat at 1.00. */
-    margin: 0 auto;
+  /*
+   * A square that owns its own coordinate space.
+   *
+   * The wedges have to scale uniformly — a non-uniform stretch would turn the
+   * compass into an ellipse and the bearings would stop meaning bearings — so
+   * unlike the cartesian plots this SVG keeps its aspect ratio and simply fills
+   * the box. Its labels are HTML positioned in percentages over the same
+   * square, which is what keeps them at 15px whether the box is 260px or 480px
+   * across. Nothing here scrolls at any width.
+   */
+  .polar-box {
+    position: relative;
+    aspect-ratio: 1;
+    width: 100%;
+    max-width: 26rem;
+    margin-inline: auto;
+  }
+  .polar-box > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .bearing,
+  .hub-text {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    line-height: 1.15;
+  }
+  .hub-text {
+    left: 50%;
+    top: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
   }
   .cell {
     stroke: var(--bg-sunken);
@@ -397,25 +437,23 @@ const legend = BREAKS.map((b, i) => ({
     stroke-width: 1.5;
   }
   .bearing {
-    fill: var(--text-faint);
+    color: var(--text-faint);
     font-size: var(--chart-micro);
     font-family: var(--font-mono);
-    text-anchor: middle;
   }
   .hub {
     fill: var(--bg-raised);
     stroke: var(--line);
   }
   .hub-label {
-    fill: var(--text-faint);
+    color: var(--text-faint);
     font-size: var(--chart-micro);
-    text-anchor: middle;
   }
   .hub-value {
-    fill: var(--text-muted);
+    color: var(--text-muted);
     font-size: var(--chart-label);
     font-family: var(--font-mono);
-    text-anchor: middle;
+    font-variant-numeric: tabular-nums;
   }
   .readout {
     display: grid;

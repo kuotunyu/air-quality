@@ -53,6 +53,7 @@ const sections = [
           }
         </ul>
       </div>
+      <div class="progress" aria-hidden="true"></div>
     </nav>
 
     <main>
@@ -80,6 +81,54 @@ const sections = [
         backdrop-filter: blur(12px);
         background: color-mix(in srgb, var(--bg) 86%, transparent);
         border-bottom: 1px solid var(--line-soft);
+      }
+
+      /*
+       * Reading progress, drawn on the bar the reader is already looking at.
+       *
+       * This document is about thirty screens deep, and the honest answer to
+       * "why does this feel long" is that it is long — nine chapters and ten
+       * thousand characters. What it was missing is any way to tell how much of
+       * that is left, which is the difference between a long read and an
+       * endless one.
+       *
+       * Driven by a scroll-progress timeline, so there is no scroll listener
+       * and nothing to keep in sync; where the timeline is unsupported the rule
+       * simply never applies and the bar stays at zero width, which is a line
+       * nobody notices rather than a broken control.
+       */
+      .progress {
+        position: absolute;
+        left: 0;
+        bottom: -1px;
+        height: 2px;
+        width: 0;
+        background: var(--accent);
+        transform-origin: left;
+      }
+
+      @supports (animation-timeline: scroll()) {
+        .progress {
+          width: 100%;
+          transform: scaleX(0);
+          animation: read linear;
+          animation-timeline: scroll(root block);
+        }
+      }
+
+      @keyframes read {
+        to {
+          transform: scaleX(1);
+        }
+      }
+
+      /* The bar reports position rather than drawing attention, and it is
+         driven by scrolling rather than by time — but honour the preference
+         anyway and let it jump instead of glide. */
+      @media (prefers-reduced-motion: reduce) {
+        .progress {
+          transition: none;
+        }
       }
       .topbar-inner {
         display: flex;

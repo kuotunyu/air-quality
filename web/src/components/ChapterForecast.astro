@@ -13,7 +13,7 @@
  * data as three scores, which is where the contradiction lives.
  */
 import forecast from "../../public/data/story/forecast.json";
-import { linear, n, spreadLabels, ticks } from "../lib/chart";
+import { labelGutter, linear, n, spreadLabels, ticks } from "../lib/chart";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -47,14 +47,12 @@ const baselines = forecast.baselines as {
 // Horizons are spaced evenly rather than by their hour value. They are four
 // chosen questions, not samples of a continuous function, and a linear axis
 // would crowd 1 and 6 into the left margin for no gain.
-const W = 880;
-const H = 350;
-const M = { top: 16, right: 92, bottom: 40, left: 52 };
-const PW = W - M.left - M.right;
-const PH = H - M.top - M.bottom;
-
+// Percent of the plot box, not pixels: the box has no width until the browser
+// lays it out. Labels are HTML over the same box, so they never inherit the
+// stretch that the marks do.
+const PLOT_H = 300;
 const xAt = (index: number) =>
-  horizons.length === 1 ? PW / 2 : (index / (horizons.length - 1)) * PW;
+  horizons.length === 1 ? 50 : (index / (horizons.length - 1)) * 100;
 
 const path = (values: number[], y: (v: number) => number) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(xAt(i), 2)} ${n(y(v), 2)}`).join(" ");
@@ -62,7 +60,7 @@ const path = (values: number[], y: (v: number) => number) =>
 
 // --- Figure 1: error in µg/m³ -------------------------------------------
 const rmseAll = horizons.flatMap((h) => [h.model_rmse, h.persistence_rmse, h.climatology_rmse]);
-const yRmse = linear([0, Math.max(...rmseAll) * 1.12], [PH, 0]);
+const yRmse = linear([0, Math.max(...rmseAll) * 1.12], [100, 0]);
 const rmseTicks = ticks(0, Math.max(...rmseAll) * 1.12, 4);
 
 const rmseSeries = [
@@ -88,7 +86,7 @@ const metricAll = horizons.flatMap((h) => [
   h.skill_climatology,
   ...h.per_split.flatMap((s) => [s.skill_persistence, s.skill_climatology]),
 ]);
-const yMetric = linear([Math.min(-0.2, Math.min(...metricAll) - 0.05), 1], [PH, 0]);
+const yMetric = linear([Math.min(-0.2, Math.min(...metricAll) - 0.05), 1], [100, 0]);
 const metricTicks = ticks(Math.min(-0.2, Math.min(...metricAll) - 0.05), 1, 5);
 
 const metricSeries = [
@@ -115,9 +113,14 @@ const metricSeries = [
   },
 ];
 
-const rmseLabelY = spreadLabels(rmseSeries.map((s) => yRmse(s.values[s.values.length - 1]) + 3.5));
+const KEY_GAP = (26 / PLOT_H) * 100;
+const rmseLabelY = spreadLabels(
+  rmseSeries.map((s) => yRmse(s.values[s.values.length - 1])),
+  KEY_GAP,
+);
 const metricLabelY = spreadLabels(
-  metricSeries.map((s) => yMetric(s.values[s.values.length - 1]) + 3.5),
+  metricSeries.map((s) => yMetric(s.values[s.values.length - 1])),
+  KEY_GAP,
 );
 
 const worst = horizons.find((h) => h.splits_not_beating_persistence > 0);
@@ -147,45 +150,67 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   <h3>絕對誤差（μg/m³）</h3>
 
   <figure>
-    <div class="chart" tabindex="0">
-      <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="三種方法的預測誤差隨期距變化">
-        <g transform={`translate(${M.left},${M.top})`}>
+    <div class="chart">
+      <div
+        class="plot"
+        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(rmseSeries.map((s) => s.label))}px`}
+      >
+        <div class="plot-y">
+          {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{n(t, 0)}</span>)}
+        </div>
+
+        <div class="plot-area">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {
+              rmseTicks.map((t) => (
+                <line
+                  x1="0"
+                  x2="100"
+                  y1={n(yRmse(t), 3)}
+                  y2={n(yRmse(t), 3)}
+                  class="plot-grid"
+                  vector-effect="non-scaling-stroke"
+                />
+              ))
+            }
+            <line x1="0" x2="100" y1="100" y2="100" class="plot-axis" vector-effect="non-scaling-stroke" />
+            {
+              rmseSeries.map((s) => (
+                <path
+                  d={path(s.values, yRmse)}
+                  class="plot-line"
+                  stroke={s.colour}
+                  vector-effect="non-scaling-stroke"
+                />
+              ))
+            }
+          </svg>
+
           {
-            rmseTicks.map((t) => (
-              <>
-                <line x1="0" x2={PW} y1={yRmse(t)} y2={yRmse(t)} class="grid" />
-                <text x="-8" y={yRmse(t) + 3.5} class="tick right">
-                  {n(t, 0)}
-                </text>
-              </>
-            ))
+            rmseSeries.map((s) =>
+              s.values.map((v, i) => (
+                <span
+                  class="plot-pt"
+                  style={`left:${n(xAt(i), 3)}%;top:${n(yRmse(v), 3)}%;color:${s.colour}`}
+                  title={`${s.label} @ ${horizons[i].horizon}h: ${n(v, 2)} μg/m³`}
+                />
+              )),
+            )
           }
-          {
-            horizons.map((h, i) => (
-              <text x={xAt(i)} y={PH + 24} class="tick">
-                {h.horizon}h
-              </text>
-            ))
-          }
+        </div>
+
+        <div class="plot-keys">
           {
             rmseSeries.map((s, si) => (
-              <>
-                <path d={path(s.values, yRmse)} class="line" style={`stroke:${s.colour}`} />
-                {s.values.map((v, i) => (
-                  <circle cx={xAt(i)} cy={yRmse(v)} r="3.4" style={`fill:${s.colour}`}>
-                    <title>
-                      {s.label} @ {horizons[i].horizon}h: {n(v, 2)} μg/m³
-                    </title>
-                  </circle>
-                ))}
-                <text x={PW + 8} y={rmseLabelY[si]} class="key" style={`fill:${s.colour}`}>
-                  {s.label}
-                </text>
-              </>
+              <span style={`top:${n(rmseLabelY[si], 3)}%;color:${s.colour}`}>{s.label}</span>
             ))
           }
-        </g>
-      </svg>
+        </div>
+
+        <div class="plot-x">
+          {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
+        </div>
+      </div>
     </div>
     <figcaption>
       均方根誤差（RMSE），越低越好。<strong>climatology 那條是平的</strong>——
@@ -211,62 +236,78 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   </p>
 
   <figure>
-    <div class="chart" tabindex="0">
-      <svg viewBox={`0 0 ${W} ${H}`} style={`--vb:${W}`} role="img" aria-label="R² 與兩種 skill 隨期距的變化方向相反">
-        <g transform={`translate(${M.left},${M.top})`}>
-          {
-            metricTicks.map((t) => (
-              <>
+    <div class="chart">
+      <div
+        class="plot"
+        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(metricSeries.map((s) => s.label))}px`}
+      >
+        <div class="plot-y">
+          {metricTicks.map((t) => <span style={`top:${n(yMetric(t), 3)}%`}>{n(t, 1)}</span>)}
+        </div>
+
+        <div class="plot-area">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {
+              metricTicks.map((t) => (
                 <line
                   x1="0"
-                  x2={PW}
-                  y1={yMetric(t)}
-                  y2={yMetric(t)}
-                  class={Math.abs(t) < 1e-9 ? "zero" : "grid"}
+                  x2="100"
+                  y1={n(yMetric(t), 3)}
+                  y2={n(yMetric(t), 3)}
+                  class={Math.abs(t) < 1e-9 ? "plot-axis" : "plot-grid"}
+                  vector-effect="non-scaling-stroke"
                 />
-                <text x="-8" y={yMetric(t) + 3.5} class="tick right">
-                  {n(t, 1)}
-                </text>
-              </>
-            ))
+              ))
+            }
+            {
+              metricSeries.map((s) => (
+                <path
+                  d={path(s.values, yMetric)}
+                  class="plot-line"
+                  stroke={s.colour}
+                  vector-effect="non-scaling-stroke"
+                />
+              ))
+            }
+          </svg>
+
+          {
+            metricSeries.map((s) =>
+              s.splits.map((values, i) =>
+                values.map((v) => (
+                  <span
+                    class="plot-pt faint"
+                    style={`left:${n(xAt(i), 3)}%;top:${n(yMetric(v), 3)}%;color:${s.colour}`}
+                  />
+                )),
+              ),
+            )
           }
           {
-            horizons.map((h, i) => (
-              <text x={xAt(i)} y={PH + 24} class="tick">
-                {h.horizon}h
-              </text>
-            ))
+            metricSeries.map((s) =>
+              s.values.map((v, i) => (
+                <span
+                  class="plot-pt"
+                  style={`left:${n(xAt(i), 3)}%;top:${n(yMetric(v), 3)}%;color:${s.colour}`}
+                  title={`${s.label} @ ${horizons[i].horizon}h: ${n(v, 3)}`}
+                />
+              )),
+            )
           }
+        </div>
+
+        <div class="plot-keys">
           {
             metricSeries.map((s, si) => (
-              <>
-                {s.splits.map((values, i) =>
-                  values.map((v) => (
-                    <circle
-                      cx={xAt(i)}
-                      cy={yMetric(v)}
-                      r="2.4"
-                      class="split"
-                      style={`fill:${s.colour}`}
-                    />
-                  )),
-                )}
-                <path d={path(s.values, yMetric)} class="line" style={`stroke:${s.colour}`} />
-                {s.values.map((v, i) => (
-                  <circle cx={xAt(i)} cy={yMetric(v)} r="3.6" style={`fill:${s.colour}`}>
-                    <title>
-                      {s.label} @ {horizons[i].horizon}h: {n(v, 3)}
-                    </title>
-                  </circle>
-                ))}
-                <text x={PW + 8} y={metricLabelY[si]} class="key" style={`fill:${s.colour}`}>
-                  {s.label}
-                </text>
-              </>
+              <span style={`top:${n(metricLabelY[si], 3)}%;color:${s.colour}`}>{s.label}</span>
             ))
           }
-        </g>
-      </svg>
+        </div>
+
+        <div class="plot-x">
+          {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
+        </div>
+      </div>
     </div>
     <figcaption>
       粗線是四個分割的平均，<strong>小點是每一個分割各自的值</strong>。
@@ -378,38 +419,6 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 </section>
 
 <style>
-  .grid {
-    stroke: var(--line-soft);
-    stroke-width: 1;
-  }
-  .zero {
-    stroke: var(--line);
-    stroke-width: 1.5;
-    stroke-dasharray: 4 3;
-  }
-  .line {
-    fill: none;
-    stroke-width: 2.2;
-    stroke-linejoin: round;
-    stroke-linecap: round;
-  }
-  .split {
-    opacity: 0.34;
-  }
-  .tick {
-    fill: var(--text-faint);
-    font-size: var(--chart-tick);
-    font-family: var(--font-mono);
-    text-anchor: middle;
-  }
-  .tick.right {
-    text-anchor: end;
-  }
-  .key {
-    font-size: var(--chart-label);
-    font-family: var(--font-mono);
-    font-weight: 600;
-  }
   .dim {
     color: var(--text-faint);
     font-weight: 400;

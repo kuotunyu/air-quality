@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { linear, linePath, ticks, padded, n, spreadLabels } from "../lib/chart";
+import { labelGutter, linear, linePath, ticks, padded, n, spreadLabels } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -87,19 +87,19 @@ const GAP_SERIES = [
   return { ...series, values, lastIndex, lastValue: values[lastIndex] ?? null };
 });
 
-const gw = 880;
-const gh = 315;
-const gm = { top: 16, right: 150, bottom: 34, left: 48 };
-const gpw = gw - gm.left - gm.right;
-const gph = gh - gm.top - gm.bottom;
+// Percent of the plot box; marks stretch with the box, HTML labels do not.
+const GAP_H = 300;
 const gapValues = GAP_SERIES.flatMap((s) => s.values).filter((v): v is number => v != null);
 const gDomain = padded(gapValues, { zero: true });
-const gx = (index: number) => (gpw / (gapBuckets.length - 1)) * index;
-const gy = linear(gDomain, [gph, 0]);
+const gx = (index: number) => (100 / (gapBuckets.length - 1)) * index;
+const gy = linear(gDomain, [100, 0]);
 const gTicks = ticks(gDomain[0], gDomain[1], 4);
 // Two of the three end within a microgram of each other; inline labels that
 // close need spreading, the same as chapters 5 and 6.
-const gLabelY = spreadLabels(GAP_SERIES.map((s) => gy(s.lastValue ?? gDomain[0])));
+const gLabelY = spreadLabels(
+  GAP_SERIES.map((s) => gy(s.lastValue ?? gDomain[0])),
+  (26 / GAP_H) * 100,
+);
 
 // The replication table, filtered to the comparisons worth showing.
 const keyCoefficients = replicationRows.filter(
@@ -107,14 +107,11 @@ const keyCoefficients = replicationRows.filter(
 );
 
 // --- small inline chart for the diurnal cycle -------------------------------
-const w = 780;
-const h = 275;
-const m = { top: 14, right: 14, bottom: 30, left: 42 };
-const pw = w - m.left - m.right;
-const ph = h - m.top - m.bottom;
+const DIURNAL_H = 250;
 const dDomain = padded(diurnalValues, { zero: false });
-const dx = linear([0, 23], [0, pw]);
-const dy = linear(dDomain, [ph, 0]);
+const dx = linear([0, 23], [0, 100]);
+const dy = linear(dDomain, [100, 0]);
+const dMean = diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length;
 const dTicks = ticks(dDomain[0], dDomain[1], 4);
 ---
 
@@ -166,47 +163,53 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <div class="two-up">
       <figure>
-        <div class="chart" tabindex="0">
-          <svg viewBox={`0 0 ${w} ${h}`} style={`--vb:${w}`} role="img" aria-label="PM2.5 的日內變化">
-            <g transform={`translate(${m.left},${m.top})`}>
-              {
-                dTicks.map((tick) => (
-                  <g>
-                    <line x1="0" x2={pw} y1={dy(tick)} y2={dy(tick)} class="gridline" />
-                    <text x="-8" y={dy(tick)} class="tick tick-y">
-                      {n(tick, 0)}
-                    </text>
-                  </g>
-                ))
-              }
-              {
-                [0, 6, 12, 18, 23].map((hour) => (
-                  <text x={dx(hour)} y={ph + 20} class="tick tick-x">
-                    {hour}時
-                  </text>
-                ))
-              }
-              <path
-                d={linePath(diurnalValues, (i) => dx(i), (v) => dy(v))}
-                fill="none"
-                stroke="var(--c3)"
-                stroke-width="2.5"
-                stroke-linejoin="round"
-              />
-              <line
-                x1="0"
-                x2={pw}
-                y1={dy(diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length)}
-                y2={dy(diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length)}
-                stroke="var(--text-faint)"
-                stroke-width="1.5"
-                stroke-dasharray="5 4"
-              />
-              <text x={pw - 4} y={dy(diurnalValues.reduce((a, b) => a + b, 0) / diurnalValues.length) - 6} class="guide-label">
+        <div class="chart">
+          <div class="plot" style={`--plot-h:${DIURNAL_H}px`}>
+            <div class="plot-y">
+              {dTicks.map((tick) => <span style={`top:${n(dy(tick), 3)}%`}>{n(tick, 0)}</span>)}
+            </div>
+
+            <div class="plot-area">
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                {
+                  dTicks.map((tick) => (
+                    <line
+                      x1="0"
+                      x2="100"
+                      y1={n(dy(tick), 3)}
+                      y2={n(dy(tick), 3)}
+                      class="plot-grid"
+                      vector-effect="non-scaling-stroke"
+                    />
+                  ))
+                }
+                <line
+                  x1="0"
+                  x2="100"
+                  y1={n(dy(dMean), 3)}
+                  y2={n(dy(dMean), 3)}
+                  stroke="var(--text-faint)"
+                  stroke-width="1.5"
+                  stroke-dasharray="5 4"
+                  vector-effect="non-scaling-stroke"
+                />
+                <path
+                  d={linePath(diurnalValues, (i) => dx(i), (v) => dy(v))}
+                  class="plot-line"
+                  stroke="var(--c3)"
+                  vector-effect="non-scaling-stroke"
+                />
+              </svg>
+
+              <span class="plot-note" style={`top:${n(dy(dMean), 3)}%;color:var(--text-faint)`}>
                 月平均看到的只有這條線
-              </text>
-            </g>
-          </svg>
+              </span>
+            </div>
+
+            <div class="plot-x">
+              {[0, 6, 12, 18, 23].map((hour) => <span style={`left:${n(dx(hour), 3)}%`}>{hour}時</span>)}
+            </div>
+          </div>
         </div>
         <figcaption>
           2010–2017 年逐時 PM2.5 的日內平均。峰值在 {diurnalPeak.hour} 時
@@ -331,36 +334,39 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       這個模式一個線性係數表達不出來，因為它不是單調的。
     </p>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>編碼方式</th>
-            <th class="num">項數</th>
-            <th class="num">R²</th>
-            <th class="num">相對於原始方位角</th>
-          </tr>
-        </thead>
-        <tbody>
-          {
-            windEncoding.map((row) => (
-              <tr class={row.encoding === "raw_bearing" ? "row-bad" : ""}>
-                <td>
-                  {row.encoding === "raw_bearing"
-                    ? "原始方位角（當年的做法）"
-                    : row.encoding === "sin_cos"
-                      ? "sin/cos"
-                      : "sin/cos + u/v 分量"}
-                </td>
-                <td class="num">{row.n_terms}</td>
-                <td class="num">{n(row.r_squared as number, 4)}</td>
-                <td class="num">{n(row.r2_relative_to_raw_bearing as number, 2)}×</td>
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-    </div>
+    <details>
+      <summary>各扇區的濃度與樣本數</summary>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>編碼方式</th>
+              <th class="num">項數</th>
+              <th class="num">R²</th>
+              <th class="num">相對於原始方位角</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              windEncoding.map((row) => (
+                <tr class={row.encoding === "raw_bearing" ? "row-bad" : ""}>
+                  <td>
+                    {row.encoding === "raw_bearing"
+                      ? "原始方位角（當年的做法）"
+                      : row.encoding === "sin_cos"
+                        ? "sin/cos"
+                        : "sin/cos + u/v 分量"}
+                  </td>
+                  <td class="num">{row.n_terms}</td>
+                  <td class="num">{n(row.r_squared as number, 4)}</td>
+                  <td class="num">{n(row.r2_relative_to_raw_bearing as number, 2)}×</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </details>
 
     <div class="note">
       <strong>但這裡有個我原本猜錯的地方。</strong>
@@ -395,36 +401,39 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       一組真的來自常態分布，一組有輕微偏態。
     </p>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>樣本數</th>
-            <th>資料真相</th>
-            <th class="num">偏態</th>
-            <th class="num">p 值</th>
-            <th>α=0.05 判定</th>
-          </tr>
-        </thead>
-        <tbody>
-          {
-            normality.map((row) => (
-              <tr>
-                <td class="num">{(row.n as number).toLocaleString()}</td>
-                <td>{SYNTHETIC_DATA[row.data as string] ?? row.data}</td>
-                <td class="num">{n(row.skewness as number, 3)}</td>
-                <td class="num">
-                  {(row.p_value as number) < 0.0001 ? "< .0001" : n(row.p_value as number, 4)}
-                </td>
-                <td class={row["rejected_at_0.05"] ? "bad" : "good"}>
-                  {row["rejected_at_0.05"] ? "拒絕常態" : "不拒絕"}
-                </td>
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-    </div>
+    <details>
+      <summary>合成資料上的常態檢定：樣本數如何決定 p 值</summary>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>樣本數</th>
+              <th>資料真相</th>
+              <th class="num">偏態</th>
+              <th class="num">p 值</th>
+              <th>α=0.05 判定</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              normality.map((row) => (
+                <tr>
+                  <td class="num">{(row.n as number).toLocaleString()}</td>
+                  <td>{SYNTHETIC_DATA[row.data as string] ?? row.data}</td>
+                  <td class="num">{n(row.skewness as number, 3)}</td>
+                  <td class="num">
+                    {(row.p_value as number) < 0.0001 ? "< .0001" : n(row.p_value as number, 4)}
+                  </td>
+                  <td class={row["rejected_at_0.05"] ? "bad" : "good"}>
+                    {row["rejected_at_0.05"] ? "拒絕常態" : "不拒絕"}
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </details>
 
     <p class="small">
       真常態的資料在任何樣本數下都不被拒絕；輕微偏態的資料在 N=100 時「通過」了，
@@ -476,36 +485,39 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       量級一致。VIF 超過 10 通常就被視為嚴重共線性。
     </p>
 
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>係數</th>
-            <th class="num">平均</th>
-            <th class="num">標準差</th>
-            <th class="num">最小</th>
-            <th class="num">最大</th>
-            <th class="num">變異係數</th>
-            <th class="num">為正的比例</th>
-          </tr>
-        </thead>
-        <tbody>
-          {
-            stability.map((row) => (
-              <tr>
-                <td>{row.term}</td>
-                <td class="num">{n(row.mean as number, 3)}</td>
-                <td class="num">{n(row.sd as number, 3)}</td>
-                <td class="num">{n(row.min as number, 3)}</td>
-                <td class="num">{n(row.max as number, 3)}</td>
-                <td class="num">{n(row.coefficient_of_variation as number, 2)}</td>
-                <td class="num">{n((row.share_positive as number) * 100, 0)}%</td>
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-    </div>
+    <details>
+      <summary>各係數在 1,000 次重抽樣下的分布</summary>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>係數</th>
+              <th class="num">平均</th>
+              <th class="num">標準差</th>
+              <th class="num">最小</th>
+              <th class="num">最大</th>
+              <th class="num">變異係數</th>
+              <th class="num">為正的比例</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              stability.map((row) => (
+                <tr>
+                  <td>{row.term}</td>
+                  <td class="num">{n(row.mean as number, 3)}</td>
+                  <td class="num">{n(row.sd as number, 3)}</td>
+                  <td class="num">{n(row.min as number, 3)}</td>
+                  <td class="num">{n(row.max as number, 3)}</td>
+                  <td class="num">{n(row.coefficient_of_variation as number, 2)}</td>
+                  <td class="num">{n((row.share_positive as number) * 100, 0)}%</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </details>
 
     <p class="small">
       重抽樣之下，同一個係數可以是正的也可以是負的。
@@ -578,75 +590,82 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
 
     <figure>
-      <div class="chart" tabindex="0">
-        <svg viewBox={`0 0 ${gw} ${gh}`} style={`--vb:${gw}`} role="img" aria-label="各填補策略的重建誤差隨缺口長度的變化">
-          <g transform={`translate(${gm.left},${gm.top})`}>
-            {
-              gTicks.map((tick) => (
-                <g>
-                  <line x1="0" x2={gpw} y1={gy(tick)} y2={gy(tick)} class="gridline" />
-                  <text x="-8" y={gy(tick)} class="tick tick-y">
-                    {n(tick, 0)}
-                  </text>
-                </g>
-              ))
-            }
-            {
-              gapBuckets.map((bucket, index) => (
-                <text x={gx(index)} y={gph + 20} class="tick tick-x">
-                  {bucket}
-                </text>
-              ))
-            }
-            {/* Where interpolation stops answering, drawn so the break in its
-                line reads as a decision rather than as missing data. */}
-            <line
-              x1={gx(1.5)}
-              x2={gx(1.5)}
-              y1="0"
-              y2={gph}
-              stroke="var(--text-faint)"
-              stroke-width="1.5"
-              stroke-dasharray="4 4"
-            />
-            <text x={gx(1.5) + 6} y="12" class="guide-label" style="text-anchor:start">
-              內插的上限：3 小時
-            </text>
-            {
-              GAP_SERIES.map((series) => (
-                <path
-                  d={linePath(series.values, (i) => gx(i), (v) => gy(v))}
-                  fill="none"
-                  stroke={series.colour}
-                  stroke-width="2.5"
-                  stroke-linejoin="round"
-                  stroke-linecap="round"
-                />
-              ))
-            }
+      <div class="chart">
+        <div
+          class="plot"
+          style={`--plot-h:${GAP_H}px;--key-w:${labelGutter(GAP_SERIES.map((s) => s.label))}px`}
+        >
+          <div class="plot-y">
+            {gTicks.map((tick) => <span style={`top:${n(gy(tick), 3)}%`}>{n(tick, 0)}</span>)}
+          </div>
+
+          <div class="plot-area">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              {
+                gTicks.map((tick) => (
+                  <line
+                    x1="0"
+                    x2="100"
+                    y1={n(gy(tick), 3)}
+                    y2={n(gy(tick), 3)}
+                    class="plot-grid"
+                    vector-effect="non-scaling-stroke"
+                  />
+                ))
+              }
+              <line
+                x1={n(gx(1.5), 3)}
+                x2={n(gx(1.5), 3)}
+                y1="0"
+                y2="100"
+                stroke="var(--text-faint)"
+                stroke-width="1.5"
+                stroke-dasharray="4 4"
+                vector-effect="non-scaling-stroke"
+              />
+              {
+                GAP_SERIES.map((series) => (
+                  <path
+                    d={linePath(series.values, (i) => gx(i), (v) => gy(v))}
+                    class="plot-line"
+                    stroke={series.colour}
+                    vector-effect="non-scaling-stroke"
+                  />
+                ))
+              }
+            </svg>
+
+            <span class="plot-note limit" style={`left:${n(gx(1.5), 3)}%`}>內插的上限：3 小時</span>
+
             {
               GAP_SERIES.map((series) =>
                 series.values.map((value, index) =>
                   value == null ? null : (
-                    <circle cx={gx(index)} cy={gy(value)} r="3" fill={series.colour} />
+                    <span
+                      class="plot-pt"
+                      style={`left:${n(gx(index), 3)}%;top:${n(gy(value), 3)}%;color:${series.colour}`}
+                      title={`${series.label} · ${gapBuckets[index]}: ${n(value, 2)}`}
+                    />
                   ),
                 ),
               )
             }
+          </div>
+
+          <div class="plot-keys">
             {
               GAP_SERIES.map((series, index) => (
-                <text
-                  x={gx(series.lastIndex) + 10}
-                  y={gLabelY[index]}
-                  class="series-label"
-                  style={`fill:${series.colour}`}
-                >
+                <span style={`top:${n(gLabelY[index], 3)}%;color:${series.colour}`}>
                   {series.label}
-                </text>
+                </span>
               ))
             }
-          </g>
-        </svg>
+          </div>
+
+          <div class="plot-x">
+            {gapBuckets.map((bucket, index) => <span style={`left:${n(gx(index), 3)}%`}>{bucket}</span>)}
+          </div>
+        </div>
       </div>
       <figcaption>
         平均絕對誤差（μg/m³），依被隱藏的缺口長度分。做法是把
@@ -870,30 +889,18 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     margin: 0 0 0.4rem;
     font-size: 1rem;
   }
-  .gridline {
-    stroke: var(--line-soft);
-    stroke-width: 1;
-  }
-  .tick {
-    fill: var(--text-faint);
-    font-size: var(--chart-tick);
-    font-family: var(--font-mono);
-  }
-  .tick-y {
-    text-anchor: end;
-    dominant-baseline: middle;
-  }
-  .tick-x {
-    text-anchor: middle;
-  }
-  .guide-label {
-    fill: var(--text-faint);
-    font-size: var(--chart-label);
-    text-anchor: end;
-  }
-  .series-label {
-    font-size: var(--chart-label);
-    font-weight: 600;
-    dominant-baseline: middle;
+  /* The "interpolation stops here" marker labels a column, not a row, so it
+     anchors beside its own vertical line instead of at the plot's right edge. */
+  .plot-note.limit {
+    top: 0;
+    right: auto;
+    margin-left: 0.4em;
+    transform: none;
+    color: var(--text-faint);
+    text-align: left;
+    /* Anchored to a column rather than to the plot's right edge, so unlike the
+       other notes it has nothing bounding it — and at 265px it ran 139px past
+       the figure. It wraps instead. */
+    max-width: 8em;
   }
 </style>

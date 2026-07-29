@@ -1,5 +1,5 @@
 ---
-import { linear, linePath, ticks, padded, n } from "../lib/chart";
+import { linePath, padded, ticks, n } from "../lib/chart";
 
 interface Props {
   years: number[];
@@ -9,106 +9,100 @@ interface Props {
   height?: number;
 }
 
-const { years, series, guides = [], unit, height = 380 } = Astro.props;
+const { years, series, guides = [], unit, height = 300 } = Astro.props;
 
-// The figure's intrinsic size. The SVG renders at exactly this many CSS px
-// (`.chart svg` pins it), so this is both the layout width and the scale the
-// annotation sizes were chosen against — widening one without the other is
-// what makes labels collide.
-const width = 880;
-const margin = { top: 18, right: 16, bottom: 34, left: 46 };
-const plotWidth = width - margin.left - margin.right;
-const plotHeight = height - margin.top - margin.bottom;
-
+// Everything below is in percent of the plot box, not pixels. The box has no
+// width until the browser lays it out, so a percentage is the only coordinate
+// that survives being fluid — and the labels, which are HTML, never inherit the
+// stretch that gets applied to the marks.
 const allValues = series.flatMap((s) => s.values).concat(guides.map((g) => g.value));
-const yDomain = padded(allValues, { zero: true });
-const x = linear([0, Math.max(years.length - 1, 1)], [0, plotWidth]);
-const y = linear(yDomain, [plotHeight, 0]);
+const [lo, hi] = padded(allValues, { zero: true });
 
-const yTicks = ticks(yDomain[0], yDomain[1], 5).filter((t) => t >= 0);
+const x = (index: number) => (years.length < 2 ? 50 : (index / (years.length - 1)) * 100);
+const y = (value: number) => (1 - (value - lo) / (hi - lo || 1)) * 100;
 
-// Filtered here rather than in the template: Astro's parser reads a `<=` in a
-// JSX expression as the start of a fragment and fails to compile.
-const visibleGuides = guides.filter(
-  (guide) => guide.value >= yDomain[0] && guide.value <= yDomain[1],
-);
-// One label roughly every five years, always including the last.
-const step = Math.max(1, Math.round(years.length / 8));
-const xTicks = years
-  .map((year, index) => ({ year, index }))
-  .filter(({ index }) => index % step === 0 || index === years.length - 1);
+const yTicks = ticks(lo, hi, 5).filter((t) => t >= 0 && t >= lo && t <= hi);
+
+// Astro's parser reads a `<=` in a JSX expression as the start of a fragment,
+// so the comparison stays out here.
+const visibleGuides = guides.filter((guide) => guide.value >= lo && guide.value <= hi);
+
+// Nine labels, evenly spaced, first and last included by construction rather
+// than by a special case. The old rule kept every nth year and then forced the
+// last one on the end, which put two labels a couple of pixels apart whenever
+// the record length was not a multiple of the step. Odd counts also let the
+// container query halve them without losing the ends — see `.plot-x`.
+const labelCount = Math.min(9, years.length);
+const xTicks = Array.from({ length: labelCount }, (_, k) => {
+  const index = Math.round((k * (years.length - 1)) / Math.max(labelCount - 1, 1));
+  return { year: years[index], index };
+});
 ---
 
-<div class="chart" tabindex="0">
-  <svg
-    viewBox={`0 0 ${width} ${height}`}
-    style={`--vb:${width}`}
-    role="img"
-    aria-label={`趨勢圖，單位 ${unit}`}
-    preserveAspectRatio="xMidYMid meet"
-  >
-    <g transform={`translate(${margin.left},${margin.top})`}>
-      {
-        yTicks.map((tick) => (
-          <g>
-            <line x1="0" x2={plotWidth} y1={y(tick)} y2={y(tick)} class="gridline" />
-            <text x="-8" y={y(tick)} class="tick tick-y">
-              {n(tick, 0)}
-            </text>
-          </g>
-        ))
-      }
+<div class="chart">
+  <div class="plot" style={`--plot-h:${height}px`}>
+    <div class="plot-y">
+      {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
+    </div>
+
+    <div class="plot-area">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {
+          yTicks.map((tick) => (
+            <line
+              x1="0"
+              x2="100"
+              y1={n(y(tick), 3)}
+              y2={n(y(tick), 3)}
+              class="plot-grid"
+              vector-effect="non-scaling-stroke"
+            />
+          ))
+        }
+
+        {
+          visibleGuides.map((guide) => (
+            <line
+              x1="0"
+              x2="100"
+              y1={n(y(guide.value), 3)}
+              y2={n(y(guide.value), 3)}
+              stroke={guide.colour}
+              stroke-width="1"
+              stroke-dasharray="5 4"
+              vector-effect="non-scaling-stroke"
+            />
+          ))
+        }
+
+        <line x1="0" x2="100" y1="100" y2="100" class="plot-axis" vector-effect="non-scaling-stroke" />
+
+        {
+          series.map((s) => (
+            <path
+              d={linePath(s.values, x, y)}
+              class="plot-line"
+              stroke={s.colour}
+              stroke-dasharray={s.dash}
+              vector-effect="non-scaling-stroke"
+            />
+          ))
+        }
+      </svg>
 
       {
         visibleGuides.map((guide) => (
-            <g>
-              <line
-                x1="0"
-                x2={plotWidth}
-                y1={y(guide.value)}
-                y2={y(guide.value)}
-                stroke={guide.colour}
-                stroke-width="1"
-                stroke-dasharray="4 4"
-                opacity="0.75"
-              />
-              <text
-                x={plotWidth - 4}
-                y={y(guide.value) - 5}
-                fill={guide.colour}
-                class="guide-label"
-              >
-                {guide.label}
-              </text>
-            </g>
-          ))
-      }
-
-      {
-        xTicks.map(({ year, index }) => (
-          <text x={x(index)} y={plotHeight + 20} class="tick tick-x">
-            {year}
-          </text>
+          <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;color:${guide.colour}`}>
+            {guide.label}
+          </span>
         ))
       }
+    </div>
 
-      <line x1="0" x2={plotWidth} y1={plotHeight} y2={plotHeight} class="axis" />
-
-      {
-        series.map((s) => (
-          <path
-            d={linePath(s.values, (i) => x(i), (v) => y(v))}
-            fill="none"
-            stroke={s.colour}
-            stroke-width="2"
-            stroke-dasharray={s.dash}
-            stroke-linejoin="round"
-            stroke-linecap="round"
-          />
-        ))
-      }
-    </g>
-  </svg>
+    <div class="plot-x">
+      {xTicks.map(({ year, index }) => <span style={`left:${n(x(index), 3)}%`}>{year}</span>)}
+    </div>
+  </div>
 
   <div class="legend">
     {
@@ -132,31 +126,6 @@ const xTicks = years
 </div>
 
 <style>
-  .gridline {
-    stroke: var(--line-soft);
-    stroke-width: 1;
-  }
-  .axis {
-    stroke: var(--line);
-    stroke-width: 1;
-  }
-  .tick {
-    fill: var(--text-faint);
-    font-size: var(--chart-tick);
-    font-family: var(--font-mono);
-  }
-  .tick-y {
-    text-anchor: end;
-    dominant-baseline: middle;
-  }
-  .tick-x {
-    text-anchor: middle;
-  }
-  .guide-label {
-    font-size: var(--chart-label);
-    text-anchor: end;
-    font-family: var(--font-mono);
-  }
   .swatch.dashed {
     background: transparent;
     border-bottom: 2px dashed;
