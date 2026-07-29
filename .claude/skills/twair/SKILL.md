@@ -426,6 +426,31 @@ two adjacent hours.
 tell how hard the problem is, so it fills a three-week outage as confidently as
 a one-hour one and says nothing about which is which.
 
+### The site's register is a research write-up, not a feature article
+
+Display copy drifted into news-headline shape: a short claim, a line break, a
+reversal. 「台灣的空氣變好了。但沒有一個地方達標。」 reads as a headline, and the
+owner asked for the opposite. The rule that fixed it, and that new copy should
+follow:
+
+**A heading names the quantity under analysis, not a conclusion with a twist.**
+「這二十年到底變好了嗎」 became 「長期趨勢與氣象校正」; 「壞空氣是從哪個方向來的」
+became 「污染來向與風速條件」; 「自己查」 became 「資料查詢」. Chapter 4's title was
+already right — 「事件效應的偵測極限」 names what is measured.
+
+Avoid in display copy: 到底 / 其實 / 故事 / 值得說 / 戲劇性, rhetorical questions,
+and the short-sentence-then-reversal. The body prose was already fine — it
+states caveats and numbers, which is the register wanted. This was a headline
+problem, not a writing problem.
+
+### Payload prose is printed verbatim — it is not Markdown
+
+Three payload strings in `viz/story.py` carried `**emphasis**` and the site
+showed the reader two asterisks, because nothing renders it. Emphasis belongs
+in the component, which has real markup. Pinned by
+`test_no_exported_string_contains_markdown_emphasis`, which walks every
+exported payload rather than naming the three that were wrong.
+
 ### A payload nobody imports is a finding nobody sees
 
 `deweather.json` was exported on every run from Phase 4 onward and read by no

@@ -119,8 +119,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 ---
 
 <section id="mistakes" class="page">
-  <p class="eyebrow">第七章 · 這一章是重點</p>
-  <h2>一種做法值多少</h2>
+  <p class="eyebrow">第七章</p>
+  <h2>方法選擇的量化代價</h2>
 
   <p class="lede">
     這一章的對照組是一份 2018 年的大學畢業專題。它的方法是：
@@ -688,7 +688,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       第二，看那條紅線有多平。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
       鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
       {n(GAP_SERIES[2].values[4] as number, 2)}。
-      <strong>這看起來像穩健，其實正好相反</strong>——它代表這個方法不知道問題有多難：
+      <strong>這並非穩健，而是相反</strong>——它代表這個方法不知道問題有多難：
       它會用同樣的自信填一次三週停機和一個一小時缺口，
       而輸出裡沒有任何欄位區分這兩者。內插的行為相反，誤差隨缺口成長，然後它<strong>停下來</strong>。
     </div>
@@ -706,7 +706,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
   <!-- ─── 誠實的收尾 ─── -->
   <article class="mistake epilogue">
-    <h3>兩件我原本以為是錯的，結果不是</h3>
+    <h3>兩項經全量資料否證的原始主張</h3>
 
     <p>
       Phase 0 我列了 11 項缺陷。跑完全量資料之後，其中兩項被自己的資料否證，

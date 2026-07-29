@@ -103,12 +103,12 @@ const fn = functions[0];
 
 <section id="health" class="page">
   <p class="eyebrow">第六章</p>
-  <h2>健康負擔的數字裡有多少是假設</h2>
+  <h2>健康負擔估計的假設敏感度</h2>
 
   <p class="lede">
     「空污每年造成 N 人死亡」這種句子裡藏著三個選擇：用哪條暴露反應函數、
     以什麼濃度當作比較基準、以及誰暴露在裡面。
-    第三個這個專案沒有資料回答，前兩個有——這一章量的是**它們把答案推動多少**。
+    第三個這個專案沒有資料回答，前兩個有——這一章量的是<strong>這兩個選擇把答案推動多少</strong>。
   </p>
 
   <p>
@@ -124,7 +124,7 @@ const fn = functions[0];
     反事實濃度就是「拿什麼當比較基準」。它幾乎從來不會跟著結論一起被講出來。
   </div>
 
-  <h3>四條線，同一批資料</h3>
+  <h3>四種反事實濃度下的可歸因比例</h3>
 
   <figure>
     <div class="chart">
@@ -179,7 +179,7 @@ const fn = functions[0];
 
   <div class="grid grid-2">
     <div class="card">
-      <h3>下降是穩健的</h3>
+      <h3>下降幅度對假設穩健</h3>
       <p class="small">
         {headline.first_year} 年是 {n(headline.first_range[0] * 100, 1)}–{
           n(headline.first_range[1] * 100, 1)
@@ -190,7 +190,7 @@ const fn = functions[0];
       </p>
     </div>
     <div class="card">
-      <h3>但「現在是多少」不穩健</h3>
+      <h3>當前水準對假設不穩健</h3>
       <p class="small">
         {headline.last_year} 年的答案是 {n(headline.last_range[0] * 100, 1)}% 還是
         {" "}{n(headline.last_range[1] * 100, 1)}%，
@@ -200,7 +200,7 @@ const fn = functions[0];
     </div>
   </div>
 
-  <h3>而且空氣越乾淨，假設佔的比重越大</h3>
+  <h3>假設佔估計值的比重隨濃度下降而上升</h3>
 
   <p>
     上面那個範圍的<strong>絕對寬度</strong>幾乎沒動（大約 3.6 到 4.2 個百分點）。
@@ -256,7 +256,7 @@ const fn = functions[0];
     這跟「資料變好、估計就變準」的直覺剛好相反。
   </div>
 
-  <h3>用的是哪條函數</h3>
+  <h3>採用的暴露反應函數</h3>
 
   <div class="table-wrap">
     <table>
@@ -298,11 +298,11 @@ const fn = functions[0];
     {" "}{n(extrapolation.ceiling_ugm3, 0)} μg/m³ 以上。{extrapolation.why}
   </div>
 
-  <h3>固定樣本，不是「當年有在測的」</h3>
+  <h3>固定測站樣本</h3>
 
   <p class="small">{panel.why}</p>
 
-  <h3>兩件刻意不做的事</h3>
+  <h3>兩項刻意不做的推論</h3>
 
   <div class="grid grid-2">
     <div class="card">

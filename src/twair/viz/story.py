@@ -7,6 +7,11 @@ threshold, which comparison.
 
 Every one of those choices is written into the payload next to the numbers it
 produced, so a reader can see the assumption without reading this file.
+
+**The prose in these payloads is printed verbatim by the site.** It is not
+Markdown and nothing renders it: an asterisk pair written for emphasis reaches
+the reader as two asterisks. Emphasis belongs in the component, which has real
+markup; the payload carries the words. `tests/test_story.py` pins this.
 """
 
 from __future__ import annotations
@@ -719,7 +724,7 @@ def _export_forecast(root: Path) -> list[Path]:
                             "回測裡 6 小時的四個分割從 −0.111 到 +0.303，跨度 0.41，"
                             "是四個期距裡最大的（1 小時只有 0.07）。"
                             "後來為了做互動 demo，另外用 2015–2024 訓練、2025 完全保留，"
-                            "在六個測站上重跑一次——6 小時的 skill 是 **−0.043**，"
+                            "在六個測站上重跑一次——6 小時的 skill 是 −0.043，"
                             "六站沒有一個明顯為正，而 1、24、48 小時全都穩定為正。"
                             "兩批不同的資料指向同一件事，那就不是某個分割運氣差。"
                             "合理的解釋是 6 小時卡在兩種訊號中間：太遠，此刻的漲跌動量已經用完；"
@@ -814,8 +819,8 @@ def _export_sources(root: Path) -> list[Path]:
                 "method": "CBPF (Uria-Tellaetxe & Carslaw, 2014)",
                 "explains": (
                     "給定風從某方位、以某風速吹來，該小時濃度落在高值區的機率。"
-                    "近處的污染源在**低風速**時顯現（風大就吹散），"
-                    "遠處的在**高風速**時顯現（要有風才送得到）。"
+                    "近處的污染源在低風速時顯現（風大就吹散），"
+                    "遠處的在高風速時顯現（要有風才送得到）。"
                 ),
                 "percentile": _round(summary["percentile"][0], 0),
                 "min_bin_count": 20,

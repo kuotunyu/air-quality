@@ -84,13 +84,13 @@ const airzoneSeries = (trendByAirzone.series as {
 ---
 
 <Base
-  title="air-quality — 台灣空氣品質的四十四年"
+  title="air-quality — 台灣空氣品質再分析（1982–2025）"
   description="1982–2025 年、3.41 億筆環境部逐時觀測的開放重新分析：完整品管、逐時解析度，以及一章方法學對照。"
 >
   <!-- ═══════════ 0. Hero ═══════════ -->
   <section id="hero" class="page">
-    <p class="eyebrow">1982 – 2025 · 341,442,552 筆逐時觀測</p>
-    <h1>台灣的空氣<br />變好了。<br /><span class="qualified">但沒有一個地方達標。</span></h1>
+    <p class="eyebrow">1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測</p>
+    <h1>台灣空氣品質的<br />長期重新分析</h1>
 
     <p class="lede">
       {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
@@ -98,7 +98,7 @@ const airzoneSeries = (trendByAirzone.series as {
       {latestYear} 年有可比較資料的 {latest.length} 個測站中，
       <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
       {overTaiwan} 個超過台灣自己的標準（15 μg/m³）。
-      兩件事都是真的。
+      趨勢與水準是兩個不同的量，這兩項結果並不衝突。
     </p>
 
     <div class="hero-grid">
@@ -124,29 +124,29 @@ const airzoneSeries = (trendByAirzone.series as {
     </div>
 
     <p class="note">
-      這份資料的品管與管線全部開源，每個數字都可以自己重算。
-      <a href="#mistakes">第七章</a>拿一份 2018 年的大學畢業專題當對照組——
-      它用 8 年的月平均、7,286 個觀測值；這裡用 44 年的逐時資料、3.41 億筆——
-      逐項比較兩種做法會得到多不一樣的結論。
+      品管規則與資料管線全部開源，本頁每個數字都可獨立重算。
+      <a href="#mistakes">第七章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
+      該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
+      兩者逐項比對，量化每個方法選擇造成的差異。
     </p>
   </section>
 
   <!-- ═══════════ 1. 趨勢 ═══════════ -->
   <section id="trend" class="page">
     <p class="eyebrow">第一章</p>
-    <h2>這二十年到底變好了嗎</h2>
+    <h2>長期趨勢與氣象校正</h2>
 
     <p class="lede">
-      變好了，而且幅度不小：{firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從
-      {n(firstValue)} 降到 {n(lastValue)} μg/m³。但要說出這句話，得先處理一個問題——
-      <strong>測站本身一直在增加</strong>。
+      {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
+      {n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
+      <strong>監測網的測站數在同期間持續增加</strong>。
     </p>
 
     <p>
       1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，
       1998 年只有 5 個實驗性測點，2005 年才成為全國網絡。
       拿「當年有回報的所有測站」平均，比較的是不同年份的不同地方，
-      趨勢裡有一部分其實是測站網在變，不是空氣在變。
+      趨勢裡有一部分來自測站網的組成改變，而非濃度改變。
     </p>
 
     <p>
@@ -186,16 +186,16 @@ const airzoneSeries = (trendByAirzone.series as {
     </figure>
 
     <div class="note">
-      <strong>這次校正沒有改變結論，而這件事本身值得說。</strong>
-      兩條線在重疊的年份最大只差 {n(maxGap, 2)} μg/m³。
-      也就是說，{balancedSince} 年以後的下降<strong>不是</strong>因為後來加進來的測站比較乾淨——
-      是同一批地方真的變乾淨了。如果兩條線分岔，故事就得改寫；它們沒有。
+      <strong>此項校正未改變結論，而陰性結果同樣需要報告。</strong>
+      兩條線在重疊年份的最大差距為 {n(maxGap, 2)} μg/m³。
+      {balancedSince} 年以後的下降因此不能歸因於後期加入的測站較為清潔；
+      在固定的測站集合上，下降同樣成立。若兩條線分岔，結論就必須修正。
     </div>
 
-    <h3>但有多少是天氣？</h3>
+    <h3>氣象正規化：分離天氣與排放</h3>
 
     <p>
-      上一個校正沒有改變結論。<strong>這一個會。</strong>
+      上一個校正量到的差異在誤差範圍內。這一個不是——它改變下降幅度的解讀。
     </p>
 
     <p>
@@ -287,7 +287,7 @@ const airzoneSeries = (trendByAirzone.series as {
   <!-- ═══════════ 2. 你住的地方 ═══════════ -->
   <section id="yours" class="page">
     <p class="eyebrow">第二章</p>
-    <h2>你住的地方</h2>
+    <h2>測站個別統計</h2>
     <p class="lede">
       選一個測站，看它最近一個「資料完整到可以比較」的年份。
       已停用的測站給的是它停用前最後一個完整年份。

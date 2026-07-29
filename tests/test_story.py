@@ -447,3 +447,26 @@ class TestTheDeweatheredSeries:
 
         assert series == []
         assert panel == {}
+
+
+class TestPayloadProseIsNotMarkdown:
+    """The site prints these strings verbatim; nothing renders them.
+
+    Three payload strings carried `**emphasis**` written by habit, and the site
+    showed the asterisks to the reader. Emphasis belongs in the component,
+    which has real markup. This walks every exported payload rather than
+    naming the three, because the next one will be written by habit too.
+    """
+
+    def test_no_exported_string_contains_markdown_emphasis(self) -> None:
+        import json
+
+        from twair.viz.export import web_data_dir
+
+        offenders: list[str] = []
+        for path in sorted((web_data_dir() / "story").glob("*.json")):
+            text = path.read_text(encoding="utf-8")
+            if "**" in text or "__" in json.dumps(json.loads(text), ensure_ascii=False):
+                offenders.append(path.name)
+
+        assert not offenders, f"markdown emphasis in payload prose: {offenders}"

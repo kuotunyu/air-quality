@@ -128,7 +128,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
 <section id="forecast" class="page">
   <p class="eyebrow">第五章</p>
-  <h2>可預測的範圍有多遠</h2>
+  <h2>預測技巧與有效期距</h2>
 
   <p class="lede">
     上一章量的是<strong>回頭看</strong>能分辨多小的效應。這一章量的是
@@ -144,7 +144,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     {n(totalRows / 1e6, 2)} 百萬列測試資料，74 站，2015–2025。
   </p>
 
-  <h3>先看實際誤差，單位是 μg/m³</h3>
+  <h3>絕對誤差（μg/m³）</h3>
 
   <figure>
     <div class="chart">
@@ -203,7 +203,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     {n(last.climatology_rmse, 2)} 好一點點。
   </div>
 
-  <h3>同一批結果，換成三個分數</h3>
+  <h3>同一批結果的三個無單位指標</h3>
 
   <p>
     R² 和 skill 都是無單位的比例，1 是完美、0 是「跟被比較的東西一樣」，
@@ -285,7 +285,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     }
   </div>
 
-  <h3>兩條基準線，因為任何一條單獨看都會高估模型</h3>
+  <h3>為何需要兩條基準線</h3>
 
   <div class="grid grid-2">
     {
@@ -349,7 +349,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     )
   }
 
-  <h3>防洩漏</h3>
+  <h3>洩漏防護與驗證</h3>
 
   <p class="small">{forecast.leakage_note}</p>
 
