@@ -1,8 +1,16 @@
 # air-quality｜台灣空氣品質再分析
 
+[![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
+
 > 1982 年至今、全台每一個測站、每一個小時的原始觀測：
 > 3.41 億筆資料，標記品質而不悄悄修補，
 > 附上完整開源的管線與一個互動網站。
+
+### 台灣的 PM2.5 在 2008–2025 年間降了 60%。其中 43% 是天氣，不是減排。
+
+把氣象條件正規化之後量出來的——61 個測站、同一批資料、兩條線。
+用另一種完全不同的聚合方式（逐站斜率比值的中位數）再問一次，答案是 42.2%。
+[看那張圖 →](https://kuotunyu.github.io/air-quality/#trend)
 
 [English](README.en.md) ·
 [互動網站](https://kuotunyu.github.io/air-quality/) ·

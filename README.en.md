@@ -1,8 +1,16 @@
 # air-quality｜Taiwan Air Quality Reanalysis
 
+[![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
+
 > Every hourly observation, at every station, from 1982 to the present:
 > 341 million measurements, quality-flagged rather than quietly repaired,
 > with an open pipeline and an interactive site on top.
+
+### Taiwan's PM2.5 fell 60% between 2008 and 2025. About 43% of that was the weather, not emissions.
+
+Measured by normalising out meteorological conditions — 61 stations, one set of rows, two lines.
+Asked again by a completely different aggregation (the median of per-station slope ratios), the answer is 42.2%.
+[See the chart →](https://kuotunyu.github.io/air-quality/#trend)
 
 [繁體中文](README.md) ·
 [Interactive site](https://kuotunyu.github.io/air-quality/) ·

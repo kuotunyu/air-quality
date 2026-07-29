@@ -16,6 +16,7 @@ import stationCards from "../../public/data/story/station-cards.json";
 import pitfalls from "../../public/data/story/pitfalls.json";
 import replication from "../../public/data/story/replication.json";
 import imputation from "../../public/data/story/imputation.json";
+import deweather from "../../public/data/story/deweather.json";
 
 export interface Station {
   station_name: string;
@@ -101,6 +102,36 @@ export const cards = stationCards.cards as StationCard[];
 export const guidelines = stationCards.guidelines as Record<string, number | object>;
 export const cigaretteCaveat = stationCards.cigarette_caveat as string;
 export const pitfallTables = pitfalls.tables as Record<string, Record<string, unknown>[]>;
+/** Chapter 1's second correction: how much of the fall was the weather.
+ *
+ * `series` carries both lines and they come from the same rows — M4's own
+ * monthly output — so the difference between them cannot be the station set.
+ */
+export const deweatherEvidence = deweather as {
+  method: string;
+  series: { year: number; observed: number; normalised: number }[];
+  panel: {
+    balanced_since: number;
+    n_stations: number;
+    station_years: number;
+    selection_rule: string;
+    why_same_source: string;
+    observed_fall: number;
+    normalised_fall: number;
+    weather_share_of_fall: number;
+  };
+  n_stations: number;
+  n_significant: number;
+  median_observed_slope: number;
+  median_normalised_slope: number;
+  median_weather_share: number;
+  weather_share_p10: number;
+  weather_share_p90: number;
+  median_holdout_r2: number;
+  caveat: string;
+  by_zone: { airzone: string; n: number; observed: number; normalised: number; weather_share: number }[];
+};
+
 /** Pitfall 07: what the 2018 project's gap-filling sentence cost. */
 export interface GapScore {
   strategy: string;

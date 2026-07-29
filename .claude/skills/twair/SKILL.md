@@ -426,6 +426,38 @@ two adjacent hours.
 tell how hard the problem is, so it fills a three-week outage as confidently as
 a one-hour one and says nothing about which is which.
 
+### A payload nobody imports is a finding nobody sees
+
+`deweather.json` was exported on every run from Phase 4 onward and read by no
+component, while its docstring said "Chapter 1's second line" from the first
+commit. Chapter 4 meanwhile pointed readers at "第一章那條氣象正規化後的月序列"
+— a chart that did not exist. Neither `astro check` nor any test catches that:
+an unused export is valid, and a cross-reference in prose is just prose.
+
+**When adding a payload, wire it into a component in the same commit**, or it
+becomes a finding that exists only in `data/outputs/`.
+
+### The two deweathered lines must come from the same rows
+
+Chapter 1's existing trend is a 68-station balanced panel over the daily
+aggregates; M4 fitted 74 stations. Plotting M4's normalised series against that
+line would put the station-set difference inside the gap between them — which
+is precisely what chapter 1's *first* correction exists to remove.
+
+So `story._deweather_series` re-aggregates **both** lines from M4's own
+`monthly.parquet`, on a panel balanced by the same rule chapter 1 uses
+(maximise station-years; a station-year needs >= 11 months). Measured: 61
+stations, 2008-2025.
+
+**Annual only.** The normalised monthly series is nearly flat within a year by
+construction — `doy` and `hour` are resampled with the meteorology, so the
+seasonal cycle goes too. Plotted monthly it looks like a broken chart.
+
+The result is worth knowing: observed falls 20.36 ug/m3 against the normalised
+11.52, so **43.4% of the fall is weather** — and M4's own median-of-per-station
+slope ratios says 42.2%. Two unrelated aggregations of the same fits landing
+1.2 points apart is worth more than either number alone, so both ship.
+
 ### Chapter 7 has seven pitfalls, and the seventh comes from a different module
 
 Pitfalls 01-06 read `story/pitfalls.json` (M3); 07 reads `story/imputation.json`

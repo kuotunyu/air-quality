@@ -330,3 +330,120 @@ class TestTheImputationPayload:
         payload = self._payload(tmp_path, monkeypatch)
 
         assert "downstream_r2" in payload["not_reported"]
+
+
+class TestTheDeweatheredSeries:
+    """Chapter 1's second line, and the reason it is built from M4's own output.
+
+    The temptation is to plot the normalised series against chapter 1's
+    existing trend. That would compare a 74-station fit against a 68-station
+    daily-aggregate panel, and part of the gap between the two lines would be
+    the station sets rather than the weather — which is the exact confound
+    chapter 1's *first* correction exists to remove.
+    """
+
+    @staticmethod
+    def _monthly(rows: list[dict[str, Any]]) -> pl.DataFrame:
+        return pl.DataFrame(
+            rows,
+            schema={
+                "station_name": pl.Utf8,
+                "month": pl.Date,
+                "observed": pl.Float64,
+                "normalised": pl.Float64,
+            },
+        )
+
+    @staticmethod
+    def _months(
+        station: str, year: int, observed: float, normalised: float, *, months: int = 12
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "station_name": station,
+                "month": date(year, m, 1),
+                "observed": observed,
+                "normalised": normalised,
+            }
+            for m in range(1, months + 1)
+        ]
+
+    def _run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frame: pl.DataFrame
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        source = tmp_path / "m4_deweather"
+        source.mkdir()
+        frame.write_parquet(source / "monthly.parquet")
+        monkeypatch.setattr(story, "outputs_dir", lambda name: tmp_path / name)
+        return story._deweather_series()
+
+    def test_both_lines_are_averaged_over_the_same_stations(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rows = (
+            self._months("長期站", 2020, 30.0, 25.0)
+            + self._months("長期站", 2021, 20.0, 24.0)
+            # Present in 2021 only, so it must not enter the panel at all —
+            # otherwise 2021 averages two stations against 2020's one.
+            + self._months("新站", 2021, 5.0, 5.0)
+        )
+
+        series, panel = self._run(tmp_path, monkeypatch, self._monthly(rows))
+
+        assert panel["stations"] == ["長期站"]
+        assert [row["year"] for row in series] == [2020, 2021]
+        assert series[1]["observed"] == pytest.approx(20.0), "新站 must not drag 2021 down"
+        assert series[1]["normalised"] == pytest.approx(24.0)
+
+    def test_a_year_missing_months_does_not_count_as_a_year(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """M4's first year holds about eight months; a partial year averaged
+        against full ones is a seasonal artefact wearing a trend's clothing."""
+        rows = (
+            self._months("站", 2019, 40.0, 40.0, months=8)
+            + self._months("站", 2020, 30.0, 25.0)
+            + self._months("站", 2021, 20.0, 24.0)
+        )
+
+        _, panel = self._run(tmp_path, monkeypatch, self._monthly(rows))
+
+        assert panel["balanced_since"] == 2020
+
+    def test_the_start_year_maximises_station_years(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Same rule chapter 1 uses. One station over three years is three
+        station-years; three stations over two years is six."""
+        rows = list(self._months("老站", 2019, 30.0, 30.0))
+        for year in (2020, 2021):
+            for name in ("老站", "新A", "新B"):
+                rows += self._months(name, year, 20.0, 20.0)
+
+        _, panel = self._run(tmp_path, monkeypatch, self._monthly(rows))
+
+        assert panel["balanced_since"] == 2020
+        assert panel["n_stations"] == 3
+        assert panel["station_years"] == 6
+
+    def test_the_weather_share_of_the_fall_is_derived_from_the_two_falls(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rows = self._months("站", 2020, 30.0, 30.0) + self._months("站", 2021, 10.0, 20.0)
+
+        _, panel = self._run(tmp_path, monkeypatch, self._monthly(rows))
+
+        assert panel["observed_fall"] == pytest.approx(20.0)
+        assert panel["normalised_fall"] == pytest.approx(10.0)
+        assert panel["weather_share_of_fall"] == pytest.approx(0.5)
+
+    def test_an_absent_monthly_output_degrades_rather_than_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The chapter falls back to the slope figures; the export still runs."""
+        monkeypatch.setattr(story, "outputs_dir", lambda name: tmp_path / name)
+
+        series, panel = story._deweather_series()
+
+        assert series == []
+        assert panel == {}

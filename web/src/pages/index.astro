@@ -16,6 +16,7 @@ import {
   trend,
   trendByAirzone,
   cigaretteCaveat,
+  deweatherEvidence,
 } from "../lib/data";
 import { n } from "../lib/chart";
 
@@ -50,6 +51,22 @@ const overlap = trend.years
   .map((year, i) => ({ year, a: trend.all_stations[i], b: trend.balanced[i] }))
   .filter((row) => row.a != null && row.b != null);
 const maxGap = Math.max(...overlap.map((r) => Math.abs((r.a as number) - (r.b as number))));
+
+// --- the second correction: how much of the fall was the weather -----------
+// Both lines come from M4's own monthly output, so the gap between them cannot
+// be the station set. `weather_share_of_fall` is the level difference across
+// this panel; `median_weather_share` is the median of per-station slope
+// ratios. Two different aggregations of the same fits, reported together
+// because their agreement is worth more than either alone.
+const dw = deweatherEvidence;
+const dwYears = dw.series.map((r) => r.year);
+const dwObserved = dw.series.map((r) => r.observed);
+const dwNormalised = dw.series.map((r) => r.normalised);
+const dwShare = dw.panel.weather_share_of_fall * 100;
+const dwGapNow = dwNormalised[dwNormalised.length - 1] - dwObserved[dwObserved.length - 1];
+// The year the observed line drops through the normalised one: before it the
+// weather was making things worse than average, after it better.
+const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normalised)?.year;
 
 const airzoneSeries = (trendByAirzone.series as {
   name: string;
@@ -173,6 +190,84 @@ const airzoneSeries = (trendByAirzone.series as {
       兩條線在重疊的年份最大只差 {n(maxGap, 2)} μg/m³。
       也就是說，{balancedSince} 年以後的下降<strong>不是</strong>因為後來加進來的測站比較乾淨——
       是同一批地方真的變乾淨了。如果兩條線分岔，故事就得改寫；它們沒有。
+    </div>
+
+    <h3>但有多少是天氣？</h3>
+
+    <p>
+      上一個校正沒有改變結論。<strong>這一個會。</strong>
+    </p>
+
+    <p>
+      同樣一場東北季風，可以把中部的濃度壓下來，也可以把它悶住。
+      一年的空氣看起來變好，可能是排放真的少了，也可能只是那幾年的風比較幫忙。
+      要分開這兩件事，做法是<strong>把天氣抽掉再看一次</strong>：
+      用隨機森林學會「這個測站在什麼氣象條件下會有多少 PM2.5」，
+      然後對每一個時間點，把氣象變數從整段期間隨機重抽、預測很多次再平均。
+      得到的序列可以讀成「如果每一年的天氣都是這 18 年的平均，濃度會是多少」。
+    </p>
+
+    <figure>
+      <TrendChart
+        years={dwYears}
+        series={[
+          {
+            key: "observed",
+            label: "實際觀測",
+            values: dwObserved,
+            colour: "var(--c1)",
+          },
+          {
+            key: "normalised",
+            label: "氣象正規化後",
+            values: dwNormalised,
+            colour: "var(--c5)",
+            dash: "5 3",
+          },
+        ]}
+        guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
+        unit="μg/m³"
+      />
+      <figcaption>
+        {dw.panel.n_stations} 個測站、{dw.panel.balanced_since}–{dwYears[dwYears.length - 1]} 年，
+        兩條線都出自同一批列。實線是實際量到的；虛線是同一批資料在「平均天氣」下的樣子。
+        {dwCrossing && <>兩條線在 {dwCrossing} 年前後交叉。</>}
+      </figcaption>
+    </figure>
+
+    <div class="note caveat">
+      <strong>那個交叉點就是答案。</strong>
+      實際觀測從 {n(dwObserved[0], 1)} 掉到 {n(dwObserved[dwObserved.length - 1], 1)} μg/m³，
+      降了 {n(dw.panel.observed_fall, 1)}。但在平均天氣之下，
+      同一批測站只從 {n(dwNormalised[0], 1)} 掉到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
+      降了 {n(dw.panel.normalised_fall, 1)}。
+      差額 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
+      佔了整個下降的 {n(dwShare, 0)}%</strong>。
+      <br /><br />
+      換句話說：{dwYears[0]} 年的天氣讓空氣看起來比排放本身更糟，
+      {dwYears[dwYears.length - 1]} 年的天氣讓它看起來比排放本身更好
+      （現在這個差距是 {n(dwGapNow, 1)} μg/m³）。
+      <strong>把兩者相加，就是那條實線比虛線陡的原因。</strong>
+    </div>
+
+    <p>
+      這個比例還可以用完全不同的方式再問一次。上面是<strong>全國面板的水準差</strong>；
+      另一種是對 {dw.n_significant} 個測站各自估斜率，再取「天氣佔比」的中位數——
+      那個答案是 <strong>{n(dw.median_weather_share * 100, 1)}%</strong>，
+      與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
+      兩種聚合方式互相獨立，一致比任何單一數字更值得相信。
+      跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%——
+      {dw.n_significant} 個獨立配適的模型落在同一個窄帶裡，
+      是因為整座島共用同一套季風通風機制。
+    </p>
+
+    <div class="note">
+      <strong>這不是因果歸因，界線要劃清楚。</strong>
+      {dw.caveat}
+      <br /><br />
+      還有一件事：正規化後的序列在<strong>年內幾乎是平的</strong>，
+      因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
+      那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像圖壞了。
     </div>
 
     <h3>各空品區</h3>

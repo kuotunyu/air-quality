@@ -836,6 +836,110 @@ def _export_sources(root: Path) -> list[Path]:
     ]
 
 
+MIN_MONTHS_FOR_A_YEAR = 11
+
+
+def _deweather_series() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The two annual lines, both drawn from M4's own monthly output.
+
+    **Both series come from the same rows.** That is the point of building them
+    here rather than plotting the normalised line against chapter 1's existing
+    trend: chapter 1's series comes from the daily aggregates over a 68-station
+    panel, M4 fitted 74 stations, and a difference between two lines drawn from
+    two different station sets is partly the station sets. Comparing M4's
+    ``observed`` against M4's ``normalised`` removes that entirely.
+
+    Annual, never monthly. The normalised monthly series is nearly flat within
+    a year by construction — ``doy`` and ``hour`` are resampled along with the
+    meteorology, so the seasonal cycle goes with them. Plotted monthly it looks
+    like a broken chart; annually it is the trend comparison it was built for.
+
+    The panel is balanced on the same rule chapter 1 uses: the start year that
+    maximises station-years, with a station-year counting only if the station
+    reported at least ``MIN_MONTHS_FOR_A_YEAR`` months.
+    """
+    monthly_path = outputs_dir("m4_deweather") / "monthly.parquet"
+    if not monthly_path.exists():
+        return [], {}
+
+    monthly = pl.read_parquet(monthly_path).with_columns(pl.col("month").dt.year().alias("year"))
+    complete = (
+        monthly.group_by("station_name", "year")
+        .agg(pl.len().alias("months"))
+        .filter(pl.col("months") >= MIN_MONTHS_FOR_A_YEAR)
+    )
+    years = sorted(complete["year"].unique().to_list())
+
+    best_start, best_members, best_score = None, [], -1
+    for start in years:
+        window = [y for y in years if y >= start]
+        members = (
+            complete.filter(pl.col("year").is_in(window))
+            .group_by("station_name")
+            .agg(pl.len().alias("n"))
+            .filter(pl.col("n") == len(window))["station_name"]
+            .to_list()
+        )
+        score = len(members) * len(window)
+        if score > best_score:
+            best_start, best_members, best_score = start, sorted(members), score
+
+    if best_start is None or not best_members:
+        log.warning("no balanced panel in the M4 monthly output — skipping the annual series")
+        return [], {}
+
+    window = [y for y in years if y >= best_start]
+    panel = monthly.filter(
+        pl.col("station_name").is_in(best_members) & pl.col("year").is_in(window)
+    )
+    annual = (
+        panel.group_by("year")
+        .agg(
+            pl.col("observed").mean().alias("observed"),
+            pl.col("normalised").mean().alias("normalised"),
+        )
+        .sort("year")
+    )
+
+    first, last = annual.row(0, named=True), annual.row(-1, named=True)
+    observed_fall = first["observed"] - last["observed"]
+    normalised_fall = first["normalised"] - last["normalised"]
+
+    provenance = {
+        "balanced_since": best_start,
+        "n_stations": len(best_members),
+        "stations": best_members,
+        "station_years": best_score,
+        "selection_rule": (
+            f"最大化站年數的起始年，且一站一年至少要有 {MIN_MONTHS_FOR_A_YEAR} 個月才算數"
+        ),
+        "why_same_source": (
+            "兩條線都出自 M4 的同一批逐月輸出。拿正規化序列去跟第一章既有的"
+            "趨勢線比會多一個差異來源——那條線來自日聚合、68 站的面板，"
+            "而 M4 配適的是 74 站。"
+        ),
+        "observed_fall": _round(observed_fall, 2),
+        "normalised_fall": _round(normalised_fall, 2),
+        # A second, independent way of asking the same question as
+        # `median_weather_share`: that one is the median across per-station
+        # slope ratios, this one is the level difference across the national
+        # panel. They are different aggregations of the same fits, so they are
+        # both reported — agreement between them is worth more than either.
+        "weather_share_of_fall": _round(
+            (observed_fall - normalised_fall) / observed_fall if observed_fall else None, 3
+        ),
+    }
+    series = [
+        {
+            "year": row["year"],
+            "observed": _round(row["observed"], 2),
+            "normalised": _round(row["normalised"], 2),
+        }
+        for row in annual.iter_rows(named=True)
+    ]
+    return series, provenance
+
+
 def _export_deweather(root: Path) -> list[Path]:
     """Chapter 1's second line: how much of the trend was the weather."""
     source = outputs_dir("m4_deweather") / "summary.parquet"
@@ -846,6 +950,7 @@ def _export_deweather(root: Path) -> list[Path]:
     summary = pl.read_parquet(source)
     significant = summary.filter(pl.col("normalised_significant"))
     stations = _stations()
+    series, panel = _deweather_series()
 
     # The zone breakdown is a bonus, not the payload. A stations table without
     # airzone still produces the national figures rather than failing the whole
@@ -875,6 +980,11 @@ def _export_deweather(root: Path) -> list[Path]:
             {
                 "method": "Grange et al. (2018), random-forest meteorological normalisation",
                 "period": [2006, 2025],
+                # The two annual lines and the panel they were drawn on. Empty
+                # if M4's monthly output is absent, so the chapter degrades to
+                # the slope figures rather than failing the export.
+                "series": series,
+                "panel": panel,
                 "n_stations": summary.height,
                 "n_significant": significant.height,
                 "median_observed_slope": _round(significant["observed_slope"].median(), 3),
