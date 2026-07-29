@@ -1,6 +1,6 @@
 ---
 /**
- * Stations on the island they were measured on.
+ * Stations on the island, and the counties they are administered by.
  *
  * This map used to be points on nothing, on the argument that the network is
  * dense enough along the western plain that the island's shape emerges from the
@@ -9,16 +9,20 @@
  * shore, a dense cluster reads as a data artefact rather than as a coastline,
  * and the empty eastern half reads as missing data rather than as mountains.
  *
- * The outline is generalized and hand-encoded; see `lib/taiwan.ts` for how it
- * is validated. It is drawn as a quiet ground — a hairline and a barely-there
- * fill — because it is context, and colour on this site belongs to the data.
+ * The boundaries are the official ones (see `lib/taiwan.ts` for the source and
+ * the licence) rather than anything drawn by hand, and they carry county lines
+ * because "which county is that" is the first question a reader asks of a dot.
+ *
+ * The basemap is deliberately almost invisible: one fill, hairline borders, no
+ * hue. It is context, not measurement, and colour on this site is reserved for
+ * concentration. The only saturated things here remain the dots.
  *
  * The stations MOENV's register cannot place are listed beneath the map instead
  * of being dropped. They have decades of measurements; what is missing is a
  * coordinate, and hiding them would misrepresent the record.
  */
 import { concentrationColour, concentrationLegend } from "../lib/chart";
-import { TAIWAN_COAST, TAIWAN_BOUNDS } from "../lib/taiwan";
+import { COUNTIES, TAIWAN_BOUNDS } from "../lib/taiwan";
 import type { Station, StationCard } from "../lib/data";
 
 interface Props {
@@ -32,10 +36,10 @@ const { stations, cards, unplaced } = Astro.props;
 const cardByStation = new Map(cards.map((c) => [c.station_name, c]));
 const placed = stations.filter((s) => s.lat != null && s.lon != null);
 
-// The frame is the coastline's own bounding box plus a margin, rather than a
-// hand-set window: the island now fills the figure instead of floating in it.
+// The frame is the boundary data's own bounding box plus a hairline of margin,
+// so no part of the figure is empty by construction.
 const [lonMin, lonMax, latMin, latMax] = TAIWAN_BOUNDS;
-const MARGIN = 0.08;
+const MARGIN = 0.04;
 const MAIN = {
   lonMin: lonMin - MARGIN,
   lonMax: lonMax + MARGIN,
@@ -51,15 +55,14 @@ const isMain = (s: Station) =>
 const main = placed.filter(isMain);
 const offshore = placed.filter((s) => !isMain(s));
 
-// Equirectangular with a cos(latitude) correction, which at this scale is
-// visually indistinguishable from a proper projection and needs no library.
+// Equirectangular with a cos(latitude) correction, which over three degrees of
+// latitude is visually indistinguishable from a proper projection and needs no
+// library. The source is EPSG:3824, whose coordinates are TWD97 lon/lat.
 const midLat = ((MAIN.latMin + MAIN.latMax) / 2) * (Math.PI / 180);
 const lonSpan = (MAIN.lonMax - MAIN.lonMin) * Math.cos(midLat);
 const latSpan = MAIN.latMax - MAIN.latMin;
 
-// The viewBox is the island's own aspect ratio, so no part of the frame is
-// empty by construction.
-const height = 460;
+const height = 1000;
 const width = Math.round((height * lonSpan) / latSpan);
 const scale = height / latSpan;
 
@@ -68,11 +71,69 @@ const project = (lon: number, lat: number) => ({
   y: height / 2 - (lat - (MAIN.latMin + MAIN.latMax) / 2) * scale,
 });
 
-const coastPath =
-  TAIWAN_COAST.map(([lon, lat], i) => {
-    const { x, y } = project(lon, lat);
-    return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(" ") + " Z";
+const counties = COUNTIES.map((county) => ({
+  name: county.name,
+  area: county.area,
+  anchors: county.anchors.map(([lon, lat]) => project(lon, lat)),
+  d: county.rings
+    .map(
+      (ring) =>
+        ring
+          .map(([lon, lat], i) => {
+            const { x, y } = project(lon, lat);
+            return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+          })
+          .join(" ") + " Z",
+    )
+    .join(" "),
+}));
+
+/*
+ * Which counties get a name printed on them.
+ *
+ * Labels are HTML over the map rather than text inside it, for the same reason
+ * the charts do it: the map scales and the type must not. But that means a
+ * label's footprint in map coordinates *grows* as the map shrinks, so placement
+ * has to be decided for the smallest size the map is ever drawn at — about
+ * 260px across — or the labels would collide on a phone.
+ *
+ * Largest county first, and for each one try its roomiest spot, then its next
+ * roomiest, and so on — Kaohsiung and Pingtung are neighbours that both open
+ * onto the same southern plain, so a single anchor each meant whichever was
+ * placed first took the space and the other went unnamed. Nothing is lost by a
+ * county being skipped entirely: every one of them carries a `<title>`.
+ */
+const MIN_RENDER_PX = 260;
+const unitsPerPx = width / MIN_RENDER_PX;
+// A CJK glyph is one em wide, so the width follows the font size directly. The
+// height has to match what the CSS below actually produces: the label sets its
+// own `line-height`, because inheriting the body's 1.7 made every box 27px tall
+// against an estimate of 17 and let two labels overlap on a map that had been
+// checked and declared clear.
+const charWidth = 16 * unitsPerPx;
+const labelHeight = 16 * 1.15 * unitsPerPx + 4 * unitsPerPx;
+
+const labelled: { name: string; x: number; y: number }[] = [];
+const boxes: [number, number, number, number][] = [];
+for (const county of [...counties].sort((a, b) => b.area - a.area)) {
+  const half = (county.name.length * charWidth) / 2;
+  for (const anchor of county.anchors) {
+    const box: [number, number, number, number] = [
+      anchor.x - half,
+      anchor.y - labelHeight / 2,
+      anchor.x + half,
+      anchor.y + labelHeight / 2,
+    ];
+    const clashes = boxes.some(
+      (b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1],
+    );
+    const inFrame = box[0] > 0 && box[2] < width && box[1] > 0 && box[3] < height;
+    if (clashes || !inFrame) continue;
+    boxes.push(box);
+    labelled.push({ name: county.name, x: anchor.x, y: anchor.y });
+    break;
+  }
+}
 
 const dots = main.map((s) => {
   const card = cardByStation.get(s.station_name);
@@ -90,26 +151,45 @@ const dots = main.map((s) => {
 ---
 
 <div class="map-wrap">
-  <svg
-    viewBox={`0 0 ${width} ${height}`}
-    role="img"
-    aria-label={`台灣本島 ${dots.length} 個測站的分布與 PM2.5 年均值`}
-  >
-    <path d={coastPath} class="coast" />
+  <div class="map-box" style={`aspect-ratio:${width} / ${height}`}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={`台灣本島 ${counties.length} 個縣市與 ${dots.length} 個測站的 PM2.5 年均值`}
+    >
+      {
+        counties.map((county) => (
+          <path d={county.d} class="county" vector-effect="non-scaling-stroke">
+            <title>{county.name}</title>
+          </path>
+        ))
+      }
+
+      {
+        dots.map((d) => (
+          <g class="dot" data-station={d.name} tabindex="0" role="button" aria-label={`${d.name}站`}>
+            <circle cx={d.x} cy={d.y} r={4.6 * unitsPerPx} fill={d.colour} class="core" />
+            <title>
+              {d.name}
+              {d.county ? `（${d.county}）` : ""}
+              {d.value != null ? ` ${d.value} μg/m³（${d.year}）` : " 無可比較的年份"}
+            </title>
+          </g>
+        ))
+      }
+    </svg>
 
     {
-      dots.map((d) => (
-        <g class="dot" data-station={d.name} tabindex="0" role="button" aria-label={`${d.name}站`}>
-          <circle cx={d.x} cy={d.y} r="5.2" fill={d.colour} class="core" />
-          <title>
-            {d.name}
-            {d.county ? `（${d.county}）` : ""}
-            {d.value != null ? ` ${d.value} μg/m³（${d.year}）` : " 無可比較的年份"}
-          </title>
-        </g>
+      labelled.map((label) => (
+        <span
+          class="county-label"
+          style={`left:${((label.x / width) * 100).toFixed(2)}%;top:${((label.y / height) * 100).toFixed(2)}%`}
+        >
+          {label.name}
+        </span>
       ))
     }
-  </svg>
+  </div>
 
   <div class="legend">
     {
@@ -123,15 +203,15 @@ const dots = main.map((s) => {
     <span class="legend-item unit">μg/m³ 年均</span>
   </div>
 
-  {
-    offshore.length > 0 && (
-      <p class="aside">
-        離島測站另計：
-        {offshore.map((s) => s.station_name).join("、")}
-        —— 位置遠離本島，未畫在同一張圖上。
-      </p>
-    )
-  }
+  <p class="aside">
+    縣市界為內政部國土測繪中心「直轄市、縣市界線（TWD97 經緯度）」，
+    依政府資料開放授權條款第 1 版使用，已簡化至約 165 公尺。
+    {
+      offshore.length > 0 && (
+        <>離島（{offshore.map((s) => s.station_name).join("、")}）不在此圖範圍內。</>
+      )
+    }
+  </p>
 
   {
     unplaced.length > 0 && (
@@ -148,49 +228,84 @@ const dots = main.map((s) => {
   .map-wrap {
     display: flex;
     flex-direction: column;
-    align-items: stretch;
   }
+
   /*
    * Bounded by height, not width.
    *
-   * The frame is now the island's own bounding box, and Taiwan is about 2.4
-   * times taller than it is wide — so `width: 100%` in a 546px column produced
-   * a 1,055px-tall map. Sizing from the height and letting the width follow
-   * keeps the proportion honest and the figure inside one fold.
+   * The frame is the island's own bounding box, and Taiwan is about 2.4 times
+   * taller than it is wide — so `width: 100%` in a 546px column produced a
+   * 1,055px-tall map. Sizing from the height and letting the width follow keeps
+   * the proportion honest and the figure inside one fold. The box carries the
+   * aspect ratio so the label layer registers exactly with the drawing.
    */
-  svg {
+  .map-box {
+    position: relative;
     height: clamp(26rem, 62vh, 36rem);
-    width: auto;
-    max-width: 100%;
-    display: block;
     margin-inline: auto;
+    max-width: 100%;
+  }
+  .map-box > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 
-  /* Context, not data: a hairline and a fill barely distinguishable from the
-     page. If the island competed with the dots it would be reading as a
-     measurement, and it is not one. */
-  .coast {
+  /*
+   * The basemap, kept quiet on purpose.
+   *
+   * `vector-effect` matters here: the map scales, and without it the borders
+   * would thicken with it — a hairline at 260px becoming 1.5px at 390px.
+   *
+   * The stroke uses `--map-line` rather than the site's `--line`, because here
+   * the border carries the information rather than merely framing it. See the
+   * token's own note for the numbers.
+   */
+  .county {
     fill: var(--bg-sunken);
-    stroke: var(--line);
-    stroke-width: 1.5;
+    stroke: var(--map-line);
+    stroke-width: 1;
     stroke-linejoin: round;
+    transition: fill 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .county:hover {
+    fill: var(--tint-neutral);
+  }
+
+  .county-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: var(--chart-micro);
+    /* Not the body's 1.7: the collision test that decides which counties get a
+       name assumes this number, and a single line has no use for leading. */
+    line-height: 1.15;
+    color: var(--text-faint);
+    white-space: nowrap;
+    pointer-events: none;
+    /* The fill is only a shade off the page, so a matching halo keeps the name
+       legible where a county border runs underneath it. */
+    text-shadow:
+      0 0 3px var(--bg-sunken),
+      0 0 3px var(--bg-sunken),
+      0 0 5px var(--bg-sunken);
   }
 
   .dot {
     cursor: pointer;
   }
   .dot .core {
-    stroke: var(--bg);
-    stroke-width: 1.2;
+    stroke: var(--bg-sunken);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
     transition: r 120ms cubic-bezier(0.22, 1, 0.36, 1);
   }
   .dot:hover .core,
   .dot:focus-visible .core {
-    r: 8;
     stroke: var(--text);
-    stroke-width: 1.5;
+    stroke-width: 2;
   }
   @media (prefers-reduced-motion: reduce) {
+    .county,
     .dot .core {
       transition: none;
     }
@@ -204,6 +319,7 @@ const dots = main.map((s) => {
     color: var(--text-faint);
     margin: var(--space-3) 0 0;
     text-align: left;
+    max-width: none;
   }
   .aside strong {
     color: var(--text-muted);

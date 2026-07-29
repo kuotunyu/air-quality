@@ -46,11 +46,12 @@ jobs:
       - name: Agent instructions mirror
         run: uv run python scripts/mirror_agents.py --check
 
-      # The station map draws a hand-encoded coastline. It is only trustworthy
-      # while every station it plots falls inside it, and either side can move:
-      # the outline is edited by hand, and the station list comes from MOENV.
-      - name: Coastline contains every plotted station
-        run: uv run python scripts/validate_coastline.py
+      # The station map's county boundaries are simplified by three orders of
+      # magnitude, and simplification can be wrong rather than merely coarse.
+      # Both sides move: geometry when the generator is re-run, stations when
+      # MOENV publishes a new register.
+      - name: Every station lands in its own county
+        run: uv run python scripts/validate_map_geometry.py
 
       - name: Test (Pytest)
         run: uv run pytest
