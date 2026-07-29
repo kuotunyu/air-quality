@@ -1,18 +1,24 @@
 ---
 /**
- * Stations positioned by their own coordinates, with no basemap.
+ * Stations on the island they were measured on.
  *
- * There is no coastline behind these points, and that is a deliberate choice
- * rather than a missing feature: Taiwan's monitoring network traces the
- * populated western plain so densely that the island's shape emerges from the
- * stations themselves. Shipping a boundary file would add an external
- * dependency and a licence to track, for decoration.
+ * This map used to be points on nothing, on the argument that the network is
+ * dense enough along the western plain that the island's shape emerges from the
+ * stations themselves. It does — but only to a reader who already knows what
+ * Taiwan looks like, which is the wrong assumption for a locator. Without a
+ * shore, a dense cluster reads as a data artefact rather than as a coastline,
+ * and the empty eastern half reads as missing data rather than as mountains.
  *
- * The stations MOENV's register cannot place are listed beneath the map
- * instead of being dropped. They have decades of measurements; what is missing
- * is a coordinate, and hiding them would misrepresent the record.
+ * The outline is generalized and hand-encoded; see `lib/taiwan.ts` for how it
+ * is validated. It is drawn as a quiet ground — a hairline and a barely-there
+ * fill — because it is context, and colour on this site belongs to the data.
+ *
+ * The stations MOENV's register cannot place are listed beneath the map instead
+ * of being dropped. They have decades of measurements; what is missing is a
+ * coordinate, and hiding them would misrepresent the record.
  */
 import { concentrationColour, concentrationLegend } from "../lib/chart";
+import { TAIWAN_COAST, TAIWAN_BOUNDS } from "../lib/taiwan";
 import type { Station, StationCard } from "../lib/data";
 
 interface Props {
@@ -26,10 +32,16 @@ const { stations, cards, unplaced } = Astro.props;
 const cardByStation = new Map(cards.map((c) => [c.station_name, c]));
 const placed = stations.filter((s) => s.lat != null && s.lon != null);
 
-// Taiwan spans roughly 21.9-25.3N on the main island; the offshore stations
-// (Matsu at 26.15N, Kinmen at 118.3E) stretch the frame a long way, so they
-// are drawn in their own inset rather than flattening the main island.
-const MAIN = { lonMin: 119.9, lonMax: 122.1, latMin: 21.8, latMax: 25.4 };
+// The frame is the coastline's own bounding box plus a margin, rather than a
+// hand-set window: the island now fills the figure instead of floating in it.
+const [lonMin, lonMax, latMin, latMax] = TAIWAN_BOUNDS;
+const MARGIN = 0.08;
+const MAIN = {
+  lonMin: lonMin - MARGIN,
+  lonMax: lonMax + MARGIN,
+  latMin: latMin - MARGIN,
+  latMax: latMax + MARGIN,
+};
 const isMain = (s: Station) =>
   (s.lon as number) >= MAIN.lonMin &&
   (s.lon as number) <= MAIN.lonMax &&
@@ -39,21 +51,28 @@ const isMain = (s: Station) =>
 const main = placed.filter(isMain);
 const offshore = placed.filter((s) => !isMain(s));
 
-const width = 300;
-const height = 460;
-const pad = 26;
-
 // Equirectangular with a cos(latitude) correction, which at this scale is
 // visually indistinguishable from a proper projection and needs no library.
 const midLat = ((MAIN.latMin + MAIN.latMax) / 2) * (Math.PI / 180);
 const lonSpan = (MAIN.lonMax - MAIN.lonMin) * Math.cos(midLat);
 const latSpan = MAIN.latMax - MAIN.latMin;
-const scale = Math.min((width - pad * 2) / lonSpan, (height - pad * 2) / latSpan);
+
+// The viewBox is the island's own aspect ratio, so no part of the frame is
+// empty by construction.
+const height = 460;
+const width = Math.round((height * lonSpan) / latSpan);
+const scale = height / latSpan;
 
 const project = (lon: number, lat: number) => ({
   x: width / 2 + (lon - (MAIN.lonMin + MAIN.lonMax) / 2) * Math.cos(midLat) * scale,
   y: height / 2 - (lat - (MAIN.latMin + MAIN.latMax) / 2) * scale,
 });
+
+const coastPath =
+  TAIWAN_COAST.map(([lon, lat], i) => {
+    const { x, y } = project(lon, lat);
+    return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ") + " Z";
 
 const dots = main.map((s) => {
   const card = cardByStation.get(s.station_name);
@@ -71,19 +90,17 @@ const dots = main.map((s) => {
 ---
 
 <div class="map-wrap">
-  <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="全台測站分布與 PM2.5 年均值">
-    <defs>
-      <radialGradient id="glow">
-        <stop offset="0%" stop-color="currentColor" stop-opacity="0.35" />
-        <stop offset="100%" stop-color="currentColor" stop-opacity="0" />
-      </radialGradient>
-    </defs>
+  <svg
+    viewBox={`0 0 ${width} ${height}`}
+    role="img"
+    aria-label={`台灣本島 ${dots.length} 個測站的分布與 PM2.5 年均值`}
+  >
+    <path d={coastPath} class="coast" />
 
     {
       dots.map((d) => (
         <g class="dot" data-station={d.name} tabindex="0" role="button" aria-label={`${d.name}站`}>
-          <circle cx={d.x} cy={d.y} r="13" fill="url(#glow)" style={`color:${d.colour}`} />
-          <circle cx={d.x} cy={d.y} r="4.4" fill={d.colour} class="core" />
+          <circle cx={d.x} cy={d.y} r="5.2" fill={d.colour} class="core" />
           <title>
             {d.name}
             {d.county ? `（${d.county}）` : ""}
@@ -131,31 +148,61 @@ const dots = main.map((s) => {
   .map-wrap {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
   }
+  /*
+   * Bounded by height, not width.
+   *
+   * The frame is now the island's own bounding box, and Taiwan is about 2.4
+   * times taller than it is wide — so `width: 100%` in a 546px column produced
+   * a 1,055px-tall map. Sizing from the height and letting the width follow
+   * keeps the proportion honest and the figure inside one fold.
+   */
   svg {
-    width: 100%;
-    max-width: 300px;
-    height: auto;
+    height: clamp(26rem, 62vh, 36rem);
+    width: auto;
+    max-width: 100%;
     display: block;
+    margin-inline: auto;
   }
+
+  /* Context, not data: a hairline and a fill barely distinguishable from the
+     page. If the island competed with the dots it would be reading as a
+     measurement, and it is not one. */
+  .coast {
+    fill: var(--bg-sunken);
+    stroke: var(--line);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+
   .dot {
     cursor: pointer;
   }
   .dot .core {
-    transition: r 120ms ease;
+    stroke: var(--bg);
+    stroke-width: 1.2;
+    transition: r 120ms cubic-bezier(0.22, 1, 0.36, 1);
   }
   .dot:hover .core,
   .dot:focus-visible .core {
-    r: 7;
+    r: 8;
     stroke: var(--text);
     stroke-width: 1.5;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dot .core {
+      transition: none;
+    }
+  }
+
+  .legend {
+    margin-top: var(--space-3);
   }
   .aside {
     font-size: var(--text-sm);
     color: var(--text-faint);
-    max-width: 34rem;
-    margin: 1rem 0 0;
+    margin: var(--space-3) 0 0;
     text-align: left;
   }
   .aside strong {

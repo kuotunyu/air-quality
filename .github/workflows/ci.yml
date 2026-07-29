@@ -46,5 +46,11 @@ jobs:
       - name: Agent instructions mirror
         run: uv run python scripts/mirror_agents.py --check
 
+      # The station map draws a hand-encoded coastline. It is only trustworthy
+      # while every station it plots falls inside it, and either side can move:
+      # the outline is edited by hand, and the station list comes from MOENV.
+      - name: Coastline contains every plotted station
+        run: uv run python scripts/validate_coastline.py
+
       - name: Test (Pytest)
         run: uv run pytest

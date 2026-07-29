@@ -375,7 +375,10 @@ const airzoneSeries = (trendByAirzone.series as {
   }
   @media (min-width: 52rem) {
     .hero-grid {
-      grid-template-columns: minmax(260px, 340px) 1fr;
+      /* The map was capped at 340px and drew 73 stations into it, which is
+         what made it feel packed. With a coastline behind them it also has a
+         shape to fill, so it gets a real share of the fold. */
+      grid-template-columns: minmax(260px, 22rem) 1fr;
       gap: 3rem;
     }
   }
