@@ -105,10 +105,11 @@ uv run twair probe sources
 | Phase 4 | 氣象正規化、事件效應偵測 | ✅ 完成 |
 | Phase 5 | 境外傳輸（CBPF）✅ ／ 空間自相關 ⬜ | 🔄 部分完成 |
 | Phase 6 | 衛星與微型感測器融合 | ⬜ |
-| Phase 7 | 預測模型、HuggingFace Space | ⬜ |
+| Phase 7 | 預測模型（M9）✅ ／ HuggingFace Space ⬜ | 🔄 部分完成 |
 | Phase 8 | 健康衝擊、自動更新、發布 | ⬜ |
 
-完整計畫見 [PLAN.md](PLAN.md)。
+完整計畫見 [PLAN.md](PLAN.md)。磁碟上的實際狀態用 `uv run twair status` 看——
+這份表寫的是意圖，那個指令量的是事實。
 
 ## 網站
 

@@ -1,6 +1,6 @@
 ---
 name: twair
-description: Working rules for the AirLens Taiwan / twair repo — the reanalysis of a 2018 PM2.5 graduation project over 44 years of MOENV hourly data. Load when touching anything in this repo: the ingest pipeline, QC, the Parquet store, analysis modules, or the web front end. Covers architecture, hard-won data gotchas, commands, testing conventions, and the end-of-session close-out ritual.
+description: Working rules for the AirLens Taiwan / twair repo — the reanalysis of a 2018 PM2.5 graduation project over 44 years of MOENV hourly data. Load when touching anything in this repo: the ingest pipeline, QC, the Parquet store, analysis modules, forecasting, or the web front end. Covers architecture, hard-won data gotchas, commands, testing conventions, and the per-commit handoff routine that keeps PROGRESS.md and the docs from drifting.
 ---
 
 # twair — working rules
@@ -190,9 +190,44 @@ Persistence (this hour = last hour) reaches R² 0.900 against 0.524 for the best
 feature set, because it uses PM2.5's own lag while the models use only
 concurrent covariates and no PM2.5 history.
 
-The models here are **explanatory, not forecasting**. Any forecasting work
-(Phase 7) must add lag features, and persistence is the bar to clear rather
-than a peer to compare against.
+The models in Phase 2 are **explanatory, not forecasting**. M9 added the lag
+features and cleared the bar — see below.
+
+### One baseline always flatters a forecast; use two
+
+M9's full backtest (74 stations, 2015–2025, 4 rolling splits, ~1.78M test rows
+per horizon) has skill against persistence **rising** with horizon (+0.175 at
+1h to +0.243 at 48h) while skill against climatology **collapses** (+0.839 to
++0.088) and R² falls fourfold (0.859 to 0.217).
+
+All three describe the same model. Persistence degrades faster than the model,
+so the model looks better the further out you go; but it is also decaying
+toward "the average for this station, this month, this hour", which only the
+climatology column shows. **Beating persistence at 48h is not an achievement
+when persistence is beaten by the long-run mean.** Useful range ends near 24h.
+
+**And never report a mean over splits without the worst one.** The first
+summary line printed "4/4 horizons beat persistence" while `rolling_1` — the
+split with the least training data — sat at **−0.111** at six hours. That is
+the same failure as an R² hiding a losing model, one level up.
+`summarise_scores` carries `skill_worst_split` beside every mean.
+
+### A lag feature and its target shift in opposite directions
+
+`lag_k` at row `t` holds the value at `t − k + 1` (`lag_1` is the most recent
+observation available); the target shifts *forward* by the horizon. The
+opposition is the entire safety property.
+
+`tests/test_lags.py` uses a series whose value at each hour **is** the hour
+index, so a leak shows up as an exact arithmetic fact rather than as a
+suspiciously good score. Lags run on a complete hourly index per station
+(`complete_hourly_index`), or a three-day outage hands the model pre-outage
+data labelled "an hour ago".
+
+Before believing any forecast score, check leakage on **real** data, not the
+fixture: no feature equalling the target in >30% of rows, and correlations
+ordered as physics predicts (lag1 0.932 > mean3 0.908 > max3 0.896 > lag2 0.883
+> PM10_lag1 0.857) — nothing suspiciously near 1.
 
 ### The site must be able to tell two nulls apart
 
@@ -269,6 +304,7 @@ rather than an error status, so downloads are verified by magic bytes.
 ## Commands
 
 ```bash
+uv run twair status          # where everything stands on disk; start here
 uv run twair doctor          # which credentials are configured
 uv run twair probe sources   # re-resolve download links (they rotate)
 uv run twair ingest airtw    # download archives; --years 2010:2017 --patient
@@ -430,17 +466,57 @@ method choice, existing comments and docstrings, or prose that makes a claim.
 **Always verify delegated work yourself** — run the checks, read the diff, and
 grep for `fill_null`, `drop_nulls` and `interpolate` before accepting it.
 
-## Close-out ritual — run this before ending a work session
+## Handoff — the docs ship *with* the commit, not at the end of the session
+
+This used to say "run this before ending a work session" and it failed, for a
+reason worth keeping: **sessions do not end, they get interrupted.** A quota
+expires, a context window compacts, a background job is still running. Commit
+`f6671c1` shipped M9 — a module, a feature builder and 25 tests — with zero doc
+changes, because the ritual was scheduled for a moment that never arrived.
+
+So the trigger is the **commit**, not the session. A commit that changes
+behaviour and touches no `.md` is the smell.
+
+Each commit that adds or changes a result:
 
 1. `uv run --no-sync pytest -q` and `ruff check src tests` — both clean.
-2. Update **`PROGRESS.md`**: what moved, what is running, what is next, any new
-   open question.
+2. Update **`PROGRESS.md`**: what moved, what is running, what is next.
 3. Update the affected **`docs/*.md`**. If a measurement contradicts something
-   already written there, correct it in place — do not leave both versions.
-4. Tick the phase checkboxes in **`README.md`** and `PLAN.md` if a phase moved.
-5. Update **this skill** if a new gotcha was learned that would otherwise cost
-   the next session an hour.
+   already written, correct it in place — never leave both versions standing.
+4. Tick the phase boxes in **`README.md`** / `PLAN.md` if a phase moved.
+5. Add any new gotcha to **this skill** — see below for what qualifies.
 6. Commit.
 
-The test of a good close-out: someone returning in two weeks reads
-`PROGRESS.md` and knows what to type next.
+### `uv run twair status` — the half that cannot go stale
+
+Prose records *intent* and drifts silently: a note saying the site is current
+reads exactly like one that has gone out of date. So the handoff is split.
+
+```bash
+uv run twair status
+```
+
+reports what is actually on disk — store span and row count, which analysis
+modules have produced outputs and when, whether the web export is older than
+something it derives from, and the commands that follow from all of that. The
+chain it checks is `store → outputs → export`; a stage is stale when anything
+upstream is newer.
+
+`status.MODULES` also records **how to regenerate each output**, which is not
+guessable — `m2_drivers` comes from `scripts/run_m2.py`, not a subcommand.
+`tests/test_status.py` asserts every entry names something that still exists,
+so a renamed command breaks a test instead of misleading a reader.
+
+When adding a module, add it to `MODULES` in the same commit. An output
+directory with no entry prints as `?? undeclared`.
+
+### What belongs in this skill
+
+Only what would otherwise **cost the next session an hour**: a measurement that
+overturned an assumption, a bug whose symptom pointed at the wrong cause, a
+format that does not behave as documented. Not a summary of what the code does
+— the code is right there, and a paraphrase of it here is one more thing to
+keep in sync.
+
+The test of a good handoff: someone returning in two weeks runs `twair status`
+to see where things stand and reads `PROGRESS.md` to see why.
