@@ -1,4 +1,4 @@
-"""AirLens Taiwan — PM2.5 forecast demo.
+"""air-quality — PM2.5 forecast demo.
 
 This Space exists to show a comparison, not a number.
 
@@ -203,7 +203,7 @@ def forecast(station: str, timestamp: str, horizon: int) -> tuple[str, str]:
     return "\n".join(lines), "\n".join(note)
 
 
-with gr.Blocks(title="AirLens Taiwan — PM2.5 預測 demo") as demo:
+with gr.Blocks(title="air-quality — PM2.5 預測 demo") as demo:
     gr.Markdown(
         """
 # PM2.5 預測：模型 vs 兩條基準線

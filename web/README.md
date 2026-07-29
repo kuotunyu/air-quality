@@ -1,4 +1,4 @@
-# web — AirLens Taiwan
+# web — air-quality
 
 The public site. Astro, static output, no runtime backend.
 

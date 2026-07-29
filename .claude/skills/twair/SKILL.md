@@ -1,6 +1,6 @@
 ---
 name: twair
-description: Working rules for the AirLens Taiwan / twair repo — the reanalysis of a 2018 PM2.5 graduation project over 44 years of MOENV hourly data. Load when touching anything in this repo: the ingest pipeline, QC, the Parquet store, analysis modules, forecasting, or the web front end. Covers architecture, hard-won data gotchas, commands, testing conventions, and the per-commit handoff routine that keeps PROGRESS.md and the docs from drifting.
+description: Working rules for the air-quality / twair repo — the reanalysis of a 2018 PM2.5 graduation project over 44 years of MOENV hourly data. Load when touching anything in this repo: the ingest pipeline, QC, the Parquet store, analysis modules, forecasting, or the web front end. Covers architecture, hard-won data gotchas, commands, testing conventions, and the per-commit handoff routine that keeps PROGRESS.md and the docs from drifting.
 ---
 
 # twair — working rules

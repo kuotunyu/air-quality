@@ -1,5 +1,5 @@
 ---
-title: AirLens Taiwan — PM2.5 Forecast
+title: air-quality — PM2.5 Forecast
 emoji: 🌫️
 colorFrom: blue
 colorTo: gray

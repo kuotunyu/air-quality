@@ -1,6 +1,6 @@
-# AirLens Taiwan ── 台灣空氣品質再分析方法論
+# air-quality ── 台灣空氣品質再分析方法論
 
-> 本文件詳細說明 **AirLens Taiwan** 專案所採用的統計與統計學、機器學習在資料工程上的修正方法。本文件旨在逐項解析 2018 年原始畢業專題（《台灣地區之 PM2.5 之影響分析》）中的 11 項結構性缺陷（標記為 D1–D11），並說明在 [PLAN.md](PLAN.md) 規劃中如何進行嚴謹的資料工程與多變量分析校正。
+> 本文件詳細說明 **air-quality** 專案所採用的統計與統計學、機器學習在資料工程上的修正方法。本文件旨在逐項解析 2018 年原始畢業專題（《台灣地區之 PM2.5 之影響分析》）中的 11 項結構性缺陷（標記為 D1–D11），並說明在 [PLAN.md](PLAN.md) 規劃中如何進行嚴謹的資料工程與多變量分析校正。
 > 本專案實作程式碼已全數在 [src/twair/analysis/replication.py](src/twair/analysis/replication.py)、[src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 與 [src/twair/analysis/drivers.py](src/twair/analysis/drivers.py) 中建立完成。
 
 ---
@@ -222,4 +222,4 @@ $$\text{NO}_x \equiv \text{NO} + \text{NO}_2$$
 
 這份重製的成果展示，我們建立的不僅僅是「寫出更漂亮的程式碼」，而是藉由資料工程與嚴謹物理原理：
 * 證明了資料工程階段隱蔽決定的巨大科學後果（如 `NR` 偏誤與 circular wind angle 錯誤）。
-* 在同一批資料庫、相同的觀測行下，展示了兩條不同的分岔道路：一條在數學與大氣物理學上是破碎的，另一條則是強健、可重複檢驗且具備高度科學價值的。這就是 **AirLens Taiwan** 再分析平台方法論的核心承諾。
+* 在同一批資料庫、相同的觀測行下，展示了兩條不同的分岔道路：一條在數學與大氣物理學上是破碎的，另一條則是強健、可重複檢驗且具備高度科學價值的。這就是 **air-quality** 再分析平台方法論的核心承諾。

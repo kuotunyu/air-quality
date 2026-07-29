@@ -1,4 +1,4 @@
-# AirLens Taiwan — 台灣空氣品質再分析平台
+# air-quality — 台灣空氣品質再分析平台
 
 > 2018 年畢業專題《台灣地區之 PM2.5 之影響分析》的終極重製版
 > 資料工程 × 現代統計/ML × 互動視覺化 × 開源發布
@@ -60,11 +60,12 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 
 ## 專案識別
 
-- Repo: `taiwan-air-quality`
-- Python 套件: `twair`
-- 網站名: **AirLens Taiwan｜台灣空氣品質再分析**
-- HF Dataset: `<user>/taiwan-air-quality`
-- HF Space: `<user>/airlens-forecast`
+- Repo: `kuotunyu/air-quality`
+- Python 套件: `twair`（**不隨專案改名**——那是 import 路徑與 CLI 名稱）
+- 網站名: **air-quality｜台灣空氣品質再分析**
+- HF Dataset: `steven0226/air-quality`（尚未上架）
+- HF Space: `steven0226/airlens-taiwan-forecast`（**已上線**，沿用建立時的名稱：
+  改名會讓一個已公開、且被 README 與網站第五章連結的網址失效）
 - 授權: 程式碼 MIT；資料衍生物 CC BY 4.0（依政府資料開放授權條款第 1 版，須註明出處）
 
 ---

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         default=1.0,
         description="Minimum seconds between requests to the same host (politeness).",
     )
-    twair_user_agent: str = "airlens-tw/0.1 (research)"
+    twair_user_agent: str = "air-quality/0.1 (research)"
 
     def require(self, field: str) -> str:
         """Fetch a secret, failing loudly with a pointer to the registration docs."""

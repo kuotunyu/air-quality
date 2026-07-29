@@ -1,4 +1,4 @@
-# AirLens Taiwan｜Taiwan Air Quality Reanalysis
+# air-quality｜Taiwan Air Quality Reanalysis
 
 > Every hourly observation, at every station, from 1982 to the present:
 > 341 million measurements, quality-flagged rather than quietly repaired,
