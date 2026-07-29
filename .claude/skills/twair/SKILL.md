@@ -369,6 +369,25 @@ forty-three. Anything written per-run needs the same treatment.
   differs from the original project.
 - `ruff check --fix && ruff format` before committing.
 
+### mypy is at zero — keep it there
+
+`mypy src tests` reports no issues across 75 files, and CI gates on it along
+with `ruff check .`, `ruff format --check .` and `pytest`. This is recent: the
+baseline was over a hundred errors, so a new one used to be invisible. It is
+now a regression.
+
+Most of those errors were one thing. A Polars aggregate — `.mean()`, `.std()`,
+`.sum()`, `.max()` — is typed as a union of every value a cell could hold, and
+mypy cannot narrow it. The sanctioned fix is `twair.scalars`: `as_float`,
+`as_int`, `opt_float`. They take `Any` and convert for real, and `as_float`
+and `as_int` **raise on null** rather than returning a plausible zero.
+
+A helper called on aggregates everywhere should take `Any` itself rather than
+force a wrapper at each call — `viz.story._round` does this for its 43 call
+sites, delegating to `opt_float`. Never reach for `cast`: it is a claim to the
+checker with no runtime force, so if the value really is None the failure just
+surfaces somewhere less useful.
+
 ### Testing
 
 - Tests are **specifications**, named as claims:

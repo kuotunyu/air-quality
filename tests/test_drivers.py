@@ -176,3 +176,35 @@ class TestModellingFrame:
 def test_unknown_feature_set_is_rejected() -> None:
     with pytest.raises(KeyError):
         FEATURE_SETS["does_not_exist"]
+
+
+class TestSplitDispatch:
+    """`_get_splits` must reject a bad scheme when *called*, not when iterated.
+
+    It reads like a generator and is one keyword away from becoming one. If it
+    ever grows a `yield`, the ValueError stops firing until something iterates
+    the result, and a typo in `split_kind` would surface as an empty run rather
+    than an error.
+    """
+
+    @staticmethod
+    def _frame() -> pl.DataFrame:
+        start = datetime(2020, 1, 1)
+        return pl.DataFrame(
+            {
+                "station_name": ["甲"] * 20,
+                "ts_local": [start + timedelta(days=i) for i in range(20)],
+            }
+        )
+
+    def test_an_unknown_scheme_raises_before_anything_is_iterated(self) -> None:
+        from twair.analysis.drivers import _get_splits
+
+        with pytest.raises(ValueError, match="unknown split_kind"):
+            _get_splits(self._frame(), "nonsense", 3, None)
+
+    @pytest.mark.parametrize("kind", ["rolling", "year"])
+    def test_every_known_scheme_still_yields_splits(self, kind: str) -> None:
+        from twair.analysis.drivers import _get_splits
+
+        assert sum(1 for _ in _get_splits(self._frame(), kind, 3, None)) > 0

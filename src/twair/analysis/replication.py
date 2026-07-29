@@ -83,6 +83,8 @@ def load_expected(path: Path | None = None) -> dict[str, Any]:
     with target.open(encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     _reject_boolean_keys(data, target.name)
+    if not isinstance(data, dict):
+        raise TypeError(f"{target.name} must be a YAML mapping, got {type(data).__name__}")
     return data
 
 

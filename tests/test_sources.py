@@ -192,12 +192,12 @@ class TestWraparound:
 class TestThreshold:
     def test_the_threshold_is_the_requested_percentile(self) -> None:
         result = cbpf(_station("站", seed=8), station="站", percentile=90.0)
+        lower = cbpf(_station("站", seed=8), station="站", percentile=50.0)
 
         assert result is not None
+        assert lower is not None
         assert result.percentile == 90.0
-        assert (
-            result.threshold > cbpf(_station("站", seed=8), station="站", percentile=50.0).threshold
-        )  # type: ignore[union-attr]
+        assert result.threshold > lower.threshold
 
     def test_too_few_hours_returns_nothing_rather_than_a_noisy_answer(self) -> None:
         assert cbpf(_station("站", n=50), station="站") is None

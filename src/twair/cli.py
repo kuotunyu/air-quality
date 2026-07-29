@@ -16,6 +16,7 @@ from rich.logging import RichHandler
 from twair import __version__
 from twair.config import get_settings
 from twair.paths import ensure_dirs
+from twair.scalars import as_float, as_int
 
 console = Console()
 
@@ -341,7 +342,7 @@ def analyze_m4(
     if not real.is_empty():
         console.print(
             f"\n[bold]{real.height}[/bold] station(s) with a significant normalised trend; "
-            f"median weather share [bold]{real['weather_share'].median():.1%}[/bold]"
+            f"median weather share [bold]{as_float(real['weather_share'].median()):.1%}[/bold]"
         )
 
     for name, path in write_deweather_report(tables).items():
@@ -428,7 +429,7 @@ def analyze_m7(
         f"[bold]{local.height}[/bold] at low wind (local signature)"
     )
     console.print(
-        f"  median calm fraction {summary['calm_fraction'].median():.1%} "
+        f"  median calm fraction {as_float(summary['calm_fraction'].median()):.1%} "
         f"(excluded from the polar plot — no direction — but counted)"
     )
     console.print(f"  {int(summary['n_suppressed_bins'].sum())} bin(s) withheld for too few hours")
@@ -457,12 +458,12 @@ def analyze_m5(
         credible = group.filter(pl.col("credible"))
         console.print(
             f"\n[bold]{name[0]}[/bold] — {group.height} station(s), "
-            f"median effect {group['effect'].median():+.2f} µg/m³"
+            f"median effect {as_float(group['effect'].median()):+.2f} µg/m³"
         )
         # The placebo spread is the honest yardstick: it is what this method
         # finds in years when nothing happened.
         console.print(
-            f"  placebo spread (median SD) {group['placebo_sd'].median():.2f} µg/m³; "
+            f"  placebo spread (median SD) {as_float(group['placebo_sd'].median()):.2f} µg/m³; "
             f"[bold]{credible.height}[/bold] station(s) clear it by 2 SD"
         )
         if credible.is_empty():
@@ -480,22 +481,22 @@ def analyze_m5(
     if not breaks.is_empty():
         tables["trend_breaks"] = breaks
         for name, group in breaks.group_by("event", maintain_order=True):
-            credible = int(group["credible"].sum())
+            n_credible = as_int(group["credible"].sum())
             # At two SD, roughly 5% of stations clear the bar by chance alone.
             expected = 0.046 * group.height
             console.print(
                 f"\n[bold]{name[0]}[/bold] (trend break) — {group.height} station(s), "
-                f"median slope change {group['delta'].median():+.3f} µg/m³/yr²"
+                f"median slope change {as_float(group['delta'].median()):+.3f} µg/m³/yr²"
             )
             console.print(
-                f"  [bold]{credible}[/bold] station(s) clear 2 SD; "
+                f"  [bold]{n_credible}[/bold] station(s) clear 2 SD; "
                 f"~{expected:.1f} expected by chance at this many stations"
             )
-            if credible <= expected:
+            if n_credible <= expected:
                 console.print("  [yellow]at or below the chance rate — no break detected[/yellow]")
 
-    for name, path in write_causal_report(tables).items():
-        console.print(f"wrote {name}: {path}")
+    for table_name, path in write_causal_report(tables).items():
+        console.print(f"wrote {table_name}: {path}")
 
 
 @analysis_app.command("m3")

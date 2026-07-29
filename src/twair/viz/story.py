@@ -18,6 +18,7 @@ from typing import Any
 import polars as pl
 
 from twair.paths import outputs_dir, processed_dir
+from twair.scalars import as_int, opt_float
 from twair.viz.export import web_data_dir, write_json
 
 log = logging.getLogger(__name__)
@@ -34,7 +35,11 @@ __all__ = [
 # without saying whose limit. WHO tightened its guideline in 2021; Taiwan's
 # standard has not moved since 2020, and the gap between the two is itself one
 # of the more useful things a reader can take away.
-GUIDELINES = {
+# Annotated because the inner dict is genuinely heterogeneous — four float
+# limits beside a nested `source` mapping — and left to infer, mypy widens the
+# values to `object`, which then refuses to be compared against a Polars
+# column. The shape is what the site reads, so it stays as it is.
+GUIDELINES: dict[str, dict[str, Any]] = {
     "PM2.5": {
         "who_2021_annual": 5.0,
         "who_2021_daily": 15.0,
@@ -186,7 +191,7 @@ def balanced_panel_options(annual: pl.DataFrame) -> pl.DataFrame:
             }
         )
 
-    last = int(annual["year"].max())
+    last = as_int(annual["year"].max())
     rows = []
     for start in sorted({int(y) for y in annual["year"].unique()}):
         window = annual.filter(pl.col("year") >= start)
@@ -264,7 +269,7 @@ def national_trend(
     members: list[str] = []
     if start is not None:
         window = annual.filter(pl.col("year") >= start)
-        n_years = int(annual["year"].max()) - start + 1
+        n_years = as_int(annual["year"].max()) - start + 1
         members = sorted(
             window.group_by("station_name")
             .agg(pl.col("year").n_unique().alias("years"))
@@ -886,8 +891,20 @@ def _export_replication(root: Path) -> list[Path]:
     return [write_json(root / "replication.json", {"rows": pl.read_parquet(path).to_dicts()})]
 
 
-def _round(value: float | None, places: int = 2) -> float | None:
-    return None if value is None else round(value, places)
+def _round(value: Any, places: int = 2) -> float | None:
+    """Round a number for the wire, passing null straight through.
+
+    Takes ``Any`` for the same reason :mod:`twair.scalars` does: most callers
+    hand it a Polars aggregate, whose declared type is a union of every value a
+    cell could hold, and narrowing that at 43 call sites would mean 43 casts
+    that assert rather than convert. ``opt_float`` does the conversion for
+    real, here, once.
+
+    Null passes through because a withheld aggregate must reach the browser as
+    null. Rounding it to 0.0 would be the exact failure this project documents.
+    """
+    number = opt_float(value)
+    return None if number is None else round(number, places)
 
 
 def _stations() -> pl.DataFrame:

@@ -19,6 +19,7 @@ import numpy as np
 import polars as pl
 
 from twair.qc.rainfall import usable
+from twair.scalars import as_float
 from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
 
@@ -85,8 +86,8 @@ def diurnal_cycle_lost_to_monthly_means(
     )
 
     # How much of the hourly variance survives monthly averaging.
-    hourly_sd = float(hourly["value"].std())
-    monthly_sd = float(monthly["mean"].std())
+    hourly_sd = as_float(hourly["value"].std())
+    monthly_sd = as_float(monthly["mean"].std())
 
     variance = pl.DataFrame(
         {
@@ -166,8 +167,8 @@ def wind_direction_linearisation(
 
     # A directional effect the linear correlation cannot see: the spread across
     # sectors, expressed against the overall mean.
-    overall = float(paired["PM2.5"].mean())
-    spread = float(by_sector["mean"].max() - by_sector["mean"].min())
+    overall = as_float(paired["PM2.5"].mean())
+    spread = as_float(by_sector["mean"].max()) - as_float(by_sector["mean"].min())
 
     summary = pl.DataFrame(
         {
@@ -288,10 +289,10 @@ def collinearity_instability(
         {
             "statistic": ["mean", "median", "p99", "max"],
             "e": [
-                float(residual.mean()),
-                float(residual.median()),
-                float(residual.quantile(0.99)),
-                float(residual.max()),
+                as_float(residual.mean()),
+                as_float(residual.median()),
+                as_float(residual.quantile(0.99)),
+                as_float(residual.max()),
             ],
         }
     )
@@ -533,7 +534,7 @@ def in_sample_versus_out_of_sample(
 
     rows = []
     for label, subset in (("in_sample", train), ("out_of_sample", test)):
-        prediction = model.predict(subset.select(features).to_numpy())
+        prediction = np.asarray(model.predict(subset.select(features).to_numpy()))
         metrics = evaluate_predictions(subset[TARGET].to_numpy(), prediction)
         rows.append({"evaluated_on": label, **metrics.as_dict()})
 

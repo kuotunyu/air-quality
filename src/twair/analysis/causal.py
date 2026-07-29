@@ -222,10 +222,12 @@ def _fit_and_predict(
     holdout_rmse = float(np.sqrt(np.mean(residual**2)))
 
     model.fit(x, y)
-    return model.predict(predict_on.select(features).to_numpy()), holdout_rmse
+    return np.asarray(model.predict(predict_on.select(features).to_numpy())), holdout_rmse
 
 
-def _block_bootstrap_mean(values: np.ndarray, *, block: int = 7, n_boot: int = 1000, seed: int = 0):
+def _block_bootstrap_mean(
+    values: np.ndarray, *, block: int = 7, n_boot: int = 1000, seed: int = 0
+) -> tuple[float, float]:
     """Percentile interval for a mean, resampling contiguous weeks.
 
     Daily residuals are autocorrelated — a stagnant spell lasts days — so an

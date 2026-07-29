@@ -477,7 +477,7 @@ def monthly_means(series: pl.DataFrame) -> pl.DataFrame:
 def _years_since_start(months: pl.Series) -> np.ndarray:
     """Month starts as a float number of years from the first one."""
     days = months.cast(pl.Date).to_numpy().astype("datetime64[D]").astype("int64").astype(float)
-    return (days - days[0]) / 365.25
+    return np.asarray((days - days[0]) / 365.25)
 
 
 def run_deweather(

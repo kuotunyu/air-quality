@@ -22,6 +22,7 @@ PM10 is no longer allowed to predict its own subset.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from twair.features.met import WIND_FEATURES, add_wind_features
 from twair.features.temporal import TEMPORAL_FEATURES, add_temporal_features
 from twair.models.evaluate import (
     Metrics,
+    Split,
     climatology_baseline,
     evaluate_predictions,
     leave_one_station_out,
@@ -225,8 +227,31 @@ def _fit_predict_gbdt(
     else:
         sample = x_test
     # Last column is the base value, so it is dropped.
-    contributions = model.predict(sample, pred_contrib=True)[:, :-1]
+    contributions = np.asarray(model.predict(sample, pred_contrib=True))[:, :-1]
     return y_test, np.asarray(prediction), np.abs(contributions).mean(axis=0)
+
+
+def _get_splits(
+    frame: pl.DataFrame,
+    split_kind: str,
+    n_splits: int,
+    stations: list[str] | None,
+) -> Iterator[Split]:
+    """Dispatch to the cross-validation scheme named by ``split_kind``.
+
+    Spelled out rather than held in a dict of lambdas, because a lambda in a
+    dict loses its signature and calling it lands as an untyped call in typed
+    context. It must stay a plain function and not become a generator: the
+    ``ValueError`` has to fire when the caller asks for a bad scheme, not when
+    it first iterates.
+    """
+    if split_kind == "rolling":
+        return rolling_origin(frame, n_splits=n_splits)
+    if split_kind == "station":
+        return leave_one_station_out(frame, stations=stations)
+    if split_kind == "year":
+        return leave_one_year_out(frame)
+    raise ValueError(f"unknown split_kind {split_kind!r}")
 
 
 def run_drivers(
@@ -249,18 +274,10 @@ def run_drivers(
     if missing:
         raise KeyError(f"frame lacks features {missing}")
 
-    splitters = {
-        "rolling": lambda f: rolling_origin(f, n_splits=n_splits),
-        "station": lambda f: leave_one_station_out(f, stations=stations),
-        "year": leave_one_year_out,
-    }
-    if split_kind not in splitters:
-        raise ValueError(f"unknown split_kind {split_kind!r}")
-
     result = DriverResult(feature_set=feature_set, model="lightgbm", split_kind=split_kind)
     importances: list[np.ndarray] = []
 
-    for split in splitters[split_kind](frame):
+    for split in _get_splits(frame, split_kind, n_splits, stations):
         truth, prediction, contribution = _fit_predict_gbdt(
             split.train, split.test, features, seed=seed
         )
