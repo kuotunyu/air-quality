@@ -1,0 +1,440 @@
+---
+/**
+ * Chapter 5 — how far ahead this is worth doing.
+ *
+ * The pair to chapter 4. That one measures how small an effect the method can
+ * still see looking backwards; this one measures how far forward it stays
+ * worth anything. Both are chapters about a limit, measured rather than
+ * asserted.
+ *
+ * Two figures, concrete before abstract. The RMSE panel first, because µg/m³
+ * needs no explanation and the whole argument is already visible in it: the
+ * climatology line is flat, and persistence crosses it. Only then the same
+ * data as three scores, which is where the contradiction lives.
+ */
+import forecast from "../../public/data/story/forecast.json";
+import { linear, n, ticks } from "../lib/chart";
+
+const horizons = forecast.horizons as {
+  horizon: number;
+  n: number;
+  splits: number;
+  model_r2: number;
+  skill_persistence: number;
+  skill_persistence_worst: number;
+  skill_climatology: number;
+  skill_climatology_worst: number;
+  splits_not_beating_persistence: number;
+  model_rmse: number;
+  persistence_rmse: number;
+  climatology_rmse: number;
+  per_split: {
+    split: string;
+    skill_persistence: number;
+    skill_climatology: number;
+    model_r2: number;
+  }[];
+}[];
+
+const reading = forecast.reading as { claim: string; detail: string }[];
+const baselines = forecast.baselines as {
+  name: string;
+  label: string;
+  what: string;
+  why: string;
+}[];
+
+// Horizons are spaced evenly rather than by their hour value. They are four
+// chosen questions, not samples of a continuous function, and a linear axis
+// would crowd 1 and 6 into the left margin for no gain.
+const W = 720;
+const H = 300;
+const M = { top: 16, right: 92, bottom: 40, left: 52 };
+const PW = W - M.left - M.right;
+const PH = H - M.top - M.bottom;
+
+const xAt = (index: number) =>
+  horizons.length === 1 ? PW / 2 : (index / (horizons.length - 1)) * PW;
+
+const path = (values: number[], y: (v: number) => number) =>
+  values.map((v, i) => `${i ? "L" : "M"}${n(xAt(i), 2)} ${n(y(v), 2)}`).join(" ");
+
+/**
+ * Push inline series labels apart so they stay readable where lines converge.
+ *
+ * Needed because convergence is the finding. At 48h R² is 0.217 and skill is
+ * 0.243, which put two labels 5px apart at an 11.5px font size — the chart was
+ * illegible in exactly the spot it was drawn to show.
+ */
+function spreadLabels(values: number[], gap = 13): number[] {
+  const order = values.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < order.length; k += 1) {
+    const overlap = order[k - 1].y + gap - order[k].y;
+    if (overlap > 0) order[k].y += overlap;
+  }
+  const out = new Array<number>(values.length);
+  order.forEach(({ y, i }) => (out[i] = y));
+  return out;
+}
+
+// --- Figure 1: error in µg/m³ -------------------------------------------
+const rmseAll = horizons.flatMap((h) => [h.model_rmse, h.persistence_rmse, h.climatology_rmse]);
+const yRmse = linear([0, Math.max(...rmseAll) * 1.12], [PH, 0]);
+const rmseTicks = ticks(0, Math.max(...rmseAll) * 1.12, 4);
+
+const rmseSeries = [
+  { key: "model", label: "模型", colour: "var(--c0)", values: horizons.map((h) => h.model_rmse) },
+  {
+    key: "persistence",
+    label: "persistence",
+    colour: "var(--c5)",
+    values: horizons.map((h) => h.persistence_rmse),
+  },
+  {
+    key: "climatology",
+    label: "climatology",
+    colour: "var(--c3)",
+    values: horizons.map((h) => h.climatology_rmse),
+  },
+];
+
+// --- Figure 2: the same runs, as three scores ---------------------------
+const metricAll = horizons.flatMap((h) => [
+  h.model_r2,
+  h.skill_persistence,
+  h.skill_climatology,
+  ...h.per_split.flatMap((s) => [s.skill_persistence, s.skill_climatology]),
+]);
+const yMetric = linear([Math.min(-0.2, Math.min(...metricAll) - 0.05), 1], [PH, 0]);
+const metricTicks = ticks(Math.min(-0.2, Math.min(...metricAll) - 0.05), 1, 5);
+
+const metricSeries = [
+  {
+    key: "r2",
+    label: "R²",
+    colour: "var(--text-faint)",
+    values: horizons.map((h) => h.model_r2),
+    splits: horizons.map((h) => h.per_split.map((s) => s.model_r2)),
+  },
+  {
+    key: "sp",
+    label: "vs persistence",
+    colour: "var(--c5)",
+    values: horizons.map((h) => h.skill_persistence),
+    splits: horizons.map((h) => h.per_split.map((s) => s.skill_persistence)),
+  },
+  {
+    key: "sc",
+    label: "vs climatology",
+    colour: "var(--c3)",
+    values: horizons.map((h) => h.skill_climatology),
+    splits: horizons.map((h) => h.per_split.map((s) => s.skill_climatology)),
+  },
+];
+
+const rmseLabelY = spreadLabels(rmseSeries.map((s) => yRmse(s.values[s.values.length - 1]) + 3.5));
+const metricLabelY = spreadLabels(
+  metricSeries.map((s) => yMetric(s.values[s.values.length - 1]) + 3.5),
+);
+
+const worst = horizons.find((h) => h.splits_not_beating_persistence > 0);
+const last = horizons[horizons.length - 1];
+const first = horizons[0];
+const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
+---
+
+<section id="forecast" class="page">
+  <p class="eyebrow">第五章</p>
+  <h2>可預測的範圍有多遠</h2>
+
+  <p class="lede">
+    上一章量的是<strong>回頭看</strong>能分辨多小的效應。這一章量的是
+    <strong>往前看</strong>能走多遠還算有用。兩章問的是同一種問題：
+    這個方法在什麼地方停止提供資訊？
+  </p>
+
+  <p>
+    做法是給模型 PM2.5 自己的歷史——落後 1、2、3、6、12、24、48、168 小時的值，
+    滾動平均與最大值，還有變化率——然後問它 h 小時之後會是多少。
+    驗證用 rolling-origin：<strong>過去訓練、未來測試，切點往前走</strong>。
+    隨機切分會讓模型用星期二預測星期一，那是沒有預報員做得到的事。
+    {n(totalRows / 1e6, 2)} 百萬列測試資料，74 站，2015–2025。
+  </p>
+
+  <h3>先看實際誤差，單位是 μg/m³</h3>
+
+  <figure>
+    <div class="chart">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="三種方法的預測誤差隨期距變化">
+        <g transform={`translate(${M.left},${M.top})`}>
+          {
+            rmseTicks.map((t) => (
+              <>
+                <line x1="0" x2={PW} y1={yRmse(t)} y2={yRmse(t)} class="grid" />
+                <text x="-8" y={yRmse(t) + 3.5} class="tick right">
+                  {n(t, 0)}
+                </text>
+              </>
+            ))
+          }
+          {
+            horizons.map((h, i) => (
+              <text x={xAt(i)} y={PH + 24} class="tick">
+                {h.horizon}h
+              </text>
+            ))
+          }
+          {
+            rmseSeries.map((s, si) => (
+              <>
+                <path d={path(s.values, yRmse)} class="line" style={`stroke:${s.colour}`} />
+                {s.values.map((v, i) => (
+                  <circle cx={xAt(i)} cy={yRmse(v)} r="3.4" style={`fill:${s.colour}`}>
+                    <title>
+                      {s.label} @ {horizons[i].horizon}h: {n(v, 2)} μg/m³
+                    </title>
+                  </circle>
+                ))}
+                <text x={PW + 8} y={rmseLabelY[si]} class="key" style={`fill:${s.colour}`}>
+                  {s.label}
+                </text>
+              </>
+            ))
+          }
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      均方根誤差（RMSE），越低越好。<strong>climatology 那條是平的</strong>——
+      它根本不看今天發生什麼事，所以期距對它毫無影響，
+      因此它是這張圖裡唯一固定不動的參考線。
+    </figcaption>
+  </figure>
+
+  <div class="note">
+    <strong>看那個交叉點。</strong>
+    persistence 從 {n(first.persistence_rmse, 2)} 一路爬到 {n(last.persistence_rmse, 2)} μg/m³，
+    在 24 到 48 小時之間<strong>穿過了 climatology</strong>。
+    也就是說到了兩天後，「跟現在一樣」已經比「這站這個月這個小時的平均」更糟。
+    而模型在 48 小時是 {n(last.model_rmse, 2)}，只比 climatology 的
+    {n(last.climatology_rmse, 2)} 好一點點。
+  </div>
+
+  <h3>同一批結果，換成三個分數</h3>
+
+  <p>
+    R² 和 skill 都是無單位的比例，1 是完美、0 是「跟被比較的東西一樣」，
+    所以三個可以畫在同一根軸上。畫在同一根軸上，它們的矛盾就變成一個形狀。
+  </p>
+
+  <figure>
+    <div class="chart">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="R² 與兩種 skill 隨期距的變化方向相反">
+        <g transform={`translate(${M.left},${M.top})`}>
+          {
+            metricTicks.map((t) => (
+              <>
+                <line
+                  x1="0"
+                  x2={PW}
+                  y1={yMetric(t)}
+                  y2={yMetric(t)}
+                  class={Math.abs(t) < 1e-9 ? "zero" : "grid"}
+                />
+                <text x="-8" y={yMetric(t) + 3.5} class="tick right">
+                  {n(t, 1)}
+                </text>
+              </>
+            ))
+          }
+          {
+            horizons.map((h, i) => (
+              <text x={xAt(i)} y={PH + 24} class="tick">
+                {h.horizon}h
+              </text>
+            ))
+          }
+          {
+            metricSeries.map((s, si) => (
+              <>
+                {s.splits.map((values, i) =>
+                  values.map((v) => (
+                    <circle
+                      cx={xAt(i)}
+                      cy={yMetric(v)}
+                      r="2.4"
+                      class="split"
+                      style={`fill:${s.colour}`}
+                    />
+                  )),
+                )}
+                <path d={path(s.values, yMetric)} class="line" style={`stroke:${s.colour}`} />
+                {s.values.map((v, i) => (
+                  <circle cx={xAt(i)} cy={yMetric(v)} r="3.6" style={`fill:${s.colour}`}>
+                    <title>
+                      {s.label} @ {horizons[i].horizon}h: {n(v, 3)}
+                    </title>
+                  </circle>
+                ))}
+                <text x={PW + 8} y={metricLabelY[si]} class="key" style={`fill:${s.colour}`}>
+                  {s.label}
+                </text>
+              </>
+            ))
+          }
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      粗線是四個分割的平均，<strong>小點是每一個分割各自的值</strong>。
+      三條線來自同一批模型、同一批預測。
+    </figcaption>
+  </figure>
+
+  <div class="grid grid-3">
+    {
+      reading.map((r) => (
+        <div class="card">
+          <h3>{r.claim}</h3>
+          <p class="small">{r.detail}</p>
+        </div>
+      ))
+    }
+  </div>
+
+  <h3>兩條基準線，因為任何一條單獨看都會高估模型</h3>
+
+  <div class="grid grid-2">
+    {
+      baselines.map((b) => (
+        <div class="card">
+          <h3>
+            {b.name} <span class="dim">{b.label}</span>
+          </h3>
+          <p class="small">{b.what}</p>
+          <p class="small dim">{b.why}</p>
+        </div>
+      ))
+    }
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>期距</th>
+          <th class="num">R²</th>
+          <th class="num">vs persistence</th>
+          <th class="num">最差分割</th>
+          <th class="num">vs climatology</th>
+          <th class="num">模型 RMSE</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          horizons.map((h) => (
+            <tr>
+              <td>{h.horizon} 小時</td>
+              <td class="num dim">{n(h.model_r2, 3)}</td>
+              <td class="num strong">{n(h.skill_persistence, 3)}</td>
+              <td class={`num ${h.skill_persistence_worst <= 0 ? "worse" : "dim"}`}>
+                {n(h.skill_persistence_worst, 3)}
+              </td>
+              <td class="num">{n(h.skill_climatology, 3)}</td>
+              <td class="num dim">{n(h.model_rmse, 2)}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  {
+    worst && (
+      <div class="note caveat">
+        <strong>那一欄「最差分割」是後來才加的，因為第一版少了它。</strong>
+        程式印出來的摘要是「4/4 期距贏過 persistence」——對四個平均值而言是真的。
+        但 16 個「期距 × 分割」格子裡有一個是
+        <strong>{n(worst.skill_persistence_worst, 3)}</strong>
+        （{worst.horizon} 小時、<code>rolling_1</code>）。rolling_1 是訓練資料最少的分割，
+        因為 rolling-origin 給第一個分割最短的歷史。
+        <br />
+        <br />
+        這跟這一章反覆講的「R² 藏掉一個爛模型」是同一個錯，只是高了一層。
+        所以現在每個平均值旁邊都掛著它最差的分割，而且有測試釘住這件事。
+      </div>
+    )
+  }
+
+  <h3>防洩漏</h3>
+
+  <p class="small">{forecast.leakage_note}</p>
+
+  <p class="small">
+    測試用的序列<strong>值就是自己的小時編號</strong>，所以位移錯方向會表現成一個
+    精確的算術事實，而不是一個「好得可疑」的分數。
+    另外在真實資料上查過一次：沒有任何特徵在超過 30% 的列上等於目標值，
+    相關係數的排序也符合物理預期
+    （lag1 0.932 &gt; mean3 0.908 &gt; max3 0.896 &gt; lag2 0.883），
+    沒有任何一個可疑地接近 1。
+  </p>
+
+  <div class="note caveat">
+    <strong>這是一個作品集裡的模型，不是空品預報。</strong>
+    它只用測站自己的歷史與同時刻的其他測項，沒有數值天氣預報、沒有衛星、
+    沒有境外傳輸的前導資訊——而那些正是官方預報用的東西。
+    這裡量的是「用公開的歷史觀測，靠自己能走多遠」，答案大約是一天。
+  </div>
+</section>
+
+<style>
+  svg {
+    width: 100%;
+    height: auto;
+    min-width: 460px;
+    display: block;
+  }
+  .grid {
+    stroke: var(--line-soft);
+    stroke-width: 1;
+  }
+  .zero {
+    stroke: var(--line);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+  }
+  .line {
+    fill: none;
+    stroke-width: 2.2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .split {
+    opacity: 0.34;
+  }
+  .tick {
+    fill: var(--text-faint);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    text-anchor: middle;
+  }
+  .tick.right {
+    text-anchor: end;
+  }
+  .key {
+    font-size: 11.5px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  .dim {
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+  td.strong {
+    font-weight: 600;
+  }
+  td.worse {
+    color: var(--c5);
+    font-weight: 600;
+  }
+</style>

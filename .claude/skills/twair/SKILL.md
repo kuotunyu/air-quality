@@ -253,6 +253,26 @@ A bare `data/` also matched `web/public/data/` and silently kept the whole
 website export out of git. It is now `/data/`. Check `git check-ignore -v`
 after adding any pattern that names a common directory.
 
+### Chapter components are named by content, never by number
+
+`Chapter3.astro`, `Chapter4.astro`, `Chapter5.astro` was fine until a chapter
+was inserted in the middle: the methodology chapter became chapter 6 while its
+file was still called `Chapter5`. Now they are `ChapterSources`,
+`ChapterDetection`, `ChapterForecast`, `ChapterMethods`, `Explorer`, and the
+number lives only in the page's `.eyebrow` — one place to change.
+
+Inserting a chapter still means renumbering the eyebrows, the `sections` list
+in `Base.astro`, and any cross-reference in prose. `astro check` will not catch
+a wrong number, but a nav entry pointing at a missing `id` shows up as an
+anchor that scrolls nowhere — worth checking in the browser after a reorder.
+
+### Inline series labels collide exactly where the finding is
+
+Chapter 5's whole point is that R² and skill converge at 48h, which put two
+end-of-line labels 5px apart at an 11.5px font. Convergence is what these
+charts are *for*, so the collision is not an edge case. `spreadLabels` pushes
+them to a 13px minimum; any new multi-series chart with inline labels needs it.
+
 ### Astro's parser reads `<=` in a template expression as a fragment
 
 `{items.filter(x => x.v <= max).map(...)}` fails to compile with a confusing

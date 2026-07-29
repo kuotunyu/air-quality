@@ -446,7 +446,136 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     written.extend(_export_deweather(root))
     written.extend(_export_detection_limit(root))
     written.extend(_export_sources(root))
+    written.extend(_export_forecast(root))
     return written
+
+
+def _export_forecast(root: Path) -> list[Path]:
+    """Chapter 8: three metrics on one axis, disagreeing.
+
+    The payload is built so the chart cannot show one baseline alone. R²,
+    skill against persistence and skill against climatology are all on the same
+    scale — 1 is perfect, 0 is no better than the thing compared against — so
+    they belong on one axis, and on one axis the contradiction is a shape
+    rather than a paragraph: R² falling, skill-vs-persistence rising,
+    skill-vs-climatology collapsing.
+
+    Every split ships too, not just the mean over them. At six hours the mean
+    is +0.190 and one split is -0.111, and a chart drawn from means alone would
+    make the same mistake the module's own summary line made.
+    """
+    source = outputs_dir("m9_forecast")
+    scores_path = source / "scores.parquet"
+    if not scores_path.exists():
+        log.warning("no M9 output — run `twair analyze m9`")
+        return []
+
+    from twair.models.forecast import summarise_scores
+
+    # Derived from the splits rather than read from by_horizon.parquet: the
+    # aggregate is a view of the scores, and re-deriving it means an older
+    # artefact cannot ship a summary that predates the columns it should carry.
+    scores = pl.read_parquet(scores_path)
+    by_horizon = summarise_scores(scores)
+
+    horizons = []
+    for row in by_horizon.iter_rows(named=True):
+        horizon = int(row["horizon"])
+        splits = scores.filter(pl.col("horizon") == horizon).sort("split")
+        horizons.append(
+            {
+                "horizon": horizon,
+                "n": int(row["n"]),
+                "splits": int(row["splits"]),
+                "model_r2": _round(row["model_r2"], 3),
+                "skill_persistence": _round(row["skill_vs_persistence"], 3),
+                "skill_persistence_worst": _round(row["skill_worst_split"], 3),
+                "skill_climatology": _round(row["skill_vs_climatology"], 3),
+                "skill_climatology_worst": _round(row["skill_vs_climatology_worst"], 3),
+                "splits_not_beating_persistence": int(row["splits_not_beating_persistence"]),
+                "model_rmse": _round(row["model_rmse"], 2),
+                "persistence_rmse": _round(row["persistence_rmse"], 2),
+                "climatology_rmse": _round(row["climatology_rmse"], 2),
+                "per_split": [
+                    {
+                        "split": s["split"],
+                        "skill_persistence": _round(s["skill_vs_persistence"], 3),
+                        "skill_climatology": _round(s["skill_vs_climatology"], 3),
+                        "model_r2": _round(s["model_r2"], 3),
+                    }
+                    for s in splits.iter_rows(named=True)
+                ],
+            }
+        )
+
+    return [
+        write_json(
+            root / "forecast.json",
+            {
+                "period": [2015, 2025],
+                "target": "PM2.5",
+                "validation": "rolling-origin：過去訓練、未來測試，切點往前走",
+                "skill_formula": "skill = 1 − MSE(模型) ÷ MSE(基準線)",
+                "baselines": [
+                    {
+                        "name": "persistence",
+                        "label": "「跟現在一樣」",
+                        "what": "把此刻的濃度直接當成 h 小時後的預測",
+                        "why": (
+                            "Phase 2 量到它的 R² 是 0.900，勝過所有解釋性模型的 0.524，"
+                            "因為它用了 PM2.5 自己的前一個值。它是要超越的門檻，不是比較對象。"
+                        ),
+                    },
+                    {
+                        "name": "climatology",
+                        "label": "「這站這時候的平均」",
+                        "what": "訓練期間內，同一測站、同月份、同小時的平均值",
+                        "why": (
+                            "它完全不看今天發生什麼事。模型如果贏不過它，"
+                            "代表模型學到的只是季節與日夜循環。"
+                        ),
+                    },
+                ],
+                "reading": [
+                    {
+                        "claim": "R² 掉四倍的同時，skill 是往上的",
+                        "detail": (
+                            "R² 衡量的是「這個目標本來多好預測」，而 PM2.5 一小時後"
+                            "任何人都很好預測——包括一條說「跟現在一樣」的規則。"
+                            "skill 問的是不同的問題：模型有沒有加到東西。"
+                            "答案隨距離變好，因為 persistence 衰退得比模型快。"
+                        ),
+                    },
+                    {
+                        "claim": "只看一條基準線，一定會高估模型",
+                        "detail": (
+                            "vs persistence 一路漲到 48 小時，單看這條會讀成「愈遠愈好」。"
+                            "但 vs climatology 在同一段從 +0.84 崩到 +0.09——"
+                            "兩天後模型已經幾乎退化成「這站、這個月、這個小時的平均」。"
+                            "在 persistence 已經輸給長期平均的地方贏過 persistence，不算成就。"
+                            "實用範圍大約到 24 小時。"
+                        ),
+                    },
+                    {
+                        "claim": "平均值會藏掉一個輸掉的分割",
+                        "detail": (
+                            "16 個「期距 × 分割」格子裡有一個是 −0.111（6 小時、rolling_1），"
+                            "而四個期距的平均全是正的。rolling_1 是訓練資料最少的分割。"
+                            "這跟「R² 藏掉一個爛模型」是同一個錯，只是高了一層——"
+                            "所以每個平均值旁邊都畫著它最差的分割。"
+                        ),
+                    },
+                ],
+                "leakage_note": (
+                    "lag_k 在第 t 列存 t−k+1 的值，target 往反方向移一個期距。"
+                    "兩個位移方向相反，那就是全部的安全性質。"
+                    "lag 跑在每站完整的逐時索引上，所以三天停機後那一小時拿到 null，"
+                    "不是被標成「一小時前」的三天前資料。"
+                ),
+                "horizons": horizons,
+            },
+        )
+    ]
 
 
 def _export_sources(root: Path) -> list[Path]:
