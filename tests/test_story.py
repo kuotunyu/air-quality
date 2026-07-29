@@ -256,3 +256,77 @@ class TestStationCards:
         daily(_daily_frame(_year_of_days("三重", 2020, 20.0, days=30)))
 
         assert story.station_cards("PM2.5") == []
+
+
+class TestTheImputationPayload:
+    """Pitfall 07's payload carries an editorial choice that a sort would undo.
+
+    Gap-length buckets are physical: 1h, 2-3h, 4-12h, 13-48h, >48h. Sorted as
+    strings, ">48h" comes first and "13-48h" lands between "1h" and "2-3h",
+    which turns the chart's whole shape — an error that does or does not grow
+    with gap length — into noise. The order therefore ships in the payload
+    rather than being left to the front end to guess.
+    """
+
+    def _payload(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        import json
+
+        source = tmp_path / "m11_imputation"
+        source.mkdir()
+        pl.DataFrame(
+            {
+                "gap_bucket": [">48h", "1h", "2-3h"],
+                "gaps": [453, 40406, 10214],
+                "hours": [84972, 40406, 23053],
+                "share_of_gaps": [0.0081, 0.7251, 0.1833],
+                "share_of_missing_hours": [0.4345, 0.2066, 0.1179],
+                "stations": [78, 78, 78],
+                "period": ["2010-2017"] * 3,
+            }
+        ).write_parquet(source / "gap_distribution.parquet")
+        pl.DataFrame(
+            {
+                "strategy": ["neighbor", "neighbor", "neighbor"],
+                "gap_bucket": ["all", ">48h", "1h"],
+                "hidden": [40679, 40679, 40679],
+                "recovered": [28367, 1823, 11312],
+                "recovery_rate": [0.6973, None, None],
+                "mae": [7.41, 8.96, 7.31],
+                "rmse": [10.6, 12.34, 10.39],
+                "bias": [-0.16, None, None],
+                "n": [28367, 1823, 11312],
+                "stations": [12, 12, 12],
+            }
+        ).write_parquet(source / "reconstruction.parquet")
+
+        monkeypatch.setattr(story, "outputs_dir", lambda name: tmp_path / name)
+        written = story._export_imputation(tmp_path)
+        assert written
+        return json.loads(written[0].read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+    def test_the_gap_buckets_ship_in_physical_order(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert payload["buckets"] == ["1h", "2-3h", "4-12h", "13-48h", ">48h"]
+        assert [row["gap_bucket"] for row in payload["distribution"]] == ["1h", "2-3h", ">48h"]
+
+    def test_counts_are_integers_not_rounded_floats(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A station count written as 78.0 reads as an estimate."""
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert payload["stations_measured"] == 78
+        assert isinstance(payload["stations_measured"], int)
+        assert isinstance(payload["hidden"], int)
+
+    def test_the_withheld_number_is_named_rather_than_omitted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A reader who does not find the downstream R² should be told it was
+        attempted, not left to assume nobody looked."""
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert "downstream_r2" in payload["not_reported"]

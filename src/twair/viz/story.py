@@ -391,7 +391,103 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     written.extend(_export_sources(root))
     written.extend(_export_forecast(root))
     written.extend(_export_health(root))
+    written.extend(_export_imputation(root))
     return written
+
+
+def _export_imputation(root: Path) -> list[Path]:
+    """Chapter 7's seventh pitfall: what the gap-filling sentence cost.
+
+    Copied from the M11 tables for the same reason the other six are: the
+    chapter and the report have to show the same numbers, and reading one file
+    is the only way to guarantee it.
+
+    Two editorial choices are written into the payload beside the numbers.
+    ``buckets`` fixes the gap-length order — it is physical, and sorting it
+    alphabetically would put ">48h" first and destroy the shape the chart
+    exists to show. And ``not_reported`` says what was measured and withheld,
+    because a reader who does not find "did it change the conclusion" here
+    should be told it was attempted rather than left to assume it was not.
+    """
+    source = outputs_dir("m11_imputation")
+    distribution_path = source / "gap_distribution.parquet"
+    reconstruction_path = source / "reconstruction.parquet"
+    if not distribution_path.exists() or not reconstruction_path.exists():
+        log.warning("no M11 output — run `twair analyze m11` before publishing pitfall 07")
+        return []
+
+    buckets = ["1h", "2-3h", "4-12h", "13-48h", ">48h"]
+    order = {name: i for i, name in enumerate(buckets)}
+
+    distribution = pl.read_parquet(distribution_path)
+    scores = pl.read_parquet(reconstruction_path)
+    pooled = scores.filter(pl.col("gap_bucket") == "all")
+    by_gap = scores.filter(pl.col("gap_bucket") != "all")
+
+    payload = {
+        "period": str(distribution["period"][0]) if "period" in distribution.columns else None,
+        # Counts, not measurements: `_round(x, 0)` would ship 78.0, and a
+        # station count with a decimal point in it reads as an estimate.
+        "stations_measured": as_int(distribution["stations"][0]),
+        "stations_compared": as_int(pooled["stations"][0]),
+        "hidden": as_int(pooled["hidden"][0]),
+        "buckets": buckets,
+        "distribution": sorted(
+            (
+                {
+                    "gap_bucket": row["gap_bucket"],
+                    "gaps": row["gaps"],
+                    "hours": row["hours"],
+                    "share_of_gaps": _round(row["share_of_gaps"], 4),
+                    "share_of_missing_hours": _round(row["share_of_missing_hours"], 4),
+                }
+                for row in distribution.iter_rows(named=True)
+            ),
+            key=lambda r: order.get(str(r["gap_bucket"]), 99),
+        ),
+        "pooled": [
+            {
+                "strategy": row["strategy"],
+                "recovered": row["recovered"],
+                "recovery_rate": _round(row["recovery_rate"], 4),
+                "mae": _round(row["mae"], 2),
+                "rmse": _round(row["rmse"], 2),
+                "bias": _round(row["bias"], 3),
+            }
+            for row in pooled.iter_rows(named=True)
+        ],
+        "by_gap": sorted(
+            (
+                {
+                    "strategy": row["strategy"],
+                    "gap_bucket": row["gap_bucket"],
+                    "n": row["n"],
+                    "mae": _round(row["mae"], 2),
+                    "rmse": _round(row["rmse"], 2),
+                }
+                for row in by_gap.iter_rows(named=True)
+            ),
+            key=lambda r: (str(r["strategy"]), order.get(str(r["gap_bucket"]), 99)),
+        ),
+        "method": {
+            "hidden_runs_drawn_from": "the gap-length distribution measured in the same data",
+            "why": (
+                "Hiding isolated cells would give interpolation a series of one-hour gaps "
+                "it cannot fail, and the table would then say interpolation is excellent."
+            ),
+            "interpolate_max_gap_hours": 3,
+            "neighbour_max_distance_km": 30,
+            "neighbour_min_correlation": 0.7,
+        },
+        "not_reported": {
+            "downstream_r2": (
+                "Measured and withheld. Filling only changes rows the baseline could not "
+                "use, so each strategy ends up scored on a different test set. A "
+                "confounded number is worse than no number."
+            )
+        },
+    }
+    return [write_json(root / "imputation.json", payload)]
 
 
 def _export_health(root: Path) -> list[Path]:

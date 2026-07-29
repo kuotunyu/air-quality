@@ -7,12 +7,13 @@
  * none of its figures is reproduced — every chart here is recomputed from the
  * raw data. See docs/legal.md.
  *
- * Every number on this page comes from `story/pitfalls.json`, which is copied
- * verbatim from the M3 evidence tables. Nothing is retyped, so the chapter
- * cannot drift away from the analysis it describes.
+ * Every number on this page comes from `story/pitfalls.json` (pitfalls 01-06)
+ * or `story/imputation.json` (07), both copied verbatim from the M3 and M11
+ * evidence tables. Nothing is retyped, so the chapter cannot drift away from
+ * the analysis it describes.
  */
-import { pitfallTables, replicationRows } from "../lib/data";
-import { linear, linePath, ticks, padded, n } from "../lib/chart";
+import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
+import { linear, linePath, ticks, padded, n, spreadLabels } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -59,6 +60,46 @@ const validation = t("validation_in_vs_out_of_sample");
 const inSample = validation.find((r) => r.evaluated_on === "in_sample");
 const outSample = validation.find((r) => r.evaluated_on === "out_of_sample");
 const optimism = validation.find((r) => r.evaluated_on === "optimism_r2");
+
+// --- 7. the one sentence about missing values -------------------------------
+const gapBuckets = imputationEvidence.buckets;
+const pooledBy = Object.fromEntries(imputationEvidence.pooled.map((r) => [r.strategy, r]));
+const gapDist = Object.fromEntries(imputationEvidence.distribution.map((r) => [r.gap_bucket, r]));
+
+// A series is null where its strategy declined to answer, and `linePath`
+// breaks at nulls — so interpolation's line simply stops at its 3-hour limit
+// rather than being drawn flat across gaps it never touched.
+const GAP_SERIES = [
+  { key: "interpolate", label: "線性內插", colour: "var(--c3)" },
+  { key: "iterative", label: "多變量疊代", colour: "var(--c2)" },
+  { key: "neighbor", label: "鄰近測站（當年做法）", colour: "var(--c1)" },
+].map((series) => {
+  const values = gapBuckets.map(
+    (bucket) =>
+      imputationEvidence.by_gap.find(
+        (row) => row.strategy === series.key && row.gap_bucket === bucket,
+      )?.mae ?? null,
+  );
+  let lastIndex = -1;
+  values.forEach((value, index) => {
+    if (value != null) lastIndex = index;
+  });
+  return { ...series, values, lastIndex, lastValue: values[lastIndex] ?? null };
+});
+
+const gw = 700;
+const gh = 268;
+const gm = { top: 16, right: 150, bottom: 34, left: 48 };
+const gpw = gw - gm.left - gm.right;
+const gph = gh - gm.top - gm.bottom;
+const gapValues = GAP_SERIES.flatMap((s) => s.values).filter((v): v is number => v != null);
+const gDomain = padded(gapValues, { zero: true });
+const gx = (index: number) => (gpw / (gapBuckets.length - 1)) * index;
+const gy = linear(gDomain, [gph, 0]);
+const gTicks = ticks(gDomain[0], gDomain[1], 4);
+// Two of the three end within a microgram of each other; inline labels that
+// close need spreading, the same as chapters 5 and 6.
+const gLabelY = spreadLabels(GAP_SERIES.map((s) => gy(s.lastValue ?? gDomain[0])));
 
 // The replication table, filtered to the comparisons worth showing.
 const keyCoefficients = replicationRows.filter(
@@ -513,6 +554,156 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
   </article>
 
+  <!-- ─── 錯誤七 ─── -->
+  <article class="mistake">
+    <h3><span class="num">07</span> 用一句話處理掉所有缺漏值</h3>
+
+    <p>
+      當年的品管只有一句：<strong>「將有遺漏值之資料以鄰近測站之資料代替」</strong>。
+      沒有數量、沒有誤差估計、沒有敏感度分析，也沒有說哪一站借給了哪一站。
+      批評這句話很容易，所以這裡改成把它<strong>標上價格</strong>——
+      同樣的做法實作出來，跟另外三種並排跑在同一批資料上。
+    </p>
+
+    <div class="note">
+      <strong>先問「缺漏長什麼形狀」，因為它決定了一切。</strong>
+      {imputationEvidence.stations_measured} 個測站、{imputationEvidence.period} 年：
+      單小時的缺口佔全部缺口的
+      <strong>{n(gapDist["1h"].share_of_gaps * 100, 1)}%</strong>，
+      但只佔缺失時數的 {n(gapDist["1h"].share_of_missing_hours * 100, 1)}%；
+      超過 48 小時的缺口只有 {gapDist[">48h"].gaps} 次（佔
+      {n(gapDist[">48h"].share_of_gaps * 100, 1)}%），
+      卻佔了缺失時數的 <strong>{n(gapDist[">48h"].share_of_missing_hours * 100, 1)}%</strong>。
+      「缺了多少」有兩個答案而且方向相反——所以一個不附缺口長度分布的填補率，等於沒有講。
+    </div>
+
+    <figure>
+      <div class="chart">
+        <svg viewBox={`0 0 ${gw} ${gh}`} role="img" aria-label="各填補策略的重建誤差隨缺口長度的變化">
+          <g transform={`translate(${gm.left},${gm.top})`}>
+            {
+              gTicks.map((tick) => (
+                <g>
+                  <line x1="0" x2={gpw} y1={gy(tick)} y2={gy(tick)} class="gridline" />
+                  <text x="-8" y={gy(tick)} class="tick tick-y">
+                    {n(tick, 0)}
+                  </text>
+                </g>
+              ))
+            }
+            {
+              gapBuckets.map((bucket, index) => (
+                <text x={gx(index)} y={gph + 20} class="tick tick-x">
+                  {bucket}
+                </text>
+              ))
+            }
+            {/* Where interpolation stops answering, drawn so the break in its
+                line reads as a decision rather than as missing data. */}
+            <line
+              x1={gx(1.5)}
+              x2={gx(1.5)}
+              y1="0"
+              y2={gph}
+              stroke="var(--text-faint)"
+              stroke-width="1.5"
+              stroke-dasharray="4 4"
+            />
+            <text x={gx(1.5) + 6} y="12" class="guide-label" style="text-anchor:start">
+              內插的上限：3 小時
+            </text>
+            {
+              GAP_SERIES.map((series) => (
+                <path
+                  d={linePath(series.values, (i) => gx(i), (v) => gy(v))}
+                  fill="none"
+                  stroke={series.colour}
+                  stroke-width="2.5"
+                  stroke-linejoin="round"
+                  stroke-linecap="round"
+                />
+              ))
+            }
+            {
+              GAP_SERIES.map((series) =>
+                series.values.map((value, index) =>
+                  value == null ? null : (
+                    <circle cx={gx(index)} cy={gy(value)} r="3" fill={series.colour} />
+                  ),
+                ),
+              )
+            }
+            {
+              GAP_SERIES.map((series, index) => (
+                <text
+                  x={gx(series.lastIndex) + 10}
+                  y={gLabelY[index]}
+                  class="series-label"
+                  style={`fill:${series.colour}`}
+                >
+                  {series.label}
+                </text>
+              ))
+            }
+          </g>
+        </svg>
+      </div>
+      <figcaption>
+        平均絕對誤差（μg/m³），依被隱藏的缺口長度分。做法是把
+        {imputationEvidence.hidden.toLocaleString()} 筆<strong>真的存在</strong>的讀數藏起來，
+        叫每個策略猜回來，再跟實際值比對。
+        隱藏的洞是<strong>成串的</strong>，長度抽自這批資料自己量到的缺口分布——
+        隨機遮蔽單一格會把每個洞都變成 1 小時，而那正是線性內插不可能失敗的情況。
+      </figcaption>
+    </figure>
+
+    <div class="compare">
+      <div class="card">
+        <span class="tag good">線性內插</span>
+        <span class="stat-value">{n(pooledBy.interpolate?.mae as number, 2)}</span>
+        <span class="stat-label">μg/m³ 平均絕對誤差</span>
+        <span class="stat-note">
+          只答 {n((pooledBy.interpolate?.recovery_rate as number) * 100, 0)}%，其餘拒答
+        </span>
+      </div>
+      <div class="arrow" aria-hidden="true">vs</div>
+      <div class="card">
+        <span class="tag bad">當年的做法</span>
+        <span class="stat-value">{n(pooledBy.neighbor?.mae as number, 2)}</span>
+        <span class="stat-label">μg/m³ 平均絕對誤差</span>
+        <span class="stat-note">
+          答了 {n((pooledBy.neighbor?.recovery_rate as number) * 100, 0)}%
+        </span>
+      </div>
+    </div>
+
+    <div class="note caveat">
+      <strong>兩件只有分桶才看得到的事。</strong>
+      第一，在<strong>完全相同</strong>的單小時缺口上，內插的誤差是
+      {n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
+      {n(GAP_SERIES[2].values[0] as number, 2)}——
+      最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
+      從 30 公里外借一個值，比把前後兩小時連成一條直線還差。
+      <br /><br />
+      第二，看那條紅線有多平。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
+      鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
+      {n(GAP_SERIES[2].values[4] as number, 2)}。
+      <strong>這看起來像穩健，其實正好相反</strong>——它代表這個方法不知道問題有多難：
+      它會用同樣的自信填一次三週停機和一個一小時缺口，
+      而輸出裡沒有任何欄位區分這兩者。內插的行為相反，誤差隨缺口成長，然後它<strong>停下來</strong>。
+    </div>
+
+    <div class="note">
+      <strong>有一個數字被算出來、然後被刪掉了。</strong>
+      「換一種填補法，最後的結論會不會變？」在四種填補下重跑同一個模型，
+      會得到四個不同的 R²，看起來可以直接讀——不能。
+      填補唯一改變的是<strong>不填就用不了的那些列</strong>，
+      所以每個策略是在不同的測試集上被評分的。
+      要問得成立，得在策略之間固定評分集合、只讓訓練集合變動。
+      <strong>一個有混淆的數字比沒有數字更糟</strong>，所以這裡沒有那個數字。
+    </div>
+  </article>
+
   <!-- ─── 誠實的收尾 ─── -->
   <article class="mistake epilogue">
     <h3>兩件我原本以為是錯的，結果不是</h3>
@@ -696,6 +887,11 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     fill: var(--text-faint);
     font-size: 10.5px;
     text-anchor: end;
+  }
+  .series-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    dominant-baseline: middle;
   }
   svg {
     width: 100%;

@@ -15,6 +15,7 @@ import trendCounty from "../../public/data/story/trend-county.json";
 import stationCards from "../../public/data/story/station-cards.json";
 import pitfalls from "../../public/data/story/pitfalls.json";
 import replication from "../../public/data/story/replication.json";
+import imputation from "../../public/data/story/imputation.json";
 
 export interface Station {
   station_name: string;
@@ -100,6 +101,42 @@ export const cards = stationCards.cards as StationCard[];
 export const guidelines = stationCards.guidelines as Record<string, number | object>;
 export const cigaretteCaveat = stationCards.cigarette_caveat as string;
 export const pitfallTables = pitfalls.tables as Record<string, Record<string, unknown>[]>;
+/** Pitfall 07: what the 2018 project's gap-filling sentence cost. */
+export interface GapScore {
+  strategy: string;
+  gap_bucket: string;
+  n: number;
+  mae: number | null;
+  rmse: number | null;
+}
+
+export const imputationEvidence = imputation as {
+  period: string;
+  stations_measured: number;
+  stations_compared: number;
+  hidden: number;
+  /** Physical order, not alphabetical — ">48h" sorts first as a string. */
+  buckets: string[];
+  distribution: {
+    gap_bucket: string;
+    gaps: number;
+    hours: number;
+    share_of_gaps: number;
+    share_of_missing_hours: number;
+  }[];
+  pooled: {
+    strategy: string;
+    recovered: number;
+    recovery_rate: number | null;
+    mae: number | null;
+    rmse: number | null;
+    bias: number | null;
+  }[];
+  by_gap: GapScore[];
+  method: Record<string, unknown>;
+  not_reported: Record<string, string>;
+};
+
 export const replicationRows = replication.rows as {
   kind: string;
   item: string;

@@ -426,6 +426,21 @@ two adjacent hours.
 tell how hard the problem is, so it fills a three-week outage as confidently as
 a one-hour one and says nothing about which is which.
 
+### Chapter 7 has seven pitfalls, and the seventh comes from a different module
+
+Pitfalls 01-06 read `story/pitfalls.json` (M3); 07 reads `story/imputation.json`
+(M11). Adding one meant a second payload rather than extending the first,
+because the two analyses have different shapes and forcing them into one table
+would have meant reshaping the M3 evidence to fit.
+
+Its chart relies on `linePath` breaking at nulls: interpolation's series is null
+past its 3-hour limit, so the line simply stops, and the break *is* the finding
+rather than a rendering gap.
+
+**The gap-length bucket order ships in the payload.** Sorted as strings, ">48h"
+comes first and "13-48h" lands between "1h" and "2-3h" — which destroys the only
+thing the chart is for. Pinned by `test_the_gap_buckets_ship_in_physical_order`.
+
 ### A fill rate without the gap-length distribution says nothing
 
 72.5% of gaps are one hour, but those are only 20.7% of missing hours; 0.8% of
