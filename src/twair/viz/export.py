@@ -360,8 +360,26 @@ def export_meta(destination: Path | None = None) -> Path:
             "Aggregates below the coverage threshold carry a null mean and a non-zero "
             "count. That is a deliberate refusal to average, not a missing file."
         ),
+        # The newest observation the export was built from, which is not the
+        # same as when the export ran and is the question a reader actually
+        # has. It is also the only way anything without a copy of the store can
+        # tell how far behind upstream this site is — see `twair freshness`,
+        # which runs in CI where the 341M-row store does not exist.
+        "data_through": _data_through(),
     }
     return write_json(root / "meta.json", payload)
+
+
+def _data_through() -> str | None:
+    """Timestamp of the newest observation in the store, as ISO 8601."""
+    from twair.store.writer import scan_observations
+
+    try:
+        newest = scan_observations().select(pl.col("ts_local").max()).collect().item()
+    except Exception as exc:
+        log.warning("could not determine data_through: %s", exc)
+        return None
+    return None if newest is None else str(newest)
 
 
 def write_manifest(destination: Path | None = None) -> Path:

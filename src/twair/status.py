@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from twair.freshness import FreshnessReport, read_data_through
 from twair.paths import REPO_ROOT, WEB_DIR, outputs_dir, processed_dir
 
 __all__ = [
@@ -119,6 +120,17 @@ class Status:
     """Output directories with no entry in :data:`MODULES` — a new module that
     nobody wrote down, which is the failure this whole module is about."""
 
+    freshness: FreshnessReport | None = None
+    """How far the export is behind *upstream*, one link further out than the
+    chain above. Optional and last so that constructing a Status without it
+    stays valid, and so ``None`` reads as "not measured" rather than "fine".
+
+    Only ever built from :func:`~twair.freshness.read_data_through`, which
+    reads the same committed ``meta.json`` the export state already opens.
+    ``check_freshness`` is the online one and must not be called from here: it
+    has a 30-second timeout, and a `status` that can hang for half a minute on
+    a plane stops being the command you run without thinking about it."""
+
     @property
     def never_run(self) -> tuple[Artefact, ...]:
         return tuple(a for a in self.artefacts if not a.exists)
@@ -137,6 +149,12 @@ class Status:
     def next_steps(self) -> list[str]:
         """Commands the measured state implies, each with the reason attached."""
         steps: list[str] = []
+        # First, because ingest is upstream of everything else in the chain:
+        # re-running an analysis over a store that is missing a year just
+        # produces a fresh answer to a stale question.
+        if self.freshness is not None and self.freshness.is_stale:
+            years = ", ".join(str(y) for y in self.freshness.missing_years)
+            steps.append(f"twair ingest airtw && twair build  # {years} published upstream")
         for artefact in self.never_run:
             steps.append(
                 f"{artefact.module.reproduce}  # {artefact.module.directory} never produced"
@@ -233,6 +251,14 @@ def collect_status(*, count_rows: bool = True) -> Status:
         artefacts=tuple(artefacts),
         export=_export_state(),
         undeclared=undeclared,
+        # `published_at=None` on purpose: this is the offline half. Filling it
+        # in would mean an HTTP request, and `twair freshness` is the command
+        # that makes one.
+        freshness=FreshnessReport(
+            data_through=read_data_through(),
+            published_at=None,
+            checked_at=datetime.now(tz=UTC),
+        ),
     )
 
 
@@ -284,6 +310,25 @@ def render(status: Status) -> list[str]:
         lines.append(f"  {export.files} files, {_mb(export.bytes)}")
         for artefact in status.stale_export:
             lines.append(f"  STALE: {artefact.module.directory} is newer than this export")
+
+    lines.append("")
+    lines.append("UPSTREAM")
+    freshness = status.freshness
+    # Deliberately not `freshness.summary()`: with no `published_at` it ends in
+    # "upstream did not answer", which is true of every local run and reads
+    # like a failure. A line people learn to ignore is worse than no line.
+    if freshness is None:
+        lines.append("  not measured")
+    elif freshness.is_unknown:
+        lines.append("  the export does not say what it covers — run: twair export web")
+    else:
+        lines.append(
+            f"  data through {freshness.data_through:%Y-%m-%d %H:%M}, "
+            f"archives expected through {freshness.expected_year}"
+        )
+        if freshness.is_stale:
+            years = ", ".join(str(y) for y in freshness.missing_years)
+            lines.append(f"  STALE: {years} should be published upstream by now")
 
     steps = status.next_steps()
     lines.append("")

@@ -656,6 +656,36 @@ def export_space(
     )
 
 
+@app.command("freshness")
+def freshness(
+    fail_if_stale: bool = typer.Option(
+        False,
+        "--fail-if-stale",
+        help="Exit 1 unless the export is demonstrably current: a completed year is "
+        "missing, or meta.json cannot say. Distance from the live feed is context, "
+        "never a failure — the archives are annual.",
+    ),
+) -> None:
+    """How far behind upstream the published data is.
+
+    Reads the committed meta.json rather than the store, so it works in a
+    checkout with no data — which is what lets it run in CI. Refreshing is
+    still a local step; this only says when one is due.
+    """
+    from twair.freshness import check_freshness
+
+    report = check_freshness()
+
+    # Green has to mean "measured, and current". An export that cannot say how
+    # current it is has not been measured, so it does not get the same colour
+    # as one that has — see FreshnessReport.is_unknown.
+    trustworthy = not (report.is_unknown or report.is_stale)
+    console.print(f"[{'green' if trustworthy else 'yellow'}]{report.summary()}[/]")
+
+    if fail_if_stale and not trustworthy:
+        raise typer.Exit(code=1)
+
+
 @app.command("summary")
 def summary() -> None:
     """Row counts per year in the canonical store."""

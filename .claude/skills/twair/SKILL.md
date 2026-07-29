@@ -406,10 +406,75 @@ makes Polars report per-file totals as global. Derive the year from `ts_local`.
 Use `--patient` (60/180/420/900s backoff). Drive returns an HTML interstitial
 rather than an error status, so downloads are verified by magic bytes.
 
+### A credential in a URL leaks by two routes, not one
+
+`net.quiet_http` was written after httpx logged a real CWA key at INFO. Its
+docstring asks the next module that needs it to use it; `freshness.py` was that
+module and rediscovered the problem instead — the key reached the terminal on
+its first real run.
+
+The second route is the one that is easy to miss. `httpx.HTTPStatusError`
+carries the full request URL **in its own message**, so
+
+```python
+except httpx.HTTPError as exc:
+    log.warning("failed: %s", exc)     # ❌ leaks past the logger you silenced
+```
+
+writes the key even inside `quiet_http()`. Log the status code, or the
+exception *type*, never the exception. Both routes are pinned by
+`TestTheKeyNeverReachesTheLog`.
+
+**Any new call that puts a secret in a query parameter needs both halves.**
+
+### Month arithmetic wants a zero-based index
+
+`freshness.expected_year` computed `year * 12 + month`, which counts December
+of year Y as "12 months elapsed" when it is the month the year ends *in*. Every
+threshold arrived a month early. Use `(month - 1)`.
+
+The parametrised case that catches it (2026-06-30) was in the test file from
+the start and was failing when the work arrived — worth remembering that a WIP
+can look finished and still be red. It also had 4 mypy errors.
+
+### Staleness is a property of the calendar, not of the diff
+
+`twair freshness` is deliberately **not** a step in `ci.yml`. The same commit is
+fresh in June and stale in July, so in the PR gate it would eventually turn
+every pull request red for a condition no pull request can fix — clearing it
+means hours of local ingest against 341M rows. The cheapest way to merge would
+become deleting the check, which is the failure `AGENTS.md` names.
+
+It lives in `.github/workflows/freshness.yml`, weekly. Not monthly: GitHub
+disables scheduled workflows after 60 days of repository inactivity, and this
+repo *is* inactive between refreshes, so a green run in the last seven days is
+the only cheap evidence the check is still switched on.
+
+Two things there are load-bearing and look like noise: `shell: bash` is what
+turns on `pipefail` (without it the `tee` swallows twair's exit code and the job
+is green forever), and `uv run --no-dev` must match the `uv sync --no-dev` above
+it (a bare `uv run` re-syncs the default groups and reinstalls pytest and mypy).
+
+The verdict is **fully offline** — `missing_years` is `meta.json` plus the clock
+— so a missing `MOENV_API_KEY` or an MOENV outage cannot change pass/fail. That
+is what makes a cron job safe to fail on. Never gate the job on the secret.
+
+### "Cannot answer" is a third state, and it is not "fine"
+
+`FreshnessReport.is_unknown` is separate from `is_stale` because
+`export._data_through()` catches a bare `Exception` and returns `None`: an
+export can lose the field without anything failing. Reported as fresh, the
+weekly job would stay green forever while measuring nothing. Both states fail
+`--fail-if-stale`; only `is_stale` names a year to go and fetch.
+
+Same shape as the two nulls in the aggregates. When absence can happen for two
+different reasons, the two reasons have to stay distinguishable.
+
 ## Commands
 
 ```bash
 uv run twair status          # where everything stands on disk; start here
+uv run twair freshness       # has upstream published a year we have not ingested?
 uv run twair doctor          # which credentials are configured
 uv run twair probe sources   # re-resolve download links (they rotate)
 uv run twair ingest airtw    # download archives; --years 2010:2017 --patient
@@ -631,6 +696,14 @@ modules have produced outputs and when, whether the web export is older than
 something it derives from, and the commands that follow from all of that. The
 chain it checks is `store → outputs → export`; a stage is stale when anything
 upstream is newer.
+
+Since the freshness work it also prints an UPSTREAM block — one link further
+out than the chain, answering "has MOENV published a year we have not
+ingested". **Only the offline half is wired in**: it builds a `FreshnessReport`
+from `read_data_through` alone and never calls `check_freshness`, which has a
+30-second timeout. A `status` that can hang for half a minute stops being the
+command you run without thinking, so the obvious simplification is the wrong
+one, and a test replaces `httpx.get` with a raiser to keep it that way.
 
 `status.MODULES` also records **how to regenerate each output**, which is not
 guessable — `m2_drivers` comes from `scripts/run_m2.py`, not a subcommand.

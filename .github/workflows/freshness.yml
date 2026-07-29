@@ -1,0 +1,91 @@
+# Has a completed year been published upstream that this repo has not ingested?
+#
+# Deliberately NOT a step in ci.yml. `ci.yml` answers "is this commit correct";
+# staleness is a property of the calendar, not of the diff — the same commit is
+# fresh in June and stale in July. In the PR gate it would eventually turn every
+# pull request red for a condition no pull request can fix, because clearing it
+# means running ingest, build, aggregate and export locally against 341 million
+# rows. The cheapest way to merge would become deleting the check, and AGENTS.md
+# already names that failure mode: a green obtained by switching the check off
+# is worse than a red one.
+#
+# Like pages.yml, this is inert until the repository has a GitHub remote.
+# Scheduled workflows also run only from the default branch, and GitHub disables
+# them after 60 days with no repository activity — which this repo will hit
+# between refreshes. Re-enabling is one button on the Actions tab.
+#
+# Refreshing is still a local step. This only says when one is due.
+
+name: freshness
+
+on:
+  schedule:
+    # Weekly, not daily: the archives are annual and ARCHIVE_GRACE_MONTHS waits
+    # six months after a year ends, so the answer changes at most once a year,
+    # on the first of a month. Weekly rather than monthly because a green run in
+    # the last seven days is the only cheap evidence that the check is still
+    # switched on — with a monthly cadence, "no run lately" is ambiguous between
+    # "nothing to report" and "GitHub disabled it".
+    #
+    # Off the hour on purpose: GitHub queues scheduled jobs and sheds them under
+    # load at :00, and nothing here cares about the minute.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: Is a completed year missing?
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Astral uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Core dependencies only. This diverges from ci.yml's
+      # `--all-extras --group dev` on purpose: the check reads one JSON file and
+      # optionally makes one HTTP request, and --all-extras would install torch,
+      # geopandas and earthengine-api to answer a question about a date. Do not
+      # "fix" this to match CI.
+      #
+      # It cannot go lower than core: twair.cli imports polars at module scope,
+      # so the entry point does not start without it.
+      - name: Sync Dependencies (core only)
+        run: uv sync --no-dev
+
+      - name: Check freshness
+        # `shell: bash` is here for `-o pipefail`, which GitHub's implicit
+        # `bash -e {0}` does not set. Without it the pipe into tee swallows a
+        # non-zero exit from twair and the job is green forever — which would be
+        # the same defect the check exists to catch, one level up.
+        shell: bash
+        env:
+          # Optional, and the job must never be gated on it. The verdict is
+          # computed entirely offline from web/public/data/meta.json plus the
+          # clock, so a repository with no secret configured still gets a
+          # correct pass/fail; the key only buys the context line saying where
+          # the live hourly feed is. An unset secret renders as the empty
+          # string, which check_freshness reads as falsy and skips the request.
+          #
+          # The same property means an MOENV outage cannot fail this job. The
+          # pass/fail axis is offline; the network is decoration.
+          MOENV_API_KEY: ${{ secrets.MOENV_API_KEY }}
+          # rich wraps at 80 columns when stdout is not a terminal, which snaps
+          # the one-line verdict in half in the log.
+          COLUMNS: "160"
+        # --no-dev must match the sync above: a bare `uv run` re-syncs with the
+        # default groups and reinstalls pytest, mypy and ruff.
+        run: uv run --no-dev twair freshness --fail-if-stale | tee -a "$GITHUB_STEP_SUMMARY"

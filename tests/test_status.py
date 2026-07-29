@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from twair.freshness import FreshnessReport
 from twair.status import (
     MODULES,
     Artefact,
@@ -69,6 +70,54 @@ class TestTheReproduceTableCannotRot:
         )
 
         assert any("undeclared" in line for line in render(status))
+
+
+class TestTheUpstreamCheckStaysOffline:
+    """`status` is the command you run without thinking about it.
+
+    `check_freshness` has a 30-second timeout. Reaching it from here would mean
+    that on a plane, behind a firewall, or with no key configured, the fast
+    command sits silent for half a minute — and then people stop running it,
+    which is the outcome this module was written to prevent. Only the offline
+    half is wired in, and the obvious "simplification" is to call
+    `check_freshness` instead, so the property is pinned rather than intended.
+    """
+
+    def test_collecting_status_never_makes_a_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+
+        def _forbidden(*args: object, **kwargs: object) -> object:
+            raise AssertionError("twair status made an HTTP request")
+
+        monkeypatch.setattr(httpx, "get", _forbidden)
+        monkeypatch.setattr(httpx, "request", _forbidden)
+        monkeypatch.setattr(httpx.Client, "send", _forbidden)
+
+        assert render(collect_status(count_rows=False))
+
+    def test_a_year_published_upstream_reaches_the_next_steps(self) -> None:
+        status = Status(
+            store=StoreState(True, (), 0, None, 0, None),
+            artefacts=(),
+            export=ExportState(True, datetime(2026, 7, 29, tzinfo=UTC), "abc1234", 84, 1),
+            undeclared=(),
+            freshness=FreshnessReport(
+                data_through=datetime(2024, 12, 31, 23, tzinfo=UTC),
+                published_at=None,
+                checked_at=datetime(2026, 7, 29, tzinfo=UTC),
+            ),
+        )
+
+        assert any("2025" in step for step in status.next_steps())
+        assert any("STALE: 2025" in line for line in render(status))
+
+    def test_an_unmeasured_upstream_is_not_rendered_as_a_problem(self) -> None:
+        """``None`` means "not measured", which is not the same as "behind"."""
+        status = _status(export_at=datetime(2026, 7, 29, tzinfo=UTC))
+
+        assert status.freshness is None
+        assert status.next_steps() == []
+        assert any("not measured" in line for line in render(status))
 
 
 class TestStaleness:
