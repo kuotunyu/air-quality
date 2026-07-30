@@ -1,5 +1,5 @@
 ---
-import { linePath, padded, ticks, n } from "../lib/chart";
+import { linePath, markInk, n, padded, ticks } from "../lib/chart";
 
 interface Props {
   years: number[];
@@ -92,7 +92,7 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
 
       {
         visibleGuides.map((guide) => (
-          <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour}`}>
+          <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
             {guide.label}
           </span>
         ))

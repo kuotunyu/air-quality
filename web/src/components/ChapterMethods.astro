@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { labelGutter, linear, linePath, ticks, padded, n, spreadLabels } from "../lib/chart";
+import { labelGutter, linePath, linear, markInk, n, padded, spreadLabels, ticks } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -658,7 +658,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
           <div class="plot-keys">
             {
               GAP_SERIES.map((series, index) => (
-                <span style={`top:${n(gLabelY[index], 3)}%;--mark:${series.colour}`}>
+                <span style={`top:${n(gLabelY[index], 3)}%;--mark:${series.colour};--mark-ink:${markInk(series.colour)}`}>
                   {series.label}
                 </span>
               ))

@@ -137,6 +137,22 @@ export function padded(
 const PM25_BREAKS = [5, 10, 15, 25, 35, 55];
 const RAMP = ["--c0", "--c1", "--c2", "--c3", "--c4", "--c5", "--c6"];
 
+/**
+ * The text token that goes with a mark token.
+ *
+ * A series label wearing its series colour is unreadable at the ramp's light
+ * end, so every ramp colour has a solved `-ink` twin (see global.css). This maps
+ * one to the other by name instead of asking every series definition to carry
+ * both, which is how the two would drift apart.
+ *
+ * Reference guides fall through to `--text-muted` on purpose: they are neutral
+ * now, so their label is annotation type and has no series hue to preserve.
+ */
+export function markInk(colour: string): string {
+  const named = /^var\(--(c[0-6])\)$/.exec(colour.trim());
+  return named ? `var(--${named[1]}-ink)` : "var(--text-muted)";
+}
+
 export function concentrationColour(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "var(--line)";
   let index = 0;

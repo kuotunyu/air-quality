@@ -14,7 +14,7 @@
  */
 import forecast from "../../public/data/story/forecast.json";
 import { sarimaEvidence } from "../lib/data";
-import { labelGutter, linear, n, spreadLabels, ticks } from "../lib/chart";
+import { labelGutter, linear, markInk, n, spreadLabels, ticks } from "../lib/chart";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -247,7 +247,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
         <div class="plot-keys">
           {
             rmseSeries.map((s, si) => (
-              <span style={`top:${n(rmseLabelY[si], 3)}%;--mark:${s.colour}`}>{s.label}</span>
+              <span style={`top:${n(rmseLabelY[si], 3)}%;--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>{s.label}</span>
             ))
           }
         </div>
@@ -344,7 +344,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
         <div class="plot-keys">
           {
             metricSeries.map((s, si) => (
-              <span style={`top:${n(metricLabelY[si], 3)}%;--mark:${s.colour}`}>{s.label}</span>
+              <span style={`top:${n(metricLabelY[si], 3)}%;--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>{s.label}</span>
             ))
           }
         </div>
@@ -556,7 +556,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
         <div class="plot-keys">
           {
             sarSeries.map((s, si) => (
-              <span style={`top:${n(sarLabelY[si], 3)}%;--mark:${s.colour}`}>{s.label}</span>
+              <span style={`top:${n(sarLabelY[si], 3)}%;--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>{s.label}</span>
             ))
           }
         </div>

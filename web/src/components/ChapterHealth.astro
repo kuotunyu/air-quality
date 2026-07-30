@@ -18,7 +18,7 @@
  * and that term would dominate the error while reading as the solid part.
  */
 import health from "../../public/data/story/health.json";
-import { labelGutter, linear, n, spreadLabels, ticks } from "../lib/chart";
+import { labelGutter, linear, markInk, n, spreadLabels, ticks } from "../lib/chart";
 
 const series = health.series as {
   name: string;
@@ -84,7 +84,19 @@ const yearTicks = Array.from(
 // Darkest for the strictest counterfactual (0), lightest for the most lenient
 // (5.9). The ordering is the point: a reader should see that "how much is
 // attributable" is a stack of choices, not a measurement.
-const COLOURS = ["var(--c5)", "var(--c4)", "var(--c3)", "var(--c2)"];
+//
+// Spread across the ramp rather than taken from the middle of it. These four
+// were c5/c4/c3/c2 — four ADJACENT members of a sequential scale used as four
+// categories, which is the one thing a sequential scale is worst at. Adjacent
+// members are adjacent because they are meant to look similar; the closest pair
+// here measured dE00 11.1 in normal vision and 8.2 under deuteranopia, on a
+// chart whose whole argument is that you can see the four lines diverge.
+//
+// Every other step doubles the lightness gap (0.093 rather than 0.0465) and
+// keeps the same low-to-high ordering, so nothing about the reading changes —
+// the four are simply four now. Closest pair, measured: dE00 25.7 in normal
+// vision and 9.1 under deuteranopia (light theme); 29.4 and 18.6 in dark.
+const COLOURS = ["var(--c6)", "var(--c4)", "var(--c2)", "var(--c0)"];
 
 const labelY = spreadLabels(
   series.map((s) => yPaf(s.paf[s.paf.length - 1])),
@@ -169,7 +181,7 @@ const fn = functions[0];
         <div class="plot-keys">
           {
             series.map((s, i) => (
-              <span style={`top:${n(labelY[i], 3)}%;--mark:${COLOURS[i % COLOURS.length]}`}>
+              <span style={`top:${n(labelY[i], 3)}%;--mark:${COLOURS[i % COLOURS.length]};--mark-ink:${markInk(COLOURS[i % COLOURS.length])}`}>
                 {s.label}
               </span>
             ))

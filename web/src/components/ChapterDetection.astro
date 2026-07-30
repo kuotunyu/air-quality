@@ -265,8 +265,14 @@ const shortName = (name: string) =>
 </section>
 
 <style>
+  /* `--rule`, not `--line`. This is the line at "no effect", and the entire
+     figure is an argument about whether the estimates sit away from it — so it
+     is a mark that carries meaning, not a gridline that may whisper. Measured
+     at `--line` it came out 1.31:1 against the plot area, which is a reference
+     line a reader has to take on faith. `--rule` is the token solved for the
+     3:1 non-text threshold. */
   .zero {
-    stroke: var(--line);
+    stroke: var(--rule);
     stroke-width: 1;
     stroke-dasharray: 3 3;
   }

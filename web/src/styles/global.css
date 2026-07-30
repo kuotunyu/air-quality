@@ -2,10 +2,16 @@
  * Chalky, dense, restrained. A Morandi palette.
  *
  * One decision still governs everything: colour encodes concentration, so
- * nothing else may use saturated colour. Chroma stays in the Morandi band
- * (0.052–0.092 in OKLCH, about a third of the Tailwind-bright ramp this
- * started from) — the colour of a document you read for twenty minutes, not of
- * a dashboard.
+ * nothing else may use saturated colour. The INTERFACE stays in the Morandi
+ * band — chroma 0.003–0.010 on every surface, line and ink, which is the colour
+ * of a document you read for twenty minutes rather than of a dashboard.
+ *
+ * The DATA does not, and that separation is the correction this file has been
+ * through twice. Muting the marks along with the interface is what made the
+ * charts unreadable: it was not a matter of taste but of the marks and the paper
+ * ending up in the same narrow band, so the figures had no figure and no ground.
+ * The ramp now runs to chroma 0.133, roughly 2.5x the old low end, and it is the
+ * only thing on the page allowed to.
  *
  * The hue *ordering* is untouched, because that is the encoding: cool through
  * warm to plum, low concentration to high, along the blue–yellow axis that
@@ -21,8 +27,8 @@
  * lightness reads as quantity — and isoluminant neighbours give the eye no
  * value edge, which is what made the page tiring rather than calm. So the
  * interface is Morandi (muted, tinted greys, close values) and the ramp is not:
- * across the data scale lightness moves monotonically, 0.21 of it, and the
- * ordering is carried twice.
+ * across the data scale lightness moves monotonically, 0.279 of it in even
+ * steps, and the ordering is carried twice.
  *
  * Values are written in `oklch()` rather than hex, so the three things that
  * matter about each one — how light, how colourful, which hue — are readable
@@ -79,19 +85,36 @@
      rather than just separating two boxes. `--line` measures 1.63:1 against the
      body — fine for a table rule you are already looking at, not fine for the
      one mark that tells you a chapter changed. Solved at the lightest value that
-     still clears the 3:1 non-text threshold on `--bg`. */
-  --rule: oklch(0.635 0.010 250);
+     still clears the 3:1 non-text threshold — and it did not: at 0.635 it
+     measured 2.92 against `--bg`, because the earlier solve checked it against
+     the page and this mark also sits on `--bg-sunken`. Re-solved against the
+     worst of the three surfaces. */
+  --rule: oklch(0.628 0.010 250);
 
-  /* `--text-muted` and `--text-faint` used to sit 0.04 apart in lightness,
-     which is not a step anyone can see. Spread so the three inks read as three.
-     `--text-faint` is solved against `--bg-sunken` rather than `--bg`, because
-     the plot area is sunken and that is where almost every faint label lives —
-     solved against the page it measured 4.51 there and 4.19 on the surface it
-     actually sits on, which is 144 axis labels failing on a token that looked
-     fine in isolation. */
-  --text: oklch(0.280 0.008 250);
-  --text-muted: oklch(0.455 0.010 250);
-  --text-faint: oklch(0.522 0.010 250);
+  /*
+   * The three inks, solved against APCA rather than against a WCAG ratio.
+   *
+   * They passed WCAG comfortably — muted measured 6.67:1 on the body, faint
+   * 5.00:1 — and they were still too faint to read for long, which is the
+   * complaint that prompted this. WCAG 2.x contrast is a ratio of a luminance
+   * formula that was never fitted to reading comfort; APCA's Lc is, and it put
+   * the same tokens at Lc 74 and 66 against a scale where 90 is fluent body
+   * text, 75 is the body-text minimum and 60 is large-text-only.
+   *
+   * Dark mode was the worse of the two, which WCAG had said the opposite about:
+   * it scored muted at 8.95:1 (better than light's 6.67) while APCA scored it
+   * Lc 60.8 (worse than light's 74.4). The ratio formula systematically
+   * overstates dark-mode contrast, so the theme that measured "AAA" was the one
+   * failing a reader. That is the whole reason this site felt tiring in dark.
+   *
+   * Solved to Lc 92 / 80 / 70 on the WORST of the three surfaces, so no token
+   * depends on which surface it lands on. `--text-faint` keeps a lower target
+   * on purpose: it labels axes and figures, and pushing it to 80 would leave
+   * the three inks too close to read as three levels.
+   */
+  --text: oklch(0.252 0.008 250);
+  --text-muted: oklch(0.404 0.010 250);
+  --text-faint: oklch(0.493 0.010 250);
 
   /*
    * Concentration ramp, low to high — and the one place on this page where
@@ -113,25 +136,93 @@
    *
    * Now the lightness is monotone across the scale and the hue order is
    * untouched, which means the ordering is carried twice — once in hue, once in
-   * value. Chroma stays inside the Morandi band (0.052–0.092) and rises toward
-   * the high end, so the top of the scale is the most insistent colour on the
-   * page. Deuteranopes read the blue-to-yellow axis, so the ramp still never
-   * rests on red-versus-green, and now they also get the value ramp.
+   * value.
+   *
+   * ── and then the same scale was measured under colour blindness ────────────
+   *
+   * The paragraph above ended by claiming the ramp "never rests on
+   * red-versus-green". That claim was wrong, and it is the reason these values
+   * changed. The walk h84 → h56 → h30 IS the red-green axis, and with only
+   * 0.035 of lightness between neighbours there was nothing else holding those
+   * steps apart. Simulated (Machado 2009) and measured in CIEDE2000:
+   *
+   *     c3/c4 under deuteranopia   dE00  3.5     — the same colour
+   *     c3/c4 under protanopia     dE00  2.7 (dark theme)
+   *     c0/c1 under deuteranopia   dE00  4.7
+   *
+   * Those are the two bins either side of Taiwan's 24-hour standard. For ~8% of
+   * men the scale had four usable steps out of seven, and the two that mattered
+   * most were one of the collapsed pairs.
+   *
+   * Three things were wrong and all three are measured, not guessed:
+   *
+   *   1. The lightness ladder was uneven and too short — steps of 0.021 to
+   *      0.035 over a band of 0.196. It is now even at 0.0465 across the widest
+   *      band the 3:1 mark threshold allows (the light end cannot go past
+   *      L 0.615 without failing 3:1 against the page).
+   *   2. Hue SPACING, not hue order, was the real lever. Order is fixed here —
+   *      cool-to-warm is what every AQI display in Taiwan uses, and breaking it
+   *      would cost more comprehension than it bought. So the hues were solved
+   *      within ±20° of their anchors.
+   *   3. Chroma is the answer to a DIFFERENT question, and conflating the two
+   *      wasted a first attempt. Holding hue and lightness and pushing every
+   *      step to 70/80/88% of its available chroma moved the worst adjacent step
+   *      from 3.5 to 4.0 — nothing. Saturation makes a mark easier to NAME
+   *      (match to a legend swatch); it does not make two neighbours easier to
+   *      TELL APART. Only one of those is what dE00 measures, and the site
+   *      needed both.
+   *
+   * Solved by hill-climbing hue and chroma with the lightness ladder fixed,
+   * maximising the smallest adjacent step seen by a normal, deuteranopic and
+   * protanopic reader at once, subject to every mark clearing 3:1 on all three
+   * surfaces and chroma staying monotone so the top of the scale is still the
+   * most insistent colour on the page. Worst adjacent step, before → after:
+   *
+   *     deuteranopia   3.5 → 8.2      protanopia   5.4 → 10.3
+   *     normal        11.5 → 11.1     (unchanged, and see below)
+   *
+   * Two honest limits. Normal-vision separation did NOT improve: 11 is the
+   * ceiling for seven ordered bins in this lightness band, and no retuning of
+   * seven tokens will beat it — what helps a normal-vision reader here is
+   * chroma (identity) and not asking any one chart to distinguish seven bins,
+   * which is why `ChapterHealth` stopped picking four adjacent members. And
+   * tritanopia gets slightly worse (5.0 → 4.4): the arc IS the blue-yellow
+   * axis, so nothing survives losing it except the lightness ladder, which is
+   * now guaranteed by construction rather than optimised for. Deutan and protan
+   * together are ~8% of men; tritan is ~0.0001% of anyone.
    */
-  --c0: oklch(0.606 0.054 249);
-  --c1: oklch(0.585 0.058 210);
-  --c2: oklch(0.550 0.060 155);
-  --c3: oklch(0.515 0.072 84);
-  --c4: oklch(0.480 0.082 56);
-  --c5: oklch(0.445 0.092 30);
-  --c6: oklch(0.410 0.086 340);
+  --c0: oklch(0.615 0.088 252);
+  --c1: oklch(0.569 0.088 206);
+  --c2: oklch(0.522 0.088 143);
+  --c3: oklch(0.475 0.088 82);
+  --c4: oklch(0.429 0.088 34);
+  --c5: oklch(0.383 0.092 11);
+  --c6: oklch(0.336 0.133 338);
 
-  /* Reference lines are deliberately not part of the ramp: they are annotation,
-     so they sit at one shared lightness (a guideline is not a quantity) and at
-     lower chroma than the data they cross. */
-  --who: oklch(0.545 0.050 210);
-  --taiwan: oklch(0.545 0.062 60);
-  --accent: oklch(0.505 0.085 250);
+  /*
+   * Reference lines are annotation, not quantity — and they are now neutral,
+   * because they were competing with the data they cross. Measured against the
+   * new ramp, `--who` at h210 sat dE00 7.4 from `--c1` and `--taiwan` dE00 12.3
+   * from `--c3`: a guideline wearing almost exactly the colour of a series in
+   * the same chart. Taking hue away from them makes hue mean concentration and
+   * nothing else, and both lines already carry their own text label. Two
+   * lightnesses so the pair is still a pair, each clearing 3:1.
+   */
+  --who: oklch(0.628 0.010 250);
+  --taiwan: oklch(0.430 0.010 250);
+  /*
+   * Every link on the site, so it is prose and answers to prose thresholds.
+   *
+   * It was the last thing still too faint after the inks were re-solved, and the
+   * only reason it survived is that it was never in the neutral ramp: at
+   * oklch(0.505 0.085 250) it measured WCAG 4.98 — a pass — and APCA Lc 68.2,
+   * which is below the 75 body-text line. Dark was far worse: Lc 47.4, under the
+   * 60 floor for text that carries meaning at all, which made the links the
+   * faintest type on a page whose links are how a reader moves between chapters.
+   * Re-solved to Lc 78, keeping hue 250 and as much chroma as the gamut allows at
+   * that lightness so a link still reads as blue and not as dark grey.
+   */
+  --accent: oklch(0.418 0.101 250);
 
   /* Which extreme a data colour is darkened (or lightened) toward to become
      legible as text. It is the opposite end from this theme's paper, which is
@@ -142,21 +233,28 @@
    * The ramp again, for when a data colour has to be TYPE rather than a mark.
    *
    * Derived rather than hand-picked, so the two can never drift apart: same
-   * hue, same order, pulled toward `--ink-mix` until it clears 4.5:1. A label,
-   * a table cell and a tag can therefore say "this is the c5 series" at full
-   * legibility while the line and the dot keep the true c5.
+   * hue, same order, pulled toward `--ink-mix` until it reads as body text. A
+   * label, a table cell and a tag can therefore say "this is the c5 series" at
+   * full legibility while the line and the dot keep the true c5.
    *
    * This exists because the ramp's light end is light BY DESIGN — that is what
    * gives the scale its value ordering — and light is what fails as text. The
    * two requirements are genuinely incompatible in one token, so there are two.
+   *
+   * Each percentage is the LARGEST mix that still holds APCA Lc 75 (the body
+   * minimum) and WCAG 4.5:1 on the worst of the three surfaces — largest, so
+   * each label keeps as much of its series' hue as legibility allows rather
+   * than all being darkened to whatever the weakest member needs. The light
+   * theme's warm end reaches 100%: c4, c5 and c6 are already dark enough to be
+   * read without any mixing at all.
    */
-  --c0-ink: color-mix(in oklab, var(--c0) 72%, var(--ink-mix));
-  --c1-ink: color-mix(in oklab, var(--c1) 72%, var(--ink-mix));
-  --c2-ink: color-mix(in oklab, var(--c2) 74%, var(--ink-mix));
-  --c3-ink: color-mix(in oklab, var(--c3) 78%, var(--ink-mix));
-  --c4-ink: color-mix(in oklab, var(--c4) 82%, var(--ink-mix));
-  --c5-ink: color-mix(in oklab, var(--c5) 86%, var(--ink-mix));
-  --c6-ink: color-mix(in oklab, var(--c6) 90%, var(--ink-mix));
+  --c0-ink: color-mix(in oklab, var(--c0) 63%, var(--ink-mix));
+  --c1-ink: color-mix(in oklab, var(--c1) 68%, var(--ink-mix));
+  --c2-ink: color-mix(in oklab, var(--c2) 77%, var(--ink-mix));
+  --c3-ink: color-mix(in oklab, var(--c3) 92%, var(--ink-mix));
+  --c4-ink: var(--c4);
+  --c5-ink: var(--c5);
+  --c6-ink: var(--c6);
 
   /*
    * Surfaces that carry a caveat or a withheld result. Tinted rather than
@@ -327,26 +425,56 @@
     --bg-sunken: oklch(0.168 0.005 250);
     --line: oklch(0.362 0.009 250);
     --line-soft: oklch(0.286 0.007 250);
-    /* Same solve against the dark body. */
-    --rule: oklch(0.530 0.010 250);
+    /* Same solve against the dark body — and same correction: 0.530 measured
+       2.92 against `--bg-sunken`, not the 3:1 it was supposed to be. */
+    --rule: oklch(0.536 0.010 250);
 
-    --text: oklch(0.935 0.005 250);
-    --text-muted: oklch(0.780 0.008 250);
-    --text-faint: oklch(0.700 0.009 250);
+    /* Solved to the same Lc 92 / 80 / 70 as the light theme, and these are the
+       tokens that moved furthest. WCAG had rated this theme the better-
+       contrasted of the two; APCA put muted at Lc 60.8, which is large-text
+       territory, and faint at 47.1, barely above the floor for text that
+       carries meaning at all. */
+    --text: oklch(0.940 0.008 250);
+    --text-muted: oklch(0.881 0.010 250);
+    --text-faint: oklch(0.830 0.010 250);
 
-    --c0: oklch(0.598 0.055 249);
-    --c1: oklch(0.620 0.058 210);
-    --c2: oklch(0.655 0.058 155);
-    --c3: oklch(0.690 0.070 84);
-    --c4: oklch(0.725 0.080 56);
-    --c5: oklch(0.760 0.088 30);
-    --c6: oklch(0.795 0.078 340);
+    /* Same solve as the light ramp, and it had more room to work with: the dark
+       theme's lightness band sits where sRGB is wider, so chroma could rise as
+       far as 2.4x the old values while the worst adjacent step improved more
+       than it did in light. deuteranopia 3.4 → 10.7, protanopia 2.7 → 10.8. */
+    --c0: oklch(0.566 0.130 247);
+    --c1: oklch(0.614 0.091 211);
+    --c2: oklch(0.661 0.079 170);
+    --c3: oklch(0.709 0.131 82);
+    --c4: oklch(0.757 0.090 52);
+    --c5: oklch(0.804 0.088 12);
+    --c6: oklch(0.852 0.091 338);
 
-    --who: oklch(0.665 0.050 210);
-    --taiwan: oklch(0.700 0.062 60);
-    --accent: oklch(0.700 0.075 250);
+    --who: oklch(0.536 0.010 250);
+    --taiwan: oklch(0.760 0.010 250);
+    --accent: oklch(0.871 0.056 250);
 
     --ink-mix: oklch(0.99 0.004 250);
+
+    /*
+     * The mixes have to be redeclared, not inherited. They are percentages
+     * toward `--ink-mix`, and `--ink-mix` is the opposite extreme in each theme
+     * — so the light theme's "63% of the mark" lightens by 37% toward near-white
+     * here instead of darkening, and the same number means the opposite thing.
+     * Left inherited, the dark labels would have kept the light theme's
+     * proportions and landed near Lc 40.
+     *
+     * The percentages are much smaller here because the marks are light to begin
+     * with: a light mark on a near-black page needs to travel further to become
+     * readable type than a dark mark on a chalky one does.
+     */
+    --c0-ink: color-mix(in oklab, var(--c0) 31%, var(--ink-mix));
+    --c1-ink: color-mix(in oklab, var(--c1) 36%, var(--ink-mix));
+    --c2-ink: color-mix(in oklab, var(--c2) 41%, var(--ink-mix));
+    --c3-ink: color-mix(in oklab, var(--c3) 47%, var(--ink-mix));
+    --c4-ink: color-mix(in oklab, var(--c4) 55%, var(--ink-mix));
+    --c5-ink: color-mix(in oklab, var(--c5) 68%, var(--ink-mix));
+    --c6-ink: color-mix(in oklab, var(--c6) 89%, var(--ink-mix));
 
     --map-line: oklch(0.542 0.009 250);
 
@@ -859,15 +987,27 @@ figcaption {
  * change: 156 elements dropped below 4.5:1, every one of them a line-end
  * series label wearing its own series colour.
  *
- * So the mark colour arrives as `--mark` and the ink is derived from it here,
- * mixed toward whichever extreme this theme's paper is furthest from. The line,
- * the dot and the label still read as one series — same hue — while the label
- * alone is dark enough to be read. The dots keep `color:` directly, because a
- * dot is a mark and answers to the 3:1 graphics threshold, not to 4.5:1.
+ * So the mark colour arrives as `--mark` and the ink beside it as `--mark-ink`.
+ * The line, the dot and the label still read as one series — same hue — while
+ * the label alone is dark enough to be read. The dots keep `color:` directly,
+ * because a dot is a mark and answers to the 3:1 graphics threshold, not to
+ * 4.5:1.
+ *
+ * `--mark-ink` is passed in rather than derived here, and that is the fix for a
+ * real bug. This rule used to mix `--mark` toward `--ink-mix` at a flat 72% for
+ * every series. One number cannot serve seven marks: measured against the
+ * current ramp, the largest mix that still reads as body text is 63% for c0 and
+ * 100% for c4, so a flat 72% was simultaneously too light for the cool end
+ * (c0's label failing) and needlessly muddy at the warm end. Each series now
+ * carries the token solved for its own colour, and the fallback keeps the old
+ * behaviour for any caller that has not been updated.
  */
 .plot-keys span,
 .plot-note {
-  color: color-mix(in oklab, var(--mark, currentColor) 72%, var(--ink-mix));
+  color: var(
+    --mark-ink,
+    color-mix(in oklab, var(--mark, currentColor) 63%, var(--ink-mix))
+  );
 }
 
 .plot-y span {
