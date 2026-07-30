@@ -30,14 +30,11 @@ const balancedStart = trend.years.indexOf(balancedSince);
 const declineFrom = trend.all_stations[balancedStart] as number;
 const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
 ---
+<section id="hero" class="page enter">
+  <p class="eyebrow" style="--enter:0">1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測</p>
+  <h1 style="--enter:1">台灣空氣品質的<br />長期重新分析</h1>
 
->
-<!-- ═══════════ 0. Hero ═══════════ -->
-<section id="hero" class="page">
-  <p class="eyebrow">1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測</p>
-  <h1>台灣空氣品質的<br />長期重新分析</h1>
-
-  <p class="lede">
+  <p class="lede" style="--enter:2">
     {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
     {n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。同一份資料也顯示，
     {latestYear} 年有可比較資料的 {latest.length} 個測站中，
@@ -46,25 +43,48 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
     趨勢與水準是兩個不同的量，這兩項結果並不衝突。
   </p>
 
-  <div class="hero-grid">
+  <div class="hero-grid" style="--enter:3">
     <StationMap stations={stations} cards={cards} unplaced={stationsWithoutCoordinates} />
 
-    <div class="hero-stats grid">
-      <div class="card stat">
-        <span class="stat-value" style="color:var(--c5-ink)">{n(dirtiest.annual_mean)}</span>
-        <span class="stat-label">{dirtiest.station_name}（{dirtiest.county}）年均最高</span>
-        <span class="stat-note">{dirtiest.year} 年 · μg/m³</span>
-      </div>
-      <div class="card stat">
-        <span class="stat-value" style="color:var(--c1-ink)">{n(cleanest.annual_mean)}</span>
-        <span class="stat-label">{cleanest.station_name}（{cleanest.county}）年均最低</span>
-        <span class="stat-note">{cleanest.year} 年 · μg/m³</span>
-      </div>
-      <div class="card stat">
-        <span class="stat-value">{n(dirtiest.annual_mean / cleanest.annual_mean, 1)}×</span>
-        <span class="stat-label">島內最高與最低的倍數</span>
-        <span class="stat-note">直線距離不到 300 公里</span>
-      </div>
+    {/*
+      Three figures, not three cards.
+
+      They were three bordered boxes with a big number in each, which is the
+      hero-metric template — and worse, they were three IDENTICAL boxes, so the
+      chrome repeated three times while saying nothing the numbers were not
+      already saying. Boxes around figures also make the figure look like a
+      widget rather than a reading.
+
+      Now it is a description list: the number is the term, its identification is
+      the description, and a hairline separates the rows. That gives the numbers
+      more presence at a smaller size (nothing competes with them), lets the
+      station names run at a readable width, and removes three frames from a fold
+      that already has a map in it.
+    */}
+    <div class="hero-stats">
+      <dl class="figures">
+        <div class="figure">
+          <dt style="color:var(--c5-ink)">{n(dirtiest.annual_mean)}</dt>
+          <dd>
+            {dirtiest.station_name}（{dirtiest.county}）年均最高
+            <span class="figure-note">{dirtiest.year} 年 · μg/m³</span>
+          </dd>
+        </div>
+        <div class="figure">
+          <dt style="color:var(--c1-ink)">{n(cleanest.annual_mean)}</dt>
+          <dd>
+            {cleanest.station_name}（{cleanest.county}）年均最低
+            <span class="figure-note">{cleanest.year} 年 · μg/m³</span>
+          </dd>
+        </div>
+        <div class="figure">
+          <dt>{n(dirtiest.annual_mean / cleanest.annual_mean, 1)}×</dt>
+          <dd>
+            島內最高與最低的倍數
+            <span class="figure-note">直線距離不到 300 公里</span>
+          </dd>
+        </div>
+      </dl>
 
       {/*
         In the column beside the figure rather than below the whole grid.
@@ -86,6 +106,55 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
 </section>
 
 <style>
+/*
+ * A figure and what it is. The number carries the weight; the hairline carries
+ * the separation that three borders used to.
+ */
+.figures {
+  margin: 0;
+  display: grid;
+}
+
+.figure {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.figure:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.figures dt {
+  font-family: var(--font-numeric);
+  font-size: clamp(2rem, 4.6vw, 2.7rem);
+  font-weight: 650;
+  line-height: 1;
+  /* Floor is -0.04em; this is nowhere near it, and digits need less negative
+     tracking than letters do anyway. */
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.figures dd {
+  margin: 0;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+.figure-note {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.1rem;
+}
+
 .qualified {
   color: var(--text-muted);
 }
@@ -128,15 +197,11 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
     grid-area: 2 / 1 / auto / -1;
   }
 }
+/* The `grid` utility and its gap went with the cards; the column now holds a
+   figure list and one note, and the note brings its own margin. */
 .hero-stats {
-  gap: 0.8rem;
-}
-.small {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  margin: 0;
-}
-.card h3 {
-  margin-bottom: 0.35rem;
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
 }
 </style>

@@ -1,7 +1,7 @@
 ---
 import "../styles/global.css";
 import { generatedAt, gitSha } from "../lib/data";
-import { CHAPTERS, href } from "../lib/chapters";
+import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
 
 interface Props {
   title: string;
@@ -9,7 +9,6 @@ interface Props {
 }
 
 const { title, description } = Astro.props;
-const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /*
  * Which chapter is open, so the nav can say so.
@@ -20,7 +19,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
  * Pages, which is the mismatch that only shows up in production.
  */
 const segment = Astro.url.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
-const current = CHAPTERS.find((c) => c.slug === segment)?.slug ?? null;
+const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
 ---
 
 <!doctype html>
@@ -41,57 +40,70 @@ const current = CHAPTERS.find((c) => c.slug === segment)?.slug ?? null;
 
     <nav class="topbar" aria-label="章節">
       <div class="topbar-inner page">
-        <a class="brand" href={base || "/"}>air-<span>quality</span></a>
-        <ul>
+        <a class="brand" href={href()}>air-<span>quality</span></a>
+
+        {/*
+          Where you are, at a size that reads.
+
+          Ten chapter titles used to sit here as a single row of links. Measured
+          at 1440px: 1,017px of labels in 1,144px of room, each link a 25px-tall
+          text run with no box — under the 44px touch minimum, and with nothing
+          to say it was a target. Making them bigger does not fit (the same
+          labels at body size need 1,128px, and with chapter numbers 1,302px), so
+          the row was never going to become a comfortable navigation; it was
+          going to stay a squeeze.
+
+          So the bar now carries the two things a paginated document's header
+          owes the reader — which chapter this is, and how to reach the others —
+          and the ten destinations live in a menu where each one can have a real
+          hit area.
+        */}
+        <p class="whereami">
           {
-            CHAPTERS.map((c) => (
-              <li>
-                <a
-                  href={href(c.slug)}
-                  aria-current={current === c.slug ? "page" : undefined}
-                >
-                  {c.nav}
-                </a>
-              </li>
-            ))
+            here ? (
+              <>
+                <span class="whereami-n">{chapterLabel(here.n)}</span>
+                <span class="whereami-t">{here.nav}</span>
+              </>
+            ) : (
+              <span class="whereami-t is-quiet">台灣空氣品質再分析</span>
+            )
           }
-        </ul>
+        </p>
+
+        {/*
+          `<details>` rather than the popover API or a JS menu: it is a working
+          disclosure with no script at all, it is keyboard-operable for free, and
+          PRODUCT.md requires the site to be readable without JavaScript.
+
+          It sits here as a sibling of the brand and NOT inside any scrolling
+          box — a panel positioned inside `overflow: auto` gets clipped, which is
+          exactly what the old link strip was.
+        */}
+        <details class="menu">
+          <summary>目錄</summary>
+
+          <div class="menu-panel">
+            <ol>
+              {
+                CHAPTERS.map((c) => (
+                  <li>
+                    <a
+                      href={href(c.slug)}
+                      aria-current={here?.slug === c.slug ? "page" : undefined}
+                    >
+                      <span class="menu-n">{chapterLabel(c.n)}</span>
+                      <span class="menu-t">{c.title}</span>
+                    </a>
+                  </li>
+                ))
+              }
+            </ol>
+          </div>
+        </details>
       </div>
       <div class="progress" aria-hidden="true"></div>
     </nav>
-
-    {/*
-      Bring the open chapter into view in the nav strip.
-
-      With ten routes the bar is wider than a phone and scrolls horizontally, so
-      on 第八章 the marked item sits off-screen to the right and the navigation
-      shows the reader everything except where they are. Four lines, no
-      dependency, and `instant` because this is not a transition the reader
-      asked for — it is the bar being drawn in the right place to begin with.
-
-      Without JavaScript the strip simply starts at the left, which is the
-      behaviour it had before. Nothing here gates content on script.
-    */}
-    <script is:inline>
-      (() => {
-        const strip = document.querySelector(".topbar ul");
-        const here = document.querySelector('.topbar a[aria-current="page"]');
-        if (!strip || !here) return;
-        // Set scrollLeft on the strip rather than calling scrollIntoView: that
-        // method is free to scroll any ancestor, including the document, and the
-        // one thing this must not do is move the page the reader just opened.
-        //
-        // Measured from bounding rects, not `offsetLeft`. `.topbar` is sticky,
-        // which makes it a positioned ancestor, so `offsetLeft` is the distance
-        // from the BAR — brand and page padding included — rather than from the
-        // scroller. Using it centred 趨勢 at scrollLeft 36 when the right answer
-        // was 0, and left 方法學對照 cut off at the edge.
-        const strip_rect = strip.getBoundingClientRect();
-        const here_rect = here.getBoundingClientRect();
-        strip.scrollLeft +=
-          here_rect.left - strip_rect.left - (strip_rect.width - here_rect.width) / 2;
-      })();
-    </script>
 
     <main id="main">
       <slot />
@@ -177,62 +189,185 @@ const current = CHAPTERS.find((c) => c.slug === segment)?.slug ?? null;
       .topbar-inner {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 1.5rem;
-        height: 3.2rem;
+        gap: clamp(0.9rem, 2.5vw, 2rem);
+        /* Room for a 44px target with air around it. The bar was 3.2rem holding
+           a 25px text run. */
+        min-height: 3.4rem;
+        /* The panel below anchors to this, so it has to be the containing block —
+           and nothing here may clip, or the menu is cut off the way the old
+           scrolling strip cut off its own links. */
+        position: relative;
       }
+
       .brand {
         font-weight: 700;
         letter-spacing: -0.02em;
         color: var(--text);
         text-decoration: none;
         white-space: nowrap;
+        font-size: var(--text-base);
       }
+
       .brand span {
         color: var(--text-faint);
         font-weight: 500;
       }
-      .topbar ul {
-        display: flex;
-        gap: 1.1rem;
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        overflow-x: auto;
-        scrollbar-width: none;
-        /* Without this the flex item refuses to shrink below its content and
-           the nav pushes the page sideways on a phone. */
+
+      /*
+       * Which chapter this is. The middle of the bar, and the one fact the old
+       * navigation never stated — it listed every destination except the one you
+       * were already at.
+       *
+       * `margin-right: auto` rather than `justify-content: space-between` on the
+       * parent, so the menu is pinned right while this stays beside the brand
+       * instead of drifting to the centre of whatever width is left.
+       */
+      .whereami {
+        margin: 0 auto 0 0;
         min-width: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 0.55em;
+        overflow: hidden;
       }
-      .topbar ul::-webkit-scrollbar {
-        display: none;
-      }
-      .topbar a {
-        color: var(--text-muted);
-        text-decoration: none;
+
+      .whereami-n {
         font-size: var(--text-sm);
+        color: var(--text-faint);
         white-space: nowrap;
+        font-variant-numeric: tabular-nums;
       }
-      .topbar a:hover {
+
+      .whereami-t {
+        font-size: var(--text-lg);
+        font-weight: 650;
+        letter-spacing: -0.012em;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* On the entry page the document's own name sits here instead, and it is
+         not a location — so it does not get the weight of one. */
+      .whereami-t.is-quiet {
+        font-weight: 400;
+        font-size: var(--text-base);
+        color: var(--text-muted);
+      }
+
+      /* ── the contents menu ────────────────────────────────────────────────── */
+
+      /*
+       * The site's own `<details>` styling already is a bordered raised box with
+       * a chevron that rotates when it opens, so this reuses it rather than
+       * building a second one — which also means the menu and the chapters'
+       * disclosures stay recognisably the same control.
+       *
+       * What has to be undone is the parts that assume a full-width block: the
+       * vertical margin (which added 42px to a sticky bar), and the bottom border
+       * an open summary grows to meet content directly beneath it. This panel
+       * floats, so there is nothing beneath the summary to meet.
+       */
+      .menu {
+        margin: 0;
+        flex: none;
+        position: relative;
+      }
+
+      .menu > summary {
+        /* Was `--text-sm` at `--space-2` padding: a 34px control. The measured
+           complaint was that nothing in the bar looked clickable, and a 44px box
+           at body size is the answer to it. */
+        min-height: 2.45rem;
+        padding: 0 0.85rem;
+        font-size: var(--text-base);
         color: var(--text);
       }
-      /* The nav went from eleven in-page anchors to eleven links to other pages,
-         and a list of links to elsewhere has to say which one is here — otherwise
-         the reader's own position is the one thing the navigation does not tell
-         them. Weight and ink, plus an underline that sits on the bar's own edge
-         rather than under the word, so the marker cannot be mistaken for a hover
-         state. */
-      .topbar a[aria-current="page"] {
+
+      .menu[open] > summary {
+        border-bottom: 0;
+        border-radius: var(--radius);
+      }
+
+      .menu > summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .menu-panel {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        right: 0;
+        z-index: var(--z-overlay);
+        width: min(22rem, calc(100vw - 2rem));
+        max-height: min(70vh, 34rem);
+        overflow-y: auto;
+        background: var(--bg-raised);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        /* A defined shadow, not a border plus a wide soft glow: the panel needs
+           to sit above the page, and 10px of blur says so without haze. */
+        box-shadow: 0 6px 10px oklch(0 0 0 / 0.09);
+      }
+
+      .menu-panel ol {
+        margin: 0;
+        padding: 0.35rem;
+        list-style: none;
+      }
+
+      .menu-panel a {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: baseline;
+        gap: 0 0.7rem;
+        /* Every row is a comfortable target rather than a line of text that
+           happens to be a link. */
+        padding: 0.6rem 0.7rem;
+        border-radius: calc(var(--radius) - 4px);
+        text-decoration: none;
         color: var(--text);
+      }
+
+      .menu-panel a:hover,
+      .menu-panel a:focus-visible {
+        background: var(--bg-sunken);
+      }
+
+      .menu-n {
+        font-size: var(--text-sm);
+        color: var(--text-faint);
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .menu-t {
+        font-size: var(--text-base);
+      }
+
+      /* The chapter you are on, marked in the list as well as in the bar. */
+      .menu-panel a[aria-current="page"] {
+        background: var(--tint-neutral);
+      }
+
+      .menu-panel a[aria-current="page"] .menu-t {
         font-weight: 650;
       }
-      .topbar a[aria-current="page"]::after {
-        content: "";
-        display: block;
-        height: 2px;
-        margin-top: 0.42rem;
-        background: var(--accent);
+
+      .menu-panel a[aria-current="page"] .menu-n {
+        color: var(--accent);
       }
+
+      /* Below this the chapter title and a bordered button cannot share the row
+         with the brand without one of them truncating to nothing. The brand is
+         the thing a reader can afford to lose: they know what site they are on. */
+      @media (max-width: 26rem) {
+        .brand {
+          display: none;
+        }
+      }
+
       footer {
         border-top: 1px solid var(--line-soft);
         padding: 2.5rem 0 4rem;
