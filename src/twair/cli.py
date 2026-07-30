@@ -7,6 +7,7 @@ workflows are thin wrappers around these commands.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 import polars as pl
 import typer
@@ -697,6 +698,120 @@ def analyze_m3(
         console.print(frame.head(14))
 
     for name, path in write_pitfall_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
+@analysis_app.command("m6")
+def analyze_m6(
+    steps: str = typer.Option(
+        "coverage,headline,sensitivity", "--steps", help="Comma list of steps to run."
+    ),
+    draws: int = typer.Option(None, "--draws", help="Override the null draw count for a fast run."),
+) -> None:
+    """M6 — whether 「分區各跑一次」 was an adequate spatial control."""
+    from twair.analysis.spatial import load_spatial_conf, run_spatial, write_spatial_report
+
+    conf = load_spatial_conf()
+    if draws:
+        inference = dict(conf.inference)
+        inference["residual_null_draws"] = draws
+        conf = replace(conf, inference=inference)
+
+    result = run_spatial(conf=conf, steps=tuple(s.strip() for s in steps.split(",")))
+
+    # Support first. Every number below this block is conditional on which
+    # stations are in the network, and a spatial result quoted without its
+    # network is not checkable — the same reason m12 prints convergence before
+    # any fitted number.
+    meta = {row["key"]: row["value"] for row in result.metadata.iter_rows(named=True)}
+    console.print("\n[bold]the network these statistics are about[/bold]")
+    console.print(
+        f"  {meta['panel_stations']} stations over {meta['panel_months']} months; "
+        f"{meta['panel_stations_placed']} have coordinates, "
+        f"{meta['panel_stations_complete']} report in every month"
+    )
+    unplaced = result.coverage.filter(~pl.col("placed"))["station_name"].to_list()
+    if unplaced:
+        console.print(
+            f"  [yellow]{len(unplaced)} excluded for want of coordinates[/yellow]: "
+            + "、".join(unplaced)
+        )
+    console.print(
+        f"  weights {meta['weights']}, zone partition {meta['zone_partition']}, "
+        f"seed {meta['seed']}, {meta['residual_null_draws']} null draws"
+    )
+
+    # The correlogram before any single I: if it changes sign, one number is a
+    # blend of opposite-signed bands and must not be quoted alone.
+    if result.correlogram.height:
+        console.print("\n[bold]residual Moran's I by distance[/bold]")
+        for row in result.correlogram.iter_rows(named=True):
+            if row["i"] is None:
+                console.print(
+                    f"  {row['bin_lo_km']:>5.0f}–{row['bin_hi_km']:<5.0f} {row['refused']}"
+                )
+                continue
+            mark = " [bold]significant[/bold]" if row["significant_bh"] else ""
+            console.print(
+                f"  {row['bin_lo_km']:>5.0f}–{row['bin_hi_km']:<5.0f} km  "
+                f"{row['pairs']:>4} pairs  I = {row['i']:+.4f}  z = {row['z']:+6.2f}{mark}"
+            )
+        signs = [
+            row["i"] > 0 for row in result.correlogram.iter_rows(named=True) if row["i"] is not None
+        ]
+        if len(set(signs)) > 1:
+            console.print(
+                "  [dim]the sign changes with distance, so no single I describes this field[/dim]"
+            )
+
+    if result.partition.height:
+        console.print("\n[bold]what each spatial control removes[/bold]")
+        for row in result.partition.iter_rows(named=True):
+            console.print(
+                f"  {row['control']:<26} {row['rank']:>4} params  R² {row['r_squared']:.4f}  "
+                f"mean I {row['mean_i']:+.4f} "
+                f"(95% CI {row['mean_i_lo']:+.4f} to {row['mean_i_hi']:+.4f})  "
+                f"{row['months_significant_bh']:>2}/{row['months_scored']} months significant"
+            )
+            if row["rank_deficient"]:
+                console.print(
+                    f"    [yellow]rank deficient[/yellow] — {row['design_columns']} columns, "
+                    f"rank {row['rank']}; residuals stand, coefficients do not"
+                )
+
+        rows = {row["control"]: row for row in result.partition.iter_rows(named=True)}
+        pooled, literal = rows.get("pooled"), rows.get("within_zone_separate_fits")
+        if pooled and literal:
+            console.print(
+                f"\n  the literal 「分區各跑一次」 takes mean I from "
+                f"[bold]{pooled['mean_i']:+.4f}[/bold] to [bold]{literal['mean_i']:+.4f}[/bold], "
+                f"and significant months from {pooled['months_significant_bh']} to "
+                f"{literal['months_significant_bh']} of {pooled['months_scored']}"
+            )
+            console.print(
+                "  [dim]reported as a difference of means, never as a share: I is a "
+                "normalised correlation and has no decomposition property[/dim]"
+            )
+
+    if result.sensitivity is not None and result.sensitivity.height:
+        console.print("\n[bold]the same field under every weights definition[/bold]")
+        console.print(
+            result.sensitivity.filter(pl.col("i").is_not_null()).select(
+                "family", "parameter", "main_island_only", "n_stations", "n_islands", "i", "z"
+            )
+        )
+
+    console.print(
+        "\n[dim]this prices the OLS stage only. The 2018 report's terminal inference was a "
+        "mixed model with AR(1), and its standard errors are not recorded in this "
+        "repository[/dim]"
+    )
+    console.print(
+        "[dim]no population-weighted exposure: there is no population grid under data/ or "
+        "conf/, and a station mean weighted by anything already here is not an exposure[/dim]"
+    )
+
+    for name, path in write_spatial_report(result).items():
         console.print(f"wrote {name}: {path}")
 
 

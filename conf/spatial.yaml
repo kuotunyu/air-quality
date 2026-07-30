@@ -1,0 +1,127 @@
+# M6 — spatial structure, and what the 2018 project's 「分區各跑一次」 bought.
+#
+# Every key is quoted. YAML turns unquoted NO, YES, ON, OFF into booleans, which
+# has already silently deleted nitric oxide from the range checks once in this
+# repository. See conf/stations.yaml for the incident.
+
+"weights":
+  # k-nearest rather than a distance band, and the reason is measured, not
+  # aesthetic: the station network's nearest-neighbour spacing runs from 0.6 km
+  # to 67 km on the main island, so any single band radius either isolates the
+  # sparse east or connects half the west coast to itself. k-nearest gives every
+  # station the same number of neighbours by construction and leaves no isolate.
+  "family": "knn"
+  "k": 5
+  # Row-standardised, so I reads as the correlation between a station and the
+  # average of its neighbours rather than a sum that grows with k.
+  "transform": "r"
+  # libpysal 4.15's KNN and DistanceBand both default to Euclidean distance on
+  # RAW DECIMAL DEGREES. At Taiwan's latitude a degree of longitude is 0.90 of a
+  # degree of latitude, so the default silently distorts every neighbour set.
+  # Passing this makes the metric a decision instead of a default.
+  "distance_metric": "arc"
+  "knn_grid": [3, 4, 5, 6, 8, 10]
+  "distance_band_grid_km": [20, 30, 40, 50, 75, 100]
+  # Below this a scope returns null with a reason rather than a number. A Moran's
+  # I over six stations is arithmetic, not evidence.
+  "min_units": 8
+# No "radius_km" key. The earth has one radius in this repository and it is
+# twair.geometry.EARTH_RADIUS_KM; a second copy in config would drift from it.
+
+"correlogram":
+  # Bin edges in km. Deliberately finer below 50 km, where the west-coast
+  # corridor lives, and coarse above 150 km, where only the east and the
+  # offshore stations contribute pairs.
+  "bins_km": [0, 10, 20, 30, 50, 75, 100, 150, 250]
+
+"inference":
+  "permutations": 9999
+  # The residual null refits inside every draw, so it costs ~1000x a permutation
+  # and gets a smaller budget. It is the one that is actually valid for
+  # residuals — see the module docstring on why permuting residuals is not.
+  "residual_null_draws": 999
+  "seed": 12345
+  "fdr_alpha": 0.05
+  "block_bootstrap_draws": 999
+  "wild_bootstrap_draws": 999
+  # Month clustering is the SPATIAL correction: it allows arbitrary correlation
+  # between every station within a month. Station clustering is the temporal one.
+  # They answer different questions and both ship.
+  "cov_types": ["iid", "cluster_month", "cluster_station", "cluster_twoway"]
+
+"panel":
+  "source_module": "m1_replication"
+  # The 2018 panel is 2010-2017, and in those years there were SEVEN air-quality
+  # zones. 離島空品區 only became a zone in 2018 — conf/stations.yaml carries the
+  # override recording that. Testing today's eight-zone partition on that panel
+  # would be an anachronism, so the era partition is what the headline uses and
+  # today's register ships beside it, labelled, rather than being chosen.
+  "zone_partition": "era_1992_2017"
+  "zone_source_doc": "docs/archive-formats.md"
+  "era_zones":
+    - "北部空品區"
+    - "竹苗空品區"
+    - "中部空品區"
+    - "雲嘉南空品區"
+    - "高屏空品區"
+    - "宜蘭空品區"
+    - "花東空品區"
+  "offshore_stations": ["馬公", "金門", "馬祖"]
+
+"clustering":
+  # Pinned to the panel window so the partition test is scored on the same rows
+  # as the headline. A longer window would test today's partition on today's
+  # network, which is a different and also legitimate question — but it would
+  # not be comparable to the headline, so it is not the default.
+  "window_start": "2010-01"
+  "window_end": "2017-12"
+  "distance": "correlation_seasonal_anomaly"
+  # Without this every station in Taiwan correlates at ~0.73 because they share
+  # one winter maximum, and the test would report all zones equally good. Removing
+  # the island-wide monthly mean drops the mean pairwise correlation to ~0.01 and
+  # is what makes the comparison about zoning rather than about the monsoon.
+  "remove_island_climatology": true
+  "linkage": "ward"
+  "k_grid": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  "ensemble_draws": 999
+  # The null a partition must beat is not a random relabelling — geography alone
+  # would beat that. It is a geographically contiguous partition of the same
+  # sizes, which is what the official zones are.
+  "ensemble_method": "geographic_kmeans"
+
+"field":
+  "variogram_candidates": ["spherical", "hole-effect"]
+  # 5 km, not the 1 km PLAN.md asks for. Two real stations fall inside one 1 km
+  # cell at the dense end of the network while the sparse end has no station
+  # within 60 km, so a 1 km cell asserts a resolution the network cannot deliver.
+  "resolution_km": 5.0
+  # Leave-one-out is optimistic when neighbours are 1 km away: it scores
+  # interpolation between near-duplicates. Blocked folds withhold everything
+  # within a radius, which is the question a map actually poses.
+  "blocked_cv_radii_km": [20, 40]
+  "station_types_fitted": ["general", "background"]
+  "baselines": ["nearest", "idw2", "station_mean"]
+  "exclude_offshore": true
+# No "range_km" key fed to pykrige. With coordinates_type='geographic' its
+# distances are arc DEGREES, so a key named km would be read as degrees and the
+# variogram would be wrong by a factor of 111 without failing.
+
+# DELIBERATELY ABSENT, recorded here rather than left as a silent gap — the same
+# way conf/health.yaml records what its GEMM function cannot do:
+#
+#   no "population_grid" — there is no population data anywhere under data/ or
+#     conf/, so M6 computes no population-weighted exposure. Weighting stations
+#     by something already in this repository would quietly reverse the refusal
+#     analysis/health.py already makes: a station mean is not an exposure.
+#     PLAN.md:485 lists it; it stays unticked with this reason beside it.
+#
+#   no "land_mask" — the only committed boundary geometry is a TypeScript module
+#     covering the main island (web/src/lib/taiwan.ts), and its GML source is
+#     deliberately not committed. A guessed inside_land_mask boolean would be a
+#     fabricated column in a repository whose whole premise is that data
+#     problems are measured rather than repaired.
+#
+# If a population grid ever lands it needs a resolvable "source_url" and an
+# explicit "vintage", the same gate conf/events.yaml and conf/health.yaml carry —
+# a 2020 population against a 2010-2017 concentration field is a mismatch that
+# has to be stated, not averaged over.

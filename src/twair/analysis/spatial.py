@@ -1,0 +1,1234 @@
+"""D7 — what the 2018 project's 「分 8 區各跑一次」 actually bought.
+
+The defect list records D7 as「78 個測站的空間維度沒用」. That is nearly right and
+the "nearly" is the interesting part: the original did not ignore space, it
+*stratified* by air-quality zone and fitted the model once inside each zone. So
+the honest question is not "did they use space" but **was that stratification an
+adequate spatial control**, and that question has an answer with a number.
+
+The answer is a residual diagnostic, not a claim about the air. PM2.5 is
+obviously spatially autocorrelated; saying so is not a finding. What matters is
+whether the *residuals* of the fitted model still are, because the original's
+inference — 6,771 station-months treated as independent observations, t
+statistics in the eighties — is valid only if they are not.
+
+Four things this module refuses to do, each because doing it would produce a
+number that looks precise and is not:
+
+**It does not permute residuals.** A permutation null assumes exchangeability,
+and OLS residuals are not exchangeable: they satisfy X'e = 0 by construction, so
+shuffling them destroys a constraint the real residuals obey and the resulting
+p-value is about the wrong null. The null here simulates under the fitted model
+instead. That turns out to be cheap for a reason worth recording: since MX = 0,
+refitting inside each draw and projecting an iid draw through the residual maker
+give the *same* vector, so a valid draw costs one matrix-vector product rather
+than one regression.
+
+**It does not use E[I] = -1/(n-1).** That is the null for a raw field. For
+regression residuals the moments are Cliff-Ord's, which depend on the design
+through M = I - X(X'X)⁻¹X'. With this panel's twelve predictors the two differ by
+more than a third of a standard deviation of I, which is enough to move a
+borderline month across the threshold.
+
+**It does not report a single headline Moran's I.** The magnitude of I is a joint
+property of the field and the weights matrix, and the correlogram in this network
+changes sign with distance — so one number is a weighted blend of opposite-signed
+bands. The correlogram and the sensitivity grid ship whole, and the CLI prints
+the correlogram before any single I.
+
+**It does not claim to refute the original's inference as a whole.** The report's
+terminal model was a mixed model with AR(1), and its standard errors are not
+recorded anywhere in this repository — `reports/_expected/replication_2018.yaml`
+holds its coefficients and fit statistics and no standard errors. Everything here
+prices the OLS stage. That limit is in the payload, the report and the CLI
+output, not only in this docstring.
+
+One measured caveat on the closed form. Cliff-Ord's Var[I] is an approximation
+whose accuracy falls away as k/n grows; a Monte-Carlo against the fitted null
+puts it 11% too high at this panel's k/n of about 0.18, and monotonically worse
+above that. The direction is conservative — it understates significance — but
+"conservative" is not "correct", so the published p-value comes from the
+simulated null and the closed-form z ships beside it as a reference.
+`tests/test_spatial.py` pins both the agreement of E[I] and the size of the
+Var[I] gap, so a future change that silently swaps one for the other fails.
+
+The residual I is a **lower bound** on the field's spatial dependence, twice
+over, and both belong in any sentence that quotes it: the fitted model contains
+predictors that are themselves spatially correlated (PM10 above all), so it has
+already absorbed spatial signal; and the panel is complete-case, so the network
+it covers is selected by data completeness.
+"""
+
+from __future__ import annotations
+
+import itertools
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
+
+import numpy as np
+import polars as pl
+
+from twair.config import load_conf
+from twair.geometry import EARTH_RADIUS_KM, pairwise_km
+from twair.paths import outputs_dir
+from twair.scalars import as_float
+
+log = logging.getLogger(__name__)
+
+__all__ = [
+    "STEPS",
+    "MoranResult",
+    "SpatialConf",
+    "SpatialResult",
+    "WeightsBundle",
+    "benjamini_hochberg",
+    "block_bootstrap_mean",
+    "build_weights",
+    "cliff_ord_moments",
+    "load_m1_artefacts",
+    "load_spatial_conf",
+    "moran_correlogram",
+    "morans_i",
+    "partition_price",
+    "placed_panel",
+    "reconstruct_residuals",
+    "residual_autocorrelation",
+    "residual_null_draws",
+    "run_spatial",
+    "station_coverage",
+    "weights_sensitivity",
+    "write_spatial_report",
+]
+
+STATION = "station_name"
+MONTH = "month"
+RESIDUAL = "residual"
+
+STEPS: tuple[str, ...] = ("coverage", "headline", "sensitivity")
+
+WeightsFamily = Literal["knn", "distance_band"]
+
+
+# --------------------------------------------------------------------------- #
+# configuration
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class SpatialConf:
+    """Every threshold, grid, seed and station list M6 uses.
+
+    Held as one frozen object so that no literal k, bin edge or zone name
+    appears anywhere else in the module — a sensitivity run and a headline run
+    cannot silently disagree about what "neighbour" means.
+    """
+
+    weights: dict[str, Any]
+    correlogram: dict[str, Any]
+    inference: dict[str, Any]
+    panel: dict[str, Any]
+    clustering: dict[str, Any]
+    field: dict[str, Any]
+
+    @property
+    def seed(self) -> int:
+        return int(self.inference["seed"])
+
+    @property
+    def min_units(self) -> int:
+        return int(self.weights["min_units"])
+
+    @property
+    def fdr_alpha(self) -> float:
+        return float(self.inference["fdr_alpha"])
+
+    @property
+    def era_zones(self) -> tuple[str, ...]:
+        return tuple(self.panel["era_zones"])
+
+    @property
+    def offshore(self) -> tuple[str, ...]:
+        return tuple(self.panel["offshore_stations"])
+
+
+def load_spatial_conf() -> SpatialConf:
+    """Read ``conf/spatial.yaml`` through the loader that rejects boolean keys."""
+    raw = load_conf("spatial")
+    missing = [
+        block
+        for block in ("weights", "correlogram", "inference", "panel", "clustering", "field")
+        if block not in raw
+    ]
+    if missing:
+        raise ValueError(f"conf/spatial.yaml is missing block(s): {missing}")
+    return SpatialConf(
+        weights=dict(raw["weights"]),
+        correlogram=dict(raw["correlogram"]),
+        inference=dict(raw["inference"]),
+        panel=dict(raw["panel"]),
+        clustering=dict(raw["clustering"]),
+        field=dict(raw["field"]),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# inputs
+# --------------------------------------------------------------------------- #
+def load_m1_artefacts(root: Path | None = None) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """The replicated 2018 panel and its OLS table.
+
+    Read from M1's outputs rather than re-derived, so that the model whose
+    residuals are tested here is provably the same fit M1 published. All of
+    ``data/`` is gitignored, so a fresh clone has neither file and the error says
+    which command produces them.
+    """
+    base = outputs_dir("m1_replication") if root is None else root / "outputs" / "m1_replication"
+    panel_path, ols_path = base / "panel.parquet", base / "ols.parquet"
+    for path in (panel_path, ols_path):
+        if not path.exists():
+            raise FileNotFoundError(
+                f"{path} not found — run `uv run twair analyze m1` first; M6 tests the "
+                "residuals of that fit rather than re-deriving it"
+            )
+    return pl.read_parquet(panel_path), pl.read_parquet(ols_path)
+
+
+def reconstruct_residuals(panel: pl.DataFrame, ols: pl.DataFrame) -> pl.DataFrame:
+    """Residuals of M1's published fit, checked against its published R².
+
+    Recomputing the fit here would risk testing a *different* model from the one
+    the site reports. Reconstructing it from the stored coefficients and then
+    asserting that the implied R² reproduces the stored one to twelve decimals
+    catches the failure that would otherwise be invisible: a column-order or
+    name mismatch produces residuals that look completely plausible.
+    """
+    from twair.analysis.replication import ORIGINAL_PREDICTORS, RESPONSE
+
+    coefficients = {row["term"]: float(row["coefficient"]) for row in ols.iter_rows(named=True)}
+    unknown = [term for term in coefficients if term not in (*ORIGINAL_PREDICTORS, "Intercept")]
+    if unknown:
+        raise ValueError(f"ols.parquet carries terms M6 does not know how to apply: {unknown}")
+
+    fitted = pl.lit(coefficients["Intercept"], dtype=pl.Float64)
+    for name in ORIGINAL_PREDICTORS:
+        fitted = fitted + pl.col(name) * coefficients[name]
+
+    out = panel.with_columns(
+        fitted.alias("fitted"),
+        (pl.col(RESPONSE) - fitted).alias(RESIDUAL),
+    )
+
+    observed = out[RESPONSE].to_numpy()
+    resid = out[RESIDUAL].to_numpy()
+    implied = 1.0 - float((resid**2).sum()) / float(((observed - observed.mean()) ** 2).sum())
+    stored = as_float(ols["r_squared"][0])
+    if stored is None or abs(implied - stored) > 1e-12:
+        raise ValueError(
+            f"reconstructed R² {implied!r} does not reproduce the stored {stored!r}; "
+            "the coefficient table and the panel columns disagree"
+        )
+    return out
+
+
+def placed_panel(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
+    """Attach coordinates, county, today's zone and the panel era's zone.
+
+    Raises when the register is empty. ``load_station_geo`` deliberately returns
+    an empty frame with the right schema when its cache is missing, so that a
+    join degrades to null coordinates rather than raising — correct for a map
+    that wants to show an unplaceable station, and fatal here, because a Moran's
+    I computed over zero stations would report success.
+
+    ``zone_era`` is the seven-zone partition of the panel's own years, not the
+    register's current eight. 離島空品區 did not exist as a zone before 2018;
+    ``conf/stations.yaml`` records that override, and using today's partition on
+    a 2010-2017 panel would be testing a map drawn after the fact.
+    """
+    from twair.ingest.station_meta import load_station_geo
+    from twair.store.stations import build_station_table, normalise_name_expr
+
+    register = load_station_geo()
+    if register.height == 0:
+        raise ValueError(
+            "the station register cache is empty (conf/station_geo.yaml absent) — every "
+            "coordinate would be null and every spatial statistic would be computed over "
+            "an empty network; run `uv run twair stations geo` first"
+        )
+
+    era = build_station_table(geography=False).select(STATION, pl.col("airzone").alias("zone_era"))
+    geo = register.select(
+        STATION, "lat", "lon", "county", "township", "airzone_official", "station_type_official"
+    )
+
+    out = (
+        panel.with_columns(normalise_name_expr().alias(STATION))
+        .join(geo, on=STATION, how="left")
+        .join(era, on=STATION, how="left")
+    )
+    # The era partition had no 離島 zone. A station the store places there is
+    # outside the era's seven zones, so it gets an explicit label rather than a
+    # null that a dummy-coder would silently drop.
+    return out.with_columns(
+        pl.when(pl.col("zone_era").is_in(list(conf.era_zones)))
+        .then(pl.col("zone_era"))
+        .otherwise(pl.lit("未分區"))
+        .alias("zone_era"),
+        pl.col(STATION).is_in(list(conf.offshore)).alias("offshore"),
+    )
+
+
+def station_coverage(
+    panel: pl.DataFrame, conf: SpatialConf, *, root: Path | None = None
+) -> pl.DataFrame:
+    """The exclusion ledger: who is in the network being measured, and who is not.
+
+    Printed before any statistic. Every number below it is conditional on this
+    table, and a spatial result quoted without its network is not checkable.
+    """
+    complete = _complete_stations(panel)
+    rows: list[dict[str, Any]] = []
+    for name, group in panel.group_by(STATION):
+        station = str(name[0] if isinstance(name, tuple) else name)
+        lat = group["lat"][0]
+        rows.append(
+            {
+                STATION: station,
+                "months_in_panel": group.height,
+                "placed": lat is not None,
+                "offshore": bool(group["offshore"][0]),
+                "zone_era": str(group["zone_era"][0]),
+                "airzone_official": group["airzone_official"][0],
+                "complete_every_month": station in complete,
+                "excluded_reason": (
+                    "no coordinates in the MOENV register"
+                    if lat is None
+                    else None
+                    if station in complete
+                    else "not present in every panel month"
+                ),
+            }
+        )
+    return pl.DataFrame(rows).sort(STATION)
+
+
+def _complete_stations(panel: pl.DataFrame) -> set[str]:
+    """Stations reporting in every month the panel covers.
+
+    Needed because a fixed weights matrix must have a fixed station set: if W
+    changes month to month, a trend in I is partly a measurement of the network
+    rather than of the air. Nothing is filled to achieve this — incomplete
+    stations are excluded and counted.
+    """
+    months = panel[MONTH].n_unique()
+    counts = panel.group_by(STATION).agg(pl.col(MONTH).n_unique().alias("n"))
+    return set(counts.filter(pl.col("n") == months)[STATION].to_list())
+
+
+# --------------------------------------------------------------------------- #
+# weights
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class WeightsBundle:
+    """A row-standardised W plus the diagnostics needed to interpret an I from it."""
+
+    dense: np.ndarray
+    stations: tuple[str, ...]
+    family: str
+    parameter: float
+    n_islands: int
+    longest_link_km: float
+    mean_link_km: float
+    metric: str
+
+    @property
+    def n(self) -> int:
+        return len(self.stations)
+
+    def spec(self) -> str:
+        return f"{self.family}({self.parameter:g}), {self.metric}, row-standardised"
+
+
+def build_weights(
+    coords: pl.DataFrame,
+    *,
+    family: WeightsFamily,
+    parameter: float,
+    conf: SpatialConf,
+) -> WeightsBundle:
+    """Row-standardised spatial weights over the stations in ``coords``.
+
+    Distances are great-circle kilometres from :mod:`twair.geometry`, computed
+    here rather than delegated. libpysal 4.15's ``KNN`` and ``DistanceBand``
+    default to Euclidean distance on raw decimal degrees; at Taiwan's latitude a
+    degree of longitude is about 0.90 of a degree of latitude, so that default
+    stretches the map east-west and quietly changes both the neighbour sets and
+    the isolate count. Doing the metric explicitly makes it a decision.
+    """
+    stations = tuple(coords[STATION].to_list())
+    d = pairwise_km(coords["lat"].to_numpy(), coords["lon"].to_numpy())
+    n = len(stations)
+    w = np.zeros((n, n), dtype=float)
+
+    if family == "knn":
+        k = int(parameter)
+        if k >= n:
+            raise ValueError(f"k={k} needs more than {n} stations")
+        masked = d.copy()
+        np.fill_diagonal(masked, np.inf)
+        for i in range(n):
+            w[i, np.argsort(masked[i], kind="stable")[:k]] = 1.0
+    elif family == "distance_band":
+        w = ((d > 0.0) & (d <= float(parameter))).astype(float)
+    else:  # pragma: no cover - Literal keeps this unreachable
+        raise ValueError(f"unknown weights family {family!r}")
+
+    degree = w.sum(axis=1)
+    islands = int((degree == 0).sum())
+    # An isolate contributes nothing to the numerator but would divide by zero
+    # here. Its row stays all-zero and the count is reported, because a band that
+    # isolates the east coast is a property of the band worth seeing.
+    safe = np.where(degree == 0.0, 1.0, degree)
+    w = w / safe[:, None]
+
+    linked = d[w > 0.0]
+    return WeightsBundle(
+        dense=w,
+        stations=stations,
+        family=family,
+        parameter=float(parameter),
+        n_islands=islands,
+        longest_link_km=float(linked.max()) if linked.size else float("nan"),
+        mean_link_km=float(linked.mean()) if linked.size else float("nan"),
+        metric=str(conf.weights["distance_metric"]),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# the statistic and its null
+# --------------------------------------------------------------------------- #
+def cliff_ord_moments(w_dense: np.ndarray, design: np.ndarray) -> tuple[float, float]:
+    """E[I] and Var[I] for Moran's I computed on OLS residuals.
+
+    With M = I - X(X'X)⁻¹X' and S0 = ΣΣw:
+
+        E[I]   = (n/S0) · tr(MW) / (n-k)
+        Var[I] = (n/S0)² · [tr(MWMW') + tr(MWMW) + tr(MW)²] / ((n-k)(n-k+2)) - E[I]²
+
+    Hand-coded in numpy because ``spreg`` is not installed and M6 adds no
+    dependency. The trace terms are short and easy to get subtly wrong, and a
+    wrong Var[I] yields plausible z-scores — so a Monte-Carlo against the fitted
+    null is the guard, and it lives in the tests.
+
+    Var[I] is an approximation (it comes from treating a ratio of quadratic forms
+    as a ratio of expectations) and it degrades with k/n. Measured against
+    simulation it runs about 11% high at k/n ≈ 0.18, which is this panel's ratio,
+    and worse above. It is therefore reported, not used as the test.
+    """
+    n, k = design.shape
+    if w_dense.shape != (n, n):
+        raise ValueError(f"W is {w_dense.shape} but the design has {n} rows")
+    s0 = float(w_dense.sum())
+    m = np.eye(n) - design @ np.linalg.solve(design.T @ design, design.T)
+    mw = m @ w_dense
+
+    tr_mw = float(np.trace(mw))
+    tr_mwmw = float(np.trace(mw @ mw))
+    tr_mwmwt = float(np.trace(mw @ mw.T))
+
+    df = n - k
+    if df <= 2:
+        return float("nan"), float("nan")
+    scale = n / s0
+    expected = scale * tr_mw / df
+    variance = scale**2 * (tr_mwmwt + tr_mwmw + tr_mw**2) / (df * (df + 2)) - expected**2
+    return expected, variance
+
+
+def _moran_statistic(values: np.ndarray, w_dense: np.ndarray) -> float:
+    z = values - values.mean()
+    denominator = float((z**2).sum())
+    if denominator == 0.0:
+        return float("nan")
+    return len(z) * float(z @ (w_dense @ z)) / (float(w_dense.sum()) * denominator)
+
+
+@dataclass(frozen=True, slots=True)
+class MoranResult:
+    """One Moran's I with everything needed to judge it."""
+
+    i: float | None
+    expected: float | None
+    variance: float | None
+    z: float | None
+    p_simulated: float | None
+    n: int
+    draws: int
+    refused: str | None = None
+
+
+def morans_i(
+    y: np.ndarray,
+    bundle: WeightsBundle,
+    *,
+    rng: np.random.Generator,
+    draws: int,
+    design: np.ndarray | None = None,
+    null_draws: np.ndarray | None = None,
+    min_units: int = 8,
+) -> MoranResult:
+    """Moran's I with an inference procedure valid for the field it is given.
+
+    ``design`` present means ``y`` is a residual vector: the moments come from
+    :func:`cliff_ord_moments` and the p-value from a null simulated under the
+    fitted model, supplied in ``null_draws`` (one column per draw, already
+    projected through the residual maker by the caller so that every scope shares
+    one set of draws). Absent, ``y`` is a raw field and the conditional
+    permutation null applies.
+
+    Returns ``None`` for the statistic with a reason rather than 0.0 when the
+    field is constant or the network is too small. Zero is indistinguishable from
+    "no spatial autocorrelation", which is exactly the finding at issue.
+    """
+    n = len(y)
+    if n < min_units:
+        return MoranResult(None, None, None, None, None, n, 0, f"fewer than {min_units} stations")
+    if float(np.nanstd(y)) == 0.0:
+        return MoranResult(None, None, None, None, None, n, 0, "the field is constant")
+
+    observed = _moran_statistic(y, bundle.dense)
+
+    expected: float | None = None
+    variance: float | None = None
+    if design is not None:
+        expected, variance = cliff_ord_moments(bundle.dense, design)
+    else:
+        expected = -1.0 / (n - 1)
+
+    if null_draws is not None:
+        null = np.array(
+            [_moran_statistic(null_draws[:, j], bundle.dense) for j in range(null_draws.shape[1])]
+        )
+    else:
+        null = np.empty(draws)
+        centred = y - y.mean()
+        for j in range(draws):
+            null[j] = _moran_statistic(rng.permutation(centred), bundle.dense)
+        variance = float(null.var(ddof=1))
+
+    null = null[np.isfinite(null)]
+    reference = expected if expected is not None else 0.0
+    # Two-sided against the null's own centre: the alternative here is "spatially
+    # structured", and a negative I is as much a structure as a positive one.
+    extreme = int((np.abs(null - reference) >= abs(observed - reference)).sum())
+    p_simulated = (1 + extreme) / (1 + null.size) if null.size else None
+
+    z: float | None = None
+    if variance is not None and variance > 0 and expected is not None:
+        z = (observed - expected) / float(np.sqrt(variance))
+
+    return MoranResult(
+        i=observed,
+        expected=expected,
+        variance=variance,
+        z=z,
+        p_simulated=p_simulated,
+        n=n,
+        draws=int(null.size),
+    )
+
+
+def residual_null_draws(design: np.ndarray, *, draws: int, rng: np.random.Generator) -> np.ndarray:
+    """Residual vectors drawn under the fitted null: iid errors, same design.
+
+    The cheap identity that makes this affordable: the residuals of a refit on
+    simulated data are M(Xβ + ε) = Mε, because MX = 0. So "refit inside every
+    draw" and "project an iid draw through the residual maker" are the same
+    vector, and a draw costs one solve of a k×k system rather than a regression.
+
+    Scale is irrelevant — I is invariant to it — so the errors are standard
+    normal and no σ̂ is needed.
+    """
+    n = design.shape[0]
+    gram = design.T @ design
+    noise = rng.standard_normal((n, draws))
+    out: np.ndarray = noise - design @ np.linalg.solve(gram, design.T @ noise)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# multiplicity and intervals
+# --------------------------------------------------------------------------- #
+def benjamini_hochberg(p: np.ndarray, alpha: float) -> np.ndarray:
+    """Step-up FDR. Returns the rejection mask.
+
+    Every count this module publishes over months, stations or bins is a family
+    of tests, not one. "71 of 96 months significant" is 96 statements, and the
+    raw count is also Monte-Carlo unstable near the threshold — so the adjusted
+    count leads everywhere and the raw one ships beside it.
+    """
+    finite = np.isfinite(p)
+    out = np.zeros(len(p), dtype=bool)
+    values = p[finite]
+    if values.size == 0:
+        return out
+    order = np.argsort(values, kind="stable")
+    ranked = values[order]
+    m = len(ranked)
+    thresholds = alpha * np.arange(1, m + 1) / m
+    passing = np.flatnonzero(ranked <= thresholds)
+    if passing.size == 0:
+        return out
+    cut = passing.max()
+    rejected = np.zeros(m, dtype=bool)
+    rejected[order[: cut + 1]] = True
+    out[finite] = rejected
+    return out
+
+
+def block_bootstrap_mean(
+    values: np.ndarray, *, draws: int, rng: np.random.Generator
+) -> tuple[float, float, float]:
+    """Mean of a per-month series with a percentile interval, resampling months.
+
+    Whole months are the block because that is the unit the statistic is computed
+    on and adjacent months share weather. The two most quotable numbers in this
+    module are differences of means over months; neither may be printed bare.
+    """
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return float("nan"), float("nan"), float("nan")
+    means = np.array(
+        [finite[rng.integers(0, finite.size, finite.size)].mean() for _ in range(draws)]
+    )
+    return float(finite.mean()), float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+
+# --------------------------------------------------------------------------- #
+# scopes
+# --------------------------------------------------------------------------- #
+def _moran_over_draws(draws: np.ndarray, w_dense: np.ndarray) -> np.ndarray:
+    """Moran's I for every column of ``draws`` at once.
+
+    Vectorised because the null is evaluated once per (scope, month): a Python
+    loop over 999 draws x 96 months x four scopes is minutes spent on nothing.
+    """
+    z = draws - draws.mean(axis=0, keepdims=True)
+    wz = w_dense @ z
+    numerator = (z * wz).sum(axis=0)
+    denominator = (z**2).sum(axis=0)
+    n = draws.shape[0]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: np.ndarray = n * numerator / (float(w_dense.sum()) * denominator)
+    return out
+
+
+def _placed(
+    frame: pl.DataFrame, value: str = RESIDUAL
+) -> tuple[np.ndarray, pl.DataFrame, np.ndarray]:
+    """Row indices, coordinates and values for the stations that can be placed."""
+    subset = frame.filter(pl.col("lat").is_not_null())
+    return (
+        subset["_row"].to_numpy(),
+        subset.select(STATION, "lat", "lon"),
+        subset[value].to_numpy(),
+    )
+
+
+def _score(
+    name: str,
+    rows: np.ndarray,
+    coords: pl.DataFrame,
+    values: np.ndarray,
+    *,
+    conf: SpatialConf,
+    null_draws: np.ndarray,
+    family: str | None = None,
+    parameter: float | None = None,
+    averaged: np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Moran's I for one cross-section, inferred against the simulated null.
+
+    The null is simulated rather than closed-form, and the reason is a real
+    subtlety rather than caution. Cliff-Ord's moments assume M is a projection.
+    For a per-month cross-section of a *pooled* fit's residuals the relevant
+    matrix is the (t,t) block of M, and **a sub-block of a projection is not a
+    projection** — it is not idempotent, so the formula does not apply to it.
+    Drawing under the fitted null and restricting to the month gives a vector
+    with exactly the right covariance and assumes nothing. The closed form is
+    kept for the case where it is genuinely valid, reported in its own column, so
+    that the two can never be mistaken for each other.
+    """
+    n = len(values)
+    if n < conf.min_units:
+        return {
+            "scope": name,
+            "n_stations": n,
+            "i": None,
+            "refused": f"fewer than {conf.min_units} placed stations",
+        }
+
+    bundle = build_weights(
+        coords,
+        family=family or str(conf.weights["family"]),  # type: ignore[arg-type]
+        parameter=parameter if parameter is not None else float(conf.weights["k"]),
+        conf=conf,
+    )
+    observed = _moran_statistic(values, bundle.dense)
+    null = _moran_over_draws(
+        averaged if averaged is not None else null_draws[rows, :], bundle.dense
+    )
+    null = null[np.isfinite(null)]
+    if null.size == 0:
+        return {"scope": name, "n_stations": n, "i": observed, "refused": "the null degenerated"}
+
+    expected = float(null.mean())
+    sd = float(null.std(ddof=1)) if null.size > 1 else float("nan")
+    extreme = int((np.abs(null - expected) >= abs(observed - expected)).sum())
+    return {
+        "scope": name,
+        "n_stations": n,
+        "i": observed,
+        "expected_simulated": expected,
+        "sd_simulated": sd,
+        "z": (observed - expected) / sd if np.isfinite(sd) and sd > 0 else None,
+        "p_simulated": (1 + extreme) / (1 + null.size),
+        "null_draws": int(null.size),
+        "weights": bundle.spec(),
+        "n_islands": bundle.n_islands,
+        "longest_link_km": bundle.longest_link_km,
+        "refused": None,
+    }
+
+
+def _design_of(frame: pl.DataFrame) -> np.ndarray:
+    """The original's design matrix, intercept first, in a fixed column order."""
+    from twair.analysis.replication import ORIGINAL_PREDICTORS
+
+    return np.column_stack(
+        [np.ones(frame.height)] + [frame[name].to_numpy() for name in ORIGINAL_PREDICTORS]
+    )
+
+
+def residual_autocorrelation(
+    panel: pl.DataFrame, conf: SpatialConf, *, rng: np.random.Generator
+) -> pl.DataFrame:
+    """Residual Moran's I at four scopes, one row per (scope, month).
+
+    ``per_month`` lets the weights matrix follow whichever stations reported that
+    month; ``per_month_fixed_w`` holds the station set to those complete in every
+    month. Both ship, because they answer different questions and their
+    disagreeing is itself informative — a trend visible only in the first is a
+    trend in the network, not in the air.
+
+    ``station_mean`` and ``station_mean_main_island`` collapse to one value per
+    station, restricted to the complete stations: the mean of three months and
+    the mean of ninety-six are not exchangeable, and a null that treats them as
+    such is measuring record length.
+    """
+    work = panel.with_row_index("_row")
+    draws = residual_null_draws(
+        _design_of(work), draws=int(conf.inference["residual_null_draws"]), rng=rng
+    )
+    complete = _complete_stations(panel)
+    rows: list[dict[str, Any]] = []
+
+    for month, group in work.group_by(MONTH, maintain_order=True):
+        stamp = month[0] if isinstance(month, tuple) else month
+        for name, subset in (
+            ("per_month", group),
+            ("per_month_fixed_w", group.filter(pl.col(STATION).is_in(list(complete)))),
+        ):
+            idx, coords, values = _placed(subset)
+            record = _score(name, idx, coords, values, conf=conf, null_draws=draws)
+            record[MONTH] = stamp
+            rows.append(record)
+
+    for name, keep_offshore in (("station_mean", True), ("station_mean_main_island", False)):
+        subset = work.filter(pl.col(STATION).is_in(list(complete)))
+        if not keep_offshore:
+            subset = subset.filter(~pl.col("offshore"))
+        placed = subset.filter(pl.col("lat").is_not_null())
+        if placed.height == 0:
+            continue
+        grouped = placed.group_by(STATION, maintain_order=True).agg(
+            pl.col(RESIDUAL).mean().alias(RESIDUAL),
+            pl.col("lat").first(),
+            pl.col("lon").first(),
+            pl.col("_row").alias("member_rows"),
+        )
+        # The null is averaged the same way the observation is, so the comparison
+        # is between two station means rather than between a mean and a single hour.
+        averaged = np.vstack(
+            [draws[np.asarray(r), :].mean(axis=0) for r in grouped["member_rows"].to_list()]
+        )
+        record = _score(
+            name,
+            np.array([], dtype=int),
+            grouped.select(STATION, "lat", "lon"),
+            grouped[RESIDUAL].to_numpy(),
+            conf=conf,
+            null_draws=draws,
+            averaged=averaged,
+        )
+        record[MONTH] = None
+        rows.append(record)
+
+    return _attach_fdr(pl.DataFrame(rows, infer_schema_length=None), conf)
+
+
+def _attach_fdr(frame: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
+    """Add a BH rejection column, computed inside each scope separately.
+
+    Inside scope, because the family of tests is "the months of this scope".
+    Pooling the scopes would make a family out of the same data looked at four
+    different ways, which is not what FDR control is for.
+    """
+    if "p_simulated" not in frame.columns:
+        return frame
+    pieces = [
+        group.with_columns(
+            pl.Series(
+                "significant_bh",
+                benjamini_hochberg(
+                    np.array(
+                        [np.nan if v is None else float(v) for v in group["p_simulated"].to_list()]
+                    ),
+                    conf.fdr_alpha,
+                ),
+            )
+        )
+        for _, group in frame.group_by("scope", maintain_order=True)
+    ]
+    return pl.concat(pieces)
+
+
+# --------------------------------------------------------------------------- #
+# the correlogram — printed before any single I
+# --------------------------------------------------------------------------- #
+def moran_correlogram(
+    panel: pl.DataFrame, conf: SpatialConf, *, rng: np.random.Generator
+) -> pl.DataFrame:
+    """Residual Moran's I by distance band, on the station-mean residual field.
+
+    This is the primary spatial-dependence table and the CLI prints it first. A
+    single I is a weighted blend over every distance the weights matrix spans; if
+    the correlogram changes sign at mid range then that blend is an average of
+    opposite-signed things and quoting it alone is misleading. It also decides
+    whether a monotone spherical variogram is even the right model for the field
+    step, so it has to exist before the field does.
+    """
+    work = panel.with_row_index("_row")
+    draws = residual_null_draws(
+        _design_of(work), draws=int(conf.inference["residual_null_draws"]), rng=rng
+    )
+    complete = _complete_stations(panel)
+    placed = work.filter(pl.col(STATION).is_in(list(complete))).filter(pl.col("lat").is_not_null())
+    grouped = placed.group_by(STATION, maintain_order=True).agg(
+        pl.col(RESIDUAL).mean().alias(RESIDUAL),
+        pl.col("lat").first(),
+        pl.col("lon").first(),
+        pl.col("_row").alias("member_rows"),
+    )
+    values = grouped[RESIDUAL].to_numpy()
+    averaged = np.vstack(
+        [draws[np.asarray(r), :].mean(axis=0) for r in grouped["member_rows"].to_list()]
+    )
+    d = pairwise_km(grouped["lat"].to_numpy(), grouped["lon"].to_numpy())
+
+    edges = [float(e) for e in conf.correlogram["bins_km"]]
+    rows: list[dict[str, Any]] = []
+    for lo, hi in itertools.pairwise(edges):
+        mask = (d > lo) & (d <= hi)
+        pairs = int(mask.sum() // 2)
+        degree = mask.sum(axis=1)
+        if pairs == 0:
+            rows.append(
+                {
+                    "bin_lo_km": lo,
+                    "bin_hi_km": hi,
+                    "pairs": 0,
+                    "i": None,
+                    "refused": "no station pairs fall in this band",
+                }
+            )
+            continue
+        w = mask.astype(float)
+        w = w / np.where(degree == 0, 1.0, degree)[:, None]
+        observed = _moran_statistic(values, w)
+        null = _moran_over_draws(averaged, w)
+        null = null[np.isfinite(null)]
+        expected = float(null.mean())
+        sd = float(null.std(ddof=1))
+        extreme = int((np.abs(null - expected) >= abs(observed - expected)).sum())
+        rows.append(
+            {
+                "bin_lo_km": lo,
+                "bin_hi_km": hi,
+                "pairs": pairs,
+                "stations_with_a_neighbour": int((degree > 0).sum()),
+                "isolates": int((degree == 0).sum()),
+                "i": observed,
+                "expected_simulated": expected,
+                "sd_simulated": sd,
+                "z": (observed - expected) / sd if sd > 0 else None,
+                "p_simulated": (1 + extreme) / (1 + null.size),
+                "refused": None,
+            }
+        )
+
+    out = pl.DataFrame(rows, infer_schema_length=None)
+    p = np.array([np.nan if v is None else float(v) for v in out["p_simulated"].to_list()])
+    return out.with_columns(pl.Series("significant_bh", benjamini_hochberg(p, conf.fdr_alpha)))
+
+
+# --------------------------------------------------------------------------- #
+# the headline
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class _Fit:
+    """An OLS fit reported by what it can and cannot support."""
+
+    residuals: np.ndarray
+    design: np.ndarray
+    rank: int
+    columns: int
+    condition: float
+    r_squared: float
+    adjusted_r_squared: float
+    rank_deficient: bool
+
+
+def _least_squares(design: np.ndarray, y: np.ndarray) -> _Fit:
+    """Least squares by SVD, so a rank-deficient design returns a fit and a warning.
+
+    NO, NO2 and NOx enter the original's specification together and NO + NO2 ≡
+    NOx, so the pooled design is singular in all but rounding error and a
+    within-zone design over three stations is worse. `lstsq` gives the minimum-norm
+    solution, which leaves the *residuals* — the only thing this module reads —
+    well defined even where the coefficients are not. The rank and the condition
+    number ship so that nobody quotes a coefficient from such a fit.
+    """
+    solution, _, rank, singular = np.linalg.lstsq(design, y, rcond=None)
+    fitted = design @ solution
+    residuals = y - fitted
+    ss_res = float((residuals**2).sum())
+    ss_tot = float(((y - y.mean()) ** 2).sum())
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    n = len(y)
+    df = n - int(rank)
+    adjusted = 1.0 - (1.0 - r2) * (n - 1) / df if df > 0 else float("nan")
+    positive = singular[singular > 0]
+    condition = float(positive.max() / positive.min()) if positive.size else float("inf")
+    return _Fit(
+        residuals=residuals,
+        design=design,
+        rank=int(rank),
+        columns=design.shape[1],
+        condition=condition,
+        r_squared=r2,
+        adjusted_r_squared=adjusted,
+        rank_deficient=int(rank) < design.shape[1],
+    )
+
+
+def _dummies(labels: list[str], *, drop_first: bool) -> tuple[np.ndarray, list[str]]:
+    """Indicator columns for a categorical control.
+
+    ``drop_first`` only when an intercept is present. Nothing is ever dropped for
+    being *unknown*: a station whose era zone cannot be determined gets its own
+    indicator, because dropping it would silently remove it from the comparison.
+    """
+    levels = sorted(set(labels))
+    used = levels[1:] if drop_first else levels
+    matrix = np.column_stack([np.array([1.0 if v == lvl else 0.0 for v in labels]) for lvl in used])
+    return matrix, used
+
+
+def partition_price(
+    panel: pl.DataFrame, conf: SpatialConf, *, rng: np.random.Generator
+) -> pl.DataFrame:
+    """THE HEADLINE: how much spatial dependence each control actually removes.
+
+    Five controls on the original's own design, in increasing strength:
+
+    ``pooled``
+        the fit exactly as M1 publishes it — no spatial control at all.
+    ``zone_era_dummies``
+        the seven zones of the panel's own years as intercept shifts.
+    ``zone_official_today``
+        the register's current zones, run so the anachronism is *visible* rather
+        than chosen. It is not the headline.
+    ``within_zone_separate_fits``
+        the literal 「分區各跑一次」: every coefficient free to differ by zone,
+        residuals pooled afterwards. Expressed as one design — zone indicators
+        interacted with the full predictor set — because separate fits and a
+        fully interacted fit produce the same residuals, and one design keeps the
+        null machinery identical across controls.
+    ``station_dummies``
+        a fixed effect per station: far stronger than anything the original did,
+        included as the ceiling. If dependence survives even this, no amount of
+        stratifying by area would have fixed it.
+
+    Reported as "mean I fell from X to Y, with an interval". There is deliberately
+    no ``share_of_dependence_removed`` column: I is a normalised correlation, it
+    has no decomposition property, and a ratio of two I values would look like a
+    variance share while being nothing of the kind.
+    """
+    from twair.analysis.replication import RESPONSE
+
+    work = panel.with_row_index("_row")
+    y = work[RESPONSE].to_numpy()
+    base = _design_of(work)
+    zone_era, _ = _dummies(work["zone_era"].to_list(), drop_first=True)
+    zone_now, _ = _dummies(
+        [v if v is not None else "未登錄" for v in work["airzone_official"].to_list()],
+        drop_first=True,
+    )
+    station, _ = _dummies(work[STATION].to_list(), drop_first=True)
+    era_labels = work["zone_era"].to_list()
+    interacted = np.column_stack(
+        [
+            base * np.array([1.0 if v == lvl else 0.0 for v in era_labels])[:, None]
+            for lvl in sorted(set(era_labels))
+        ]
+    )
+
+    controls: list[tuple[str, np.ndarray]] = [
+        ("pooled", base),
+        ("zone_era_dummies", np.column_stack([base, zone_era])),
+        ("zone_official_today", np.column_stack([base, zone_now])),
+        ("within_zone_separate_fits", interacted),
+        ("station_dummies", np.column_stack([base, station])),
+    ]
+
+    complete = _complete_stations(panel)
+    draws_wanted = int(conf.inference["residual_null_draws"])
+    rows: list[dict[str, Any]] = []
+
+    for name, design in controls:
+        fit = _least_squares(design, y)
+        draws = residual_null_draws(design, draws=draws_wanted, rng=rng)
+        scored = work.with_columns(pl.Series(RESIDUAL, fit.residuals))
+
+        per_month: list[dict[str, Any]] = []
+        for month, group in scored.group_by(MONTH, maintain_order=True):
+            subset = group.filter(pl.col(STATION).is_in(list(complete)))
+            idx, coords, values = _placed(subset)
+            record = _score(name, idx, coords, values, conf=conf, null_draws=draws)
+            record[MONTH] = month[0] if isinstance(month, tuple) else month
+            per_month.append(record)
+
+        i_values = np.array([np.nan if r.get("i") is None else float(r["i"]) for r in per_month])
+        p_values = np.array(
+            [np.nan if r.get("p_simulated") is None else float(r["p_simulated"]) for r in per_month]
+        )
+        mean_i, lo, hi = block_bootstrap_mean(
+            i_values, draws=int(conf.inference["block_bootstrap_draws"]), rng=rng
+        )
+        rejected = benjamini_hochberg(p_values, conf.fdr_alpha)
+        rows.append(
+            {
+                "control": name,
+                "n_obs": len(y),
+                "design_columns": fit.columns,
+                "rank": fit.rank,
+                "rank_deficient": fit.rank_deficient,
+                "condition_number": fit.condition,
+                "r_squared": fit.r_squared,
+                "adjusted_r_squared": fit.adjusted_r_squared,
+                "months_scored": int(np.isfinite(i_values).sum()),
+                "mean_i": mean_i,
+                "mean_i_lo": lo,
+                "mean_i_hi": hi,
+                "median_i": float(np.nanmedian(i_values)),
+                "months_significant_bh": int(rejected.sum()),
+                "months_significant_raw": int(np.nansum(p_values < conf.fdr_alpha)),
+                "coefficients_reportable": not fit.rank_deficient,
+            }
+        )
+
+    return pl.DataFrame(rows, infer_schema_length=None)
+
+
+def weights_sensitivity(
+    panel: pl.DataFrame, conf: SpatialConf, *, rng: np.random.Generator
+) -> pl.DataFrame:
+    """The same residual field under every weights definition in the grid.
+
+    Without this the headline's magnitude reads as a property of the air. It is
+    not: it is a property of the air *and* of a matrix somebody chose. The grid is
+    what stops a single k being quoted as if the number were k-free.
+    """
+    work = panel.with_row_index("_row")
+    draws = residual_null_draws(
+        _design_of(work), draws=int(conf.inference["residual_null_draws"]), rng=rng
+    )
+    complete = _complete_stations(panel)
+    rows: list[dict[str, Any]] = []
+
+    for main_island_only in (False, True):
+        subset = work.filter(pl.col(STATION).is_in(list(complete)))
+        if main_island_only:
+            subset = subset.filter(~pl.col("offshore"))
+        placed = subset.filter(pl.col("lat").is_not_null())
+        if placed.height == 0:
+            continue
+        grouped = placed.group_by(STATION, maintain_order=True).agg(
+            pl.col(RESIDUAL).mean().alias(RESIDUAL),
+            pl.col("lat").first(),
+            pl.col("lon").first(),
+            pl.col("_row").alias("member_rows"),
+        )
+        averaged = np.vstack(
+            [draws[np.asarray(r), :].mean(axis=0) for r in grouped["member_rows"].to_list()]
+        )
+        coords = grouped.select(STATION, "lat", "lon")
+        values = grouped[RESIDUAL].to_numpy()
+
+        grid: list[tuple[str, float]] = [("knn", float(k)) for k in conf.weights["knn_grid"]] + [
+            ("distance_band", float(km)) for km in conf.weights["distance_band_grid_km"]
+        ]
+
+        for family, parameter in grid:
+            if family == "knn" and int(parameter) >= len(values):
+                continue
+            record = _score(
+                "station_mean",
+                np.array([], dtype=int),
+                coords,
+                values,
+                conf=conf,
+                null_draws=draws,
+                family=family,
+                parameter=parameter,
+                averaged=averaged,
+            )
+            record["family"] = family
+            record["parameter"] = parameter
+            record["main_island_only"] = main_island_only
+            rows.append(record)
+
+    return pl.DataFrame(rows, infer_schema_length=None)
+
+
+# --------------------------------------------------------------------------- #
+# orchestration
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class SpatialResult:
+    """Every table M6 produced, plus the run's own parameters."""
+
+    metadata: pl.DataFrame
+    coverage: pl.DataFrame
+    correlogram: pl.DataFrame
+    residual: pl.DataFrame
+    partition: pl.DataFrame
+    sensitivity: pl.DataFrame | None = None
+
+    def tables(self) -> dict[str, pl.DataFrame]:
+        out = {
+            "metadata": self.metadata,
+            "station_coverage": self.coverage,
+            "correlogram": self.correlogram,
+            "residual_autocorrelation": self.residual,
+            "partition_price": self.partition,
+        }
+        if self.sensitivity is not None:
+            out["weights_sensitivity"] = self.sensitivity
+        return out
+
+
+def run_spatial(
+    root: Path | None = None,
+    *,
+    conf: SpatialConf | None = None,
+    steps: tuple[str, ...] = STEPS,
+) -> SpatialResult:
+    """Run M6, threading one seeded generator through every consumer."""
+    settings = conf or load_spatial_conf()
+    rng = np.random.default_rng(settings.seed)
+
+    panel_raw, ols = load_m1_artefacts(root)
+    residuals = reconstruct_residuals(panel_raw, ols)
+    panel = placed_panel(residuals, settings)
+
+    placed_count = panel.filter(pl.col("lat").is_not_null())[STATION].n_unique()
+    if placed_count < settings.min_units:
+        raise ValueError(
+            f"only {placed_count} of {panel[STATION].n_unique()} panel stations can be placed; "
+            f"conf/spatial.yaml requires at least {settings.min_units}"
+        )
+
+    metadata = pl.DataFrame(
+        {
+            "key": [
+                "seed",
+                "earth_radius_km",
+                "residual_null_draws",
+                "block_bootstrap_draws",
+                "weights",
+                "zone_partition",
+                "panel_months",
+                "panel_stations",
+                "panel_stations_placed",
+                "panel_stations_complete",
+                "r_squared_pooled",
+            ],
+            "value": [
+                str(settings.seed),
+                str(EARTH_RADIUS_KM),
+                str(settings.inference["residual_null_draws"]),
+                str(settings.inference["block_bootstrap_draws"]),
+                f"{settings.weights['family']}({settings.weights['k']})",
+                str(settings.panel["zone_partition"]),
+                str(panel[MONTH].n_unique()),
+                str(panel[STATION].n_unique()),
+                str(placed_count),
+                str(len(_complete_stations(panel))),
+                str(as_float(ols["r_squared"][0])),
+            ],
+        }
+    )
+
+    coverage = station_coverage(panel, settings, root=root)
+    log.info(
+        "M6 panel: %d station-months, %d stations, %d placed, %d complete in every month",
+        panel.height,
+        panel[STATION].n_unique(),
+        placed_count,
+        len(_complete_stations(panel)),
+    )
+
+    correlogram = (
+        moran_correlogram(panel, settings, rng=rng) if "headline" in steps else pl.DataFrame()
+    )
+    residual = (
+        residual_autocorrelation(panel, settings, rng=rng)
+        if "headline" in steps
+        else pl.DataFrame()
+    )
+    partition = partition_price(panel, settings, rng=rng) if "headline" in steps else pl.DataFrame()
+    sensitivity = weights_sensitivity(panel, settings, rng=rng) if "sensitivity" in steps else None
+
+    return SpatialResult(
+        metadata=metadata,
+        coverage=coverage,
+        correlogram=correlogram,
+        residual=residual,
+        partition=partition,
+        sensitivity=sensitivity,
+    )
+
+
+def write_spatial_report(result: SpatialResult) -> dict[str, Path]:
+    """Persist every table as zstd parquet and return name -> path."""
+    base = outputs_dir("m6_spatial")
+    base.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    for name, frame in result.tables().items():
+        if frame.height == 0:
+            continue
+        path = base / f"{name}.parquet"
+        frame.write_parquet(path, compression="zstd")
+        written[name] = path
+    return written

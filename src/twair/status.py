@@ -76,6 +76,7 @@ MODULES: tuple[Module, ...] = (
     Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
     Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),
     Module("m12_sarima", "twair analyze m12", "the model the 2018 project called inconvenient"),
+    Module("m6_spatial", "twair analyze m6", "what the 2018 zone stratification bought"),
 )
 
 

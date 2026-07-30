@@ -30,13 +30,13 @@ what the finding costs.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import polars as pl
 
 from twair.config import load_conf
+from twair.geometry import haversine_km
 from twair.scalars import as_float, opt_float
 
 log = logging.getLogger(__name__)
@@ -248,16 +248,6 @@ def _interpolate(
     return _mark(back, original, columns), notes
 
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Great-circle distance. Taiwan is small enough that the ellipsoid does not matter."""
-    radius = 6371.0088
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = p2 - p1
-    dl = math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * radius * math.asin(math.sqrt(a))
-
-
 def _neighbor(
     frame: pl.DataFrame,
     columns: list[str],
@@ -362,7 +352,7 @@ def _best_donor(
         if other == target or other not in coords or other not in matrix.columns:
             continue
         olat, olon = coords[other]
-        km = _haversine_km(tlat, tlon, olat, olon)
+        km = haversine_km(tlat, tlon, olat, olon)
         if km <= max_km:
             candidates.append((km, other))
 
