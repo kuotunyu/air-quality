@@ -8,6 +8,7 @@
  */
 import { n } from "../lib/chart";
 import { stationType } from "../lib/labels";
+import { groupByCountyNorthToSouth } from "../lib/data";
 import type { StationCard } from "../lib/data";
 
 interface Props {
@@ -17,13 +18,10 @@ interface Props {
 
 const { cards, caveat } = Astro.props;
 
-const byCounty = new Map<string, StationCard[]>();
-for (const card of cards) {
-  const county = card.county ?? "（已停用，無行政區資料）";
-  if (!byCounty.has(county)) byCounty.set(county, []);
-  byCounty.get(county)!.push(card);
-}
-const counties = [...byCounty.entries()].sort(([a], [b]) => a.localeCompare(b, "zh-Hant"));
+// Grouped by county already, but the counties came out in stroke order, which
+// is no more findable than the station names were. Same helper as chapter 3's
+// picker, so the two lists cannot drift into different orders.
+const counties = groupByCountyNorthToSouth(cards, (card) => card.station_name);
 
 const initial = cards.find((c) => c.station_name === "鳳山") ?? cards[0];
 ---
@@ -34,15 +32,13 @@ const initial = cards.find((c) => c.station_name === "鳳山") ?? cards[0];
       測站
       <select id="station-select">
         {
-          counties.map(([county, group]) => (
-            <optgroup label={county}>
-              {group
-                .sort((a, b) => a.station_name.localeCompare(b.station_name, "zh-Hant"))
-                .map((card) => (
-                  <option value={card.station_name} selected={card.station_name === initial.station_name}>
-                    {card.station_name}
-                  </option>
-                ))}
+          counties.map((group) => (
+            <optgroup label={group.label}>
+              {group.items.map((card) => (
+                <option value={card.station_name} selected={card.station_name === initial.station_name}>
+                  {card.station_name}
+                </option>
+              ))}
             </optgroup>
           ))
         }

@@ -18,6 +18,101 @@ import replication from "../../public/data/story/replication.json";
 import imputation from "../../public/data/story/imputation.json";
 import deweather from "../../public/data/story/deweather.json";
 import sarima from "../../public/data/story/sarima.json";
+import { COUNTIES } from "./taiwan";
+
+/**
+ * Stations grouped by county, counties running north to south.
+ *
+ * A `<select>` of 74 stations sorted by name puts 二林（彰化）next to
+ * 三義（苗栗）next to 土城（新北）: three counties and 300km in three rows. The
+ * order a reader can actually use is geographic, and the coordinates to build it
+ * are already in the register — so it is derived rather than typed out. A
+ * hand-written county list would be correct today and wrong the first time the
+ * register changes, on a site whose whole claim is that its numbers can be
+ * checked.
+ *
+ * Order, in three tiers:
+ *
+ * 1. Main-island counties, by the mean latitude of their own stations. That is
+ *    literally north to south, so the east coast interleaves with the west —
+ *    宜蘭 sits between 新竹市 and 苗栗, 花蓮 between 彰化 and 南投. True to the
+ *    latitude, and the alternative would mean inventing a west-then-east
+ *    convention rather than reading one off the data.
+ * 2. Offshore counties. "Offshore" is not a list here either: it is any county
+ *    the map's own boundary data has no main-island geometry for, which is the
+ *    same test `StationMap` uses to decide what it can draw. Otherwise 連江縣
+ *    would lead the whole select on the strength of being at 26.15°N.
+ * 3. Stations the register has no county for at all — six of them, all with
+ *    decades of observations and no coordinate. Grouped and labelled rather
+ *    than dropped, for the same reason the map lists them.
+ */
+export interface CountyGroup<T> {
+  label: string;
+  items: T[];
+}
+
+const MAIN_ISLAND = new Set(COUNTIES.map((county) => county.name));
+const NO_COUNTY = "無縣市紀錄";
+
+/**
+ * Each county's latitude, averaged over every station the register places in
+ * it — not over the stations of whichever list is being sorted.
+ *
+ * Computed from the list, chapter 3 and chapter 2 disagreed about 臺北市 and
+ * 新北市: chapter 3 has 富貴角 at 25.30 but no 淡水, chapter 2 has 陽明 at 25.18,
+ * and the two means crossed over. Same rule, different data, two different
+ * orders — which is the complaint this ordering exists to answer, one level up.
+ */
+const countyLatitude = new Map<string, number>();
+{
+  const sums = new Map<string, { total: number; n: number }>();
+  for (const station of meta.stations as Station[]) {
+    if (station.lat == null || !station.county) continue;
+    const acc = sums.get(station.county) ?? { total: 0, n: 0 };
+    acc.total += station.lat;
+    acc.n += 1;
+    sums.set(station.county, acc);
+  }
+  for (const [county, { total, n }] of sums) countyLatitude.set(county, total / n);
+}
+
+export function groupByCountyNorthToSouth<T>(
+  items: T[],
+  nameOf: (item: T) => string,
+): CountyGroup<T>[] {
+  const placed = new Map(stations.map((s) => [s.station_name, s]));
+
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const county = placed.get(nameOf(item))?.county || NO_COUNTY;
+    if (!groups.has(county)) groups.set(county, []);
+    groups.get(county)!.push(item);
+  }
+
+  const latitudeOf = (item: T) => placed.get(nameOf(item))?.lat ?? null;
+
+  // Tier first, then latitude, then name — so the result is total and stable
+  // rather than depending on Map insertion order for the ties.
+  const tier = (county: string) =>
+    county === NO_COUNTY ? 2 : MAIN_ISLAND.has(county) ? 0 : 1;
+
+  return [...groups.entries()]
+    .map(([label, group]) => ({ label, items: group, lat: countyLatitude.get(label) ?? null }))
+    .sort(
+      (a, b) =>
+        tier(a.label) - tier(b.label) ||
+        (b.lat ?? -Infinity) - (a.lat ?? -Infinity) ||
+        a.label.localeCompare(b.label, "zh-Hant"),
+    )
+    .map(({ label, items: group }) => ({
+      label,
+      items: [...group].sort(
+        (a, b) =>
+          (latitudeOf(b) ?? -Infinity) - (latitudeOf(a) ?? -Infinity) ||
+          nameOf(a).localeCompare(nameOf(b), "zh-Hant"),
+      ),
+    }));
+}
 
 export interface Station {
   station_name: string;

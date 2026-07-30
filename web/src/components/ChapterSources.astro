@@ -16,6 +16,7 @@
 import sourcesData from "../../public/data/story/sources.json";
 import { compass, SIGNATURE } from "../lib/labels";
 import { n } from "../lib/chart";
+import { groupByCountyNorthToSouth } from "../lib/data";
 
 const data = sourcesData as {
   explains: string;
@@ -45,7 +46,11 @@ const data = sourcesData as {
   >;
 };
 
-const names = Object.keys(data.stations).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+// Name order put 二林（彰化）, 三義（苗栗）and 土城（新北）in consecutive rows —
+// three counties and 300 km in three rows. Grouped and ordered geographically
+// instead; see `groupByCountyNorthToSouth`.
+const names = Object.keys(data.stations);
+const grouped = groupByCountyNorthToSouth(names, (name) => name);
 const initial = names.includes("富貴角") ? "富貴角" : names[0];
 
 const SIZE = 420;
@@ -126,11 +131,16 @@ const legend = BREAKS.map((b, i) => ({
       測站
       <select id="cbpf-station">
         {
-          names.map((name) => (
-            <option value={name} selected={name === initial}>
-              {name}
-              {data.stations[name].county ? `（${data.stations[name].county}）` : ""}
-            </option>
+          grouped.map((group) => (
+            <optgroup label={group.label}>
+              {group.items.map((name) => (
+                /* The county is the group's own label now, so the option is
+                   just the station. */
+                <option value={name} selected={name === initial}>
+                  {name}
+                </option>
+              ))}
+            </optgroup>
           ))
         }
       </select>
