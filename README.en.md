@@ -180,7 +180,7 @@ Current developmental milestones are tracked in **[PROGRESS.md](PROGRESS.md)**.
 | **Phase 2** | Method Replication (M1) & Robust Pitfall Demonstration (M3) | ✅ Complete |
 | **Phase 3** | Astro Interactive Dashboard & DuckDB-WASM Setup | ✅ Complete |
 | **Phase 4** | Weather Normalization (M4) & Policy Causal Inference (M5) | ✅ Complete |
-| **Phase 5** | Source direction via CBPF (M7) ✅ / Spatial autocorrelation (M6) ⬜ | 🔄 **Partial** |
+| **Phase 5** | Source direction via CBPF (M7) ✅ / Spatial autocorrelation (M6) ✅ | ✅ **Done** |
 | **Phase 6** | Satellite AOD & Low-Cost Micro-sensor Network Fusion | ⬜ Likely skipped |
 | **Phase 7** | Forecasting (M9) & HF Space Demo | ✅ **Complete — [Space is live](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast)** |
 | **Phase 8** | Health burden (M10) ✅ / freshness check ✅ / full report ⬜ | 🔄 **In progress** |

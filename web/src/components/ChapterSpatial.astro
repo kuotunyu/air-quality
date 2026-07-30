@@ -1,0 +1,498 @@
+---
+/**
+ * Chapter 3 — spatial structure, and what 「分區各跑一次」 bought.
+ *
+ * D7 recorded the defect as 「78 個測站的空間維度沒用」, and measuring it
+ * corrected the record: the 2018 project *stratified* by zone, and that
+ * stratification removed most of the spatial dependence. The chapter therefore
+ * runs on two questions that can each come out either way — was the
+ * stratification an adequate control (mostly yes), and are its standard errors
+ * still standing (no) — rather than on a verdict picked in advance.
+ *
+ * Order of material mirrors the module's own printing rule: the network first,
+ * the correlogram before any single number, the controls after both.
+ */
+import spatial from "../../public/data/story/spatial-structure.json";
+import { n } from "../lib/chart";
+
+const network = spatial.network as {
+  stations: number;
+  months: number;
+  placed: number;
+  complete: number;
+  unplaced: string[];
+  weights: string;
+  null_draws: number;
+};
+
+const correlogram = spatial.correlogram as {
+  lo_km: number;
+  hi_km: number;
+  pairs: number;
+  i: number;
+  z: number;
+  significant: boolean;
+}[];
+
+const controls = spatial.controls as {
+  control: string;
+  params: number;
+  r_squared: number;
+  mean_i: number;
+  mean_i_lo: number;
+  mean_i_hi: number;
+  months_significant_bh: number;
+  months_scored: number;
+}[];
+
+const partition = spatial.partition_test as {
+  groups: number;
+  separation_r: number;
+  silhouette: number;
+  pct_separation: number;
+  pct_silhouette: number;
+  ensemble_draws: number;
+  best_k: number;
+  best_k_silhouette: number;
+  ari_at_official_k: number | null;
+};
+
+const lisa = spatial.lisa as {
+  stations: number;
+  significant_bh: number;
+  significant_raw: number;
+  quadrants: Record<string, number>;
+};
+
+const inference = spatial.inference as {
+  published_t_pm10: number | null;
+  rows: { cov_type: string; meaning: string; t: number; se_inflation: number }[];
+  flips_two_way: string[];
+};
+
+const field = spatial.field as {
+  summary: { method: string; buffer_km: number; mae: number; rmse: number; n: number }[];
+  failed_folds: number;
+};
+
+const scopeLimits = spatial.scope_limits as string[];
+const refusals = spatial.refusals as string[];
+
+const CONTROL_LABELS: Record<string, string> = {
+  pooled: "合併式（原文推論所依據）",
+  zone_era_dummies: "七區截距",
+  zone_official_today: "今日分區截距（時代錯置對照）",
+  within_zone_separate_fits: "字面上的「分區各跑一次」",
+  station_dummies: "測站固定效果（天花板）",
+};
+
+const pooled = controls.find((c) => c.control === "pooled");
+const literal = controls.find((c) => c.control === "within_zone_separate_fits");
+
+// The bar geometry: mean I spans a shared scale so the five controls are
+// comparable at a glance. Domain padded to the widest interval.
+const maxI = Math.max(...controls.map((c) => c.mean_i_hi)) * 1.12;
+const pct = (v: number) => (v / maxI) * 100;
+
+// Correlogram bars are signed; the axis midline splits the band.
+const maxAbs = Math.max(...correlogram.map((b) => Math.abs(b.i))) * 1.15;
+const half = (v: number) => (Math.abs(v) / maxAbs) * 50;
+
+const iidRow = inference.rows.find((r) => r.cov_type === "iid");
+const twoWayRow = inference.rows.find((r) => r.cov_type === "cluster_twoway");
+
+const buffers = [...new Set(field.summary.map((r) => r.buffer_km))].sort((a, b) => a - b);
+const methodOrder = ["kriging_spherical", "kriging_hole-effect", "idw2", "nearest", "station_mean"];
+const METHOD_LABELS: Record<string, string> = {
+  "kriging_spherical": "Kriging（球型變異圖）",
+  "kriging_hole-effect": "Kriging（hole-effect）",
+  idw2: "反距離平方加權",
+  nearest: "最近測站",
+  station_mean: "全網平均",
+};
+const fieldMethods = methodOrder.filter((m) => field.summary.some((r) => r.method === m));
+const cellFor = (method: string, buffer: number) =>
+  field.summary.find((r) => r.method === method && r.buffer_km === buffer);
+---
+
+<section id="space" class="page">
+  <p class="eyebrow">第三章</p>
+  <h2>空間結構與官方分區</h2>
+  <p class="lede">
+    原始清單把這個缺陷記成「78 個測站的空間維度沒用」。動手量了之後，這句話需要修正：
+    當年的做法是按空品區分層、每區各跑一次——所以誠實的問題不是「有沒有用空間」，
+    而是<strong>那個分層是不是足夠的空間控制</strong>。這個問題有數字可答，
+    而且答案對原文比清單上的指控公平。
+  </p>
+
+  <p>
+    量測對象是第八章那個復刻模型的<strong>殘差</strong>，不是 PM2.5 本身——
+    濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
+    還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}
+    千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，
+    {network.placed} 站有座標、{network.complete} 站每月都有值；
+    {network.unplaced.length > 0 && (
+      <>
+        {network.unplaced.join("、")}因座標缺失而被排除並列名；
+      </>
+    )}
+    虛無分布一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
+    不可交換，所以不能用排列檢定），權重 {network.weights}。
+  </p>
+
+  <h3>先看距離，再看任何單一數字</h3>
+
+  <p>
+    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變——
+    這就是為什麼本章不發表單一的「空間自相關係數」：
+  </p>
+
+  <figure>
+    <div class="correlogram" role="img" aria-label="殘差 Moran's I 按站間距離分帶">
+      {correlogram.map((b) => (
+        <div class="corr-row">
+          <span class="corr-label">{n(b.lo_km, 0)}–{n(b.hi_km, 0)} km</span>
+          <span class="corr-band">
+            <span
+              class={"corr-bar " + (b.i >= 0 ? "pos" : "neg") + (b.significant ? " sig" : "")}
+              style={`--w:${n(half(b.i), 2)}%`}></span>
+          </span>
+          <span class="corr-value">
+            I = {b.i >= 0 ? "+" : ""}{n(b.i, 3)}
+            {b.significant && <strong>＊</strong>}
+          </span>
+        </div>
+      ))}
+    </div>
+    <figcaption>
+      站均殘差的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。10 公里內同號相聚
+      （I = +{n(correlogram[0].i, 2)}），100 公里外反號（I =
+      {n(correlogram.find((b) => b.lo_km === 100)?.i ?? 0, 2)}，z =
+      {n(correlogram.find((b) => b.lo_km === 100)?.z ?? 0, 1)}）——
+      北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
+    </figcaption>
+  </figure>
+
+  <h3>五種空間控制，各買到多少</h3>
+
+  <p>
+    同一個設計矩陣、同一批資料，只換空間控制的強度。報告的是每月殘差 I 的平均
+    與塊狀 bootstrap 區間——寫成差值、不寫成比例，因為 I 是正規化的相關係數，
+    沒有可加分解的性質：
+  </p>
+
+  <figure>
+    <div class="controls-fig">
+      {controls.map((c) => (
+        <div class="ctrl-row">
+          <span class="ctrl-label">{CONTROL_LABELS[c.control] ?? c.control}</span>
+          <span class="ctrl-band">
+            <span class="ctrl-ci" style={`--lo:${n(pct(c.mean_i_lo), 2)}%;--hi:${n(pct(c.mean_i_hi), 2)}%`}></span>
+            <span class="ctrl-dot" style={`--at:${n(pct(c.mean_i), 2)}%`}></span>
+          </span>
+          <span class="ctrl-value">
+            {n(c.mean_i, 3)}（{c.months_significant_bh}/{c.months_scored} 月顯著）
+          </span>
+        </div>
+      ))}
+    </div>
+    <figcaption>
+      每月殘差 Moran's I 的平均（點）與 95% 塊狀 bootstrap 區間（線）。
+      「顯著月數」為 BH 校正後計數。
+    </figcaption>
+  </figure>
+
+  {pooled && literal && (
+    <div class="note">
+      <p>
+        <strong>
+          字面上的「分區各跑一次」把平均 I 從 +{n(pooled.mean_i, 3)} 壓到
+          +{n(literal.mean_i, 3)}，顯著月數從 {pooled.months_significant_bh} 降到
+          {literal.months_significant_bh}。
+        </strong>
+        它比測站固定效果還有效——因為它讓每個係數都隨區改變，不只截距。
+        當年那個被清單指控「沒用空間」的做法，其實移除了大部分的空間相依。
+      </p>
+      <p>
+        但「大部分」不是全部：站均殘差場的 I 仍是
+        +{n(spatial.station_mean_i.i as number, 3)}（z = {n(spatial.station_mean_i.z as number, 2)}，
+        p = {n(spatial.station_mean_i.p as number, 3)}）。更要緊的是——
+        原文各表的 t 統計量出自<strong>合併式</strong>模型，
+        也就是上圖最上面那一列，而不是它自己分區跑的那個版本。
+      </p>
+    </div>
+  )}
+
+  <h3>官方分區比純地理多知道什麼？</h3>
+
+  <p>
+    這個檢定的虛無不是隨機重貼標籤——任何連續的分割都會贏那個，贏了不算本事。
+    對照組是 {n(partition.ensemble_draws, 0)} 個只知道地理、別的什麼都不知道的隨機
+    Voronoi 分割：官方分區必須攜帶「超出鄰接性」的資訊才能勝出。
+  </p>
+
+  <p>
+    結果兩面都有。時代的 {partition.groups} 組分區在「區內−區間相關差」上得
+    +{n(partition.separation_r, 2)}，落在地理 ensemble 的
+    <strong>{n(partition.pct_separation * 100, 1)} 百分位</strong>——分區確實載有
+    超出地理的資訊，不是亂劃的。但它的 silhouette 只有 +{n(partition.silhouette, 2)}，
+    而資料自己偏好的分群數是 <strong>k = {partition.best_k}</strong>
+    （silhouette +{n(partition.best_k_silhouette, 2)}）：北部一群、南部一群，
+    彼此反向共變——正是上面 correlogram 的偶極。官方分區數下的資料分群與官方劃法
+    的一致性只有 ARI {n(partition.ari_at_official_k ?? 0, 2)}。
+    一句話：<strong>分區不是亂劃、但比資料支持的粒度細</strong>。
+  </p>
+
+  <div class="note">
+    <p>
+      <strong>相關算在距全島均值的異常量上，這一步是檢定成立的前提。</strong>
+      生料月均值全島相關 0.73——那是共用的冬季高峰，用它來測，八個區會看起來
+      一樣好。減掉島均之後平均相關掉到 0.01，剩下的才是「這一站如何偏離全國」，
+      分區的資訊才量得出來。
+    </p>
+  </div>
+
+  <h3>相依散在整個場，不在少數熱點</h3>
+
+  <p>
+    LISA（局部 Moran，同一套模擬虛無）逐站檢查殘差相依住在哪裡：{lisa.stations} 站中
+    raw 顯著 {lisa.significant_raw} 站，<strong>BH 校正後 {lisa.significant_bh} 站</strong>。
+    象限分布 HH {lisa.quadrants.HH}、HL {lisa.quadrants.HL}、LH {lisa.quadrants.LH}、
+    LL {lisa.quadrants.LL}——沒有任何單站扛得起「熱點」之名，
+    相依是整個場的性質。這也是為什麼上面的修正必須動整個共變異矩陣，
+    而不是踢掉幾個「異常站」了事。
+  </p>
+
+  <h3>把 t 統計量重新標價</h3>
+
+  <p>
+    係數完全不動、設計完全不動，只換共變異估計量——這樣得出的前後對照才對得上
+    原文自己刊的數字。聚類月允許同月內任意站間相依（空間的修正）；聚類站允許
+    同站內任意月間相依（時間的修正）；two-way 兩者皆允許：
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>共變異假設</th>
+          <th class="num">t（PM10）</th>
+          <th class="num">標準誤膨脹</th>
+        </tr>
+      </thead>
+      <tbody>
+        {inference.rows.map((r) => (
+          <tr>
+            <td>
+              {r.cov_type === "iid" && "iid——原文自己的假設"}
+              {r.cov_type === "cluster_month" && "聚類月（空間）"}
+              {r.cov_type === "cluster_station" && "聚類站（時間）"}
+              {r.cov_type === "cluster_twoway" && "two-way（CGM）"}
+            </td>
+            <td class="num">{n(r.t, 2)}</td>
+            <td class="num">×{n(r.se_inflation, 2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note caveat">
+    <p>
+      <strong>
+        原文刊出的 t(PM10) = {n(inference.published_t_pm10 ?? 0, 2)}；
+        two-way 之下是 {n(twoWayRow?.t ?? 0, 2)}。
+      </strong>
+      復刻的 iid 值（{n(iidRow?.t ?? 0, 2)}）與刊出值的差來自面板重建的
+      6,771 對 7,286 筆；膨脹倍數不受此影響。
+    </p>
+    <p>
+      two-way 下失去顯著的有四項：{inference.flips_two_way.join("、")}。
+      其中 <strong>WD_HR 就是第八章的錯誤三</strong>——風向被當成線性連續變數。
+      原文「風向顯著」的結論於是錯了兩次：編碼錯（D3），而顯著性本身
+      也是相依性造出來的（D7）。兩個缺陷疊在同一個係數上。
+    </p>
+  </div>
+
+  {fieldMethods.length > 0 && (
+    <>
+      <h3>測站之間的空白能不能誠實地補？</h3>
+
+      <p>
+        全台 1 公里濃度場是計畫書上的目標，但測站最近鄰距離從 0.6 到 67 公里，
+        1 公里的格子宣稱了網絡給不起的解析度。所以先量「補值的技巧」本身：
+        留一站交叉驗證，並加上 20 與 40 公里的緩衝——把目標站周圍整圈都藏起來，
+        因為那才是「地圖上兩站之間那片空白」真正的問題。變異圖在每個 fold 內重配，
+        兩種變異圖家族並列（correlogram 會變號，球型不一定是對的模型）。
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>方法</th>
+              {buffers.map((b) => (
+                <th class="num">{b === 0 ? "留一站" : `緩衝 ${n(b, 0)} km`}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {fieldMethods.map((m) => (
+              <tr>
+                <td>{METHOD_LABELS[m] ?? m}</td>
+                {buffers.map((b) => {
+                  const cell = cellFor(m, b);
+                  return <td class="num">{cell ? n(cell.mae, 2) : "—"}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="small">
+        每格為 MAE（μg/m³），月×站逐一預測後彙整；留一站是<strong>樂觀上界</strong>
+        ——600 公尺外就有鄰站時，它量到的是近重複點之間的內插。
+        {field.failed_folds > 0 && (
+          <>
+            {" "}緩衝把西部網絡挖掉大半時 fold 會失敗，共 {n(field.failed_folds, 0)}
+            次，以空值連同原因記錄、不計入平均。
+          </>
+        )}
+      </p>
+    </>
+  )}
+
+  <div class="note">
+    {scopeLimits.map((s) => <p>{s}</p>)}
+  </div>
+
+  <p class="small">
+    兩件事刻意不做：{refusals.join("；")}。缺的輸入（人口網格）與其來源要求
+    記錄在 conf/spatial.yaml，補上與否是資料層的決定，不是本章能替它決定的。
+  </p>
+</section>
+
+<style>
+  .correlogram,
+  .controls-fig {
+    display: grid;
+    gap: 0.45rem;
+    max-width: var(--measure);
+  }
+
+  .corr-row,
+  .ctrl-row {
+    display: grid;
+    grid-template-columns: 7.5em minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .corr-label,
+  .ctrl-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ctrl-label {
+    font-variant-numeric: normal;
+  }
+
+  /* A signed band: the midline is zero, positive grows right, negative left.
+     Widths arrive as a custom property so the markup stays data-only. */
+  .corr-band {
+    position: relative;
+    height: 14px;
+    background: var(--bg-sunken);
+    border-radius: 2px;
+  }
+
+  .corr-band::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -2px;
+    bottom: -2px;
+    width: 1px;
+    background: var(--rule);
+  }
+
+  .corr-bar {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: var(--w);
+    background: var(--line);
+    border-radius: 1px;
+  }
+
+  .corr-bar.pos {
+    left: 50%;
+  }
+
+  .corr-bar.neg {
+    right: 50%;
+  }
+
+  .corr-bar.sig.pos {
+    background: var(--c1);
+  }
+
+  .corr-bar.sig.neg {
+    background: var(--c5);
+  }
+
+  .corr-value,
+  .ctrl-value {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ctrl-band {
+    position: relative;
+    height: 14px;
+    background: var(--bg-sunken);
+    border-radius: 2px;
+  }
+
+  .ctrl-ci {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: var(--lo);
+    width: calc(var(--hi) - var(--lo));
+    background: var(--line);
+    border-radius: 1px;
+  }
+
+  .ctrl-dot {
+    position: absolute;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    left: calc(var(--at) - 4px);
+    border-radius: 50%;
+    background: var(--c0);
+  }
+
+  @media (max-width: 560px) {
+    .corr-row,
+    .ctrl-row {
+      grid-template-columns: 5.6em minmax(0, 1fr);
+    }
+
+    .corr-value,
+    .ctrl-value {
+      grid-column: 2;
+      justify-self: end;
+    }
+
+    .ctrl-label {
+      font-size: var(--chart-micro, 16px);
+    }
+  }
+</style>

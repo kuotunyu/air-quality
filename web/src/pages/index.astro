@@ -2,6 +2,7 @@
 import Base from "../layouts/Base.astro";
 import TrendChart from "../components/TrendChart.astro";
 import StationMap from "../components/StationMap.astro";
+import ChapterSpatial from "../components/ChapterSpatial.astro";
 import ChapterSources from "../components/ChapterSources.astro";
 import ChapterDetection from "../components/ChapterDetection.astro";
 import ChapterForecast from "../components/ChapterForecast.astro";
@@ -132,7 +133,7 @@ const airzoneSeries = (trendByAirzone.series as {
         */}
         <p class="note">
           品管規則與資料管線全部開源，本頁每個數字都可獨立重算。
-          <a href="#mistakes">第七章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
+          <a href="#mistakes">第八章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
           該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
           兩者逐項比對，量化每個方法選擇造成的差異。
         </p>
@@ -312,6 +313,8 @@ const airzoneSeries = (trendByAirzone.series as {
   </section>
 
   <!-- ═══════════ 3. 空氣從哪來 ═══════════ -->
+  <ChapterSpatial />
+
   <ChapterSources />
 
   <!-- ═══════════ 4. 偵測極限 ═══════════ -->
@@ -331,7 +334,7 @@ const airzoneSeries = (trendByAirzone.series as {
 
   <!-- ═══════════ 9. 資料與方法 ═══════════ -->
   <section id="data" class="page">
-    <p class="eyebrow">第九章</p>
+    <p class="eyebrow">第十章</p>
     <h2>資料與方法</h2>
 
     <p class="lede">

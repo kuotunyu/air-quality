@@ -88,6 +88,7 @@ __all__ = [
     "block_bootstrap_mean",
     "build_weights",
     "cliff_ord_moments",
+    "field_skill",
     "geographic_ensemble",
     "inference_price",
     "lisa",
@@ -112,7 +113,15 @@ STATION = "station_name"
 MONTH = "month"
 RESIDUAL = "residual"
 
-STEPS: tuple[str, ...] = ("coverage", "headline", "sensitivity", "partition", "lisa", "inference")
+STEPS: tuple[str, ...] = (
+    "coverage",
+    "headline",
+    "sensitivity",
+    "partition",
+    "lisa",
+    "inference",
+    "field",
+)
 
 WeightsFamily = Literal["knn", "distance_band"]
 
@@ -1134,6 +1143,7 @@ class SpatialResult:
     clusters: pl.DataFrame | None = None
     lisa: pl.DataFrame | None = None
     inference: pl.DataFrame | None = None
+    field: pl.DataFrame | None = None
 
     def tables(self) -> dict[str, pl.DataFrame]:
         out = {
@@ -1153,6 +1163,8 @@ class SpatialResult:
             out["lisa"] = self.lisa
         if self.inference is not None:
             out["inference_price"] = self.inference
+        if self.field is not None:
+            out["field_skill"] = self.field
         return out
 
 
@@ -1236,6 +1248,7 @@ def run_spatial(
 
     lisa_table = lisa(panel, settings, rng=rng) if "lisa" in steps else None
     inference = inference_price(panel, settings) if "inference" in steps else None
+    field = field_skill(settings, root=root, rng=rng) if "field" in steps else None
 
     return SpatialResult(
         metadata=metadata,
@@ -1248,6 +1261,7 @@ def run_spatial(
         clusters=clusters,
         lisa=lisa_table,
         inference=inference,
+        field=field,
     )
 
 
@@ -1722,3 +1736,189 @@ def _published_t() -> dict[str, float]:
 
     published = load_expected().get("published_t") or {}
     return {str(k): float(v) for k, v in published.items()}
+
+
+# --------------------------------------------------------------------------- #
+# the field's skill — measured before any surface exists
+# --------------------------------------------------------------------------- #
+def field_skill(
+    conf: SpatialConf, *, root: Path | None = None, rng: np.random.Generator
+) -> pl.DataFrame:
+    """Can anything honest be interpolated between 65 stations? Scored first.
+
+    Every method is scored on identical folds: hold one station out, predict it
+    from the rest, at three buffer radii. Radius 0 is plain leave-one-out —
+    **the optimistic bound**, because with a neighbour 600 m away it scores
+    interpolation between near-duplicates. The buffered folds also withhold
+    every station within 20 or 40 km of the target, which is the question a map
+    of the empty space between stations actually poses.
+
+    Kriging appears twice, once per variogram family, rather than with an
+    internal selection step: choosing the family by fit inside each fold would
+    be honest but doubles the cost, choosing it once outside the folds would
+    leak, and publishing both lets the reader see when the hole-effect family —
+    offered because the correlogram changes sign at mid range — actually earns
+    its keep. The variogram is refitted inside every fold either way; fitting it
+    once on all stations and then "holding one out" would leak the held-out
+    station into the model it is scored against.
+
+    A fold can fail: pykrige needs a stable variogram fit and a 40 km buffer in
+    the dense west removes most of the network. Failures come back as null
+    predictions with the reason, and the CLI prints the count before any skill
+    number — a mean over the folds that happened to converge is the same trap as
+    a mean over splits without the worst split.
+    """
+    bundle = station_dissimilarity(conf, root=root)
+    lat = bundle.coords["lat"].to_numpy()
+    lon = bundle.coords["lon"].to_numpy()
+    d = pairwise_km(lat, lon)
+    offshore = np.array([name in conf.offshore for name in bundle.stations])
+
+    from twair.paths import processed_dir
+
+    base = processed_dir("monthly") if root is None else root / "processed" / "monthly"
+    start = str(conf.clustering["window_start"])
+    end = str(conf.clustering["window_end"])
+    monthly = (
+        pl.scan_parquet(f"{base}/**/*.parquet")
+        .filter(
+            (pl.col("pollutant") == "PM2.5")
+            & (pl.col(MONTH).dt.strftime("%Y-%m") >= start)
+            & (pl.col(MONTH).dt.strftime("%Y-%m") <= end)
+            & pl.col("mean").is_not_null()
+            & pl.col(STATION).is_in(list(bundle.stations))
+        )
+        .select(STATION, MONTH, "mean")
+        .collect()
+        .pivot(on=STATION, index=MONTH, values="mean")
+        .sort(MONTH)
+    )
+    months = monthly[MONTH].to_list()
+    values = monthly.select(list(bundle.stations)).to_numpy()  # months × stations
+
+    radii = [0.0] + [float(r) for r in conf.field["blocked_cv_radii_km"]]
+    candidates = [str(v) for v in conf.field["variogram_candidates"]]
+    exclude_offshore = bool(conf.field["exclude_offshore"])
+
+    rows: list[dict[str, Any]] = []
+    for t, month in enumerate(months):
+        field = values[t]
+        usable = np.isfinite(field)
+        if exclude_offshore:
+            usable &= ~offshore
+        index = np.flatnonzero(usable)
+        if index.size < conf.min_units:
+            continue
+        for i in index:
+            for radius in radii:
+                train = index[(d[index, i] > radius) & (index != i)]
+                record_base = {
+                    MONTH: month,
+                    STATION: bundle.stations[i],
+                    "buffer_km": radius,
+                    "n_train": int(train.size),
+                    "observed": float(field[i]),
+                }
+                if train.size < conf.min_units:
+                    for method in (
+                        *[f"kriging_{c}" for c in candidates],
+                        "nearest",
+                        "idw2",
+                        "station_mean",
+                    ):
+                        rows.append(
+                            {
+                                **record_base,
+                                "method": method,
+                                "predicted": None,
+                                "failed": "buffer leaves too few stations",
+                            }
+                        )
+                    continue
+
+                dist = d[train, i]
+                train_values = field[train]
+                rows.append(
+                    {
+                        **record_base,
+                        "method": "nearest",
+                        "predicted": float(train_values[np.argmin(dist)]),
+                        "failed": None,
+                    }
+                )
+                weight = 1.0 / np.maximum(dist, 0.1) ** 2
+                rows.append(
+                    {
+                        **record_base,
+                        "method": "idw2",
+                        "predicted": float(weight @ train_values / weight.sum()),
+                        "failed": None,
+                    }
+                )
+                rows.append(
+                    {
+                        **record_base,
+                        "method": "station_mean",
+                        "predicted": float(train_values.mean()),
+                        "failed": None,
+                    }
+                )
+                for family in candidates:
+                    rows.append(
+                        _krige_one(
+                            record_base,
+                            family,
+                            lat[train],
+                            lon[train],
+                            train_values,
+                            lat[i],
+                            lon[i],
+                        )
+                    )
+
+    out = pl.DataFrame(rows, infer_schema_length=None)
+    return out.with_columns(
+        (pl.col("predicted") - pl.col("observed")).alias("error"),
+    )
+
+
+def _krige_one(
+    record: dict[str, Any],
+    family: str,
+    train_lat: np.ndarray,
+    train_lon: np.ndarray,
+    train_values: np.ndarray,
+    target_lat: float,
+    target_lon: float,
+) -> dict[str, Any]:
+    """One ordinary-kriging prediction, failure recorded rather than raised.
+
+    ``coordinates_type="geographic"`` so pykrige works on the sphere — its
+    distances are then arc *degrees*, which is why no kilometre-named range
+    parameter is ever passed (conf/spatial.yaml documents the trap).
+    """
+    from pykrige.ok import OrdinaryKriging
+
+    method = f"kriging_{family}"
+    try:
+        krige = OrdinaryKriging(
+            train_lon,
+            train_lat,
+            train_values,
+            variogram_model=family,
+            nlags=8,
+            coordinates_type="geographic",
+            enable_plotting=False,
+        )
+        predicted, variance = krige.execute(
+            "points", np.array([target_lon]), np.array([target_lat])
+        )
+        return {
+            **record,
+            "method": method,
+            "predicted": float(np.asarray(predicted).ravel()[0]),
+            "kriging_sd": float(np.sqrt(max(float(np.asarray(variance).ravel()[0]), 0.0))),
+            "failed": None,
+        }
+    except Exception as error:  # the failure IS the datum
+        return {**record, "method": method, "predicted": None, "failed": type(error).__name__}

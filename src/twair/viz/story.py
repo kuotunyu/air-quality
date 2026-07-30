@@ -398,7 +398,196 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     written.extend(_export_sarima(root))
     written.extend(_export_health(root))
     written.extend(_export_imputation(root))
+    written.extend(_export_spatial(root))
     return written
+
+
+def _export_spatial(root: Path) -> list[Path]:
+    """The spatial chapter: what 「分區各跑一次」 bought, and what it did not.
+
+    Named ``spatial-structure`` rather than ``spatial`` because this file
+    already exports a ``spatial_check`` for M5's falsification tests, rendered
+    under 「空間檢定」 in the detection chapter — two payloads whose names
+    differ by one word would eventually be confused for each other.
+
+    Every number here is read from the M6 parquets; nothing is recomputed. The
+    payload deliberately repeats the two scope limits (OLS stage only; residual
+    I is a lower bound) because a payload is quoted without its module
+    docstring.
+    """
+    source = outputs_dir("m6_spatial")
+    partition_path = source / "partition_price.parquet"
+    if not partition_path.exists():
+        log.warning("no M6 output — run `twair analyze m6`")
+        return []
+
+    partition = pl.read_parquet(partition_path)
+    correlogram = pl.read_parquet(source / "correlogram.parquet")
+    residual = pl.read_parquet(source / "residual_autocorrelation.parquet")
+    coverage = pl.read_parquet(source / "station_coverage.parquet")
+    metadata = {
+        row["key"]: row["value"]
+        for row in pl.read_parquet(source / "metadata.parquet").iter_rows(named=True)
+    }
+    agreement = pl.read_parquet(source / "partition_agreement.parquet")
+    lisa_table = pl.read_parquet(source / "lisa.parquet")
+    inference = pl.read_parquet(source / "inference_price.parquet")
+
+    station_mean = residual.filter(pl.col("scope") == "station_mean").to_dicts()[0]
+    era = agreement.filter(pl.col("partition") == "zone_era").to_dicts()[0]
+    ward = agreement.filter(pl.col("partition").str.starts_with("ward_")).sort(
+        "silhouette", descending=True
+    )
+    best_ward = ward.to_dicts()[0]
+    ward_at_era = agreement.filter(pl.col("partition") == f"ward_k{era['k']}").to_dicts()
+
+    pm10 = inference.filter(pl.col("term") == "PM10")
+    iid = inference.filter(pl.col("cov_type") == "iid")
+    two_way = inference.filter(pl.col("cov_type") == "cluster_twoway")
+    flips = (
+        iid.join(two_way, on="term", suffix="_tw")
+        .filter((pl.col("p") < 0.05) & (pl.col("p_tw") >= 0.05))["term"]
+        .to_list()
+    )
+
+    field_path = source / "field_skill.parquet"
+    field_summary: list[dict[str, Any]] = []
+    field_failed = 0
+    if field_path.exists():
+        skill = pl.read_parquet(field_path)
+        field_failed = skill.filter(pl.col("failed").is_not_null()).height
+        scored = skill.filter(pl.col("predicted").is_not_null())
+        field_summary = [
+            {
+                "method": row["method"],
+                "buffer_km": row["buffer_km"],
+                "mae": _round(row["mae"], 2),
+                "rmse": _round(row["rmse"], 2),
+                "n": int(row["n"]),
+            }
+            for row in (
+                scored.with_columns(pl.col("error").abs().alias("abs_error"))
+                .group_by("method", "buffer_km")
+                .agg(
+                    pl.col("abs_error").mean().alias("mae"),
+                    (pl.col("error") ** 2).mean().sqrt().alias("rmse"),
+                    pl.len().alias("n"),
+                )
+                .sort("buffer_km", "mae")
+                .iter_rows(named=True)
+            )
+        ]
+
+    unplaced = coverage.filter(~pl.col("placed"))["station_name"].to_list()
+    quadrants = {
+        row["quadrant"]: row["len"]
+        for row in lisa_table.group_by("quadrant").len().iter_rows(named=True)
+    }
+
+    return [
+        write_json(
+            root / "spatial-structure.json",
+            {
+                "network": {
+                    "stations": int(metadata["panel_stations"]),
+                    "months": int(metadata["panel_months"]),
+                    "placed": int(metadata["panel_stations_placed"]),
+                    "complete": int(metadata["panel_stations_complete"]),
+                    "unplaced": unplaced,
+                    "weights": metadata["weights"],
+                    "zone_partition": metadata["zone_partition"],
+                    "null_draws": int(metadata["residual_null_draws"]),
+                    "seed": int(metadata["seed"]),
+                },
+                "correlogram": [
+                    {
+                        "lo_km": row["bin_lo_km"],
+                        "hi_km": row["bin_hi_km"],
+                        "pairs": row["pairs"],
+                        "i": _round(row["i"], 4),
+                        "z": _round(row["z"], 2),
+                        "significant": bool(row["significant_bh"]),
+                    }
+                    for row in correlogram.iter_rows(named=True)
+                    if row["i"] is not None
+                ],
+                "station_mean_i": {
+                    "i": _round(station_mean["i"], 4),
+                    "z": _round(station_mean["z"], 2),
+                    "p": _round(station_mean["p_simulated"], 4),
+                    "n": int(station_mean["n_stations"]),
+                },
+                "controls": [
+                    {
+                        "control": row["control"],
+                        "params": int(row["rank"]),
+                        "r_squared": _round(row["r_squared"], 4),
+                        "mean_i": _round(row["mean_i"], 4),
+                        "mean_i_lo": _round(row["mean_i_lo"], 4),
+                        "mean_i_hi": _round(row["mean_i_hi"], 4),
+                        "months_significant_bh": int(row["months_significant_bh"]),
+                        "months_scored": int(row["months_scored"]),
+                    }
+                    for row in partition.iter_rows(named=True)
+                ],
+                "partition_test": {
+                    "groups": int(era["k"]),
+                    "separation_r": _round(era["separation_r"], 3),
+                    "silhouette": _round(era["silhouette"], 3),
+                    "pct_separation": _round(era["pct_vs_geographic_ensemble_separation"], 3),
+                    "pct_silhouette": _round(era["pct_vs_geographic_ensemble_silhouette"], 3),
+                    "ensemble_draws": int(era["ensemble_draws"]),
+                    "best_k": int(best_ward["k"]),
+                    "best_k_silhouette": _round(best_ward["silhouette"], 3),
+                    "ari_at_official_k": _round(ward_at_era[0]["ari_vs_zone_era"], 2)
+                    if ward_at_era
+                    else None,
+                },
+                "lisa": {
+                    "stations": int(lisa_table.height),
+                    "significant_bh": int(lisa_table["significant_bh"].sum()),
+                    "significant_raw": int(lisa_table["significant_raw"].sum()),
+                    "quadrants": {q: int(quadrants.get(q, 0)) for q in ("HH", "HL", "LH", "LL")},
+                },
+                "inference": {
+                    "published_t_pm10": _round(
+                        pm10.filter(pl.col("cov_type") == "iid")["published_t"][0], 2
+                    ),
+                    "rows": [
+                        {
+                            "cov_type": row["cov_type"],
+                            "meaning": row["cov_meaning"],
+                            "t": _round(row["t"], 2),
+                            "se_inflation": _round(row["se_inflation_vs_iid"], 2),
+                        }
+                        for row in pm10.iter_rows(named=True)
+                    ],
+                    "flips_two_way": flips,
+                },
+                "field": {
+                    "summary": field_summary,
+                    "failed_folds": field_failed,
+                },
+                # The two sentences that must travel with any quotation of these
+                # numbers. The component prints both; keeping them here as well
+                # means a future chapter cannot forget them.
+                "scope_limits": [
+                    "這裡定價的是 OLS 階段。原文最終的推論是 AR(1) 混合模型，"
+                    "其標準誤未被記錄於本專案，所以這些數字修正的是它的中間步驟，"
+                    "不構成對其整體推論的反駁。",
+                    "殘差的空間自相關是場相依性的下界，原因有二：模型裡的解釋變數"
+                    "（尤其 PM10）本身就帶空間結構，已吸走一部分訊號；"
+                    "而面板是完整案例，網絡本身就被資料完整度篩選過。",
+                ],
+                "refusals": [
+                    "不做人口加權暴露：repo 內沒有任何人口網格，"
+                    "拿測站平均乘上任何現有欄位都不是暴露量。",
+                    "不出 1 公里濃度場：測站最近鄰距離從 0.6 到 67 公里，"
+                    "1 公里的格子宣稱了網絡給不起的解析度。",
+                ],
+            },
+        )
+    ]
 
 
 def _export_sarima(root: Path) -> list[Path]:

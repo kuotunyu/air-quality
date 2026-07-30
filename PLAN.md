@@ -43,7 +43,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | D4 | **常態檢定結論倒果為因** | 🟠 | p.37「將拒絕域的標準降低至 0.01，使每一個變數都不拒絕虛無假設，因此符合常態性」 | 不做這種檢定。改用穩健統計、bootstrap CI、分位數迴歸 |
 | D5 | **共線性用逐步刪除硬處理** | 🟠 | 第五章第三節，NO/NO2/NOx 反覆進出模型 8 次 | NO + NO2 ≡ NOx 是恆等式，本來就不該同時進模型。改用 Elastic Net / 樹模型 + SHAP |
 | D6 | **零樣本外驗證** | 🟠 | 全文只有 in-sample AIC/BIC | rolling-origin CV + leave-one-station-out + leave-one-year-out，一律報告 baseline 對照 |
-| D7 | **78 個測站的空間維度沒用** | 🟠 | 僅「分 8 區各跑一次」 | Moran's I / LISA、測站時序分群、Kriging 濃度場、人口加權暴露 |
+| D7 | **78 個測站的空間維度沒用** | 🟠 | 僅「分 8 區各跑一次」 | ✅ M6 實測後修正指控：分層其實移除大部分空間相依（每月殘差 I 0.157→0.063），但原文 t 值出自合併式模型——two-way 校正後 t(PM10) 92.75→14.07，WD_HR 失去顯著；分區在地理 ensemble 99.5 百分位、惟資料偏好 k=2。LISA BH 後 0 熱點。人口加權暴露與 1km 場**不做**，理由記錄於 conf/spatial.yaml |
 | D8 | **相關 ≠ 因果，無氣象正規化** | 🟡 | 全文 | Grange et al. (2018) random-forest 氣象正規化 + 事件研究/合成控制 |
 | D9 | **GUI 工具不可重現** | 🟡 | SAS EG / SPSS | 全 Python，uv 鎖定版本，CI 可重跑 |
 | D10 | **放棄 SARIMA** | 🟡 | p.137「SARIMA 不在本專題繼續討論…在此實屬不便」 | 補回 SARIMA，並加上現代基準（LightGBM / N-HiTS / GNN） |
@@ -492,8 +492,8 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 - **交叉驗證** — 用 PM2.5/PM10 ratio、SO2/NOx ratio 佐證來源類型（沙塵 ratio 低、燃燒 ratio 高）
 
 **驗收**
-- [ ] 全台 1km 濃度場（GeoTIFF + Cloud-Optimized）
-- [ ] Moran's I 顯著性、LISA 圖
+- [ ] ~~全台 1km 濃度場~~ **不出**：最近鄰 0.6–67 km，1km 宣稱網絡給不起的解析度；補值技巧以緩衝 LOO 實測（M6 field_skill）
+- [x] Moran's I 顯著性、LISA 圖 ✅（M6：Cliff–Ord 殘差虛無、correlogram 變號、LISA BH 後 0/60）
 - [ ] 至少 5 年的後推軌跡資料庫 + 分群結果
 - [ ] 網站第 3 章上線（軌跡動畫）
 - [ ] `reports/03-spatial.qmd`

@@ -119,7 +119,7 @@ uv run twair probe sources
 | Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ✅ 完成 |
 | Phase 3 | 互動網站首波上線 | ✅ 完成 |
 | Phase 4 | 氣象正規化、事件效應偵測 | ✅ 完成 |
-| Phase 5 | 境外傳輸（CBPF）✅ ／ 空間自相關 ⬜ | 🔄 部分完成 |
+| Phase 5 | 境外傳輸（CBPF）✅ ／ 空間自相關（M6）✅ | ✅ 完成 |
 | Phase 6 | 衛星與微型感測器融合 | ⬜ |
 | Phase 7 | 預測模型（M9）✅ ／ HuggingFace Space ✅ | ✅ 完成 |
 | Phase 8 | 健康衝擊（M10）✅ ／ 資料新鮮度檢查 ✅ ／ 完整報告 ⬜ | 🔄 進行中 |
