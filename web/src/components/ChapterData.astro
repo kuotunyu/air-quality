@@ -12,7 +12,7 @@
   <h2>資料與方法</h2>
 
   <p class="lede">
-    所有數字都可以自己重算。原始資料來自環境部空氣品質監測網公開的年度逐時檔，
+    所有數字都可以獨立重算。原始資料來自環境部空氣品質監測網公開的年度逐時檔，
     管線、品管規則、分析程式全部開源。
   </p>
 
@@ -31,13 +31,13 @@
     <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
 
     <dt>L1 站-日</dt>
-    <dd>每個測項一個 Parquet，共 54.6 MB。給 DuckDB-WASM 或桌面工具用。</dd>
+    <dd>每個測項一個 Parquet，共 54.6 MB。供 DuckDB-WASM 或桌面工具使用。</dd>
 
     <dt>L2 站-時</dt>
     <dd>
       3.41 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
-      只發衍生產物與完整管線，跑一次 <code>twair ingest</code> 加
-      <code>twair build</code> 就能自己重建。
+      只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加
+      <code>twair build</code> 即可獨立重建。
     </dd>
   </dl>
 

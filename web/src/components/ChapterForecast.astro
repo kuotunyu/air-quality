@@ -265,12 +265,12 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   </figure>
 
   <div class="note">
-    <strong>看那個交叉點。</strong>
+    <strong>關鍵是那個交叉點。</strong>
     persistence 從 {n(first.persistence_rmse, 2)} 一路爬到 {n(last.persistence_rmse, 2)} μg/m³，
     在 24 到 48 小時之間<strong>穿過了 climatology</strong>。
-    也就是說到了兩天後，「跟現在一樣」已經比「這站這個月這個小時的平均」更糟。
+    也就是說到了兩天後，「跟現在一樣」的誤差已經大於「這站這個月這個小時的平均」。
     而模型在 48 小時是 {n(last.model_rmse, 2)}，只比 climatology 的
-    {n(last.climatology_rmse, 2)} 好一點點。
+    {n(last.climatology_rmse, 2)} 略低。
   </div>
 
   <h3>同一批結果的三個無單位指標</h3>
@@ -584,7 +584,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           {sar.why_it_loses_at_one_hour}
         </p>
         <p>
-          它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但看一下贏多少：
+          它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但勝出的幅度為：
           {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}
           ——到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
           <strong>兩天後任何方法都退化成 climatology</strong>。
@@ -612,7 +612,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   </div>
 
   <p>
-    想自己挑測站、挑時刻、看模型和兩條基準線怎麼分歧，可以直接玩互動 demo：
+    若要自行選擇測站與時刻、比較模型與兩條基準線的分歧，可使用互動 demo：
     <a href="https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast" target="_blank" rel="noopener">
       huggingface.co/spaces/steven0226/airlens-taiwan-forecast
     </a>

@@ -226,7 +226,7 @@ const cellFor = (method: string, buffer: number) =>
   <h3>官方分區比純地理多知道什麼？</h3>
 
   <p>
-    這個檢定的虛無不是隨機重貼標籤——任何連續的分割都會贏那個，贏了不算本事。
+    這個檢定的虛無不是隨機重貼標籤——任何連續的分割都會勝過它，勝出並不具鑑別力。
     對照組是 {n(partition.ensemble_draws, 0)} 個只知道地理、別的什麼都不知道的隨機
     Voronoi 分割：官方分區必須攜帶「超出鄰接性」的資訊才能勝出。
   </p>
@@ -235,12 +235,12 @@ const cellFor = (method: string, buffer: number) =>
     結果兩面都有。時代的 {partition.groups} 組分區在「區內−區間相關差」上得
     +{n(partition.separation_r, 2)}，落在地理 ensemble 的
     <strong>{n(partition.pct_separation * 100, 1)} 百分位</strong>——分區確實載有
-    超出地理的資訊，不是亂劃的。但它的 silhouette 只有 +{n(partition.silhouette, 2)}，
+    超出地理的資訊，不是任意劃定的。但它的 silhouette 只有 +{n(partition.silhouette, 2)}，
     而資料自己偏好的分群數是 <strong>k = {partition.best_k}</strong>
     （silhouette +{n(partition.best_k_silhouette, 2)}）：北部一群、南部一群，
     彼此反向共變——正是上面 correlogram 的偶極。官方分區數下的資料分群與官方劃法
     的一致性只有 ARI {n(partition.ari_at_official_k ?? 0, 2)}。
-    一句話：<strong>分區不是亂劃、但比資料支持的粒度細</strong>。
+    一句話：<strong>分區不是任意劃定、但比資料支持的粒度細</strong>。
   </p>
 
   <div class="note">
@@ -255,12 +255,12 @@ const cellFor = (method: string, buffer: number) =>
   <h3>相依散在整個場，不在少數熱點</h3>
 
   <p>
-    LISA（局部 Moran，同一套模擬虛無）逐站檢查殘差相依住在哪裡：{lisa.stations} 站中
+    LISA（局部 Moran，同一套模擬虛無）逐站檢查殘差相依的所在位置：{lisa.stations} 站中
     raw 顯著 {lisa.significant_raw} 站，<strong>BH 校正後 {lisa.significant_bh} 站</strong>。
     象限分布 HH {lisa.quadrants.HH}、HL {lisa.quadrants.HL}、LH {lisa.quadrants.LH}、
-    LL {lisa.quadrants.LL}——沒有任何單站扛得起「熱點」之名，
+    LL {lisa.quadrants.LL}——沒有任何單站足以擔負「熱點」之名，
     相依是整個場的性質。這也是為什麼上面的修正必須動整個共變異矩陣，
-    而不是踢掉幾個「異常站」了事。
+    而不是排除幾個「異常站」即可。
   </p>
 
   <h3>把 t 統計量重新標價</h3>

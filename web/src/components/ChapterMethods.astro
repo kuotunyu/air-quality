@@ -134,7 +134,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </p>
 
   <p>
-    先說結論：有些選擇無關痛癢，有些讓整個模型的解釋力虛胖了三分之一。
+    先說結論：有些選擇無關痛癢，有些讓整個模型的解釋力高估了三分之一。
     這些不是誰特別粗心，而是<strong>整個世代的環境統計慣例</strong>——
     同一批做法在當年的期刊論文裡到處都是。
   </p>
@@ -154,11 +154,11 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       2010–2017 年逐時 PM2.5 的標準差是 {n(hourlySd)} μg/m³。
       壓成月平均之後只剩 {n(monthlySd)} μg/m³——
       變異保留了 <strong>{n(retained * 100, 1)}%</strong>。
-      當年的模型不管怎麼調，能解釋的上限就是這剩下的兩成。
+      當年的模型無論怎麼調，能解釋的上限就是這剩下的兩成。
     </p>
 
     <p>
-      被丟掉的是什麼？下圖是日內節律，一個看得見、也最容易講的成分。
+      被丟掉的是什麼？下圖是日內節律，一個看得見、也最容易說明的成分。
     </p>
 
     <div class="two-up">
@@ -237,7 +237,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       境外傳輸的高濃度事件、鋒面過境、逆溫累積。
       一個 40 μg/m³ 的污染日和一個 10 μg/m³ 的乾淨日落在同一個月，
       月平均只留下 25，兩者都不見了。
-      日內節律好講、好畫，但它不是主要的損失來源，這裡不把它當成主要證據。
+      日內節律容易說明、容易繪製，但它不是主要的損失來源，這裡不把它當成主要證據。
     </div>
 
     {
@@ -303,7 +303,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <div class="note caveat">
       <strong>{n((leakShare?.r2 as number) * 100, 1)}%</strong> ——
       含 PM10 的模型有三分之一的解釋力，來自這個定義上的重疊。
-      當年那個 t = 92.75 撐起來的就是這一塊。
+      當年 t = 92.75 所支撐的就是這一部分。
     </div>
   </article>
 
@@ -395,7 +395,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p>
       這裡有兩個獨立的問題。第一個是<strong>算術</strong>：
-      p &lt; 0.001 在 α = 0.01 之下同樣被拒絕。調低 α 不會救回來。
+      p &lt; 0.001 在 α = 0.01 之下同樣被拒絕。調低 α 也無法使它不被拒絕。
     </p>
 
     <p>
@@ -440,7 +440,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p class="small">
       真常態的資料在任何樣本數下都不被拒絕；輕微偏態的資料在 N=100 時「通過」了，
-      N ≥ 1,000 時全部被拒絕。<strong>同一份資料，答案取決於你抽了幾筆。</strong>
+      N ≥ 1,000 時全部被拒絕。<strong>同一份資料，答案取決於抽取的樣本數。</strong>
       當年 N = 7,286，檢定拒絕是必然的，那個 .000 沒有告訴你任何關於分布形狀的事。
     </p>
 
@@ -564,7 +564,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <div class="note caveat">
       落差 <strong>{n(optimism?.r2 as number, 3)}</strong> 的 R²，
-      就是樣本內評估看不到的樂觀偏誤。這不是模型壞掉，
+      就是樣本內評估看不到的樂觀偏誤。這不是模型失效，
       是<strong>評估方式本身會系統性高估</strong>。
     </div>
   </article>
@@ -589,7 +589,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       超過 48 小時的缺口只有 {gapDist[">48h"].gaps} 次（佔
       {n(gapDist[">48h"].share_of_gaps * 100, 1)}%），
       卻佔了缺失時數的 <strong>{n(gapDist[">48h"].share_of_missing_hours * 100, 1)}%</strong>。
-      「缺了多少」有兩個答案而且方向相反——所以一個不附缺口長度分布的填補率，等於沒有講。
+      「缺了多少」有兩個答案而且方向相反——所以一個不附缺口長度分布的填補率，等於沒有說明。
     </div>
 
     <figure>
@@ -709,7 +709,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
         從 30 公里外借一個值，比把前後兩小時連成一條直線還差。
       </p>
       <p>
-        第二，看那條紅線有多平。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
+        第二，那條紅線相當平緩。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
         鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
         {n(GAP_SERIES[2].values[4] as number, 2)}。
         <strong>這並非穩健，而是相反</strong>——它代表這個方法不知道問題有多難：

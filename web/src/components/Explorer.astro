@@ -21,7 +21,9 @@ const EXAMPLES = [
     // PM2.5 — a number that deserves scepticism, and the hour count is the
     // first thing to look at. Out-of-range values are flagged upstream, never
     // deleted, so they are still here to be argued with.
-    label: "十大最髒的日子（PM2.5）",
+    // Rows are station-days, not days: the same date can appear more than once
+    // if several stations were high together, so the label says so.
+    label: "PM2.5 日均值最高的十個站日",
     sql: `SELECT station_name, date, mean AS pm25, n_valid AS hours
 FROM "PM2.5"
 WHERE mean IS NOT NULL
@@ -41,7 +43,9 @@ HAVING days >= 274          -- 至少 75% 的天數，否則不可比較
 ORDER BY annual_mean DESC;`,
   },
   {
-    label: "髒空氣集中在哪幾個月",
+    // The threshold in the query is 35 μg/m³, Taiwan's 24-hour standard, so the
+    // label names that rather than describing the air.
+    label: "超過日均標準的天數，逐月分布",
     sql: `SELECT month(date) AS month,
        count(*) FILTER (WHERE mean > 35) AS days_over_standard,
        count(*) AS days_measured,
@@ -123,7 +127,24 @@ const candidates = pollutantIndex.map((p) => ({
     <span id="status" class="status" role="status" aria-live="polite"></span>
   </div>
 
-  <textarea id="sql" spellcheck="false" aria-label="SQL 查詢" rows="10">{EXAMPLES[0].sql}</textarea>
+  {/*
+    The query itself is behind a disclosure, closed by default.
+
+    It used to be an open ten-row textarea sitting between the controls and the
+    results — 340px of monospace in the middle of a reading page, shown before
+    the reader had asked for anything. For most readers that is not the content;
+    the question in the menu is the content, and the table is the answer. The
+    editable query is what makes this chapter a database rather than six fixed
+    charts, so it is kept in full and one click away rather than removed.
+
+    `<details>` and not a JavaScript toggle: this page's premise is that it does
+    nothing until the button is pressed, and a disclosure that needs script to
+    open would break that for a reader who never presses it.
+  */}
+  <details class="sql-panel">
+    <summary>檢視或修改查詢語句</summary>
+    <textarea id="sql" spellcheck="false" aria-label="SQL 查詢" rows="10">{EXAMPLES[0].sql}</textarea>
+  </details>
 
   <div id="result" class="result"></div>
 
@@ -167,7 +188,27 @@ const candidates = pollutantIndex.map((p) => ({
 
   const examples = json<string[]>("explorer-examples", []);
   const candidates = json<Candidate[]>("explorer-candidates", []);
-  const base = new URL("data/", document.baseURI).href;
+
+  /*
+   * Resolved against the SITE root, not against this document.
+   *
+   * This was `new URL("data/", document.baseURI)`, which was correct for exactly
+   * as long as the explorer lived on the entry page. When the document became
+   * ten routes it moved to `/explore/`, and a relative `data/` then resolved to
+   * `<base>/explore/data/` — so every HEAD probe 404'd and the page reported
+   * that the site ships no L1 files at all. It ships two.
+   *
+   * The failure was invisible because it looked like a legitimate empty state:
+   * not all 21 pollutants are committed, so "no data files here" is a sentence
+   * this page is genuinely allowed to say. The give-away was the probe URL
+   * printed in the message itself, which had `/explore/` in the middle of it.
+   *
+   * `BASE_URL` is what Astro was configured with and is inlined at build time,
+   * so this is right both locally (`/`) and on Pages (`/air-quality/`), and it
+   * stays right if the explorer is ever moved to another route again.
+   */
+  const root = import.meta.env.BASE_URL.replace(/\/*$/, "/");
+  const base = new URL(`${root}data/`, location.origin).href;
 
   exampleSelect.addEventListener("change", () => {
     const sql = examples[Number(exampleSelect.value)];
@@ -271,6 +312,47 @@ const candidates = pollutantIndex.map((p) => ({
 </script>
 
 <style>
+  /*
+   * The disclosure holding the query, opting OUT of the site's `details` chrome.
+   *
+   * `details` is styled globally as a door — border, raised surface, padding, a
+   * full-width hit area — because chapter 8 hides six evidence tables behind it
+   * and a reviewer has to see that the proof is there. Inheriting that here was
+   * wrong in a way worth recording: it rendered this panel as a bordered button,
+   * which is the exact control that was removed from the site's navigation two
+   * rounds ago for being ugly. The query is the thing the reader asked not to be
+   * shown, so it has to read as a footnote, not as a door.
+   *
+   * Only the box is removed. The marker and its rotation stay inherited, so the
+   * two kinds of disclosure on the site agree about which way a closed chevron
+   * points — the first version of this block redefined `::before` and ended up
+   * pointing right-then-down in chapter 8 and down-then-up here.
+   */
+  .sql-panel {
+    margin: 1rem 0 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .sql-panel > summary {
+    /* The global rule pads this to a 59px row; a footnote is the height of its
+       own line, plus just enough to stay a comfortable target. */
+    padding: 0.15rem 0;
+    width: fit-content;
+    font-weight: 500;
+  }
+
+  /* Also from the global rule: it draws a rule under an open summary to separate
+     it from the table beneath. There is no frame here for that rule to close. */
+  .sql-panel[open] > summary {
+    border-bottom: 0;
+  }
+
+  .sql-panel > textarea {
+    margin-top: 0.7rem;
+  }
+
   textarea {
     width: 100%;
     font-family: var(--font-mono);
