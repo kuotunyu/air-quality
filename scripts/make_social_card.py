@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Draw the social card the site links to as `og:image`.
 
@@ -17,6 +16,7 @@ Run after a data refresh:
 
 Output: web/public/og.png, 1200x630, committed alongside the data it describes.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,11 +34,11 @@ WIDTH, HEIGHT = 1200, 630
 # The site's own light-theme tokens, resolved. Written as hex here because Pillow
 # has no OKLCH; the source of truth is web/src/styles/global.css and these are
 # what those tokens measured as in the browser.
-INK = (31, 34, 38)          # --text        oklch(0.252 0.008 250)
-MUTED = (69, 73, 78)        # --text-muted  oklch(0.404 0.010 250)
-FAINT = (93, 98, 103)       # --text-faint  oklch(0.493 0.010 250)
-FIELD = (243, 245, 248)     # --bg          oklch(0.970 0.004 250)
-RULE = (132, 137, 142)      # --rule        oklch(0.628 0.010 250)
+INK = (31, 34, 38)  # --text        oklch(0.252 0.008 250)
+MUTED = (69, 73, 78)  # --text-muted  oklch(0.404 0.010 250)
+FAINT = (93, 98, 103)  # --text-faint  oklch(0.493 0.010 250)
+FIELD = (243, 245, 248)  # --bg          oklch(0.970 0.004 250)
+RULE = (132, 137, 142)  # --rule        oklch(0.628 0.010 250)
 # The concentration ramp, low to high. The one mark that is unmistakably this
 # document, and the only saturated colour it allows itself.
 RAMP = ["#5d88b8", "#238690", "#4a7647", "#755716", "#783c2e", "#6b2b37", "#5e0d4e"]
@@ -131,7 +131,7 @@ def draw() -> None:
     # Bottom line, in the figure face, because these are figures.
     d.text(
         (x, HEIGHT - pad - 34),
-        f"kuotunyu.github.io/air-quality",
+        "kuotunyu.github.io/air-quality",
         font=num,
         fill=FAINT,
     )
