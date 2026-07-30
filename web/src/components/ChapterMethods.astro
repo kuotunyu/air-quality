@@ -794,9 +794,17 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 </section>
 
 <style>
+  /*
+   * Eight of these stack down the chapter, so their separation is paid seven
+   * times. It was 3.5rem of collapsed margin plus 2.5rem of padding above the
+   * rule — 126px between one comparison ending and the next one being named,
+   * measured, and the single largest repeated gap in the document. The rule
+   * already does the separating; the space around it only has to keep the rule
+   * from touching the text.
+   */
   .mistake {
-    margin: 3.5rem 0;
-    padding-top: 2.5rem;
+    margin: 2.25rem 0;
+    padding-top: 1.75rem;
     border-top: 1px solid var(--line-soft);
   }
   .mistake h3 {

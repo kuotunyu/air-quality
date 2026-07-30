@@ -32,7 +32,7 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
 ---
 <section id="hero" class="page enter">
   <p class="eyebrow" style="--enter:0">1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測</p>
-  <h1 style="--enter:1">台灣空氣品質的<br />長期重新分析</h1>
+  <h1 style="--enter:1">台灣空氣品質的長期重新分析</h1>
 
   <p class="lede" style="--enter:2">
     {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
@@ -120,7 +120,9 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--space-3);
-  padding: var(--space-3) 0;
+  /* Three of these, so the padding is paid six times: 21px each side came to
+     126px of the list height. The hairline is what separates them. */
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--line-soft);
 }
 
@@ -160,35 +162,65 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
 }
 .hero-grid {
   display: grid;
-  gap: 2rem;
-  margin: 2.5rem 0;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 var(--space-5);
   align-items: start;
-}
-@media (min-width: 52rem) {
-  .hero-grid {
-    /* The map was capped at 340px and drew 73 stations into it, which is
-       what made it feel packed. With a coastline behind them it also has a
-       shape to fill, so it gets a real share of the fold. */
-    grid-template-columns: minmax(260px, 22rem) 1fr;
-    gap: 3rem;
-  }
   /*
-   * Explicit placement, because the figure now ships two regions: the map and
-   * the prose about it. The map takes the narrow column; its notes drop to a
+   * Queried on the CONTAINER, not the viewport, and that distinction was
+   * expensive to learn. The old rule was `@media (min-width: 52rem)`, written
+   * when this figure sat in a 1,145px column and the viewport was a fair proxy
+   * for the room available. It is not one any more: the rail takes a fixed share
+   * and the reading column is capped at the measure, so a wide viewport no
+   * longer means a wide figure. Measured before this change — at a 1,440px
+   * viewport the stats column resolved to 357px and grew to 863px tall against a
+   * 655px map, leaving 271px of nothing under the map; at 1,100px it resolved to
+   * 201px, 1,604px tall, and 1,012px of nothing. The breakpoint was reading a
+   * number that had stopped describing the box.
+   */
+  container-type: inline-size;
+}
+
+@container (min-width: 34rem) {
+  .hero-grid {
+    /*
+     * The map column is sized to the map, not to a share of the row. The map box
+     * is height-budgeted (see StationMap) and may not go below 260px wide or the
+     * county-label collision test loses its guarantee — so it takes what it needs
+     * and the figures take the rest, which is the opposite of the old split.
+     */
+    grid-template-columns: clamp(16rem, 34%, 20rem) minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  /*
+   * Explicit placement, because the figure ships two regions: the map and the
+   * prose about it. The map takes the narrow column; its notes drop to a
    * full-width row underneath and pick up the page measure there, instead of
-   * wrapping at 20 characters inside a 22rem column.
+   * wrapping at 20 characters inside the column.
+   *
+   * `:global` on the two the figure owns, and not on `.hero-stats`. Astro scopes
+   * a component styles by stamping its own id on both the selector and its own
+   * elements, so a rule written here silently fails to match anything rendered by
+   * StationMap — which is what happened: the notes row stayed in column one at
+   * 462px and kept the ragged measure this change exists to remove.
    */
   /*
-   * `:global` on the two the figure owns, and not on `.hero-stats`.
+   * The map is intrinsically a tall narrow object — about 700px by 307 — because
+   * its height is budgeted and its aspect ratio is the island. Whatever sits
+   * beside it therefore has to be about that tall or the row leaves slack, and
+   * the figures come to a little more, so the slack lands under the map: 137px
+   * of it, measured.
    *
-   * Astro scopes a component's styles by stamping its own id on both the
-   * selector and its own elements, so a rule written here silently fails to
-   * match anything rendered by StationMap — which is what happened: the notes
-   * row stayed in column one at 462px and kept the ragged measure this change
-   * exists to remove.
+   * Centring the map in the row turns that into 68px above and below, which the
+   * eye reads as a figure aligned against a list rather than as a column that
+   * stopped early. The alternative — growing the map to match — makes it wider,
+   * which takes width from the figures, which makes them taller again.
    */
   .hero-grid > :global(.map-wrap) {
     grid-area: 1 / 1;
+    align-self: stretch;
+    display: grid;
+    align-content: center;
   }
   .hero-grid > .hero-stats {
     grid-area: 1 / 2;
