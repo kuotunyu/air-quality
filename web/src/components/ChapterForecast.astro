@@ -421,16 +421,18 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   {
     worst && (
       <div class="note caveat">
-        <strong>那一欄「最差分割」是後來才加的，因為第一版少了它。</strong>
-        程式印出來的摘要是「4/4 期距贏過 persistence」——對四個平均值而言是真的。
-        但 16 個「期距 × 分割」格子裡有一個是
-        <strong>{n(worst.skill_persistence_worst, 3)}</strong>
-        （{worst.horizon} 小時、<code>rolling_1</code>）。rolling_1 是訓練資料最少的分割，
-        因為 rolling-origin 給第一個分割最短的歷史。
-        <br />
-        <br />
-        這跟這一章反覆講的「R² 藏掉一個爛模型」是同一個錯，只是高了一層。
-        所以現在每個平均值旁邊都掛著它最差的分割，而且有測試釘住這件事。
+        <p>
+          <strong>那一欄「最差分割」是後來才加的，因為第一版少了它。</strong>
+          程式印出來的摘要是「4/4 期距贏過 persistence」——對四個平均值而言是真的。
+          但 16 個「期距 × 分割」格子裡有一個是
+          <strong>{n(worst.skill_persistence_worst, 3)}</strong>
+          （{worst.horizon} 小時、<code>rolling_1</code>）。rolling_1 是訓練資料最少的分割，
+          因為 rolling-origin 給第一個分割最短的歷史。
+        </p>
+        <p>
+          這跟這一章反覆講的「R² 藏掉一個爛模型」是同一個錯，只是高了一層。
+          所以現在每個平均值旁邊都掛著它最差的分割，而且有測試釘住這件事。
+        </p>
       </div>
     )
   }
@@ -574,16 +576,19 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
   {
     sarOneHour && (
       <div class="note caveat">
-        <strong>
-          一小時後，SARIMA 輸給一行規則 {n(Math.abs(sarOneHour.margin) * 100, 1)}%。
-        </strong>
-        {n(sarOneHour.sarima_rmse, 2)} 對 persistence 的 {n(sarOneHour.persistence_rmse, 2)} μg/m³。
-        {sar.why_it_loses_at_one_hour}
-        <br /><br />
-        它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但看一下贏多少：
-        {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}
-        ——到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
-        <strong>兩天後任何方法都退化成 climatology</strong>。
+        <p>
+          <strong>
+            一小時後，SARIMA 輸給一行規則 {n(Math.abs(sarOneHour.margin) * 100, 1)}%。
+          </strong>
+          {n(sarOneHour.sarima_rmse, 2)} 對 persistence 的 {n(sarOneHour.persistence_rmse, 2)} μg/m³。
+          {sar.why_it_loses_at_one_hour}
+        </p>
+        <p>
+          它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但看一下贏多少：
+          {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}
+          ——到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
+          <strong>兩天後任何方法都退化成 climatology</strong>。
+        </p>
       </div>
     )
   }

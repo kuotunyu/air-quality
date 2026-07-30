@@ -369,15 +369,18 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </details>
 
     <div class="note">
-      <strong>但這裡有個我原本猜錯的地方。</strong>
-      在 LightGBM 這類樹模型裡，原始方位角的表現<strong>反而略好</strong>
-      （R² 0.537 對 0.524）——樹可以反覆切分同一個變數，
-      把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎沒有代價。
-      <br /><br />
-      所以「sin/cos 編碼比較好」這句話必須帶著適用範圍：
-      在<strong>線性模型</strong>裡它是 {n(sinCos?.r2_relative_to_raw_bearing as number, 2)} 倍，
-      而當年用的正是線性模型（Pearson、OLS、線性混合模型）。
-      在樹模型裡它不重要。這個區分是我跑完才知道的，不是一開始就知道。
+      <p>
+        <strong>但這裡有個我原本猜錯的地方。</strong>
+        在 LightGBM 這類樹模型裡，原始方位角的表現<strong>反而略好</strong>
+        （R² 0.537 對 0.524）——樹可以反覆切分同一個變數，
+        把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎沒有代價。
+      </p>
+      <p>
+        所以「sin/cos 編碼比較好」這句話必須帶著適用範圍：
+        在<strong>線性模型</strong>裡它是 {n(sinCos?.r2_relative_to_raw_bearing as number, 2)} 倍，
+        而當年用的正是線性模型（Pearson、OLS、線性混合模型）。
+        在樹模型裡它不重要。這個區分是我跑完才知道的，不是一開始就知道。
+      </p>
     </div>
   </article>
 
@@ -697,19 +700,22 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
 
     <div class="note caveat">
-      <strong>兩件只有分桶才看得到的事。</strong>
-      第一，在<strong>完全相同</strong>的單小時缺口上，內插的誤差是
-      {n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
-      {n(GAP_SERIES[2].values[0] as number, 2)}——
-      最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
-      從 30 公里外借一個值，比把前後兩小時連成一條直線還差。
-      <br /><br />
-      第二，看那條紅線有多平。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
-      鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
-      {n(GAP_SERIES[2].values[4] as number, 2)}。
-      <strong>這並非穩健，而是相反</strong>——它代表這個方法不知道問題有多難：
-      它會用同樣的自信填一次三週停機和一個一小時缺口，
-      而輸出裡沒有任何欄位區分這兩者。內插的行為相反，誤差隨缺口成長，然後它<strong>停下來</strong>。
+      <p>
+        <strong>兩件只有分桶才看得到的事。</strong>
+        第一，在<strong>完全相同</strong>的單小時缺口上，內插的誤差是
+        {n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
+        {n(GAP_SERIES[2].values[0] as number, 2)}——
+        最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
+        從 30 公里外借一個值，比把前後兩小時連成一條直線還差。
+      </p>
+      <p>
+        第二，看那條紅線有多平。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
+        鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
+        {n(GAP_SERIES[2].values[4] as number, 2)}。
+        <strong>這並非穩健，而是相反</strong>——它代表這個方法不知道問題有多難：
+        它會用同樣的自信填一次三週停機和一個一小時缺口，
+        而輸出裡沒有任何欄位區分這兩者。內插的行為相反，誤差隨缺口成長，然後它<strong>停下來</strong>。
+      </p>
     </div>
 
     <div class="note">

@@ -245,18 +245,21 @@ const airzoneSeries = (trendByAirzone.series as {
     </figure>
 
     <div class="note caveat">
-      <strong>那個交叉點就是答案。</strong>
-      實際觀測從 {n(dwObserved[0], 1)} 掉到 {n(dwObserved[dwObserved.length - 1], 1)} μg/m³，
-      降了 {n(dw.panel.observed_fall, 1)}。但在平均天氣之下，
-      同一批測站只從 {n(dwNormalised[0], 1)} 掉到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
-      降了 {n(dw.panel.normalised_fall, 1)}。
-      差額 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
-      佔了整個下降的 {n(dwShare, 0)}%</strong>。
-      <br /><br />
-      換句話說：{dwYears[0]} 年的天氣讓空氣看起來比排放本身更糟，
-      {dwYears[dwYears.length - 1]} 年的天氣讓它看起來比排放本身更好
-      （現在這個差距是 {n(dwGapNow, 1)} μg/m³）。
-      <strong>把兩者相加，就是那條實線比虛線陡的原因。</strong>
+      <p>
+        <strong>那個交叉點就是答案。</strong>
+        實際觀測從 {n(dwObserved[0], 1)} 掉到 {n(dwObserved[dwObserved.length - 1], 1)} μg/m³，
+        降了 {n(dw.panel.observed_fall, 1)}。但在平均天氣之下，
+        同一批測站只從 {n(dwNormalised[0], 1)} 掉到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
+        降了 {n(dw.panel.normalised_fall, 1)}。
+        差額 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
+        佔了整個下降的 {n(dwShare, 0)}%</strong>。
+      </p>
+      <p>
+        換句話說：{dwYears[0]} 年的天氣讓空氣看起來比排放本身更糟，
+        {dwYears[dwYears.length - 1]} 年的天氣讓它看起來比排放本身更好
+        （現在這個差距是 {n(dwGapNow, 1)} μg/m³）。
+        <strong>把兩者相加，就是那條實線比虛線陡的原因。</strong>
+      </p>
     </div>
 
     <p>
@@ -271,12 +274,15 @@ const airzoneSeries = (trendByAirzone.series as {
     </p>
 
     <div class="note">
-      <strong>這不是因果歸因，界線要劃清楚。</strong>
-      {dw.caveat}
-      <br /><br />
-      還有一件事：正規化後的序列在<strong>年內幾乎是平的</strong>，
-      因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
-      那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像圖壞了。
+      <p>
+        <strong>這不是因果歸因，界線要劃清楚。</strong>
+        {dw.caveat}
+      </p>
+      <p>
+        還有一件事：正規化後的序列在<strong>年內幾乎是平的</strong>，
+        因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
+        那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像圖壞了。
+      </p>
     </div>
 
     <h3>各空品區</h3>

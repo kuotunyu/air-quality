@@ -58,6 +58,12 @@
   --bg-sunken: #ececec;
   --line: #cfcfcf;
   --line-soft: #e3e3e3;
+  /* The chapter divider, and the only line on the page that carries meaning
+     rather than just separating two boxes. `--line` measures 1.63:1 against the
+     body — fine for a table rule you are already looking at, not fine for the
+     one mark that tells you a chapter changed. Solved at the lightest value that
+     still clears the 3:1 non-text threshold on `--bg`: 3.17:1 here. */
+  --rule: #8a8a8a;
 
   --text: #292929;
   --text-muted: #5c5c5c;
@@ -193,6 +199,8 @@
     --bg-sunken: #0f0f0f;
     --line: #3c3c3c;
     --line-soft: #2c2c2c;
+    /* Same solve against the dark body: 3.37:1. */
+    --rule: #6b6b6b;
 
     --text: #e9e9e9;
     --text-muted: #b7b7b7;
@@ -309,6 +317,30 @@ p {
   overflow-wrap: break-word;
 }
 
+/* Chinese is set justified, and for a structural reason: every glyph is one em
+   wide, so the line breaks land on an exact multiple of the character box and a
+   justified column costs nothing to close up. Latin justification has to
+   stretch word spaces, which is why English is usually left-aligned; Chinese
+   has no word spaces to stretch.
+ *
+ * Left-aligned, the same paragraphs finished a median of 31px — one and a half
+ * characters — short of the column, and up to three characters short on the
+ * worst line. Nothing was broken, but the right edge wandered by a different
+ * amount in every block, which is what read as 「不工整」.
+ *
+ * `line-break: strict` applies the full CJK 禁則 rules, so a 。or 」never
+ * starts a line. Scoped to prose: tables, legends and controls are aligned by
+ * their own layout and must not be stretched. */
+p,
+.note,
+.aside,
+figcaption,
+dd,
+blockquote {
+  text-align: justify;
+  line-break: strict;
+}
+
 a {
   color: var(--accent);
   text-underline-offset: 3px;
@@ -363,13 +395,39 @@ code,
   padding-inline: clamp(1.15rem, 4vw, 2.75rem);
 }
 
+/* A chapter boundary used to be built out of four things stacked up: a hairline
+ * on the section, 49px of padding, a second hairline beside the chapter number,
+ * then the heading. Two rules 49px apart do not separate twice as clearly as
+ * one — they just make the reader work out which one is the boundary. There is
+ * now exactly one rule, and it is the chapter marker's own (below), so the line
+ * and the number that names it are the same object.
+ *
+ * The padding is asymmetric on purpose. Space above the rule is what separates
+ * the chapters; space below it would only push the rule away from the number
+ * that names it. Symmetric padding put 156px between the last line of one
+ * chapter and the next chapter's marker, which is a gap, not a transition. */
 section {
-  padding-block: clamp(1.9rem, 3.4vw, 3rem);
-  border-top: 1px solid var(--line-soft);
+  padding-block: clamp(1.9rem, 3.2vw, 2.8rem) clamp(1.3rem, 2.2vw, 2rem);
 }
 
-section:first-of-type {
-  border-top: 0;
+/* Whatever a chapter happens to end on — a hero grid, a picker, a disclosure —
+ * brings its own bottom margin, so the measured gap before the next chapter's
+ * rule ranged from 78px to 130px depending on which. The padding is supposed to
+ * be the only thing setting that distance.
+ *
+ * `:last-child` twice is not a typo. Astro scopes each component's styles with
+ * an attribute selector, so `.hero-grid[data-astro-cid-…]` outranks a plain
+ * `section > :last-child` and its 52px margin survived the first attempt.
+ * Repeating the pseudo-class selects exactly the same elements one specificity
+ * step higher, which is cheaper and less brittle than chasing the margin into
+ * every component that happens to set one.
+ *
+ * The second selector is for the margin one level in: the 「你的測站」 chapter
+ * ends on a `.picker` whose own margin is zero but whose last paragraph's is
+ * not, so the 21px leaked through the wrapper. */
+section > :last-child:last-child,
+section > :last-child > :last-child:last-child {
+  margin-bottom: 0;
 }
 
 /*
@@ -378,23 +436,33 @@ section:first-of-type {
  * have is the generated-interface tell, and `text-transform: uppercase` does
  * nothing at all to Chinese. It is now a legible label with a rule, which is
  * what a chapter marker in a report looks like.
+ *
+ * It reads at body size in the muted ink rather than 0.93rem in the faintest,
+ * because it is now the only thing marking the transition and a boundary you
+ * have to look for is not a boundary. It sits tight against its heading
+ * (`--space-1`) so the pair reads as one block rather than two.
  */
 .eyebrow {
   display: flex;
+  /* It is a <p>, so it inherited the 39rem prose measure and the rule stopped
+     326px short of the column — a line drawn two thirds of the way across reads
+     as unfinished, not as a divider. The chapter break spans the whole content
+     column, like the charts and tables below it. */
+  max-width: none;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-faint);
-  margin: 0 0 var(--space-2);
+  gap: var(--space-3);
+  font-size: var(--text-base);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-1);
 }
 
 .eyebrow::after {
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: var(--rule);
 }
 
 .lede {

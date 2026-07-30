@@ -274,9 +274,27 @@ const dots = main.map((s) => {
     flex-direction: column;
   }
 
-  /* Placed by the parent; on its own it is just prose at the page measure. */
+  /*
+   * Placed by the parent. Two columns, because one 819px column of footnotes
+   * inside a 1,145px page left 326px of nothing beside it — and unlike body
+   * prose, a source note is read once and reads fine at half the measure.
+   * `auto-fit` drops to one column as soon as two no longer fit, so this needs
+   * no breakpoint; the row gap only ever applies in that collapsed state.
+   */
   .map-notes {
-    max-width: var(--measure);
+    display: grid;
+    /* `min(…, 100%)` and not a bare `19rem`: a minmax floor is a floor even when
+       there is only one column, so at 375px the single track measured 351px in a
+       333px container and the notes sat 18px past the right edge every other
+       block on the page lines up with. */
+    grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
+    gap: var(--space-3) var(--space-5);
+    align-items: start;
+  }
+
+  /* The grid gap does the spacing; the paragraph margin would double it. */
+  .map-notes .aside {
+    margin: 0;
   }
 
   /*

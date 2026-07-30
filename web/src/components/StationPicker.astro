@@ -130,6 +130,13 @@ const initial = cards.find((c) => c.station_name === "鳳山") ?? cards[0];
   .picker {
     margin-top: 1.5rem;
   }
+  /* This caveat ends the chapter, and Astro's own <script> is the section's real
+     last child — so the global rule that clears trailing margins lands on a
+     zero-height element and this one's 21px survived, making the gap before the
+     next chapter 99px where every other boundary measures 78px. */
+  .picker > .note:last-child {
+    margin-bottom: 0;
+  }
   .report {
     background: var(--bg-raised);
     border: 1px solid var(--line);
