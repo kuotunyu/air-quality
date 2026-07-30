@@ -13,6 +13,7 @@
  * data as three scores, which is where the contradiction lives.
  */
 import forecast from "../../public/data/story/forecast.json";
+import { sarimaEvidence } from "../lib/data";
 import { labelGutter, linear, n, spreadLabels, ticks } from "../lib/chart";
 
 const horizons = forecast.horizons as {
@@ -122,6 +123,50 @@ const metricLabelY = spreadLabels(
   metricSeries.map((s) => yMetric(s.values[s.values.length - 1])),
   KEY_GAP,
 );
+
+// --- D10: the model the 2018 project set aside ---------------------------
+// Its own panel, its own scale, and deliberately not sharing an axis with the
+// two above: these are six stations at 72-hour origins, not the 74-station rows
+// the model figures come from. See `sarimaEvidence.not_comparable`.
+const sar = sarimaEvidence;
+const SAR_H = 300;
+const sarX = (index: number) =>
+  sar.horizons.length === 1 ? 50 : (index / (sar.horizons.length - 1)) * 100;
+
+const sarSeries = [
+  {
+    key: "sarima",
+    label: "SARIMA",
+    colour: "var(--c0)",
+    values: sar.horizons.map((h) => h.sarima_rmse),
+  },
+  {
+    key: "persistence",
+    label: "persistence",
+    colour: "var(--c5)",
+    values: sar.horizons.map((h) => h.persistence_rmse),
+  },
+  {
+    key: "climatology",
+    label: "climatology",
+    colour: "var(--c3)",
+    values: sar.horizons.map((h) => h.climatology_rmse),
+  },
+];
+
+const sarAll = sarSeries.flatMap((s) => s.values);
+const ySar = linear([0, Math.max(...sarAll) * 1.12], [100, 0]);
+const sarTicks = ticks(0, Math.max(...sarAll) * 1.12, 4);
+const sarPath = (values: number[]) =>
+  values.map((v, i) => `${i ? "L" : "M"}${n(sarX(i), 2)} ${n(ySar(v), 2)}`).join(" ");
+const sarLabelY = spreadLabels(
+  sarSeries.map((s) => ySar(s.values[s.values.length - 1])),
+  (26 / SAR_H) * 100,
+);
+
+// The one-hour row is the finding, so it is named rather than left to the eye.
+const sarOneHour = sar.horizons.find((h) => h.horizon === 1);
+const sarWins = sar.horizons.filter((h) => h.margin > 0);
 
 const worst = horizons.find((h) => h.splits_not_beating_persistence > 0);
 const last = horizons[horizons.length - 1];
@@ -402,6 +447,157 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     （lag1 0.932 &gt; mean3 0.908 &gt; max3 0.896 &gt; lag2 0.883），
     沒有任何一個可疑地接近 1。
   </p>
+
+  <h3>被跳過的那個模型（D10）</h3>
+
+  <p class="lede">
+    原專題第 {sar.quote_page} 頁：「{sar.quote}」。
+    問題從來不是這個結論，是<strong>它沒有附任何數字</strong>——
+    那句話可以是工程判斷，也可以是個人偏好，而讀者無法分辨是哪一種。
+    一個附了秒數的表格只能是前者。
+  </p>
+
+  <p>
+    所以這裡量兩件互相獨立的事：<strong>那個不便值多少</strong>，
+    以及<strong>它買到了什麼</strong>。
+    固定階數 {sar.order}、{sar.stations} 個測站 × {sar.splits} 個 rolling-origin 分割、
+    每 {sar.origin_stride_hours} 小時一個預測原點。
+    {sar.fits.converged}/{sar.fits.total} 次擬合全部收斂，
+    中位數 {sar.fits.median_seconds} 秒、{sar.fits.median_observed.toLocaleString()} 個有效觀測點。
+  </p>
+
+  <h4>一、那個不便，定價</h4>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>序列長度</th>
+          <th class="num">自動選階</th>
+          <th class="num">固定階數</th>
+          <th class="num">倍數</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          sar.selection_cost.map((row) => (
+            <tr>
+              <td class="num">{row.points.toLocaleString()} 點</td>
+              <td class="num">{n(row.auto_seconds, 2)} s</td>
+              <td class="num">{n(row.fixed_seconds, 2)} s</td>
+              <td class="num strong">{n(row.multiple, 1)}×</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>倍數會隨資料量長大，這比一個定值更嚴重。</strong>
+    {sar.why_multiple_grows}
+    所以原文說它不便——<strong>這件事是對的</strong>。
+  </div>
+
+  <h4>二、那個不便，買到了什麼</h4>
+
+  <figure>
+    <div class="chart">
+      <div
+        class="plot"
+        style={`--plot-h:${SAR_H}px;--key-w:${labelGutter(sarSeries.map((s) => s.label))}px`}
+      >
+        <div class="plot-y">
+          {sarTicks.map((t) => <span style={`top:${n(ySar(t), 3)}%`}>{n(t, 0)}</span>)}
+        </div>
+
+        <div class="plot-area">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {
+              sarTicks.map((t) => (
+                <line
+                  x1="0"
+                  x2="100"
+                  y1={n(ySar(t), 3)}
+                  y2={n(ySar(t), 3)}
+                  class="plot-grid"
+                  vector-effect="non-scaling-stroke"
+                />
+              ))
+            }
+            <line x1="0" x2="100" y1="100" y2="100" class="plot-axis" vector-effect="non-scaling-stroke" />
+            {
+              sarSeries.map((s) => (
+                <path
+                  d={sarPath(s.values)}
+                  class="plot-line"
+                  stroke={s.colour}
+                  vector-effect="non-scaling-stroke"
+                />
+              ))
+            }
+          </svg>
+
+          {
+            sarSeries.map((s) =>
+              s.values.map((v, i) => (
+                <span
+                  class="plot-pt"
+                  style={`left:${n(sarX(i), 3)}%;top:${n(ySar(v), 3)}%;color:${s.colour}`}
+                  title={`${s.label} @ ${sar.horizons[i].horizon}h: ${n(v, 2)} μg/m³`}
+                />
+              )),
+            )
+          }
+        </div>
+
+        <div class="plot-keys">
+          {
+            sarSeries.map((s, si) => (
+              <span style={`top:${n(sarLabelY[si], 3)}%;color:${s.colour}`}>{s.label}</span>
+            ))
+          }
+        </div>
+
+        <div class="plot-x">
+          {sar.horizons.map((h, i) => <span style={`left:${n(sarX(i), 3)}%`}>{h.horizon}h</span>)}
+        </div>
+      </div>
+    </div>
+    <figcaption>
+      均方根誤差（μg/m³），越低越好。三種方法評分在<strong>完全相同的預測原點</strong>上，
+      每個期距約 {sar.horizons[0].origins.toLocaleString()} 個原點。
+      SARIMA 是<strong>固定階數</strong>，不是搜尋出來的——搜尋的代價就是上面那張表。
+    </figcaption>
+  </figure>
+
+  {
+    sarOneHour && (
+      <div class="note caveat">
+        <strong>
+          一小時後，SARIMA 輸給一行規則 {n(Math.abs(sarOneHour.margin) * 100, 1)}%。
+        </strong>
+        {n(sarOneHour.sarima_rmse, 2)} 對 persistence 的 {n(sarOneHour.persistence_rmse, 2)} μg/m³。
+        {sar.why_it_loses_at_one_hour}
+        <br /><br />
+        它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但看一下贏多少：
+        {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}
+        ——到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
+        <strong>兩天後任何方法都退化成 climatology</strong>。
+      </div>
+    )
+  }
+
+  <div class="note">
+    <strong>所以跳過 SARIMA 是對的，但不是因為它不便。</strong>
+    {sar.verdict}
+  </div>
+
+  <div class="note caveat">
+    <strong>這張表不能和本章前面的數字並排。</strong>
+    {sar.not_comparable}
+    {sar.no_lightgbm}
+  </div>
 
   <div class="note caveat">
     <strong>這是一個作品集裡的模型，不是空品預報。</strong>

@@ -17,6 +17,7 @@ import pitfalls from "../../public/data/story/pitfalls.json";
 import replication from "../../public/data/story/replication.json";
 import imputation from "../../public/data/story/imputation.json";
 import deweather from "../../public/data/story/deweather.json";
+import sarima from "../../public/data/story/sarima.json";
 
 export interface Station {
   station_name: string;
@@ -130,6 +131,45 @@ export const deweatherEvidence = deweather as {
   median_holdout_r2: number;
   caveat: string;
   by_zone: { airzone: string; n: number; observed: number; normalised: number; weather_share: number }[];
+};
+
+/**
+ * Chapter 5's coda: D10 — the model the 2018 project set aside as inconvenient.
+ *
+ * `not_comparable` is a field rather than a comment because the chapter prints
+ * it. These origins are not M9's origins, and the one thing a reader will want
+ * to do with this table is set it beside the LightGBM numbers above it.
+ */
+export const sarimaEvidence = sarima as {
+  quote: string;
+  quote_page: number;
+  period: number[];
+  order: string;
+  stations: number;
+  splits: number;
+  origin_stride_hours: number;
+  fits: { total: number; converged: number; median_seconds: number; median_observed: number };
+  selection_cost: {
+    points: number;
+    auto_seconds: number;
+    fixed_seconds: number;
+    multiple: number;
+  }[];
+  horizons: {
+    horizon: number;
+    origins: number;
+    sarima_rmse: number;
+    persistence_rmse: number;
+    climatology_rmse: number;
+    best_baseline: string;
+    /** Signed so positive always means SARIMA won. */
+    margin: number;
+  }[];
+  why_multiple_grows: string;
+  why_it_loses_at_one_hour: string;
+  verdict: string;
+  not_comparable: string;
+  no_lightgbm: string;
 };
 
 /** Pitfall 07: what the 2018 project's gap-filling sentence cost. */

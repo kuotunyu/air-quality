@@ -395,9 +395,123 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     written.extend(_export_detection_limit(root))
     written.extend(_export_sources(root))
     written.extend(_export_forecast(root))
+    written.extend(_export_sarima(root))
     written.extend(_export_health(root))
     written.extend(_export_imputation(root))
     return written
+
+
+def _export_sarima(root: Path) -> list[Path]:
+    """Chapter 5's coda: the model the 2018 project set aside, priced.
+
+    Two things go in, and they answer different questions. The selection cost is
+    the whole of 「實屬不便」 with seconds attached; the horizon table is whether
+    the inconvenience bought anything.
+
+    The payload carries `not_comparable` and the chapter prints it, because the
+    one thing a reader will want to do with this table is set it beside the
+    LightGBM numbers above it — and those are scored on different stations, at
+    different origins, over different rows. Putting the two in one chart would be
+    the same error this chapter exists to document, committed by the chapter.
+    """
+    source = outputs_dir("m12_sarima")
+    scores_path = source / "scores.parquet"
+    if not scores_path.exists():
+        log.warning("no M12 output — run `twair analyze m12`")
+        return []
+
+    scores = pl.read_parquet(scores_path)
+    fits = pl.read_parquet(source / "fits.parquet")
+    cost = pl.read_parquet(source / "selection_cost.parquet")
+
+    pooled = (
+        scores.group_by("method", "horizon")
+        .agg(pl.col("rmse").mean().alias("rmse"), pl.col("n").sum().alias("n"))
+        .sort("horizon")
+    )
+
+    horizons = []
+    for horizon in sorted({int(h) for h in pooled["horizon"].to_list()}):
+        at = {
+            row["method"]: row["rmse"]
+            for row in pooled.filter(pl.col("horizon") == horizon).iter_rows(named=True)
+        }
+        counted = pooled.filter((pl.col("horizon") == horizon) & (pl.col("method") == "sarima"))[
+            "n"
+        ]
+        rivals = {name: rmse for name, rmse in at.items() if name != "sarima"}
+        best = min(rivals, key=lambda name: rivals[name])
+        horizons.append(
+            {
+                "horizon": horizon,
+                # Origins, not rows: one origin per forecast, and all three
+                # methods are scored on the same ones.
+                "origins": int(counted[0]) if counted.len() else 0,
+                "sarima_rmse": _round(at["sarima"], 2),
+                "persistence_rmse": _round(at.get("persistence"), 2),
+                "climatology_rmse": _round(at.get("climatology"), 2),
+                "best_baseline": best,
+                # Signed so positive always means SARIMA won.
+                "margin": _round((rivals[best] - at["sarima"]) / rivals[best], 3),
+            }
+        )
+
+    return [
+        write_json(
+            root / "sarima.json",
+            {
+                "quote": "SARIMA 不在本專題繼續討論⋯⋯在此實屬不便",
+                "quote_page": 137,
+                "period": [2015, 2025],
+                "order": "(1,0,1)(1,0,1)₂₄",
+                "stations": int(fits["station_name"].n_unique()),
+                "splits": int(fits["split"].n_unique()),
+                "origin_stride_hours": 72,
+                "fits": {
+                    "total": int(fits.height),
+                    "converged": int(fits["converged"].sum()),
+                    "median_seconds": _round(fits["fit_seconds"].median(), 0),
+                    "median_observed": as_int(fits["train_observed"].median()),
+                },
+                "selection_cost": [
+                    {
+                        "points": int(row["points"]),
+                        "auto_seconds": _round(row["auto_seconds"], 2),
+                        "fixed_seconds": _round(row["fixed_seconds"], 2),
+                        "multiple": _round(row["search_multiple"], 1),
+                    }
+                    for row in cost.iter_rows(named=True)
+                ],
+                "horizons": horizons,
+                "why_multiple_grows": (
+                    "候選階數的數量與序列長度無關，但每一次擬合的成本隨長度增長，"
+                    "所以搜尋對固定階數的倍數本身會放大。逐時單站序列是九萬多點，"
+                    "不是五千點。"
+                ),
+                "why_it_loses_at_one_hour": (
+                    "(1,0,1)(1,0,1)₂₄ 沒有差分項，一步預測會往均值回歸，"
+                    "而不是承諾「跟剛才一樣」。在 PM2.5 的一小時尺度上，"
+                    "承諾比回歸準——所以這不是實作問題，是這個模型的性質。"
+                ),
+                # No headline sentence here. The component supplies one in
+                # markup, and a payload that also states it makes the site print
+                # the same claim twice in a row — which it did on the first run.
+                "verdict": (
+                    "它在最該有用的期距上被一行規則打敗，會贏的地方又贏得不夠多。"
+                    "原文給了正確的答案，和一個不完整的理由；現在兩者都有數字。"
+                ),
+                "not_comparable": (
+                    "那些是 74 站、另一組原點、另一批列上算出來的；"
+                    "要讓 LightGBM 落在這裡的同一批原點上，得逐站-分割重建整條特徵管線。"
+                    "把兩者畫在同一張圖上，正是本章在記錄的那種錯誤。"
+                ),
+                "no_lightgbm": (
+                    "而 D10 要問的問題不需要它：一個連「一小時前的值」都打不贏的方法，"
+                    "被放棄就是對的，不管梯度提升樹做得如何。"
+                ),
+            },
+        )
+    ]
 
 
 def _export_imputation(root: Path) -> list[Path]:

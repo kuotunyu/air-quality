@@ -470,3 +470,105 @@ class TestPayloadProseIsNotMarkdown:
                 offenders.append(path.name)
 
         assert not offenders, f"markdown emphasis in payload prose: {offenders}"
+
+
+class TestTheSarimaPayload:
+    """D10's payload has to hold two things apart that a reader will want to mix.
+
+    Chapter 5 prints these numbers a few paragraphs below the LightGBM ones, and
+    they are not comparable: different stations, different origins, different
+    rows. The payload therefore ships the warning as a field rather than trusting
+    the component to remember, and the sign convention on `margin` has to be
+    unambiguous because the chapter renders it as a percentage either way.
+    """
+
+    def _payload(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        import json
+
+        source = tmp_path / "m12_sarima"
+        source.mkdir()
+        # One horizon SARIMA loses and one it wins, so the sign convention is
+        # exercised in both directions.
+        pl.DataFrame(
+            {
+                "station_name": ["古亭"] * 6,
+                "split": ["rolling_1"] * 6,
+                "horizon": [1, 1, 1, 24, 24, 24],
+                "method": ["sarima", "persistence", "climatology"] * 2,
+                "n": [100] * 6,
+                "rmse": [5.0, 4.0, 9.0, 8.0, 9.0, 10.0],
+                "mae": [3.0, 2.0, 7.0, 6.0, 7.0, 8.0],
+                "r2": [0.5, 0.6, 0.1, 0.3, 0.2, 0.1],
+            }
+        ).write_parquet(source / "scores.parquet")
+        pl.DataFrame(
+            {
+                "station_name": ["古亭"],
+                "split": ["rolling_1"],
+                "train_points": [8760],
+                "train_observed": [8294],
+                "fit_seconds": [28.1],
+                "converged": [True],
+                "aic": [49830.0],
+            }
+        ).write_parquet(source / "fits.parquet")
+        pl.DataFrame(
+            {
+                "points": [1000],
+                "auto_seconds": [11.14],
+                "fixed_seconds": [0.58],
+                "search_multiple": [19.1],
+            }
+        ).write_parquet(source / "selection_cost.parquet")
+
+        monkeypatch.setattr(story, "outputs_dir", lambda name: tmp_path / name)
+        written = story._export_sarima(tmp_path)
+        assert written
+        return json.loads(written[0].read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+    def test_margin_is_positive_only_when_sarima_wins(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = self._payload(tmp_path, monkeypatch)
+        by_horizon = {row["horizon"]: row for row in payload["horizons"]}
+
+        # 5.0 against a best baseline of 4.0 is a loss of 25%.
+        assert by_horizon[1]["margin"] == pytest.approx(-0.25)
+        # 8.0 against a best baseline of 9.0 is a win of 11.1%.
+        assert by_horizon[24]["margin"] == pytest.approx(0.111, abs=5e-4)
+
+    def test_the_best_baseline_is_the_lowest_error_not_the_first_listed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """At 24h climatology is worse than persistence, so persistence is the bar."""
+        payload = self._payload(tmp_path, monkeypatch)
+        by_horizon = {row["horizon"]: row for row in payload["horizons"]}
+
+        assert by_horizon[1]["best_baseline"] == "persistence"
+        assert by_horizon[24]["best_baseline"] == "persistence"
+
+    def test_the_non_comparability_warning_ships_with_the_numbers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert "LightGBM" in payload["not_comparable"]
+        assert payload["no_lightgbm"]
+
+    def test_the_payload_does_not_restate_the_headline_the_chapter_supplies(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The site printed the same sentence twice in a row on the first run."""
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert not payload["verdict"].startswith("跳過 SARIMA")
+        assert not payload["not_comparable"].startswith("這張表不能")
+
+    def test_convergence_is_reported_rather_than_assumed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert payload["fits"]["total"] == 1
+        assert payload["fits"]["converged"] == 1
+        assert isinstance(payload["fits"]["median_observed"], int)
