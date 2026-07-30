@@ -141,6 +141,22 @@ export function neighbours(slug: string): { prev: Chapter | null; next: Chapter 
  * `BASE_URL` carries the prefix Astro was configured with.
  */
 export function href(path = ""): string {
-  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-  return path ? `${base}/${path.replace(/^\//, "")}` : base || "/";
+  const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+  if (!path) return `${base}/`;
+  const clean = path.replace(/^\/+/, "");
+  /*
+   * A route gets the trailing slash, because that is the spelling the host
+   * actually serves it at.
+   *
+   * This returned `/air-quality/trend`, and GitHub Pages answers that with a 301
+   * to `/air-quality/trend/`. Every internal link on the site therefore cost a
+   * redirect round-trip before the page began loading, and every canonical URL,
+   * `og:url` and sitemap `<loc>` named the spelling the host redirects away from
+   * — which is the exact failure a canonical link exists to prevent. Measured on
+   * the live site: 11 of 11 routes.
+   *
+   * A path with an extension is a file, not a route, so `sitemap.xml` keeps its
+   * name.
+   */
+  return /\.[a-z0-9]+$/i.test(clean) ? `${base}/${clean}` : `${base}/${clean}/`;
 }

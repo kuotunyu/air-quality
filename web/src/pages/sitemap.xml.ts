@@ -24,7 +24,9 @@ export const GET: APIRoute = ({ site }) => {
   const paths = ["", ...CHAPTERS.map((c) => c.slug)];
   const urls = paths
     .map((slug) => {
-      const loc = new URL(`${base}${slug}`, origin).href.replace(/\/$/, "") || origin.href;
+      // Trailing slash kept, not stripped: Pages 301s the bare form, and a
+      // sitemap should list the URL that answers 200.
+      const loc = new URL(slug ? `${base}${slug}/` : base, origin).href;
       // The entry page is the way in, so it is the one that outranks the rest.
       const priority = slug === "" ? "1.0" : "0.8";
       return `  <url>

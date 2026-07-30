@@ -315,13 +315,13 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       風向是<strong>圓形變數</strong>：359° 和 1° 相差 2 度，不是 358 度。
       當年把 WD_HR 直接丟進相關分析與迴歸，得到相關係數 0.089，
       結論寫「風向與 PM2.5 無相關」。本專案復刻出
-      {n(windSummary.pearson_r_with_raw_bearing, 3)}，數量級一致。
+      {" "}{n(windSummary.pearson_r_with_raw_bearing, 3)}，數量級一致。
     </p>
 
     <p>
       但把同一份資料按 30° 分組，最高的 {compass(sectorHigh?.sector as number)}
       是 {n(sectorHigh?.mean as number)} μg/m³，最低的
-      {compass(sectorLow?.sector as number)} 是 {n(sectorLow?.mean as number)} μg/m³——
+      {" "}{compass(sectorLow?.sector as number)} 是 {n(sectorLow?.mean as number)} μg/m³——
       相差 {n(windSummary.sector_mean_range)} μg/m³，
       是整體平均的 {n(windSummary.sector_range_as_pct_of_mean, 0)}%。
       方向依賴一直都在，是線性相關係數看不見它。
@@ -587,7 +587,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <strong>{n(gapDist["1h"].share_of_gaps * 100, 1)}%</strong>，
       但只佔缺失時數的 {n(gapDist["1h"].share_of_missing_hours * 100, 1)}%；
       超過 48 小時的缺口只有 {gapDist[">48h"].gaps} 次（佔
-      {n(gapDist[">48h"].share_of_gaps * 100, 1)}%），
+      {" "}{n(gapDist[">48h"].share_of_gaps * 100, 1)}%），
       卻佔了缺失時數的 <strong>{n(gapDist[">48h"].share_of_missing_hours * 100, 1)}%</strong>。
       「缺了多少」有兩個答案而且方向相反——所以一個不附缺口長度分布的填補率，等於沒有說明。
     </div>
@@ -672,7 +672,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       </div>
       <figcaption>
         平均絕對誤差（μg/m³），依被隱藏的缺口長度分。做法是把
-        {imputationEvidence.hidden.toLocaleString()} 筆<strong>真的存在</strong>的讀數藏起來，
+        {" "}{imputationEvidence.hidden.toLocaleString()} 筆<strong>真的存在</strong>的讀數藏起來，
         叫每個策略猜回來，再跟實際值比對。
         隱藏的洞是<strong>成串的</strong>，長度抽自這批資料自己量到的缺口分布——
         隨機遮蔽單一格會把每個洞都變成 1 小時，而那正是線性內插不可能失敗的情況。
@@ -703,15 +703,15 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <p>
         <strong>兩件只有分桶才看得到的事。</strong>
         第一，在<strong>完全相同</strong>的單小時缺口上，內插的誤差是
-        {n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
-        {n(GAP_SERIES[2].values[0] as number, 2)}——
+        {" "}{n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
+        {" "}{n(GAP_SERIES[2].values[0] as number, 2)}——
         最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
         從 30 公里外借一個值，比把前後兩小時連成一條直線還差。
       </p>
       <p>
         第二，那條紅線相當平緩。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
         鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
-        {n(GAP_SERIES[2].values[4] as number, 2)}。
+        {" "}{n(GAP_SERIES[2].values[4] as number, 2)}。
         <strong>這並非穩健，而是相反</strong>——它代表這個方法不知道問題有多難：
         它會用同樣的自信填一次三週停機和一個一小時缺口，
         而輸出裡沒有任何欄位區分這兩者。內插的行為相反，誤差隨缺口成長，然後它<strong>停下來</strong>。

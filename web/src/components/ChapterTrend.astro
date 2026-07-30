@@ -63,6 +63,39 @@ const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normal
  * Every line is also labelled at its own end (see TrendChart's `.plot-keys`), so
  * colour is the second identifier here rather than the only one.
  */
+/*
+ * What the zones actually did, for the sentence that describes them.
+ *
+ * Computed rather than written down: the sentence this feeds used to assert
+ * 「東部與離島本來就低，幾乎沒有下降空間」 while the chart underneath showed 離島
+ * falling 15.5 μg/m³ and ending third-highest of eight. A claim about a figure
+ * belongs to the figure's own numbers.
+ */
+const azStats = (trendByAirzone.series as { name: string; mean: (number | null)[] }[])
+  .map((s) => {
+    const present = s.mean.filter((v): v is number => v != null);
+    const first = present[0];
+    const last = present[present.length - 1];
+    return {
+      label: s.name.replace("空品區", ""),
+      first,
+      last,
+      drop: ((first - last) / first) * 100,
+    };
+  })
+  .filter((z) => Number.isFinite(z.drop));
+
+const azSpread = {
+  min: Math.min(...azStats.map((z) => z.drop)),
+  max: Math.max(...azStats.map((z) => z.drop)),
+};
+// Highest at the start; the sentence then checks whether it is still highest.
+const azTop = azStats.reduce((hi, z) => (z.first > hi.first ? z : hi));
+const azStillTop = azStats.every((z) => z.last <= azTop.last);
+// Smallest relative fall, and where that leaves it in the current ranking.
+const azLeast = azStats.reduce((lo, z) => (z.drop < lo.drop ? z : lo));
+const azLeastRank = azStats.filter((z) => z.last > azLeast.last).length + 1;
+
 const airzoneSeries = (trendByAirzone.series as {
   name: string;
   years: number[];
@@ -94,7 +127,7 @@ const airzoneSeries = (trendByAirzone.series as {
 
   <p class="lede">
     {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
-    {n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
+    {" "}{n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
     <strong>監測網的測站數在同期間持續增加</strong>。
   </p>
 
@@ -108,7 +141,7 @@ const airzoneSeries = (trendByAirzone.series as {
   <p>
     所以這裡畫兩條線。<strong>全部測站</strong>是多數報導引用的數字；
     <strong>固定樣本</strong>只保留 {balancedSince} 年以來每一年都有可比較資料的
-    {balancedCount} 個測站，前後比的是同一批地方。
+    {" "}{balancedCount} 個測站，前後比的是同一批地方。
   </p>
 
   <figure>
@@ -233,9 +266,27 @@ const airzoneSeries = (trendByAirzone.series as {
   </div>
 
   <h3>各空品區</h3>
+  {/*
+    Rewritten because the figure underneath contradicted it.
+
+    It said 「中部與雲嘉南的起點高、降幅大；東部與離島本來就低，幾乎沒有下降空間」.
+    Measured from the same file the chart is drawn from: every zone fell between
+    50.1% and 71.8%, so 「幾乎沒有下降空間」 is true of none of them — 離島 fell
+    15.5 μg/m³ and 東部 60.5%. 離島 is not 「本來就低」 either: it started at 30.92,
+    above three other zones, and it now ends THIRD-HIGHEST of the eight. And the
+    zone that best fits the sentence's own first clause, 高屏 — highest start,
+    largest fall — was not named at all.
+
+    The figures below are computed, so the sentence cannot drift from the chart
+    again.
+  */}
   <p>
-    下降不是均勻的。中部與雲嘉南的起點高、降幅大；東部與離島本來就低，
-    幾乎沒有下降空間。
+    下降不是均勻的，但沒有一區例外：八個空品區的降幅都落在
+    {" "}{n(azSpread.min, 0)}% 到 {n(azSpread.max, 0)}% 之間。
+    起點最高的{azTop.label}降幅也最大（{n(azTop.first, 1)} → {n(azTop.last, 1)} μg/m³）
+    {azStillTop && <>，而且排序幾乎沒有動：它當年最高，現在仍然最高</>}。
+    真正換了位置的是{azLeast.label}——它的降幅最小（{n(azLeast.drop, 0)}%），
+    於是從中段升到全台第 {azLeastRank} 高。
   </p>
 
   <figure>

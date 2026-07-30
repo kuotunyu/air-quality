@@ -160,6 +160,22 @@ export function concentrationColour(value: number | null | undefined): string {
   return `var(${RAMP[index]})`;
 }
 
+/**
+ * The TEXT colour for a concentration, from the same bins as the mark colour.
+ *
+ * The entry page set its highest figure in `--c5-ink` as a literal, and
+ * `concentrationColour` puts that value (19.61) in `--c3` — two bins out, dE00 31,
+ * printed beside the legend that adjudicates the bins and directly above its own
+ * `--c3` dot on the map. Hardcoding a bin is guessing at an answer this function
+ * already has, and it cannot follow the data when the data moves.
+ */
+export function concentrationInk(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "var(--text-muted)";
+  let index = 0;
+  while (index < PM25_BREAKS.length && value >= PM25_BREAKS[index]) index += 1;
+  return `var(${RAMP[index]}-ink)`;
+}
+
 export const concentrationLegend = PM25_BREAKS.map((breakpoint, index) => ({
   colour: `var(${RAMP[index]})`,
   label:

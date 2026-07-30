@@ -1,4 +1,8 @@
-"""Fail if a built page has spaces inside Chinese sentences.
+"""Fail if a built page spaces Chinese wrongly — in either direction.
+
+Two opposite failures, both caused by the same thing and both invisible to every
+other gate. This file began as a check for the first only, and shipped nineteen
+instances of the second while reporting a clean run.
 
 A newline in an `.astro` source file is whitespace in the HTML it produces. In
 English that is invisible, because words are separated by spaces anyway. Chinese
@@ -44,6 +48,24 @@ CJK = (
 OPAQUE = re.compile(r"<(script|style|pre|code|textarea)\b[^>]*>.*?</\1>", re.S | re.I)
 TAG = re.compile(r"<[^>]+>")
 GAP = re.compile(CJK + r"[ \t\r\n]+" + CJK)
+
+# ── the opposite failure ─────────────────────────────────────────────────────
+#
+# `GAP` catches a space wrongly INSERTED into Chinese. This catches one wrongly
+# LOST: a Han character welded straight onto a digit, as in 「降到13.4」.
+#
+# Nineteen of those shipped while this gate reported zero, because it had only
+# ever been asked about the first failure. The cause is uniform, and it is a build
+# artefact rather than a typo: a line break immediately before a `{expression}` in
+# an Astro template is collapsed away, so prose that reads correctly in the source
+# renders welded. Three places in the codebase already worked around it with an
+# explicit `{" "}`; thirteen did not.
+#
+# Only Han-then-digit is flagged, and the direction matters. Digit-then-Han is
+# usually correct — 「6時」, 「6.9千筆」 and 「180°」 all want no space — so flagging
+# both directions would report the axis labels of chapter 8 as defects.
+WELDED = re.compile(r"[⺀-⿕一-鿿]" + r"[0-9]")
+
 NUL = "\x00"
 
 # Spacing that is deliberate and has to survive. Chinese/Latin and Chinese/digit
@@ -83,12 +105,18 @@ def main(argv: list[str]) -> int:
         return 1
 
     total = 0
+    welded = 0
     for page in pages:
-        gaps = GAP.findall(prose_of(page.read_text(encoding="utf-8")))
+        prose = prose_of(page.read_text(encoding="utf-8"))
+        gaps = GAP.findall(prose)
+        stuck = WELDED.findall(prose)
         total += len(gaps)
-        print(f"{len(gaps):>4} gap(s)  {page.relative_to(ROOT).as_posix()}")
+        welded += len(stuck)
+        print(f"{len(gaps):>4} gap(s) {len(stuck):>4} welded  {page.relative_to(ROOT).as_posix()}")
         for gap in gaps[:6]:
-            print(f"           {gap!r}")
+            print(f"           gap    {gap!r}")
+        for one in stuck[:6]:
+            print(f"           welded {one!r}")
 
     missing = []
     for probe, where in MUST_KEEP:
@@ -98,11 +126,12 @@ def main(argv: list[str]) -> int:
 
     print(f"\npages checked   : {len(pages)}")
     print(f"gaps in Chinese : {total}")
+    print(f"welded to digits: {welded}")
     print(f"spacing kept    : {len(MUST_KEEP) - len(missing)}/{len(MUST_KEEP)}")
     for probe, where in missing:
         print(f"  lost {probe!r} (expected on {where})")
 
-    return 1 if (total or missing) else 0
+    return 1 if (total or missing or welded) else 0
 
 
 if __name__ == "__main__":

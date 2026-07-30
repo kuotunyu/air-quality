@@ -208,7 +208,7 @@ const cellFor = (method: string, buffer: number) =>
         <strong>
           字面上的「分區各跑一次」把平均 I 從 +{n(pooled.mean_i, 3)} 壓到
           +{n(literal.mean_i, 3)}，顯著月數從 {pooled.months_significant_bh} 降到
-          {literal.months_significant_bh}。
+          {" "}{literal.months_significant_bh}。
         </strong>
         它比測站固定效果還有效——因為它讓每個係數都隨區改變，不只截距。
         當年那個被清單指控「沒用空間」的做法，其實移除了大部分的空間相依。

@@ -16,7 +16,7 @@ import {
   trend,
 } from "../lib/data";
 import { href } from "../lib/chapters";
-import { n } from "../lib/chart";
+import { concentrationInk, n } from "../lib/chart";
 
 const latestYear = Math.max(...cards.map((c) => c.year));
 const latest = cards.filter((c) => c.year >= latestYear - 1);
@@ -64,7 +64,7 @@ const opening = [
 
   <p class="lede" style="--enter:2">
     {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
-    {n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。同一份資料也顯示，
+    {" "}{n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。同一份資料也顯示，
     {latestYear} 年有可比較資料的 {latest.length} 個測站中，
     <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
     {overTaiwan} 個超過台灣自身的標準（15 μg/m³）。
@@ -92,14 +92,14 @@ const opening = [
     <div class="hero-stats">
       <dl class="figures">
         <div class="figure">
-          <dt style="color:var(--c5-ink)">{n(dirtiest.annual_mean)}</dt>
+          <dt style={`color:${concentrationInk(dirtiest.annual_mean)}`}>{n(dirtiest.annual_mean)}</dt>
           <dd>
             {dirtiest.station_name}（{dirtiest.county}）年均最高
             <span class="figure-note">{dirtiest.year} 年 · μg/m³</span>
           </dd>
         </div>
         <div class="figure">
-          <dt style="color:var(--c1-ink)">{n(cleanest.annual_mean)}</dt>
+          <dt style={`color:${concentrationInk(cleanest.annual_mean)}`}>{n(cleanest.annual_mean)}</dt>
           <dd>
             {cleanest.station_name}（{cleanest.county}）年均最低
             <span class="figure-note">{cleanest.year} 年 · μg/m³</span>

@@ -1545,4 +1545,43 @@ button:hover {
   .enter > * {
     animation: none !important;
   }
+
+  /*
+   * Every data mark on this site is a CSS background, and Chrome ships its print
+   * dialog with "Background graphics" UNCHECKED. So the first version of this
+   * stylesheet printed the entry map as empty county outlines with all 73 station
+   * dots gone, and the seven legend swatches with them — a figure whose caption
+   * describes marks that are not on the paper.
+   *
+   * `print-color-adjust: exact` is the instruction not to drop them. It is scoped
+   * to the marks rather than set globally, because the one thing that SHOULD lose
+   * its background on paper is the page itself.
+   */
+  .plot-pt,
+  .swatch,
+  .dot,
+  .plot-keys span,
+  tbody tr:nth-child(even),
+  .note,
+  .card,
+  th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /*
+   * Collapsed evidence has to open on paper.
+   *
+   * Chapter 8 hides six verification tables behind `<details>`, none of them
+   * `open` — so they printed as six summaries advertising 47 rows of evidence
+   * that were not there. A sheet of paper has nothing to click.
+   */
+  details {
+    display: block;
+  }
+
+  details::details-content {
+    content-visibility: visible;
+    block-size: auto;
+  }
 }
