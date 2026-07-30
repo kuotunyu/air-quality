@@ -123,7 +123,50 @@ export async function attachTables(
 export interface QueryResult {
   columns: string[];
   rows: unknown[][];
+  /**
+   * Arrow's own description of each column, e.g. "Int32", "Float64",
+   * "Date32<DAY>", "Utf8".
+   *
+   * Returned rather than discarded because the renderer has to align each column
+   * and cannot do it from the values. `normalise` below turns a DATE into a
+   * string and a BIGINT into a number, so by the time a value reaches the table
+   * a year, a count and a measurement are all just `number`, and a date is
+   * indistinguishable from a station name. The declared type is the only thing
+   * that still knows which is which.
+   */
+  kinds: string[];
+  /**
+   * Rows the query actually produced, before the display cap.
+   *
+   * Reported because the cap was silent: a query matching 40,000 station-days
+   * rendered 500 of them under a status line reading 「500 列」, which on this
+   * site is the wrong kind of wrong — the whole page exists so a reader can
+   * check a number, and a truncated answer that does not say it is truncated
+   * invites them to check it against the wrong denominator.
+   */
+  total: number;
+  /** Whether `rows` is a prefix of the result rather than the whole of it. */
+  truncated: boolean;
   ms: number;
+}
+
+/** What a column is, for the purpose of laying it out. */
+export type ColumnKind = "number" | "date" | "bool" | "text";
+
+/**
+ * Arrow type name to layout class.
+ *
+ * Date and Timestamp are deliberately NOT "number" even though they arrive as
+ * integers from Arrow: `normalise` has already rendered them to ISO strings, and
+ * an ISO string is fixed-width, so it aligns on the left without help. Treating
+ * them as numbers would right-align a date against a column of measurements.
+ */
+export function columnKind(arrowType: string): ColumnKind {
+  const t = arrowType.trim();
+  if (/^(date|timestamp|time)/i.test(t)) return "date";
+  if (/^bool/i.test(t)) return "bool";
+  if (/^(int|uint|float|decimal|half|double)/i.test(t)) return "number";
+  return "text";
 }
 
 export async function runQuery(
@@ -141,14 +184,40 @@ export async function runQuery(
     // has to be driven by this rather than by the value: a DATE arrives as a
     // plain number and is indistinguishable from a measurement.
     const kinds = fields.map((f) => String(f.type));
-    const rows: unknown[][] = [];
+    // DECIMAL carries its scale on the type rather than in the value, and the
+    // value arrives unscaled. The type STRING is no help — Arrow renders
+    // DECIMAL(2,1) as "Decimal[2e+1]" — so the number is read off the field.
+    const scales = fields.map((f) => {
+      const declared = (f.type as { scale?: unknown }).scale;
+      return typeof declared === "number" ? declared : null;
+    });
 
-    for (const row of table.toArray().slice(0, limit)) {
-      const record = row as Record<string, unknown>;
-      rows.push(columns.map((name, i) => normalise(record[name], kinds[i])));
+    /*
+     * Read positionally, not by column name.
+     *
+     * This was `for (const row of table.toArray())` followed by
+     * `record[name]`, which silently returns the wrong data whenever two
+     * columns share a name: `SELECT 1 AS a, 2 AS a` printed 1 twice, and
+     * `SELECT a.date, b.date FROM x a JOIN y b` — an ordinary join on this
+     * schema — printed the first date in both columns. A name is not a key here;
+     * the position is.
+     */
+    const vectors = fields.map((_, i) => table.getChildAt(i));
+    const rows: unknown[][] = [];
+    const total = table.numRows;
+    const wanted = Math.min(total, limit);
+    for (let r = 0; r < wanted; r += 1) {
+      rows.push(vectors.map((vec, i) => normalise(vec?.get(r), kinds[i], scales[i])));
     }
 
-    return { columns, rows, ms: performance.now() - started };
+    return {
+      columns,
+      kinds,
+      rows,
+      total,
+      truncated: total > limit,
+      ms: performance.now() - started,
+    };
   } finally {
     await connection.close();
   }
@@ -157,10 +226,49 @@ export async function runQuery(
 const MS_PER_DAY = 86_400_000;
 
 /** Arrow hands back typed values that do not stringify usefully on their own. */
-function normalise(value: unknown, kind = ""): unknown {
+function normalise(value: unknown, kind = "", scale: number | null = null): unknown {
   if (value == null) return null;
 
   if (value instanceof Date) return value.toISOString().slice(0, 10);
+
+  /*
+   * DECIMAL, and this one was printing wrong numbers on the page.
+   *
+   * Arrow hands a DECIMAL back as a `DecimalBigNum` object whose `String()` is
+   * the UNSCALED integer, so `SELECT 0.6` reached the table as 6. Worse inside a
+   * `VALUES` list, where DuckDB widens every row to one common type: a column of
+   * (0.6, 0.637, 0.5834) becomes DECIMAL(5,4) and printed 6000, 6370, 5834. The
+   * value fell through every branch below — it is an object, so the `bigint`
+   * test never matched — and arrived as whatever `String()` made of it.
+   *
+   * The point is reinserted by string surgery rather than by dividing, because
+   * DECIMAL(38,6) does not survive a round trip through a double. Trailing zeros
+   * from the widening are dropped: they are DuckDB's artefact, not a precision
+   * the reader asked for, and this file's whole policy is not to print digits
+   * nobody measured.
+   */
+  if (/^decimal/i.test(kind)) {
+    const s = scale ?? 0;
+    const text = String(value);
+    const negative = text.startsWith("-");
+    const digits = negative ? text.slice(1) : text;
+    if (!/^\d+$/.test(digits)) return text;
+    let out: string;
+    if (s <= 0) {
+      out = digits;
+    } else {
+      const padded = digits.padStart(s + 1, "0");
+      const whole = padded.slice(0, padded.length - s);
+      const frac = padded.slice(padded.length - s).replace(/0+$/, "");
+      out = frac ? `${whole}.${frac}` : whole;
+    }
+    if (negative) out = `-${out}`;
+    // Only hand back a number when it survives the trip; otherwise the exact
+    // decimal string, which the table right-aligns anyway because the COLUMN is
+    // typed Decimal.
+    const asNumber = Number(out);
+    return String(asNumber) === out ? asNumber : out;
+  }
 
   if (kind.startsWith("Date")) {
     // The declared unit lies. A DuckDB DATE arrives as Arrow `Date32<DAY>`,

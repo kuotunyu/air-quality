@@ -172,6 +172,7 @@ const candidates = pollutantIndex.map((p) => ({
 />
 
 <script>
+  import { columnKind } from "../lib/duck";
   import type { Candidate } from "../lib/duck";
 
   const runButton = document.getElementById("run") as HTMLButtonElement;
@@ -265,9 +266,35 @@ const candidates = pollutantIndex.map((p) => ({
       const { db } = await prepare();
       const { runQuery } = await duck();
       setStatus("查詢中", true);
-      const { columns, rows, ms } = await runQuery(db, sqlBox.value);
-      setStatus(`${rows.length} 列 · ${ms.toFixed(0)} ms`);
-      resultEl.appendChild(renderTable(columns, rows));
+      const { columns, kinds, rows, total, truncated, ms } = await runQuery(db, sqlBox.value);
+      // Say the real count. A cap that reports the capped number as if it were
+      // the answer is the one kind of wrong this page cannot afford.
+      setStatus(
+        truncated
+          ? `顯示前 ${rows.length} 列，共 ${total.toLocaleString("en-US")} 列 · ${ms.toFixed(0)} ms`
+          : `${rows.length} 列 · ${ms.toFixed(0)} ms`,
+      );
+      if (rows.length === 0) {
+        // Zero rows used to render as a bordered strip of column names over
+        // nothing, which reads as a broken table rather than as an answer.
+        const none = document.createElement("p");
+        none.className = "no-rows";
+        none.textContent =
+          columns.length > 0
+            ? `查詢成立，但沒有任何一列符合條件（欄位：${columns.join("、")}）。`
+            : "查詢成立，但沒有回傳任何資料。";
+        resultEl.appendChild(none);
+      } else {
+        resultEl.appendChild(renderTable(columns, kinds, rows));
+        if (truncated) {
+          const cap = document.createElement("p");
+          cap.className = "capped";
+          cap.textContent =
+            `這裡只畫得出前 ${rows.length} 列。全部 ${total.toLocaleString("en-US")} 列請加上 ` +
+            `LIMIT 或先彙總，否則下面的數字是這一段而不是全部。`;
+          resultEl.appendChild(cap);
+        }
+      }
     } catch (error) {
       setStatus("");
       // A failed preparation must not be cached, or every later attempt
@@ -282,28 +309,159 @@ const candidates = pollutantIndex.map((p) => ({
     }
   });
 
-  function renderTable(columns: string[], rows: unknown[][]): HTMLElement {
+  /*
+   * Two spaces that are exactly as wide as what they stand in for, both
+   * measured in the rendered face rather than assumed:
+   *
+   *   U+2007 FIGURE SPACE       10.875px — identical to every digit
+   *   U+2008 PUNCTUATION SPACE   4.375px — identical to "."
+   *
+   * (`--font-numeric` resolves to Segoe UI here and `tabular-nums` is active, so
+   * all ten digits measure the same. An ordinary space and NBSP are 5.531px and
+   * would not have worked; neither is collapsed by HTML at the end of a cell,
+   * but neither is a digit wide either.)
+   *
+   * They exist so a column of numbers can be aligned on its decimal point
+   * WITHOUT padding the short values with zeros. Writing 0.6 as "0.600" would
+   * invent two digits of precision, and duck.ts goes out of its way to avoid
+   * exactly that when it truncates Float32 to seven significant figures. Padding
+   * with a blank of digit width lines the points up and claims nothing.
+   */
+  const FIGURE_SPACE = " ";
+  const PUNCT_SPACE = " ";
+
+  const isPlainNumber = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v) && !String(v).includes("e");
+
+  /** How many digits this value prints after the point. */
+  function decimalsOf(v: unknown): number {
+    if (!isPlainNumber(v)) return 0;
+    const s = String(v);
+    const dot = s.indexOf(".");
+    return dot < 0 ? 0 : s.length - dot - 1;
+  }
+
+  function formatNumber(v: number, decimals: number, group: boolean): string {
+    const s = String(v);
+    const dot = s.indexOf(".");
+    let head = dot < 0 ? s : s.slice(0, dot);
+    const frac = dot < 0 ? "" : s.slice(dot + 1);
+
+    const negative = head.startsWith("-");
+    if (negative) head = head.slice(1);
+    if (group) head = head.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    // U+2212 MINUS SIGN, not ASCII hyphen-minus: it is what the prose in the
+    // other chapters uses, and in this tabular face it measures a full digit
+    // where the hyphen measures 8.06px against a digit's 10.875.
+    if (negative) head = `−${head}`;
+    // Unpadded, but never truncated. `decimals` is 0 both for a column of whole
+    // numbers AND for a column switched out of padding because something in it
+    // is exponential — and in the second case the value can still have a
+    // fraction. Returning `head` alone printed 0.5 as "0" and 2.25 as "2".
+    if (decimals === 0) return frac ? `${head}.${frac}` : head;
+    // `repeat` throws on a negative count, and this runs inside the click
+    // handler's try — a padding slip would replace the entire result with an
+    // error box. The count cannot go negative while `decimals` is the column
+    // maximum, so the clamp is here to keep that true of any later edit.
+    const pad = (n: number) => FIGURE_SPACE.repeat(Math.max(0, n));
+    // No point of its own: stand in for the point as well, so the column's
+    // points still form one line.
+    if (!frac) return head + PUNCT_SPACE + pad(decimals);
+    return head + "." + frac + pad(decimals - frac.length);
+  }
+
+  function renderTable(
+    columns: string[],
+    kinds: string[],
+    rows: unknown[][],
+  ): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "table-wrap";
     const table = document.createElement("table");
 
+    // Alignment comes from the column's declared type, not from sniffing the
+    // first value. Sniffing is what left the header of every numeric column at
+    // the left edge while its values sat at the right — measured at 106, 272 and
+    // 125px of divergence on a three-column result.
+    const kind = columns.map((_, i) => columnKind(kinds[i] ?? ""));
+    const cls = kind.map((k) => (k === "number" ? "num" : k === "date" ? "iso" : ""));
+
+    /*
+     * Two decisions taken per COLUMN rather than per cell, because a column is
+     * the thing a reader compares down.
+     *
+     * `decimals` is the widest fractional part in the column, so every value in
+     * it pads to the same point position.
+     *
+     * `group` is whether to write thousands separators, and the rule is that a
+     * column groups only if something in it has five or more integer digits.
+     * That is not arbitrary: a year is four digits, and 「1,997」 is wrong in a
+     * way that 「341,442,552」 is right. Deciding per column rather than per value
+     * also stops one column printing both 1213 and 34,125.
+     */
+    /*
+     * A column with an exponential in it pads nothing.
+     *
+     * `1e-7` has no decimal point, so there is nothing to line the column up on,
+     * and padding the neighbours would push their points out of line with a cell
+     * that has none. One such value therefore turns padding off for the whole
+     * column, which is the honest outcome: the column simply is not decimal.
+     */
+    const exponential = columns.map(
+      (_, i) =>
+        kind[i] === "number" &&
+        rows.some((r) => typeof r[i] === "number" && !isPlainNumber(r[i])),
+    );
+    const decimals = columns.map((_, i) =>
+      kind[i] === "number" && !exponential[i]
+        ? rows.reduce((most, r) => Math.max(most, decimalsOf(r[i])), 0)
+        : 0,
+    );
+    const group = columns.map(
+      (_, i) =>
+        kind[i] === "number" &&
+        rows.some((r) => {
+          const v = r[i];
+          return isPlainNumber(v) && Math.abs(Math.trunc(v)).toString().length >= 5;
+        }),
+    );
+
     const head = table.createTHead().insertRow();
-    for (const name of columns) {
+    columns.forEach((name, i) => {
       const th = document.createElement("th");
       th.textContent = name;
+      th.scope = "col";
+      if (cls[i]) th.className = cls[i];
       head.appendChild(th);
-    }
+    });
 
     const body = table.createTBody();
     for (const row of rows) {
       const tr = body.insertRow();
-      for (const value of row) {
+      row.forEach((value, i) => {
         const td = tr.insertCell();
-        // A null here means what it means everywhere else on this site: no
-        // measurement, or one withheld. It is never zero.
-        td.textContent = value == null ? "—" : String(value);
-        if (typeof value === "number") td.className = "num";
-      }
+        if (cls[i]) td.className = cls[i];
+
+        if (value == null) {
+          // A null here means what it means everywhere else on this site: no
+          // measurement, or one withheld. It is never zero — so it keeps the
+          // column's alignment (a left-aligned dash in a right-aligned column
+          // was a third source of the crookedness, 398px out of line) and says
+          // so to a screen reader instead of being read as an em dash.
+          td.classList.add("nil");
+          const mark = document.createElement("span");
+          mark.setAttribute("aria-hidden", "true");
+          mark.textContent = "—";
+          const said = document.createElement("span");
+          said.className = "visually-hidden";
+          said.textContent = "無值";
+          td.append(mark, said);
+        } else if (kind[i] === "number" && isPlainNumber(value)) {
+          td.textContent = formatNumber(value, decimals[i], group[i]);
+        } else {
+          td.textContent = String(value);
+        }
+      });
     }
 
     wrap.appendChild(table);
@@ -373,7 +531,10 @@ const candidates = pollutantIndex.map((p) => ({
   .status {
     font-size: var(--text-sm);
     color: var(--text-faint);
-    font-family: var(--font-mono);
+    /* The figure face, not the terminal face. This line counts the rows in the
+       table beside it, and its digits were in a different typeface from theirs. */
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
   }
   .status[data-busy="true"]::after {
     content: "…";
@@ -381,9 +542,85 @@ const candidates = pollutantIndex.map((p) => ({
   .result {
     margin-top: 1.2rem;
   }
+
+  /*
+   * The frame hugs the table instead of the table stretching to the frame.
+   *
+   * Site tables are `width: 100%` because they sit in figures sized for them.
+   * A query result is not: its shape is whatever the reader asked for. With
+   * `width: 100%` plus `white-space: nowrap`, the browser hands the surplus out
+   * in proportion to each column's widest content — so the column whose HEADER
+   * NAME is longest gets the most empty space, and its values end up furthest
+   * from the label above them. Measured on the reader's own three-column result:
+   * column widths 186 / 484 / 211px, and `pm25_over_pm10` sitting 272px away
+   * from its own numbers. That is most of the crookedness, and it was caused by
+   * a column name rather than by any data.
+   *
+   * `fit-content` sizes every column to what is in it and lets the box end
+   * there. A narrow result becomes a compact table at the reading edge; a wide
+   * one still fills the measure and scrolls, which is what the wrapper is for.
+   */
   .result :global(.table-wrap) {
+    width: fit-content;
+    max-width: 100%;
     max-height: 26rem;
     overflow: auto;
+  }
+
+  .result :global(table) {
+    width: auto;
+  }
+
+  /*
+   * Tighter than prose, on purpose.
+   *
+   * Cells inherit the document's 1.7 line-height, which put these rows at 60px —
+   * right for a paragraph, wrong for a grid whose job is to be read down. This
+   * is not the density-versus-legibility trade PRODUCT.md refuses: that rule is
+   * about prose, and a table is scanned rather than read.
+   */
+  .result :global(th),
+  .result :global(td) {
+    line-height: 1.45;
+    padding: 0.42rem 0.85rem;
+  }
+
+  /*
+   * The column names are SQL identifiers — the reader typed them — so they are
+   * set in the terminal face rather than the text face. `pm25_over_pm10` in a
+   * proportional face reads as damaged prose; in mono it reads as a name.
+   */
+  .result :global(thead th) {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  /* Dates arrive as ISO strings: fixed width, so they align left without help,
+     but they are still figures and want the figure face. */
+  .result :global(td.iso),
+  .result :global(th.iso) {
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Absent, not zero. Faint enough to read as a gap in the column, and it keeps
+     whatever alignment its column has so the gap is where a digit would be. */
+  .result :global(td.nil) {
+    color: var(--text-faint);
+  }
+
+  /* A query that matched nothing, and a result the box could not hold all of.
+     Both are answers, so they are set as prose rather than as a warning. */
+  .result :global(.no-rows) {
+    margin: var(--space-3) 0 0;
+    color: var(--text-muted);
+  }
+
+  .result :global(.capped) {
+    margin: 0.55rem 0 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
   }
   .error {
     color: var(--c5-ink);

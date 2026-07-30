@@ -275,6 +275,9 @@
    */
   --map-line: oklch(0.618 0.007 250);
 
+  /* The zebra stripe. A recess on light paper; see the rule that uses it. */
+  --table-stripe: oklch(0.945 0.004 250);
+
   --tint-neutral: oklch(0.948 0.005 250);
   --tint-caution: oklch(0.958 0.022 85);
   --tint-caution-edge: oklch(0.860 0.048 85);
@@ -477,6 +480,9 @@
     --c6-ink: color-mix(in oklab, var(--c6) 89%, var(--ink-mix));
 
     --map-line: oklch(0.542 0.009 250);
+
+    /* And a lift on dark paper — away from the page either way. */
+    --table-stripe: oklch(0.262 0.005 250);
 
     --tint-neutral: oklch(0.245 0.006 250);
     --tint-caution: oklch(0.258 0.022 85);
@@ -1158,6 +1164,17 @@ figcaption {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   margin: var(--space-4) 0;
+  /*
+   * A stacking context of its own, so the sticky header's z-index is spent
+   * inside this box and cannot compete with the page.
+   *
+   * `th` is `position: sticky` at `--z-sticky`, which is also what the mobile
+   * chapter bar uses — so below the rail breakpoint a scrolled table header
+   * could paint an opaque strip across the bar that names the chapter. With
+   * `isolation` the header still pins to the top of its own scroller and stops
+   * existing as far as the rest of the page is concerned.
+   */
+  isolation: isolate;
 }
 
 table {
@@ -1193,6 +1210,10 @@ th {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+  /* An inset shadow rather than a border: it draws the rule that separates the
+     header from rows scrolling underneath it without adding a row of layout,
+     and without doubling the `--line-soft` hairline the cells already carry. */
+  box-shadow: inset 0 -1px 0 var(--line);
 }
 
 td.num,
@@ -1202,10 +1223,26 @@ th.num {
   font-variant-numeric: tabular-nums;
 }
 
-/* A row is easier to track across a wide table when the eye has something to
-   rest on; at this opacity it reads as texture rather than as stripes. */
+/*
+ * A row is easier to track across a wide table when the eye has something to
+ * rest on — and this stripe was not giving it anything. Measured against the
+ * page it composited to 1.031:1 in light and 1.064:1 in dark: the row-tracking
+ * device was doing nothing at all, which is part of why a wide result read as a
+ * drift of loose numbers.
+ *
+ * It was mixing `--bg-raised` toward transparent, i.e. lifting a near-white off
+ * a near-white. The stripe has to move AWAY from the paper, so the direction
+ * flips per theme, and both land on a surface token that already exists: a
+ * recess in light, a lift in dark.
+ *
+ * The value is bounded by the faintest ink that sits on it rather than by taste.
+ * A stripe is a fourth surface, and `--text-faint` was solved for three, so it
+ * is set to the furthest point from the page at which `--text-faint` still
+ * measures APCA Lc 70 — exactly its target. Any darker and the NULL dashes and
+ * dimmed cells resting on the stripe would have paid for the stripe.
+ */
 tbody tr:nth-child(even) {
-  background: color-mix(in srgb, var(--bg-raised) 45%, transparent);
+  background: var(--table-stripe);
 }
 
 tbody tr:last-child td {
