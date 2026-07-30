@@ -379,6 +379,9 @@ const cellFor = (method: string, buffer: number) =>
     display: grid;
     gap: 0.45rem;
     max-width: var(--measure);
+    /* Centred like every other capped block, so these two figures sit under the
+       prose they belong to rather than starting flush left of it. */
+    margin-inline: auto;
   }
 
   .corr-row,

@@ -1,7 +1,7 @@
 ---
 import "../styles/global.css";
 import { generatedAt, gitSha } from "../lib/data";
-import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
+import { CHAPTERS, chapterLabel, href, neighbours } from "../lib/chapters";
 
 interface Props {
   title: string;
@@ -20,6 +20,17 @@ const { title, description } = Astro.props;
  */
 const segment = Astro.url.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
 const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
+
+/*
+ * The two moves a reader in a ten-part document actually wants, resolved here so
+ * the bar can offer them without anyone opening a menu to find them.
+ *
+ * On the entry page there is no previous chapter and "next" is where the document
+ * starts, which is why `next` falls back to the first chapter rather than to
+ * nothing: an entry page whose forward control is missing gives the reader no
+ * button to press.
+ */
+const step = here ? neighbours(here.slug) : { prev: null, next: CHAPTERS[0] };
 ---
 
 <!doctype html>
@@ -43,45 +54,32 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
         <a class="brand" href={href()}>air-<span>quality</span></a>
 
         {/*
-          Where you are, at a size that reads.
+          Where you are IS the control that shows where else you could go.
 
-          Ten chapter titles used to sit here as a single row of links. Measured
-          at 1440px: 1,017px of labels in 1,144px of room, each link a 25px-tall
-          text run with no box — under the 44px touch minimum, and with nothing
-          to say it was a target. Making them bigger does not fit (the same
-          labels at body size need 1,128px, and with chapter numbers 1,302px), so
-          the row was never going to become a comfortable navigation; it was
-          going to stay a squeeze.
+          The previous version put the chapter title in the bar as plain text and
+          a separate 目錄 button beside it, and the objection was the right one:
+          nothing suggests that a reader should go looking in a menu. So the
+          label and the trigger are now one thing. Clicking where you are to see
+          the other places you could be is the instinct people already have —
+          it is how a breadcrumb, a file path and a tab strip all behave.
 
-          So the bar now carries the two things a paginated document's header
-          owes the reader — which chapter this is, and how to reach the others —
-          and the ten destinations live in a menu where each one can have a real
-          hit area.
-        */}
-        <p class="whereami">
-          {
-            here ? (
-              <>
-                <span class="whereami-n">{chapterLabel(here.n)}</span>
-                <span class="whereami-t">{here.nav}</span>
-              </>
-            ) : (
-              <span class="whereami-t is-quiet">台灣空氣品質再分析</span>
-            )
-          }
-        </p>
-
-        {/*
-          `<details>` rather than the popover API or a JS menu: it is a working
-          disclosure with no script at all, it is keyboard-operable for free, and
-          PRODUCT.md requires the site to be readable without JavaScript.
-
-          It sits here as a sibling of the brand and NOT inside any scrolling
-          box — a panel positioned inside `overflow: auto` gets clipped, which is
-          exactly what the old link strip was.
+          The chevron points DOWN when closed. It pointed right, inherited from
+          the site's disclosure styling, and a right-pointing chevron on a
+          navigation control reads as "go" rather than "opens".
         */}
         <details class="menu">
-          <summary>目錄</summary>
+          <summary>
+            {
+              here ? (
+                <>
+                  <span class="at-n">{chapterLabel(here.n)}</span>
+                  <span class="at-t">{here.nav}</span>
+                </>
+              ) : (
+                <span class="at-t">全部 {CHAPTERS.length} 章</span>
+              )
+            }
+          </summary>
 
           <div class="menu-panel">
             <ol>
@@ -101,6 +99,42 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
             </ol>
           </div>
         </details>
+
+        {/*
+          And the move most readers want, spelled out rather than hidden.
+
+          A labelled forward control needs no discovery at all: 「下一章」 is not
+          a thing anyone has to work out. Back is icon-only because it is the
+          rarer move and the label would cost the forward one its words on a
+          narrow screen. Both name their destination to a screen reader.
+        */}
+        <div class="steps">
+          {
+            step.prev && (
+              <a
+                class="step-btn"
+                href={href(step.prev.slug)}
+                aria-label={`前一章：${step.prev.title}`}
+                title={`前一章：${step.prev.title}`}
+              >
+                <span class="step-arrow" aria-hidden="true">←</span>
+              </a>
+            )
+          }
+          {
+            step.next && (
+              <a
+                class="step-btn is-next"
+                href={href(step.next.slug)}
+                aria-label={`${here ? "下一章" : "開始讀"}：${step.next.title}`}
+                title={`${here ? "下一章" : "開始讀"}：${step.next.title}`}
+              >
+                <span class="step-word">{here ? "下一章" : "開始讀"}</span>
+                <span class="step-arrow" aria-hidden="true">→</span>
+              </a>
+            )
+          }
+        </div>
       </div>
       <div class="progress" aria-hidden="true"></div>
     </nav>
@@ -213,32 +247,21 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
         font-weight: 500;
       }
 
-      /*
-       * Which chapter this is. The middle of the bar, and the one fact the old
-       * navigation never stated — it listed every destination except the one you
-       * were already at.
-       *
-       * `margin-right: auto` rather than `justify-content: space-between` on the
-       * parent, so the menu is pinned right while this stays beside the brand
-       * instead of drifting to the centre of whatever width is left.
-       */
-      .whereami {
-        margin: 0 auto 0 0;
-        min-width: 0;
-        display: flex;
-        align-items: baseline;
-        gap: 0.55em;
-        overflow: hidden;
-      }
+      /* ── where you are, and it is the menu trigger ────────────────────── */
 
-      .whereami-n {
+      /*
+       * The chapter label lives inside the `<summary>` now, so the styling that
+       * used to sit on a separate `.whereami` paragraph belongs to the button.
+       */
+      .at-n {
         font-size: var(--text-sm);
         color: var(--text-faint);
         white-space: nowrap;
         font-variant-numeric: tabular-nums;
+        font-weight: 400;
       }
 
-      .whereami-t {
+      .at-t {
         font-size: var(--text-lg);
         font-weight: 650;
         letter-spacing: -0.012em;
@@ -246,14 +269,7 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-      }
-
-      /* On the entry page the document's own name sits here instead, and it is
-         not a location — so it does not get the weight of one. */
-      .whereami-t.is-quiet {
-        font-weight: 400;
-        font-size: var(--text-base);
-        color: var(--text-muted);
+        min-width: 0;
       }
 
       /* ── the contents menu ────────────────────────────────────────────────── */
@@ -271,7 +287,10 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
        */
       .menu {
         margin: 0;
-        flex: none;
+        /* Takes the slack, so the forward control stays pinned right whatever
+           the chapter is called. */
+        margin-right: auto;
+        min-width: 0;
         position: relative;
       }
 
@@ -280,9 +299,32 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
            complaint was that nothing in the bar looked clickable, and a 44px box
            at body size is the answer to it. */
         min-height: 2.45rem;
-        padding: 0 0.85rem;
+        padding: 0 0.8rem;
         font-size: var(--text-base);
         color: var(--text);
+        gap: 0.55em;
+        align-items: baseline;
+      }
+
+      /* Baseline-aligned text needs the chevron pulled back onto the centre. */
+      .menu > summary::before {
+        align-self: center;
+        order: 2;
+        margin-left: 0.15em;
+      }
+
+      /*
+       * Down when closed, up when open. The site's disclosure rule points this
+       * chevron right at rest, which is correct for "expands downward into the
+       * flow" and wrong for a control in a navigation bar, where a right-pointing
+       * arrow means "takes you somewhere".
+       */
+      .menu > summary::before {
+        transform: rotate(45deg);
+      }
+
+      .menu[open] > summary::before {
+        transform: rotate(-135deg);
       }
 
       .menu[open] > summary {
@@ -298,9 +340,17 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
       .menu-panel {
         position: absolute;
         top: calc(100% + 0.5rem);
-        right: 0;
+        /*
+         * Opens rightward from the trigger's left edge, not leftward from its
+         * right. The trigger moved to the left of the bar when it absorbed the
+         * chapter label, and a panel anchored `right: 0` then hangs off the left
+         * of the screen — measured at 375px it started at -163px. Anchoring left
+         * and clamping the width to the viewport is the version that cannot do
+         * that at any width.
+         */
+        left: 0;
         z-index: var(--z-overlay);
-        width: min(22rem, calc(100vw - 2rem));
+        width: min(24rem, calc(100vw - 2rem));
         max-height: min(70vh, 34rem);
         overflow-y: auto;
         background: var(--bg-raised);
@@ -357,6 +407,76 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
 
       .menu-panel a[aria-current="page"] .menu-n {
         color: var(--accent);
+      }
+
+      /* ── forward and back ─────────────────────────────────────────────── */
+
+      .steps {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex: none;
+      }
+
+      .step-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+        min-height: 2.45rem;
+        padding: 0 0.7rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg-raised);
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: var(--text-sm);
+        font-weight: 600;
+        white-space: nowrap;
+        transition:
+          border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+          background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+          color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .step-btn:hover,
+      .step-btn:focus-visible {
+        border-color: var(--rule);
+        background: var(--bg-sunken);
+        color: var(--text);
+      }
+
+      /* The forward move is the one most readers want, so it is the one with
+         words on it. */
+      .step-btn.is-next {
+        color: var(--text);
+      }
+
+      .step-arrow {
+        font-size: var(--text-base);
+        line-height: 1;
+      }
+
+      /* Below 34rem the label would push the chapter title to an ellipsis of two
+         characters. The arrow alone still says which way it goes, and the
+         accessible name keeps the destination. */
+      @media (max-width: 34rem) {
+        .step-word {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+          white-space: nowrap;
+        }
+        .step-btn {
+          padding: 0 0.55rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .step-btn {
+          transition: none;
+        }
       }
 
       /* Below this the chapter title and a bordered button cannot share the row

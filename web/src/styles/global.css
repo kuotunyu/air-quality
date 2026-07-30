@@ -272,7 +272,26 @@
    * wide enough for comfortable CJK (39rem ≈ 39 characters a line) and a page
    * that a full-width figure genuinely fills.
    */
-  --measure: 39rem;
+  /*
+   * The reading measure, and it is CENTRED in its column rather than flush left.
+   *
+   * The cap itself is not negotiable: measured, 39rem gave 33 CJK characters a
+   * line, which is where Chinese body text belongs. What was wrong is where the
+   * leftover went. The column's content box is 1,145px at 1440, so every capped
+   * paragraph left 326px of nothing on its right while the figures beside it ran
+   * the full width — and 326px of one-sided emptiness does not read as a margin,
+   * it reads as a block that failed to fill. It was asked about twice.
+   *
+   * Centring the capped blocks splits that leftover in two. Same measure, same
+   * line length, but the space is now on both sides, which is what a margin is.
+   * Figures still take the whole column on purpose: a chart wants width, and a
+   * paragraph does not, so the two being different widths is the design rather
+   * than a mistake in it.
+   *
+   * 42rem rather than 39 because the leftover is worth reducing as well as
+   * balancing: 35 characters a line is still inside the comfortable range.
+   */
+  --measure: 42rem;
   --page: 60rem;
   --radius: 10px;
 
@@ -455,6 +474,7 @@ h4 {
 p {
   margin: 0 0 var(--space-3);
   max-width: var(--measure);
+  margin-inline: auto;
   text-wrap: pretty;
   /* A pasted URL is one unbreakable word; at 335px one of them was 19px wider
      than the column it sat in. */
@@ -614,6 +634,7 @@ section > :last-child > :last-child:last-child {
   line-height: 1.65;
   color: var(--text-muted);
   max-width: var(--measure);
+  margin-inline: auto;
   margin-bottom: var(--space-4);
 }
 
@@ -698,6 +719,7 @@ figcaption {
   color: var(--text-muted);
   margin-top: var(--space-2);
   max-width: var(--measure);
+  margin-inline: auto;
 }
 
 .chart {
@@ -1166,7 +1188,7 @@ button:hover {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
-  margin: var(--space-3) 0;
+  margin: var(--space-3) auto;
   color: var(--text-muted);
   font-size: var(--text-base);
   line-height: 1.62;
