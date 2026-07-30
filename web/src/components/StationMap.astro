@@ -62,6 +62,15 @@ const isMain = (s: Station) =>
 const main = placed.filter(isMain);
 const offshore = placed.filter((s) => !isMain(s));
 
+// Named from the data rather than typed into the caption. A hand-written
+// "連江、金門、澎湖" would be correct today and silently wrong the day the
+// register or the frame changes, on a page whose whole claim is that its numbers
+// can be checked. These are the counties whose stations fall outside the frame,
+// which is exactly the fact the caption needs to state.
+const offshoreCounties = [
+  ...new Set(offshore.map((s) => s.county).filter((c): c is string => Boolean(c))),
+];
+
 // Equirectangular with a cos(latitude) correction, which over three degrees of
 // latitude is visually indistinguishable from a proper projection and needs no
 // library. The source is EPSG:3824, whose coordinates are TWD97 lon/lat.
@@ -158,7 +167,10 @@ const dots = main.map((s) => {
 ---
 
 <div class="map-wrap">
-  <div class="map-box" style={`aspect-ratio:${width} / ${height}`}>
+  <div
+    class="map-box"
+    style={`--map-ratio:${width} / ${height};--map-wide:${(width / height).toFixed(4)}`}
+  >
     <svg
       viewBox={`0 0 ${width} ${height}`}
       role="img"
@@ -220,13 +232,16 @@ const dots = main.map((s) => {
     縣市界為內政部國土測繪中心「直轄市、縣市界線（TWD97 經緯度）」1140318 版，
     原始比例尺 1:5000，依政府資料開放授權條款第 1 版使用。
     此圖為簡化後的衍生成果：輪廓簡化至約 <strong>165 公尺</strong>，
-    並<strong>移除面積小於 1.2 平方公里的離岸島礁</strong>；
-    連江、金門、澎湖三縣不在本島圖框內，因此未繪出
+    並<strong>移除面積小於 1.2 平方公里的離岸島礁</strong>。
     {
-      offshore.length > 0 && (
-        <>（其測站 {offshore.map((s) => s.station_name).join("、")} 亦同）</>
+      offshoreCounties.length > 0 && (
+        <>
+          {offshoreCounties.join("、")}不在本島圖框內，其測站（
+          {offshore.map((s) => s.station_name).join("、")}）因此未繪出。
+        </>
       )
-    }。界線僅供定位，非量測依據。
+    }
+    界線僅供定位，非量測依據。
   </p>
 
   {
@@ -247,19 +262,32 @@ const dots = main.map((s) => {
   }
 
   /*
-   * Bounded by height, not width.
+   * Sized from a height budget, but driven through `width`.
    *
-   * The frame is the island's own bounding box, and Taiwan is about 2.4 times
-   * taller than it is wide — so `width: 100%` in a 546px column produced a
-   * 1,055px-tall map. Sizing from the height and letting the width follow keeps
-   * the proportion honest and the figure inside one fold. The box carries the
-   * aspect ratio so the label layer registers exactly with the drawing.
+   * The frame is the island's own bounding box and Taiwan is about 2.4 times
+   * taller than wide, so `width: 100%` in a 546px column produced a 1,055px
+   * map. The obvious fix — set `height` and let `aspect-ratio` supply the width
+   * — has a trap: add `max-width: 100%` for safety and, on any viewport narrow
+   * enough for it to bite, the width is clamped while the definite height stays
+   * put. The box stops matching the viewBox, the SVG letterboxes inside it, and
+   * the percentage-positioned labels and dots silently stop registering with
+   * the drawing they annotate. Misalignment is a worse failure than overflow,
+   * and it starts below about 280px.
+   *
+   * So the height budget is converted to a width up front and `width` is the
+   * definite axis. `aspect-ratio` then supplies the height, and the box matches
+   * the viewBox at every size by construction.
+   *
+   * Two custom properties for one number, deliberately: `--map-ratio` is the
+   * `<ratio>` grammar `aspect-ratio` wants, `--map-wide` is a plain unitless
+   * number so the multiplication below is ordinary CSS math rather than a
+   * length multiplied by a substituted `550 / 1000`.
    */
   .map-box {
     position: relative;
-    height: clamp(26rem, 62vh, 36rem);
+    aspect-ratio: var(--map-ratio);
+    width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
     margin-inline: auto;
-    max-width: 100%;
   }
   .map-box > svg {
     display: block;

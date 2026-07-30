@@ -289,6 +289,9 @@ def main(argv: list[str]) -> int:
             holes.extend(h for h in (keep(i) for i in interiors) if h is not None)
 
         if not outer:
+            # The map's caption names these, but it derives them from the
+            # stations that fall outside the frame rather than from a list
+            # emitted here — same fact, one fewer thing to keep in sync.
             print(f"  offshore, not drawn: {name}")
             continue
 

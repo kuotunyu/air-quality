@@ -65,3 +65,8 @@ docs/report/
 
 # Run logs. Artefacts of a run, not part of it.
 logs/
+
+# Staged inputs for the one-off generators — e.g. the 12.7 MB county boundary
+# GML that scripts/build_taiwan_geo.py reads. The simplified output is
+# committed; its source is re-downloadable and does not belong in history.
+.cache/

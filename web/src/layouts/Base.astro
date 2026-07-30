@@ -66,8 +66,15 @@ const sections = [
           資料：環境部空氣品質監測網 1982–2025 逐時觀測，341,442,552 筆。
           管線與分析全部開源。
         </p>
+        {/*
+          "資料匯出於", not "匯出於". The commit is the one the *data layers*
+          were exported at, and the page is rebuilt on every push — so on any
+          given day this sha is usually older than the code that rendered the
+          page around it. Unqualified, it reads as the build's provenance and
+          quietly overstates what is being traced.
+        */}
         <p class="mono dim">
-          匯出於 {generatedAt.slice(0, 10)}
+          資料匯出於 {generatedAt.slice(0, 10)}
           {gitSha ? ` · ${gitSha}` : ""}
         </p>
       </div>
