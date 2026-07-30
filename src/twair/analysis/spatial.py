@@ -89,6 +89,8 @@ __all__ = [
     "build_weights",
     "cliff_ord_moments",
     "geographic_ensemble",
+    "inference_price",
+    "lisa",
     "load_m1_artefacts",
     "load_spatial_conf",
     "moran_correlogram",
@@ -110,7 +112,7 @@ STATION = "station_name"
 MONTH = "month"
 RESIDUAL = "residual"
 
-STEPS: tuple[str, ...] = ("coverage", "headline", "sensitivity", "partition")
+STEPS: tuple[str, ...] = ("coverage", "headline", "sensitivity", "partition", "lisa", "inference")
 
 WeightsFamily = Literal["knn", "distance_band"]
 
@@ -1130,6 +1132,8 @@ class SpatialResult:
     sensitivity: pl.DataFrame | None = None
     agreement: pl.DataFrame | None = None
     clusters: pl.DataFrame | None = None
+    lisa: pl.DataFrame | None = None
+    inference: pl.DataFrame | None = None
 
     def tables(self) -> dict[str, pl.DataFrame]:
         out = {
@@ -1145,6 +1149,10 @@ class SpatialResult:
             out["partition_agreement"] = self.agreement
         if self.clusters is not None:
             out["station_clusters"] = self.clusters
+        if self.lisa is not None:
+            out["lisa"] = self.lisa
+        if self.inference is not None:
+            out["inference_price"] = self.inference
         return out
 
 
@@ -1226,6 +1234,9 @@ def run_spatial(
         bundle = station_dissimilarity(settings, root=root)
         agreement, clusters = partition_agreement(bundle, settings, rng=rng)
 
+    lisa_table = lisa(panel, settings, rng=rng) if "lisa" in steps else None
+    inference = inference_price(panel, settings) if "inference" in steps else None
+
     return SpatialResult(
         metadata=metadata,
         coverage=coverage,
@@ -1235,6 +1246,8 @@ def run_spatial(
         sensitivity=sensitivity,
         agreement=agreement,
         clusters=clusters,
+        lisa=lisa_table,
+        inference=inference,
     )
 
 
@@ -1538,3 +1551,174 @@ def partition_agreement(
             adjusted_rand_score(labels_era, ward_at_era_k),
         )
     return agreement, pl.DataFrame(cluster_rows, infer_schema_length=None)
+
+
+# --------------------------------------------------------------------------- #
+# LISA — where the residual dependence lives
+# --------------------------------------------------------------------------- #
+def lisa(panel: pl.DataFrame, conf: SpatialConf, *, rng: np.random.Generator) -> pl.DataFrame:
+    """Local Moran's I per station on the station-mean residual field.
+
+    The global I says the pooled model's errors cluster; this says *where*. Same
+    machinery as the global statistic on purpose — the same weights bundle and
+    the same simulated null, restricted to each station — so the local map can
+    never disagree with the global number about what the null is. esda's
+    conditional permutation is not used for the same reason the global
+    permutation was rejected: residuals are not exchangeable.
+
+    Quadrants read as usual: HH means a station whose residual is high where its
+    neighbours' are high (the model under-predicts a whole area), LL the mirror,
+    HL/LH a station out of step with its surroundings. The published count is
+    BH-adjusted across the stations; the raw count ships beside it.
+    """
+    work = panel.with_row_index("_row")
+    draws = residual_null_draws(
+        _design_of(work), draws=int(conf.inference["residual_null_draws"]), rng=rng
+    )
+    complete = _complete_stations(panel)
+    placed = work.filter(pl.col(STATION).is_in(list(complete))).filter(pl.col("lat").is_not_null())
+    grouped = placed.group_by(STATION, maintain_order=True).agg(
+        pl.col(RESIDUAL).mean().alias(RESIDUAL),
+        pl.col("lat").first(),
+        pl.col("lon").first(),
+        pl.col("zone_era").first(),
+        pl.col("airzone_official").first(),
+        pl.col("station_type_official").first(),
+        pl.col("offshore").first(),
+        pl.col("_row").alias("member_rows"),
+    )
+    values = grouped[RESIDUAL].to_numpy()
+    averaged = np.vstack(
+        [draws[np.asarray(r), :].mean(axis=0) for r in grouped["member_rows"].to_list()]
+    )
+    bundle = build_weights(
+        grouped.select(STATION, "lat", "lon"),
+        family=str(conf.weights["family"]),  # type: ignore[arg-type]
+        parameter=float(conf.weights["k"]),
+        conf=conf,
+    )
+
+    def local_i(field: np.ndarray) -> np.ndarray:
+        z = field - field.mean()
+        denominator = float((z**2).sum()) / len(z)
+        lag: np.ndarray = bundle.dense @ z
+        out: np.ndarray = z * lag / denominator
+        return out
+
+    observed = local_i(values)
+    null = np.column_stack([local_i(averaged[:, j]) for j in range(averaged.shape[1])])
+    centre = null.mean(axis=1)
+    # Two-sided per station against its own null distribution: each station has
+    # a different neighbour count and sits in a different corner of the design,
+    # so one pooled null would be wrong for most of them.
+    extreme = (np.abs(null - centre[:, None]) >= np.abs(observed - centre)[:, None]).sum(axis=1)
+    p = (1 + extreme) / (1 + null.shape[1])
+    rejected = benjamini_hochberg(p, conf.fdr_alpha)
+
+    z_field = values - values.mean()
+    lag = bundle.dense @ z_field
+    quadrant = np.where(
+        z_field >= 0, np.where(lag >= 0, "HH", "HL"), np.where(lag >= 0, "LH", "LL")
+    )
+
+    return grouped.drop("member_rows").with_columns(
+        pl.Series("local_i", observed),
+        pl.Series("p_simulated", p),
+        pl.Series("significant_bh", rejected),
+        pl.Series("significant_raw", p < conf.fdr_alpha),
+        pl.Series("quadrant", quadrant),
+        pl.lit(bundle.spec()).alias("weights"),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# the inference price — the original's own t-statistics, re-priced
+# --------------------------------------------------------------------------- #
+def inference_price(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
+    """The pooled fit's standard errors under covariances that admit dependence.
+
+    Month clustering is the *spatial* correction here — it allows arbitrary
+    correlation among every station within a month, which is exactly the
+    dependence the Moran tables measure. Station clustering is the temporal one.
+    Two-way allows both, combined as Cameron–Gelbach–Miller (V_month +
+    V_station − V_white); a non-PSD combination in small samples is repaired by
+    clipping negative eigenvalues to zero and the repair is **recorded in its
+    own column**, never applied silently.
+
+    This is deliberately not a spatial-lag or error model: those change the
+    estimand, and then the before/after against the original's own numbers —
+    the entire point — evaporates. Same design, same coefficients, different
+    covariance.
+    """
+    import statsmodels.api as sm
+    from scipy import stats
+
+    from twair.analysis.replication import ORIGINAL_PREDICTORS, RESPONSE
+
+    frame = panel.to_pandas()
+    x = sm.add_constant(frame[list(ORIGINAL_PREDICTORS)], has_constant="add")
+    y = frame[RESPONSE]
+    terms = ["Intercept" if c == "const" else c for c in x.columns]
+
+    fits = {
+        "iid": sm.OLS(y, x).fit(),
+        "cluster_month": sm.OLS(y, x).fit(
+            cov_type="cluster", cov_kwds={"groups": frame[MONTH].to_numpy()}
+        ),
+        "cluster_station": sm.OLS(y, x).fit(
+            cov_type="cluster", cov_kwds={"groups": frame[STATION].to_numpy()}
+        ),
+    }
+
+    covariances = {name: np.asarray(fit.cov_params()) for name, fit in fits.items()}
+    white = np.asarray(sm.OLS(y, x).fit(cov_type="HC0").cov_params())
+    two_way = covariances["cluster_month"] + covariances["cluster_station"] - white
+    eigenvalues = np.linalg.eigvalsh(two_way)
+    psd_fixed = bool(eigenvalues.min() < 0)
+    if psd_fixed:
+        values, vectors = np.linalg.eigh(two_way)
+        two_way = vectors @ np.diag(np.clip(values, 0.0, None)) @ vectors.T
+    covariances["cluster_twoway"] = two_way
+
+    published = _published_t()
+    beta = np.asarray(fits["iid"].params, dtype=float)
+    df = int(fits["iid"].df_resid)
+    rows: list[dict[str, Any]] = []
+    wanted = [str(name) for name in conf.inference["cov_types"]]
+    label = {
+        "iid": "the original's own assumption",
+        "cluster_month": "spatial: any dependence within a month",
+        "cluster_station": "temporal: any dependence within a station",
+        "cluster_twoway": "both at once (CGM)",
+    }
+    for cov_name in wanted:
+        se = np.sqrt(np.diag(covariances[cov_name]))
+        for i, term in enumerate(terms):
+            t = float(beta[i] / se[i]) if se[i] > 0 else float("nan")
+            rows.append(
+                {
+                    "term": term,
+                    "cov_type": cov_name,
+                    "cov_meaning": label.get(cov_name, cov_name),
+                    "coefficient": float(beta[i]),
+                    "se": float(se[i]),
+                    "t": t,
+                    "p": float(2 * stats.t.sf(abs(t), df)) if np.isfinite(t) else None,
+                    "se_inflation_vs_iid": float(se[i] / np.sqrt(covariances["iid"][i, i])),
+                    "published_t": published.get(term),
+                    "psd_fix_applied": psd_fixed if cov_name == "cluster_twoway" else False,
+                }
+            )
+    return pl.DataFrame(rows, infer_schema_length=None)
+
+
+def _published_t() -> dict[str, float]:
+    """The original's published t-statistics, from the expected-values file.
+
+    One entry exists (PM10, 第五章). Read rather than hard-coded so that if the
+    owner ever transcribes more of them, this table grows without a code change.
+    """
+    from twair.analysis.replication import load_expected
+
+    published = load_expected().get("published_t") or {}
+    return {str(k): float(v) for k, v in published.items()}

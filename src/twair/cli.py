@@ -704,9 +704,9 @@ def analyze_m3(
 @analysis_app.command("m6")
 def analyze_m6(
     steps: str = typer.Option(
-        ",".join(("coverage", "headline", "sensitivity", "partition")),
+        None,
         "--steps",
-        help="Comma list of steps to run.",
+        help="Comma list of steps to run; omit for all of them.",
     ),
     draws: int = typer.Option(None, "--draws", help="Override the null draw count for a fast run."),
 ) -> None:
@@ -719,7 +719,10 @@ def analyze_m6(
         inference["residual_null_draws"] = draws
         conf = replace(conf, inference=inference)
 
-    result = run_spatial(conf=conf, steps=tuple(s.strip() for s in steps.split(",")))
+    from twair.analysis.spatial import STEPS
+
+    chosen = tuple(s.strip() for s in steps.split(",")) if steps else STEPS
+    result = run_spatial(conf=conf, steps=chosen)
 
     # Support first. Every number below this block is conditional on which
     # stations are in the network, and a spatial result quoted without its
@@ -829,6 +832,54 @@ def analyze_m6(
                 else ""
             )
         )
+
+    if result.lisa is not None and result.lisa.height:
+        bh = int(result.lisa["significant_bh"].sum())
+        raw = int(result.lisa["significant_raw"].sum())
+        quadrants = {
+            row["quadrant"]: row["len"]
+            for row in result.lisa.group_by("quadrant").len().iter_rows(named=True)
+        }
+        console.print("\n[bold]where the residual dependence lives (LISA)[/bold]")
+        console.print(
+            f"  {result.lisa.height} stations: {bh} significant after BH across the family "
+            f"({raw} raw) — "
+            + ("no station is individually a hot spot; " if bh == 0 else "")
+            + "the dependence is a property of the field, not of a few sites"
+        )
+        console.print(
+            "  quadrants: "
+            + "  ".join(f"{q} {quadrants.get(q, 0)}" for q in ("HH", "HL", "LH", "LL"))
+        )
+
+    if result.inference is not None and result.inference.height:
+        console.print("\n[bold]the original's t-statistics under honest covariances[/bold]")
+        pm10 = result.inference.filter(pl.col("term") == "PM10")
+        for row in pm10.iter_rows(named=True):
+            published = (
+                f"  (published: {row['published_t']:.2f})"
+                if row["published_t"] is not None and row["cov_type"] == "iid"
+                else ""
+            )
+            fix = "  [yellow]PSD repair applied[/yellow]" if row["psd_fix_applied"] else ""
+            console.print(
+                f"  PM10  {row['cov_meaning']:<42} t = {row['t']:>7.2f}  "
+                f"se ×{row['se_inflation_vs_iid']:.2f}{published}{fix}"
+            )
+        flips = (
+            result.inference.filter(pl.col("cov_type") == "iid")
+            .join(
+                result.inference.filter(pl.col("cov_type") == "cluster_month"),
+                on="term",
+                suffix="_m",
+            )
+            .filter((pl.col("p") < 0.05) & (pl.col("p_m") >= 0.05))["term"]
+            .to_list()
+        )
+        if flips:
+            console.print(
+                f"  significance lost under the spatial covariance: [bold]{'、'.join(flips)}[/bold]"
+            )
 
     console.print(
         "\n[dim]this prices the OLS stage only. The 2018 report's terminal inference was a "

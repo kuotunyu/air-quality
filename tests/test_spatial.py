@@ -456,3 +456,132 @@ class TestPartitionAgreement:
         truth = np.array([0] * 15 + [1] * 15)
         assert _separation(bundle.distance, truth) > 0.5
         assert abs(_separation(bundle.distance, blind)) < 0.15
+
+
+def _synthetic_panel(seed: int, month_shock: float = 0.0) -> pl.DataFrame:
+    """A tiny station-month panel wearing the original's column names.
+
+    Predictors are noise; the response is a linear function of them plus an
+    optional shock shared by every station within a month — the dependence
+    structure month clustering exists to price.
+    """
+    from twair.analysis.replication import ORIGINAL_PREDICTORS, RESPONSE
+
+    rng = np.random.default_rng(seed)
+    stations, months = 12, 30
+    rows: list[dict[str, object]] = []
+    shocks = rng.normal(0, month_shock, months) if month_shock else np.zeros(months)
+    beta = rng.normal(0, 1, len(ORIGINAL_PREDICTORS))
+    for s in range(stations):
+        for m in range(months):
+            x = rng.normal(0, 1, len(ORIGINAL_PREDICTORS))
+            row: dict[str, object] = {
+                "station_name": f"s{s:02d}",
+                "month": m,
+                RESPONSE: float(x @ beta + shocks[m] + rng.normal(0, 0.5)),
+            }
+            row.update({name: float(v) for name, v in zip(ORIGINAL_PREDICTORS, x, strict=True)})
+            rows.append(row)
+    return pl.DataFrame(rows)
+
+
+class TestInferencePrice:
+    def test_month_shocks_inflate_the_month_clustered_standard_errors(self) -> None:
+        """The dependence the correction exists for actually moves it.
+
+        With a shock shared by every station in a month, iid standard errors are
+        a fiction; the month-clustered ones must come out materially larger. On
+        the real panel the PM10 inflation is measured at ×3.79.
+        """
+        from twair.analysis.spatial import inference_price, load_spatial_conf
+
+        table = inference_price(_synthetic_panel(seed=1, month_shock=2.0), load_spatial_conf())
+        merged = (
+            table.filter(pl.col("cov_type") == "cluster_month")
+            .filter(pl.col("term") == "Intercept")
+            .to_dicts()[0]
+        )
+        assert merged["se_inflation_vs_iid"] > 1.5
+
+    def test_without_dependence_the_corrections_change_little(self) -> None:
+        from twair.analysis.spatial import inference_price, load_spatial_conf
+
+        table = inference_price(_synthetic_panel(seed=2, month_shock=0.0), load_spatial_conf())
+        inflation = table.filter(pl.col("cov_type") == "cluster_month")["se_inflation_vs_iid"]
+        median = inflation.median()
+        assert median is not None and median < 1.4
+
+    def test_a_psd_repair_is_recorded_rather_than_silent(self) -> None:
+        # The column must exist on every two-way row, whichever way it came out —
+        # a reader of the parquet can always tell whether the number was repaired.
+        from twair.analysis.spatial import inference_price, load_spatial_conf
+
+        table = inference_price(_synthetic_panel(seed=3), load_spatial_conf())
+        two_way = table.filter(pl.col("cov_type") == "cluster_twoway")
+        assert two_way.height > 0
+        assert two_way["psd_fix_applied"].dtype == pl.Boolean
+
+    def test_the_published_t_column_comes_from_the_expected_values_file(self) -> None:
+        # PM10's 92.75 is the one t the original published that this repo
+        # records; it must arrive from the YAML, not from a constant.
+        from twair.analysis.spatial import inference_price, load_spatial_conf
+
+        table = inference_price(_synthetic_panel(seed=4), load_spatial_conf())
+        pm10 = table.filter((pl.col("term") == "PM10") & (pl.col("cov_type") == "iid"))
+        assert pm10["published_t"][0] == pytest.approx(92.75)
+        others = table.filter((pl.col("term") == "SO2") & (pl.col("cov_type") == "iid"))
+        assert others["published_t"][0] is None
+
+
+class TestLisa:
+    @staticmethod
+    def _panel_with_hot_cluster(seed: int) -> pl.DataFrame:
+        """Residuals near zero everywhere except four adjacent stations."""
+        from twair.analysis.replication import ORIGINAL_PREDICTORS
+
+        rng = np.random.default_rng(seed)
+        coords = grid_coords(4, 5)
+        months = 24
+        rows: list[dict[str, object]] = []
+        for i, station in enumerate(coords.iter_rows(named=True)):
+            hot = 4.0 if i in (0, 1, 5, 6) else 0.0
+            for m in range(months):
+                row: dict[str, object] = {
+                    "station_name": station["station_name"],
+                    "month": m,
+                    "residual": float(hot + rng.normal(0, 0.3)),
+                    "lat": station["lat"],
+                    "lon": station["lon"],
+                    "zone_era": "北部空品區" if i < 10 else "高屏空品區",
+                    "airzone_official": None,
+                    "station_type_official": "general",
+                    "offshore": False,
+                }
+                row.update({name: float(rng.normal()) for name in ORIGINAL_PREDICTORS})
+                rows.append(row)
+        return pl.DataFrame(rows)
+
+    def test_a_seeded_hot_cluster_is_found_in_the_hh_quadrant(self) -> None:
+        from twair.analysis.spatial import lisa, load_spatial_conf
+
+        table = lisa(
+            self._panel_with_hot_cluster(seed=7), load_spatial_conf(), rng=np.random.default_rng(1)
+        )
+        hot = table.filter(pl.col("station_name").is_in(["s00", "s01", "s05", "s06"]))
+        assert (hot["quadrant"] == "HH").all()
+        assert bool(hot["significant_raw"].all())
+        # The interior station's lag is diluted by its non-hot neighbours and can
+        # land at p ≈ 0.02, which BH across twenty stations rightly declines —
+        # the adjustment being conservative is the point, so the claim is three
+        # of four, not all four.
+        assert int(hot["significant_bh"].sum()) >= 3
+        cold = table.filter(~pl.col("station_name").is_in(["s00", "s01", "s05", "s06"]))
+        assert int(cold["significant_bh"].sum()) == 0
+
+    def test_the_adjusted_count_never_exceeds_the_raw_count(self) -> None:
+        from twair.analysis.spatial import lisa, load_spatial_conf
+
+        table = lisa(
+            self._panel_with_hot_cluster(seed=9), load_spatial_conf(), rng=np.random.default_rng(2)
+        )
+        assert int(table["significant_bh"].sum()) <= int(table["significant_raw"].sum())

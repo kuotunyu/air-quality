@@ -43,7 +43,6 @@
   "seed": 12345
   "fdr_alpha": 0.05
   "block_bootstrap_draws": 999
-  "wild_bootstrap_draws": 999
   # Month clustering is the SPATIAL correction: it allows arbitrary correlation
   # between every station within a month. Station clustering is the temporal one.
   # They answer different questions and both ship.
