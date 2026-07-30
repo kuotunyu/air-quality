@@ -50,7 +50,17 @@ function strip(e: (typeof events)[number]) {
   const hi = Math.max(...values, 1);
   const pad = (hi - lo) * 0.05;
   const x = linear([lo - pad, hi + pad], [0, 100]);
-  return { x, lo: lo - pad, hi: hi + pad, pool };
+  /*
+   * `lo`/`hi` are the frame; `dataLo`/`dataHi` are the data.
+   *
+   * The axis used to print the frame — `n(s.lo, 1)` where `lo` already had the
+   * 5% pad added — so two of its three numbers were layout coordinates wearing
+   * the costume of measurements, and they missed the real extremes by 0.97 and
+   * 1.31 μg/m³. This chapter's entire subject is effects of about that size. A
+   * number on this site is a measurement; a frame edge is not one, and it does
+   * not get to be printed as though it were.
+   */
+  return { x, lo: lo - pad, hi: hi + pad, dataLo: Math.min(...values), dataHi: Math.max(...values), pool };
 }
 
 const shortName = (name: string) =>
@@ -138,16 +148,31 @@ const shortName = (name: string) =>
               <div class="plot-area">
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <line x1={zero} x2={zero} y1="0" y2="88" class="zero" vector-effect="non-scaling-stroke" />
-                  {s.pool.map((v) => (
-                    <line
-                      x1={s.x(v)}
-                      x2={s.x(v)}
-                      y1="8"
-                      y2="52"
-                      class="placebo"
-                      vector-effect="non-scaling-stroke"
-                    />
-                  ))}
+                  {/*
+                    One `<path>` per placebo estimate, and the reason it is not
+                    ONE path for all of them is the encoding.
+
+                    Each mark is drawn at `opacity: 0.28`, so where estimates
+                    coincide the marks composite and darken — that accumulation
+                    IS the distribution's shape. Measured on the COVID strip: the
+                    densest 0.25-unit bucket holds 20 marks, which composite to
+                    an effective alpha of 0.999. Merged into a single path the
+                    same peak would render at 0.28, a uniform wash where the
+                    argument of the figure is precisely that the estimates pile
+                    up around zero. So they stay separate elements.
+
+                    What was wasteful was the MARKUP, not the marks. Each was a
+                    `<line>` carrying x twice, y twice, a class and a
+                    vector-effect attribute — 150 characters for a 1px hairline,
+                    and the coordinates were emitted at 13 decimal places while
+                    one pixel is 0.124 viewBox units. A path states x once, the
+                    class and the vector-effect move to the parent, and the
+                    coordinate is rounded to the last digit that can change a
+                    pixel. 150 characters becomes 29.
+                  */}
+                  <g class="placebo-pool">
+                    {s.pool.map((v) => <path d={`M${n(s.x(v), 2)} 8V52`} />)}
+                  </g>
                 </svg>
                 {e.station_effects.map((st) => (
                   <span
@@ -158,10 +183,12 @@ const shortName = (name: string) =>
                 ))}
               </div>
 
+              {/* Each label sits at the position of the value it names, which
+                  is why they are no longer pinned to 0% and 100%. */}
               <div class="plot-x keep">
-                <span style="left:0%">{n(s.lo, 1)}</span>
+                <span style={`left:${n(s.x(s.dataLo), 3)}%`}>{n(s.dataLo, 1)}</span>
                 <span style={`left:${n(zero, 3)}%`}>0</span>
-                <span style="left:100%">{n(s.hi, 1)}</span>
+                <span style={`left:${n(s.x(s.dataHi), 3)}%`}>{n(s.dataHi, 1)}</span>
               </div>
             </div>
           </div>
@@ -276,10 +303,17 @@ const shortName = (name: string) =>
     stroke-width: 1;
     stroke-dasharray: 3 3;
   }
-  .placebo {
+  /* On each path, never on the group: opacity set on `.placebo-pool` itself
+     would flatten the whole cloud to one layer and destroy the density.
+     (The remaining ~60KB on this page is Astro's own `data-astro-cid`
+     attribute on each mark. It is stamped per component, not per selector, so
+     `:global` does not remove it — measured, not assumed.) */
+  .placebo-pool path {
+    fill: none;
     stroke: var(--text-faint);
     stroke-width: 1;
     opacity: 0.28;
+    vector-effect: non-scaling-stroke;
   }
   /* The real estimates are HTML dots now, so this is a colour, not a fill. */
   .plot-pt.real {

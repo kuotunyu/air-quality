@@ -42,19 +42,50 @@ const dwGapNow = dwNormalised[dwNormalised.length - 1] - dwObserved[dwObserved.l
 // weather was making things worse than average, after it better.
 const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normalised)?.year;
 
+/*
+ * The eight air-quality zones, coloured by their own concentration.
+ *
+ * This was `var(--c${i % 7})` over eight zones, which did two things wrong at
+ * once. It wrapped — zone eight wore zone one's colour, and measured in the built
+ * page the pair that collided were 高屏, the highest series in every year, and
+ * one of the zones the prose beside the figure names. And the index it wrapped
+ * was the order the JSON happened to arrive in, so the colours carried no
+ * information at all: on a site where hue means concentration, eight lines took
+ * their hue from an array position.
+ *
+ * Sorted by their own final value and mapped across the ramp, so the ramp does
+ * here what it does everywhere else — low to high. Eight categories still do not
+ * fit seven steps, so one step is shared; `Math.round(i * 6 / 7)` puts that
+ * sharing between the two zones that are adjacent IN CONCENTRATION, which is the
+ * one place a sequential scale is allowed to repeat itself, instead of between
+ * the highest zone and a middling one.
+ *
+ * Every line is also labelled at its own end (see TrendChart's `.plot-keys`), so
+ * colour is the second identifier here rather than the only one.
+ */
 const airzoneSeries = (trendByAirzone.series as {
   name: string;
   years: number[];
   mean: (number | null)[];
-}[]).map((s, i) => ({
-  key: s.name,
-  label: s.name.replace("空品區", ""),
-  values: trend.years.map((year) => {
-    const at = s.years.indexOf(year);
-    return at === -1 ? null : s.mean[at];
-  }),
-  colour: `var(--c${i % 7})`,
-}));
+}[])
+  .map((s) => ({
+    key: s.name,
+    label: s.name.replace("空品區", ""),
+    values: trend.years.map((year) => {
+      const at = s.years.indexOf(year);
+      return at === -1 ? null : s.mean[at];
+    }),
+    // The zone's latest reported value, for the ordering. `-Infinity` sorts a
+    // zone with no recent data to the clean end rather than crashing the sort.
+    level: [...s.mean].reverse().find((v) => v != null) ?? -Infinity,
+  }))
+  .sort((a, b) => a.level - b.level)
+  .map((s, i, all) => ({
+    key: s.key,
+    label: s.label,
+    values: s.values,
+    colour: `var(--c${Math.round((i * 6) / Math.max(all.length - 1, 1))})`,
+  }));
 ---
 
 <section id="trend" class="page">

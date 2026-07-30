@@ -1,10 +1,15 @@
 /**
  * DuckDB-WASM, loaded on demand.
  *
- * Nothing here runs until the reader asks for it. The engine is roughly 30 MB
- * of WebAssembly, which is a reasonable price for querying four decades of
- * measurements in a browser tab and an absurd one for a page the reader only
- * scrolled past.
+ * Nothing here runs until the reader asks for it. The engine is 35.9 MB of
+ * WebAssembly that transfers as 8.1 MB gzipped, plus a 0.2 MB worker — which is a
+ * reasonable price for querying four decades of measurements in a browser tab and
+ * an absurd one for a page the reader only scrolled past.
+ *
+ * The page used to promise 「約 30 MB」, the uncompressed figure, and Pages serves
+ * this gzipped. Overstating the cost 3.6x on a site whose whole register is that
+ * numbers are measured makes readers decline something cheaper than advertised,
+ * so the prose quotes the transfer and this comment carries both.
  *
  * The `eh` bundle (exception handling, single-threaded) is chosen deliberately
  * over `coi`: the threaded build needs cross-origin isolation headers, and

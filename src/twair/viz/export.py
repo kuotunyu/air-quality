@@ -367,6 +367,15 @@ def export_meta(destination: Path | None = None) -> Path:
         # tell how far behind upstream this site is — see `twair freshness`,
         # which runs in CI where the 341M-row store does not exist.
         "data_through": _data_through(),
+        # How many hourly observations the record holds.
+        #
+        # Added because the site was stating this figure as literal text in its
+        # opening line — 341,442,552, a number that appeared nowhere else in the
+        # repository, so nothing could contradict it and no run could refresh it.
+        # It is the one headline figure the published data cannot check on its
+        # own: it counts L2 station-hours, and L2 is deliberately not published.
+        # Recording it here is what makes it checkable.
+        "hourly_observations": _hourly_observations(),
     }
     return write_json(root / "meta.json", payload)
 
@@ -381,6 +390,27 @@ def _data_through() -> str | None:
         log.warning("could not determine data_through: %s", exc)
         return None
     return None if newest is None else str(newest)
+
+
+def _hourly_observations() -> int | None:
+    """How many rows the observation store holds, or ``None`` if it cannot say.
+
+    Same shape as :func:`_data_through`, and for the same reason: this runs in CI
+    where the 341M-row store does not exist, so a missing store has to degrade to
+    "unknown" rather than fail the export. The site renders the clause only when
+    the number is present, so ``None`` costs a clause and never a wrong figure.
+
+    Cheap on a Parquet-backed store — a length over a lazy scan is answered from
+    row-group metadata rather than by reading the columns.
+    """
+    from twair.store.writer import scan_observations
+
+    try:
+        total = scan_observations().select(pl.len()).collect().item()
+    except Exception as exc:
+        log.warning("could not count hourly observations: %s", exc)
+        return None
+    return None if total is None else int(total)
 
 
 def write_manifest(destination: Path | None = None) -> Path:

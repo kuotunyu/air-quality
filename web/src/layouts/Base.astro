@@ -1,6 +1,13 @@
 ---
 import "../styles/global.css";
-import { generatedAt, gitSha } from "../lib/data";
+import {
+  generatedAt,
+  gitSha,
+  hourlyObservationsFull,
+  hourlyObservationsShort,
+  recordSpan,
+  stations,
+} from "../lib/data";
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
 
 interface Props {
@@ -21,6 +28,45 @@ const { title, description } = Astro.props;
 const segment = Astro.url.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
 const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
 
+/*
+ * Absolute URLs, for the things that only work absolute.
+ *
+ * A canonical link and an `og:image` are read by machines that have no page to
+ * resolve a relative path against, so both have to carry the origin. `Astro.site`
+ * is the configured one; the fallback keeps a local preview from throwing.
+ *
+ * The path is normalised to no trailing slash (except the root) because
+ * `trailingSlash: "ignore"` means both spellings serve the same page, and two
+ * spellings of one page is exactly what a canonical link exists to settle.
+ */
+const origin = Astro.site ?? new URL("/", Astro.url);
+const path = Astro.url.pathname.replace(/\/+$/, "") || "/";
+const canonical = new URL(path, origin).href;
+const base = import.meta.env.BASE_URL.replace(/\/*$/, "/");
+const socialCard = new URL(`${base}og.png`, origin).href;
+
+/*
+ * The favicon, in the palette the site actually uses.
+ *
+ * It was a cyan disc (#22d3ee) on near-black (#0b0e13) — both from the palette
+ * this project had two rebuilds ago, and neither is a token any more. What it
+ * shows now is the concentration ramp itself, low to high, which is the one idea
+ * the whole document is built on and the only mark that still means something at
+ * 16px. Two versions, because a near-white field vanishes into light browser
+ * chrome and a near-black one vanishes into dark.
+ */
+const icon = (field: string, ramp: string[]) =>
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">` +
+      `<rect width="32" height="32" rx="7" fill="${field}"/>` +
+      ramp
+        .map((c, i) => `<rect x="6" y="${6 + i * 5}" width="20" height="5" fill="${c}"/>`)
+        .join("") +
+      `</svg>`,
+  );
+const iconLight = icon("#ebedef", ["#5d88b8", "#4a7647", "#783c2e", "#5e0d4e"]);
+const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 ---
 
 <!doctype html>
@@ -30,11 +76,32 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="color-scheme" content="dark light" />
+    {/* Light first, which is what `global.css` declares and what this document
+        decided its reading situation is. This said `dark light` — a leftover from
+        when dark was the default, and it disagreed with the stylesheet. */}
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href={canonical} />
+
+    <meta property="og:type" content="article" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:type" content="website" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e13'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%2322d3ee'/%3E%3C/svg%3E" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="台灣空氣品質的長期重新分析" />
+    <meta property="og:locale" content="zh_TW" />
+    {/* A link to this document in a chat app used to unfurl as a bare line of
+        text, because there was no image to unfurl. */}
+    <meta property="og:image" content={socialCard} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content={`台灣空氣品質的長期重新分析：${recordSpan.first}–${recordSpan.last}，${stations.length} 個測站，${hourlyObservationsShort}筆逐時觀測`}
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href={iconLight} media="(prefers-color-scheme: light)" />
+    <link rel="icon" href={iconDark} media="(prefers-color-scheme: dark)" />
+    <link rel="sitemap" type="application/xml" href={href("sitemap.xml")} />
   </head>
   <body>
     <a href="#main" class="visually-hidden">跳到主要內容</a>
@@ -122,7 +189,7 @@ const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
         <footer>
           <div class="page">
             <p class="mono">
-              資料：環境部空氣品質監測網 1982–2025 逐時觀測，341,442,552 筆。
+              資料：環境部空氣品質監測網 {recordSpan.first}–{recordSpan.last} 逐時觀測，{hourlyObservationsFull} 筆。
               管線與分析全部開源。
             </p>
             {/*

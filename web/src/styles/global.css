@@ -1442,3 +1442,107 @@ button:hover {
   white-space: nowrap;
   border: 0;
 }
+
+/* ---------- print ---------- */
+
+/*
+ * There were no print rules at all, and this is a document people will want to
+ * keep. Printed as it stood, the first page was the navigation rail and every
+ * chapter ended mid-figure.
+ *
+ * The rules are about what a page of paper cannot do rather than about taste:
+ * paper has no dark mode, no scrollbars, no hover, no fixed positioning, and no
+ * way to follow a link — so the rail goes, every scroll box opens to its full
+ * height, and the URLs behind links get written out.
+ */
+@media print {
+  /* Paper is paper. Forcing the light tokens rather than trusting the reader's
+     system means a dark-mode reader does not print a near-black page. */
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-raised: #ffffff;
+    --bg-sunken: #f4f5f7;
+    --table-stripe: #f1f2f4;
+    --text: #16181b;
+    --text-muted: #3b3f44;
+    --text-faint: #55595e;
+    --accent: #1c4f80;
+  }
+
+  /* The rail is a way of moving around a document that is now in one piece, and
+     the drawer's controls cannot be pressed on paper. */
+  .rail,
+  .rail-veil,
+  .rail-switch,
+  .handle,
+  .progress,
+  .chapter-nav {
+    display: none !important;
+  }
+
+  .shell {
+    display: block;
+    min-height: 0;
+  }
+
+  /* The measure on paper is the paper, not a 42rem column inside it. */
+  .page {
+    max-width: none;
+    padding-inline: 0;
+  }
+
+  /* Every scroll box has to open: a printed page cannot be scrolled, so anything
+     still capped by `max-height` would print as a cropped fragment with no sign
+     that the rest existed. */
+  .table-wrap,
+  .result-flow,
+  .chart,
+  .plot {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* A figure split across a page break is a figure that has to be reassembled by
+     the reader, and its caption belongs to it. */
+  figure,
+  .card,
+  .note,
+  table,
+  .mistake {
+    break-inside: avoid;
+  }
+
+  figcaption {
+    break-before: avoid;
+  }
+
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* A chapter is a chapter. */
+  main > section {
+    break-before: page;
+  }
+
+  main > section:first-child {
+    break-before: auto;
+  }
+
+  /* A link on paper is just underlined text unless it says where it goes. Only
+     external ones: writing out every in-document anchor would bury the prose. */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: var(--text-faint);
+    word-break: break-all;
+  }
+
+  /* The entrance animation has nothing to animate into on paper, and a frozen
+     `from` state would print the hero shifted down by 7px. */
+  .enter > * {
+    animation: none !important;
+  }
+}

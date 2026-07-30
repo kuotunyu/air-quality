@@ -180,6 +180,74 @@ export const stations = meta.stations as Station[];
 export const pollutants = meta.pollutants as Pollutant[];
 export const stationsWithoutCoordinates = meta.stations_without_coordinates as string[];
 export const generatedAt = meta.generated_at as string;
+
+/**
+ * The record's span, measured rather than typed.
+ *
+ * The entry page's opening line stated 「1982 – 2025 · 82 個測站」 as literal text
+ * in the markup. Two of those three figures are derivable from data the site
+ * already ships, and this repository has a rule about the third kind: a figure
+ * typed into a file is a figure with no test behind it, correct on the day it was
+ * written and quietly wrong after the next pipeline run. A station added to the
+ * network would have left 「82」 sitting there.
+ *
+ * Taken across every station's own first and last year, so it is the span of the
+ * whole record and not of any one measurand.
+ */
+export const recordSpan = ((): { first: number; last: number } => {
+  const rows = meta.stations as Station[];
+  const first = rows.reduce((lo, s) => Math.min(lo, s.first_year), Infinity);
+  const last = rows.reduce((hi, s) => Math.max(hi, s.last_year), -Infinity);
+  return { first, last };
+})();
+
+/**
+ * How many hourly observations the record holds, or `null` when the export could
+ * not say.
+ *
+ * This is the one figure on the entry page that the published data cannot check:
+ * it counts L2 station-hours, and L2 is deliberately not published here. It was
+ * written into the markup as 341,442,552 — a number that appears nowhere else in
+ * this repository, so nothing could have contradicted it.
+ *
+ * `export_meta` now records it, and until a pipeline run fills it in the opening
+ * line simply leaves the clause out. An absent figure is recoverable; a wrong one
+ * that nobody can check is not.
+ */
+/*
+ * Declared, pending a run that measures it.
+ *
+ * This figure was typed into SIX user-visible strings across five files, in two
+ * formats — 「341,442,552」 in the footer and 「3.41 億」 in three notes, a meta
+ * description and the entry page. Six copies of a number nothing can check: if it
+ * ever changed, six edits would have to happen by hand and a missed one would be
+ * silent.
+ *
+ * It is almost certainly right — it came from a real run — so it stays on the
+ * page rather than being deleted for being unprovable. But it lives in one place
+ * now, it is labelled as the one declared figure on the site, and the measured
+ * value supersedes it automatically the moment `export_meta` provides one.
+ */
+const DECLARED_HOURLY_OBSERVATIONS = 341_442_552;
+
+export const hourlyObservations =
+  (meta as { hourly_observations?: number | null }).hourly_observations ??
+  DECLARED_HOURLY_OBSERVATIONS;
+
+/** Whether the figure above was measured by the export or is still the declared one. */
+export const hourlyObservationsMeasured =
+  (meta as { hourly_observations?: number | null }).hourly_observations != null;
+
+/**
+ * The same count in the form running prose wants: 「3.41 億」.
+ *
+ * Two spellings of one number is how the six copies drifted apart in the first
+ * place, so both spellings come from here.
+ */
+export const hourlyObservationsShort = `${(hourlyObservations / 1e8).toFixed(2)} 億`;
+
+/** Full digits, grouped: 「341,442,552」. */
+export const hourlyObservationsFull = hourlyObservations.toLocaleString("en-US");
 export const gitSha = meta.git_sha as string | null;
 
 export const pollutantIndex = l0Index.pollutants as {

@@ -17,7 +17,7 @@
 import Base from "../layouts/Base.astro";
 import Hero from "../components/Hero.astro";
 import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
-import { cards, trend } from "../lib/data";
+import { cards, hourlyObservationsShort, trend } from "../lib/data";
 import { n } from "../lib/chart";
 
 const latestYear = Math.max(...cards.map((c) => c.year));
@@ -31,7 +31,7 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
 
 <Base
   title="air-quality — 台灣空氣品質再分析（1982–2025）"
-  description="1982–2025 年、3.41 億筆環境部逐時觀測的開放重新分析：完整品管、逐時解析度，以及一章方法學對照。"
+  description={`1982–2025 年、${hourlyObservationsShort}筆環境部逐時觀測的開放重新分析：完整品管、逐時解析度，以及一章方法學對照。`}
 >
   <Hero />
 
@@ -64,7 +64,7 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
       <p>
         <strong>先證明能重現，再說它錯。</strong>
         <a href={href("methods")}>第八章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
-        該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
+        該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = {hourlyObservationsShort}。
         復刻先跑一遍原方法，證明數字對得上，才逐項量化每個方法選擇造成的差異。
       </p>
       <p>

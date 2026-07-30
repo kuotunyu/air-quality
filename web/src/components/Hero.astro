@@ -7,7 +7,14 @@
  * shows the network, and the chapter index below it does the rest.
  */
 import StationMap from "./StationMap.astro";
-import { cards, stations, stationsWithoutCoordinates, trend } from "../lib/data";
+import {
+  cards,
+  hourlyObservationsFull,
+  recordSpan,
+  stations,
+  stationsWithoutCoordinates,
+  trend,
+} from "../lib/data";
 import { href } from "../lib/chapters";
 import { n } from "../lib/chart";
 
@@ -29,9 +36,30 @@ const balancedSince = trend.panel.balanced_since as number;
 const balancedStart = trend.years.indexOf(balancedSince);
 const declineFrom = trend.all_stations[balancedStart] as number;
 const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
+
+/*
+ * The opening line, assembled from measurements.
+ *
+ * It read 「1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測」 as literal text. The
+ * span and the station count are derivable from data the site already ships, so
+ * they are; the observation count is not derivable here at all — it counts L2
+ * station-hours and L2 is deliberately not published — so the clause appears only
+ * when the export has recorded it, and stays out otherwise.
+ *
+ * The clauses are joined rather than written as one string so that a missing
+ * figure removes its own clause and its own separator, instead of leaving a
+ * stranded 「 · 」 in the most prominent line on the site.
+ */
+const opening = [
+  `${recordSpan.first} – ${recordSpan.last}`,
+  `${stations.length} 個測站`,
+  `${hourlyObservationsFull} 筆逐時觀測`,
+]
+  .filter(Boolean)
+  .join(" · ");
 ---
 <section id="hero" class="page enter">
-  <p class="eyebrow" style="--enter:0">1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測</p>
+  <p class="eyebrow" style="--enter:0">{opening}</p>
   <h1 style="--enter:1">台灣空氣品質的長期重新分析</h1>
 
   <p class="lede" style="--enter:2">
@@ -95,11 +123,19 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
         first and removes the second: the headline numbers and what the project
         is now read as one block.
       */}
+      {/*
+        Trimmed to what only this block says.
+        
+        It used to carry the 2018 comparison in full — 「該研究使用 8 年月平均、
+        N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億」 — and so does the note
+        under the chapter index, forty lines further down the same page. A reader
+        met the same sentence twice within two screens. The pointer to chapter 8
+        belongs next to the chapter list, which is where it stays; what is left
+        here is the claim this fold alone makes.
+      */}
       <p class="note">
-        品管規則與資料管線全部開源，本頁每個數字都可獨立重算。
-        <a href={href("methods")}>第八章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
-        該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
-        兩者逐項比對，量化每個方法選擇造成的差異。
+        品管規則與資料管線全部開源，本頁每個數字都可獨立重算——
+        包含上面那三個，它們是從同一份資料算出來的，不是寫進版面的。
       </p>
     </div>
   </div>
