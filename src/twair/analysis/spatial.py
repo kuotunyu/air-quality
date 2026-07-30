@@ -79,6 +79,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "STEPS",
+    "DissimilarityBundle",
     "MoranResult",
     "SpatialConf",
     "SpatialResult",
@@ -87,10 +88,12 @@ __all__ = [
     "block_bootstrap_mean",
     "build_weights",
     "cliff_ord_moments",
+    "geographic_ensemble",
     "load_m1_artefacts",
     "load_spatial_conf",
     "moran_correlogram",
     "morans_i",
+    "partition_agreement",
     "partition_price",
     "placed_panel",
     "reconstruct_residuals",
@@ -98,6 +101,7 @@ __all__ = [
     "residual_null_draws",
     "run_spatial",
     "station_coverage",
+    "station_dissimilarity",
     "weights_sensitivity",
     "write_spatial_report",
 ]
@@ -106,7 +110,7 @@ STATION = "station_name"
 MONTH = "month"
 RESIDUAL = "residual"
 
-STEPS: tuple[str, ...] = ("coverage", "headline", "sensitivity")
+STEPS: tuple[str, ...] = ("coverage", "headline", "sensitivity", "partition")
 
 WeightsFamily = Literal["knn", "distance_band"]
 
@@ -1124,6 +1128,8 @@ class SpatialResult:
     residual: pl.DataFrame
     partition: pl.DataFrame
     sensitivity: pl.DataFrame | None = None
+    agreement: pl.DataFrame | None = None
+    clusters: pl.DataFrame | None = None
 
     def tables(self) -> dict[str, pl.DataFrame]:
         out = {
@@ -1135,6 +1141,10 @@ class SpatialResult:
         }
         if self.sensitivity is not None:
             out["weights_sensitivity"] = self.sensitivity
+        if self.agreement is not None:
+            out["partition_agreement"] = self.agreement
+        if self.clusters is not None:
+            out["station_clusters"] = self.clusters
         return out
 
 
@@ -1210,6 +1220,12 @@ def run_spatial(
     partition = partition_price(panel, settings, rng=rng) if "headline" in steps else pl.DataFrame()
     sensitivity = weights_sensitivity(panel, settings, rng=rng) if "sensitivity" in steps else None
 
+    agreement: pl.DataFrame | None = None
+    clusters: pl.DataFrame | None = None
+    if "partition" in steps:
+        bundle = station_dissimilarity(settings, root=root)
+        agreement, clusters = partition_agreement(bundle, settings, rng=rng)
+
     return SpatialResult(
         metadata=metadata,
         coverage=coverage,
@@ -1217,6 +1233,8 @@ def run_spatial(
         residual=residual,
         partition=partition,
         sensitivity=sensitivity,
+        agreement=agreement,
+        clusters=clusters,
     )
 
 
@@ -1232,3 +1250,291 @@ def write_spatial_report(result: SpatialResult) -> dict[str, Path]:
         frame.write_parquet(path, compression="zstd")
         written[name] = path
     return written
+
+
+# --------------------------------------------------------------------------- #
+# the partition test — does the official zoning match how stations co-vary?
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class DissimilarityBundle:
+    """Everything the partition test consumes, built once.
+
+    ``anomaly`` is stations × months, each row z-scored. ``distance`` is the
+    correlation distance 1 − r between those rows. The two are the same
+    information twice on purpose: Ward linkage needs Euclidean geometry, and on
+    z-scored rows ‖zᵢ − zⱼ‖² = 2T(1 − rᵢⱼ), so Ward on the rows *is* Ward under
+    the correlation distance — while silhouette and the separation statistic
+    read the distance matrix directly.
+
+    ``months_used`` is the count of *common* months — those every kept station
+    published — and ``months_window`` the window's full count. The difference is
+    part of the result, not a footnote: every correlation in ``distance`` is
+    computed on exactly the same months, which is what makes it one metric.
+    """
+
+    stations: tuple[str, ...]
+    coords: pl.DataFrame
+    labels_era: tuple[str, ...]
+    anomaly: np.ndarray
+    distance: np.ndarray
+    months_used: int
+    months_window: int
+    excluded: pl.DataFrame
+
+
+def station_dissimilarity(conf: SpatialConf, *, root: Path | None = None) -> DissimilarityBundle:
+    """Monthly PM2.5 anomalies per station over the clustering window.
+
+    Reads the monthly aggregate table, whose withheld means are already null —
+    those stay excluded here, never filled. Demanding a published mean in every
+    window month keeps 6 stations (measured), which is no network; so a station
+    enters if it publishes in at least ``min_station_share`` of the window, and
+    the correlations are then computed on the months **every** kept station
+    published. Both cuts are counted — stations in ``excluded`` with the reason,
+    months in ``months_used`` against ``months_window`` — because a distance
+    computed on a different month set per pair would not be one metric.
+
+    The island-wide monthly mean is removed first. Without that step every
+    station in Taiwan correlates at ~0.7 through the shared winter maximum and
+    the test would find all partitions equally good — an artefact of the
+    monsoon, not evidence about zoning.
+    """
+    from twair.ingest.station_meta import load_station_geo
+    from twair.paths import processed_dir
+    from twair.store.stations import build_station_table
+
+    base = processed_dir("monthly") if root is None else root / "processed" / "monthly"
+    start = str(conf.clustering["window_start"])
+    end = str(conf.clustering["window_end"])
+    monthly = (
+        pl.scan_parquet(f"{base}/**/*.parquet")
+        .filter(
+            (pl.col("pollutant") == "PM2.5")
+            & (pl.col(MONTH).dt.strftime("%Y-%m") >= start)
+            & (pl.col(MONTH).dt.strftime("%Y-%m") <= end)
+        )
+        .select(STATION, MONTH, "mean")
+        .collect()
+    )
+    if monthly.height == 0:
+        raise FileNotFoundError(
+            f"no monthly PM2.5 rows under {base} for {start}..{end} — run `uv run twair aggregate`"
+        )
+
+    months = sorted(monthly[MONTH].unique().to_list())
+    published = monthly.filter(pl.col("mean").is_not_null())
+    counts = published.group_by(STATION).agg(pl.len().alias("published_months"))
+    required = float(conf.clustering["min_station_share"]) * len(months)
+
+    register = load_station_geo()
+    if register.height == 0:
+        raise ValueError(
+            "the station register cache is empty — the ensemble null is geographic and "
+            "needs coordinates; run `uv run twair stations geo` first"
+        )
+    geo = register.select(STATION, "lat", "lon")
+    era = build_station_table(root, geography=False).select(
+        STATION, pl.col("airzone").alias("zone_era")
+    )
+
+    ledger = (
+        counts.join(geo, on=STATION, how="left")
+        .join(era, on=STATION, how="left")
+        .with_columns(
+            pl.when(pl.col("published_months") < required)
+            .then(
+                pl.lit(
+                    "published in too few window months (mean withheld below the "
+                    "coverage threshold, or the station was not measuring)"
+                )
+            )
+            .when(pl.col("lat").is_null())
+            .then(pl.lit("no coordinates in the MOENV register"))
+            .otherwise(pl.lit(None, dtype=pl.Utf8))
+            .alias("excluded_reason")
+        )
+    )
+    kept = ledger.filter(pl.col("excluded_reason").is_null()).sort(STATION)
+    excluded = ledger.filter(pl.col("excluded_reason").is_not_null()).sort(STATION)
+    if kept.height < conf.min_units:
+        raise ValueError(
+            f"only {kept.height} stations publish in {required:.0f}+ months of "
+            f"{start}..{end}; the partition test needs at least {conf.min_units}"
+        )
+
+    wide = (
+        published.filter(pl.col(STATION).is_in(kept[STATION].to_list()))
+        .pivot(on=STATION, index=MONTH, values="mean")
+        .sort(MONTH)
+    )
+    names = tuple(sorted(c for c in wide.columns if c != MONTH))
+    full = wide.select(names).to_numpy().T  # stations × window months
+    common = ~np.isnan(full).any(axis=0)
+    matrix = full[:, common]
+    if matrix.shape[1] < 24:
+        raise ValueError(
+            f"only {matrix.shape[1]} months are shared by every kept station — "
+            "too few for a correlation anyone should trust"
+        )
+
+    if bool(conf.clustering["remove_island_climatology"]):
+        matrix = matrix - matrix.mean(axis=0, keepdims=True)
+
+    # Z-score each station's series so that Ward-on-rows equals Ward under the
+    # correlation distance (see the dataclass docstring for the identity).
+    centred = matrix - matrix.mean(axis=1, keepdims=True)
+    scale = centred.std(axis=1, keepdims=True)
+    if (scale == 0).any():
+        flat = [names[i] for i in np.flatnonzero(scale[:, 0] == 0)]
+        raise ValueError(f"station(s) with a constant anomaly series: {flat}")
+    z = centred / scale
+    distance: np.ndarray = np.asarray(1.0 - np.corrcoef(z))
+    np.fill_diagonal(distance, 0.0)
+
+    order = {str(row[STATION]): row for row in kept.iter_rows(named=True)}
+    labels = tuple(
+        str(order[name]["zone_era"]) if order[name]["zone_era"] in conf.era_zones else "未分區"
+        for name in names
+    )
+    coords = pl.DataFrame(
+        {
+            STATION: list(names),
+            "lat": [float(order[n]["lat"]) for n in names],
+            "lon": [float(order[n]["lon"]) for n in names],
+        }
+    )
+    return DissimilarityBundle(
+        stations=names,
+        coords=coords,
+        labels_era=labels,
+        anomaly=z,
+        distance=distance,
+        months_used=int(matrix.shape[1]),
+        months_window=len(months),
+        excluded=excluded,
+    )
+
+
+def geographic_ensemble(
+    coords: pl.DataFrame, *, k: int, draws: int, rng: np.random.Generator
+) -> np.ndarray:
+    """``draws`` geography-only partitions of the stations into ``k`` groups.
+
+    Each draw seeds ``k`` stations at random and assigns every station to its
+    nearest seed — a random Voronoi partition, contiguous by construction. That
+    is the null the official zoning has to beat: a random *relabelling* would be
+    beaten by any contiguous partition whatsoever (measured on this data the
+    official zones beat relabelling at p = 0.001, which demonstrates nothing),
+    so the reference class is partitions that also know the geography and know
+    nothing else.
+    """
+    d = pairwise_km(coords["lat"].to_numpy(), coords["lon"].to_numpy())
+    n = d.shape[0]
+    out = np.empty((draws, n), dtype=np.int64)
+    for j in range(draws):
+        seeds = rng.choice(n, size=k, replace=False)
+        out[j] = np.argmin(d[:, seeds], axis=1)
+    return out
+
+
+def _separation(distance: np.ndarray, labels: np.ndarray) -> float:
+    """Mean within-group correlation minus mean between-group correlation.
+
+    On the correlation distance this is (mean between-distance − mean
+    within-distance); reported on the correlation scale because 「區內平均相關
+    比區間高多少」 is the sentence a reader can check.
+    """
+    same = labels[:, None] == labels[None, :]
+    off = ~np.eye(len(labels), dtype=bool)
+    within = distance[same & off]
+    between = distance[~same]
+    if within.size == 0 or between.size == 0:
+        return float("nan")
+    return float(between.mean() - within.mean())
+
+
+def partition_agreement(
+    bundle: DissimilarityBundle, conf: SpatialConf, *, rng: np.random.Generator
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Score the era partition against geography-only nulls and Ward's tree.
+
+    PLAN.md predicted the official zoning is 「很可能不合理」 and called that a
+    good finding. A prediction that cannot fail is not a finding, so both
+    directions are live: the partition's percentile in the Voronoi ensemble says
+    whether it beats geography-alone, and the Ward sweep over ``k_grid`` says
+    what structure the data prefers, including a k nowhere near the official
+    count. Whichever way it comes out is the result.
+    """
+    from sklearn.cluster import AgglomerativeClustering
+    from sklearn.metrics import (
+        adjusted_rand_score,
+        normalized_mutual_info_score,
+        silhouette_score,
+    )
+
+    labels_era = np.array(bundle.labels_era)
+    era_groups = len(set(bundle.labels_era))
+    sil_era = float(silhouette_score(bundle.distance, labels_era, metric="precomputed"))
+    sep_era = _separation(bundle.distance, labels_era)
+
+    draws = int(conf.clustering["ensemble_draws"])
+    ensemble = geographic_ensemble(bundle.coords, k=era_groups, draws=draws, rng=rng)
+    sil_null = np.empty(draws)
+    sep_null = np.empty(draws)
+    for j in range(draws):
+        labels = ensemble[j]
+        # A draw can produce a group with one station; silhouette treats a
+        # singleton as 0, which only handicaps the null, never the official row.
+        sil_null[j] = silhouette_score(bundle.distance, labels, metric="precomputed")
+        sep_null[j] = _separation(bundle.distance, labels)
+
+    def percentile(observed: float, null: np.ndarray) -> float:
+        return float((null < observed).mean())
+
+    rows: list[dict[str, Any]] = [
+        {
+            "partition": "zone_era",
+            "k": era_groups,
+            "silhouette": sil_era,
+            "separation_r": sep_era,
+            "pct_vs_geographic_ensemble_silhouette": percentile(sil_era, sil_null),
+            "pct_vs_geographic_ensemble_separation": percentile(sep_era, sep_null),
+            "ensemble_draws": draws,
+            "ari_vs_zone_era": 1.0,
+            "nmi_vs_zone_era": 1.0,
+        }
+    ]
+
+    cluster_rows: list[dict[str, Any]] = []
+    ward_at_era_k: np.ndarray | None = None
+    for k in (int(v) for v in conf.clustering["k_grid"]):
+        if k >= len(bundle.stations):
+            continue
+        found = AgglomerativeClustering(n_clusters=k, linkage="ward").fit_predict(bundle.anomaly)
+        rows.append(
+            {
+                "partition": f"ward_k{k}",
+                "k": k,
+                "silhouette": float(silhouette_score(bundle.distance, found, metric="precomputed")),
+                "separation_r": _separation(bundle.distance, found),
+                "pct_vs_geographic_ensemble_silhouette": None,
+                "pct_vs_geographic_ensemble_separation": None,
+                "ensemble_draws": 0,
+                "ari_vs_zone_era": float(adjusted_rand_score(labels_era, found)),
+                "nmi_vs_zone_era": float(normalized_mutual_info_score(labels_era, found)),
+            }
+        )
+        if k == era_groups:
+            ward_at_era_k = found
+        for station, zone, cluster in zip(bundle.stations, labels_era, found, strict=True):
+            cluster_rows.append(
+                {STATION: station, "k": k, "cluster": int(cluster), "zone_era": zone}
+            )
+
+    agreement = pl.DataFrame(rows, infer_schema_length=None)
+    if ward_at_era_k is not None:
+        log.info(
+            "ward at the era k agrees with the official partition at ARI %.3f",
+            adjusted_rand_score(labels_era, ward_at_era_k),
+        )
+    return agreement, pl.DataFrame(cluster_rows, infer_schema_length=None)

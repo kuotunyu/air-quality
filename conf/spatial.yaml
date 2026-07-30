@@ -75,6 +75,14 @@
   # not be comparable to the headline, so it is not the default.
   "window_start": "2010-01"
   "window_end": "2017-12"
+  # The monthly table withholds a mean below its coverage threshold, and those
+  # nulls stay excluded here — so demanding a published mean in all 96 window
+  # months leaves 6 stations, which is no network. Measured trade-off: share
+  # 0.98 keeps 43 stations on 86 common months, 0.95 keeps 66 on 63, 0.90 keeps
+  # 73 on 47. The test is about the network, so stations weigh more than months
+  # and 63 months is ample for a correlation; 0.95 is the choice. Stations below
+  # the share and months any kept station misses are both counted, never filled.
+  "min_station_share": 0.95
   "distance": "correlation_seasonal_anomaly"
   # Without this every station in Taiwan correlates at ~0.73 because they share
   # one winter maximum, and the test would report all zones equally good. Removing

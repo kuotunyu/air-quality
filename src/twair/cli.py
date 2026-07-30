@@ -704,7 +704,9 @@ def analyze_m3(
 @analysis_app.command("m6")
 def analyze_m6(
     steps: str = typer.Option(
-        "coverage,headline,sensitivity", "--steps", help="Comma list of steps to run."
+        ",".join(("coverage", "headline", "sensitivity", "partition")),
+        "--steps",
+        help="Comma list of steps to run.",
     ),
     draws: int = typer.Option(None, "--draws", help="Override the null draw count for a fast run."),
 ) -> None:
@@ -798,6 +800,33 @@ def analyze_m6(
         console.print(
             result.sensitivity.filter(pl.col("i").is_not_null()).select(
                 "family", "parameter", "main_island_only", "n_stations", "n_islands", "i", "z"
+            )
+        )
+
+    if result.agreement is not None and result.agreement.height:
+        console.print("\n[bold]does the official zoning know more than geography?[/bold]")
+        era = result.agreement.filter(pl.col("partition") == "zone_era").to_dicts()[0]
+        console.print(
+            f"  era partition, {era['k']} groups: separation {era['separation_r']:+.3f} on the "
+            f"correlation scale, silhouette {era['silhouette']:+.3f}"
+        )
+        console.print(
+            f"  vs {era['ensemble_draws']} geography-only Voronoi partitions: percentile "
+            f"{era['pct_vs_geographic_ensemble_separation']:.3f} on separation, "
+            f"{era['pct_vs_geographic_ensemble_silhouette']:.3f} on silhouette"
+        )
+        ward = result.agreement.filter(pl.col("partition").str.starts_with("ward_")).sort(
+            "silhouette", descending=True
+        )
+        best = ward.to_dicts()[0]
+        at_era = result.agreement.filter(pl.col("partition") == f"ward_k{era['k']}").to_dicts()
+        console.print(
+            f"  the data's own preference: k = {best['k']} "
+            f"(silhouette {best['silhouette']:+.3f})"
+            + (
+                f"; ward at the official k agrees at ARI {at_era[0]['ari_vs_zone_era']:.2f}"
+                if at_era
+                else ""
             )
         )
 

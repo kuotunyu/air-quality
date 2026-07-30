@@ -18,6 +18,7 @@ import polars as pl
 import pytest
 
 from twair.analysis.spatial import (
+    DissimilarityBundle,
     SpatialConf,
     benjamini_hochberg,
     block_bootstrap_mean,
@@ -307,3 +308,151 @@ class TestConfiguration:
         conf = load_spatial_conf()
         assert "population_grid" not in conf.field
         assert "land_mask" not in conf.field
+
+
+class TestGeographicEnsemble:
+    def test_every_draw_partitions_into_exactly_k_contiguous_groups(self) -> None:
+        # Voronoi by construction: k seed stations, everyone joins the nearest.
+        # Each seed is its own nearest, so no group can come back empty.
+        from twair.analysis.spatial import geographic_ensemble
+
+        coords = grid_coords(5, 6)
+        draws = geographic_ensemble(coords, k=4, draws=50, rng=np.random.default_rng(9))
+        assert draws.shape == (50, 30)
+        for j in range(50):
+            assert len(set(draws[j].tolist())) == 4
+
+    def test_the_ensemble_is_reproducible_under_the_seed(self) -> None:
+        from twair.analysis.spatial import geographic_ensemble
+
+        coords = grid_coords(4, 5)
+        a = geographic_ensemble(coords, k=3, draws=20, rng=np.random.default_rng(77))
+        b = geographic_ensemble(coords, k=3, draws=20, rng=np.random.default_rng(77))
+        assert (a == b).all()
+
+
+def _two_regime_bundle(noise: float, seed: int) -> DissimilarityBundle:
+    """Thirty stations, two anticorrelated regimes split north/south.
+
+    The truth is k=2 with a clean geographic boundary, so a partition test that
+    cannot recover this is broken, and a mismatched partition must score below
+    the true one.
+    """
+    rng = np.random.default_rng(seed)
+    months = 48
+    signal = rng.normal(0, 1, months)
+    rows = []
+    for i in range(30):
+        sign = 1.0 if i < 15 else -1.0
+        rows.append(sign * signal + rng.normal(0, noise, months))
+    matrix = np.array(rows)
+    centred = matrix - matrix.mean(axis=1, keepdims=True)
+    z = centred / centred.std(axis=1, keepdims=True)
+    distance = np.asarray(1.0 - np.corrcoef(z))
+    np.fill_diagonal(distance, 0.0)
+
+    lat = [25.0 - 0.02 * i for i in range(15)] + [22.5 - 0.02 * i for i in range(15)]
+    lon = [121.0 + 0.01 * (i % 5) for i in range(30)]
+    coords = pl.DataFrame(
+        {"station_name": [f"s{i:02d}" for i in range(30)], "lat": lat, "lon": lon}
+    )
+    return DissimilarityBundle(
+        stations=tuple(f"s{i:02d}" for i in range(30)),
+        coords=coords,
+        labels_era=tuple("北" if i < 15 else "南" for i in range(30)),
+        anomaly=z,
+        distance=distance,
+        months_used=months,
+        months_window=months,
+        excluded=pl.DataFrame({"station_name": [], "excluded_reason": []}),
+    )
+
+
+class TestPartitionAgreement:
+    def test_a_split_geography_alone_explains_does_not_beat_the_ensemble(self) -> None:
+        """The null working as designed, pinned so nobody "fixes" it.
+
+        In this fixture the regime boundary is purely geographic, so a random
+        Voronoi 2-partition recovers the very same split about half the time and
+        the true labelling lands mid-ensemble. That is the entire point of using
+        a geography-only null instead of random relabelling: a partition earns a
+        high percentile only for structure geography does not already give you.
+        """
+        from twair.analysis.spatial import load_spatial_conf, partition_agreement
+
+        bundle = _two_regime_bundle(noise=0.4, seed=5)
+        agree, _clusters = partition_agreement(
+            bundle, load_spatial_conf(), rng=np.random.default_rng(11)
+        )
+        era = agree.filter(pl.col("partition") == "zone_era").to_dicts()[0]
+        assert era["separation_r"] > 0.5
+        assert era["pct_vs_geographic_ensemble_separation"] < 0.9
+
+    def test_a_partition_carrying_more_than_geography_beats_the_ensemble(self) -> None:
+        """Left and right clusters share a regime; the middle is opposite.
+
+        No contiguous two-way split can put the outer clusters together against
+        the middle — every Voronoi draw mixes regimes — so the true labelling
+        must clear essentially the whole ensemble. This is the shape of the real
+        finding: the official zones encode information beyond adjacency.
+        """
+        from twair.analysis.spatial import load_spatial_conf, partition_agreement
+
+        rng = np.random.default_rng(6)
+        months = 48
+        signal = rng.normal(0, 1, months)
+        rows, labels, lat, lon = [], [], [], []
+        for i in range(30):
+            block = i // 10  # 0 = west, 1 = middle, 2 = east
+            sign = -1.0 if block == 1 else 1.0
+            rows.append(sign * signal + rng.normal(0, 0.4, months))
+            labels.append("外" if block != 1 else "中")
+            lat.append(23.5 + 0.01 * (i % 10))
+            lon.append(120.0 + 0.6 * block + 0.01 * (i % 10))
+        matrix = np.array(rows)
+        centred = matrix - matrix.mean(axis=1, keepdims=True)
+        z = centred / centred.std(axis=1, keepdims=True)
+        distance = np.asarray(1.0 - np.corrcoef(z))
+        np.fill_diagonal(distance, 0.0)
+        bundle = DissimilarityBundle(
+            stations=tuple(f"s{i:02d}" for i in range(30)),
+            coords=pl.DataFrame(
+                {"station_name": [f"s{i:02d}" for i in range(30)], "lat": lat, "lon": lon}
+            ),
+            labels_era=tuple(labels),
+            anomaly=z,
+            distance=distance,
+            months_used=months,
+            months_window=months,
+            excluded=pl.DataFrame({"station_name": [], "excluded_reason": []}),
+        )
+        agree, _ = partition_agreement(bundle, load_spatial_conf(), rng=np.random.default_rng(2))
+        era = agree.filter(pl.col("partition") == "zone_era").to_dicts()[0]
+        assert era["pct_vs_geographic_ensemble_separation"] > 0.95
+
+    def test_ward_recovers_the_true_split_exactly_at_the_true_k(self) -> None:
+        from twair.analysis.spatial import load_spatial_conf, partition_agreement
+
+        bundle = _two_regime_bundle(noise=0.4, seed=5)
+        agree, _ = partition_agreement(bundle, load_spatial_conf(), rng=np.random.default_rng(3))
+        ward2 = agree.filter(pl.col("partition") == "ward_k2").to_dicts()[0]
+        assert ward2["ari_vs_zone_era"] == pytest.approx(1.0)
+
+    def test_the_true_k_wins_the_silhouette_sweep(self) -> None:
+        from twair.analysis.spatial import load_spatial_conf, partition_agreement
+
+        bundle = _two_regime_bundle(noise=0.4, seed=8)
+        agree, _ = partition_agreement(bundle, load_spatial_conf(), rng=np.random.default_rng(4))
+        ward = agree.filter(pl.col("partition").str.starts_with("ward_"))
+        best = ward.sort("silhouette", descending=True).to_dicts()[0]
+        assert best["k"] == 2
+
+    def test_a_partition_blind_to_the_regimes_scores_near_zero_separation(self) -> None:
+        from twair.analysis.spatial import _separation
+
+        bundle = _two_regime_bundle(noise=0.4, seed=5)
+        # East/west split, orthogonal to the true north/south structure.
+        blind = np.array([i % 2 for i in range(30)])
+        truth = np.array([0] * 15 + [1] * 15)
+        assert _separation(bundle.distance, truth) > 0.5
+        assert abs(_separation(bundle.distance, blind)) < 0.15
