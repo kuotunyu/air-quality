@@ -274,27 +274,8 @@ const candidates = pollutantIndex.map((p) => ({
           ? `顯示前 ${rows.length} 列，共 ${total.toLocaleString("en-US")} 列 · ${ms.toFixed(0)} ms`
           : `${rows.length} 列 · ${ms.toFixed(0)} ms`,
       );
-      if (rows.length === 0) {
-        // Zero rows used to render as a bordered strip of column names over
-        // nothing, which reads as a broken table rather than as an answer.
-        const none = document.createElement("p");
-        none.className = "no-rows";
-        none.textContent =
-          columns.length > 0
-            ? `查詢成立，但沒有任何一列符合條件（欄位：${columns.join("、")}）。`
-            : "查詢成立，但沒有回傳任何資料。";
-        resultEl.appendChild(none);
-      } else {
-        resultEl.appendChild(renderTable(columns, kinds, rows));
-        if (truncated) {
-          const cap = document.createElement("p");
-          cap.className = "capped";
-          cap.textContent =
-            `這裡只畫得出前 ${rows.length} 列。全部 ${total.toLocaleString("en-US")} 列請加上 ` +
-            `LIMIT 或先彙總，否則下面的數字是這一段而不是全部。`;
-          resultEl.appendChild(cap);
-        }
-      }
+      shown = { columns, kinds, rows, total, truncated };
+      paint();
     } catch (error) {
       setStatus("");
       // A failed preparation must not be cached, or every later attempt
@@ -307,6 +288,158 @@ const candidates = pollutantIndex.map((p) => ({
     } finally {
       runButton.disabled = false;
     }
+  });
+
+  /*
+   * The last result, kept so its LAYOUT can be recomputed without re-querying.
+   *
+   * How the result is arranged depends on how much room there is, and the room
+   * changes when the window does. Re-running the query to re-lay it out would be
+   * absurd; the rows are already here.
+   */
+  let shown: {
+    columns: string[];
+    kinds: string[];
+    rows: unknown[][];
+    total: number;
+    truncated: boolean;
+  } | null = null;
+  let laidOutAt = { width: 0, chunks: 0 };
+
+  /*
+   * The chunks butt against each other, separated by one rule.
+   *
+   * They do not need a gap: each cell already carries 0.85rem of horizontal
+   * padding, so two adjacent chunks put ~36px of air either side of the rule
+   * between them. This constant has to agree with the CSS or the arithmetic
+   * budgets space that is not there — it was 26 against a grid with no gap, and
+   * a two-column result came out at three chunks and 61% of the width when four
+   * fit.
+   */
+  const CHUNK_GAP = 1;
+  /*
+   * Four, which is a newspaper's answer rather than a round number. A two-column
+   * result measured 61% of the width at a cap of three where four chunks fit and
+   * reach 90%; past four, a single column of numbers repeated across the page
+   * stops being a table and becomes a wall, and knowing which chunk you are in
+   * costs more than the height saved.
+   */
+  const MAX_CHUNKS = 4;
+  const MIN_ROWS_PER_CHUNK = 8;
+
+  /*
+   * How many side-by-side columns to flow the rows into.
+   *
+   * A three-column, twenty-nine-row result measured 375px wide inside an 882px
+   * reading column: 44% of the width used, 490px of it dead, and 19 of the 29
+   * rows hidden behind a scrollbar in a 546px box. Two copies of that table fit
+   * side by side with room to spare. A long narrow table set in columns is what
+   * print has always done with this shape, and it spends the width that was
+   * going to waste on the height that was in short supply.
+   *
+   * Guards, because this is only right for one shape:
+   *   - a wide result has nothing to gain and would just start scrolling
+   *     sideways, so anything past six columns stays whole;
+   *   - a short result cut in half reads as a mistake, so there is a floor on
+   *     rows per chunk rather than only a ceiling on chunk count. Flowing 15
+   *     rows into three columns of five is a gimmick, not a layout.
+   */
+  function chunkCount(natural: number, rowCount: number, colCount: number): number {
+    if (colCount > 6 || rowCount < MIN_ROWS_PER_CHUNK * 2) return 1;
+    const room = resultEl.clientWidth;
+    if (!room || !natural) return 1;
+    const fits = Math.floor((room + CHUNK_GAP) / (natural + CHUNK_GAP));
+    if (fits < 2) return 1;
+    return Math.max(1, Math.min(fits, MAX_CHUNKS, Math.floor(rowCount / MIN_ROWS_PER_CHUNK)));
+  }
+
+  function paint() {
+    if (!shown) return;
+    const { columns, kinds, rows, total, truncated } = shown;
+    resultEl.replaceChildren();
+
+    if (rows.length === 0) {
+      // Zero rows used to render as a bordered strip of column names over
+      // nothing, which reads as a broken table rather than as an answer.
+      const none = document.createElement("p");
+      none.className = "no-rows";
+      none.textContent =
+        columns.length > 0
+          ? `查詢成立，但沒有任何一列符合條件（欄位：${columns.join("、")}）。`
+          : "查詢成立，但沒有回傳任何資料。";
+      resultEl.appendChild(none);
+      laidOutAt = { width: resultEl.clientWidth, chunks: 0 };
+      return;
+    }
+
+    const shape = shapeOf(columns, kinds, rows);
+
+    // Lay the whole thing out once, unchunked. That settles two numbers that
+    // cannot be guessed: how wide the table wants to be, and how wide each
+    // column has to be for its widest value anywhere in the result.
+    const single = renderTable(columns, rows, shape);
+    resultEl.appendChild(single);
+    const table = single.querySelector("table") as HTMLTableElement;
+    const natural = table.getBoundingClientRect().width;
+    const widths = Array.from(
+      table.tHead!.rows[0].cells,
+      (cell) => cell.getBoundingClientRect().width,
+    );
+
+    const chunks = chunkCount(natural, rows.length, columns.length);
+    if (chunks > 1) {
+      const per = Math.ceil(rows.length / chunks);
+      const flow = document.createElement("div");
+      flow.className = "result-flow";
+      flow.style.setProperty("--chunks", String(chunks));
+      // One table split for layout is still one answer, so it is announced as
+      // one group and each piece says which rows it holds.
+      flow.setAttribute("role", "group");
+      flow.setAttribute(
+        "aria-label",
+        `查詢結果，共 ${rows.length} 列，分 ${chunks} 段並排顯示`,
+      );
+      for (let c = 0; c < chunks; c += 1) {
+        const slice = rows.slice(c * per, (c + 1) * per);
+        if (slice.length === 0) continue;
+        flow.appendChild(
+          renderTable(columns, slice, shape, {
+            widths,
+            caption: `第 ${c * per + 1}–${c * per + slice.length} 列`,
+          }),
+        );
+      }
+      single.remove();
+      resultEl.appendChild(flow);
+    }
+
+    if (truncated) {
+      const cap = document.createElement("p");
+      cap.className = "capped";
+      cap.textContent =
+        `這裡只畫得出前 ${rows.length} 列。全部 ${total.toLocaleString("en-US")} 列請加上 ` +
+        `LIMIT 或先彙總，否則下面的數字是這一段而不是全部。`;
+      resultEl.appendChild(cap);
+    }
+    laidOutAt = { width: resultEl.clientWidth, chunks };
+  }
+
+  /*
+   * Re-flow on resize, but only when the arrangement would actually differ.
+   *
+   * Repainting on every resize event would rebuild a 500-row table dozens of
+   * times while the window is being dragged, so the guard is the decision itself
+   * rather than a timer: measure what the layout would be now, and only redraw
+   * if that is not what is already on screen.
+   */
+  let reflow = 0;
+  window.addEventListener("resize", () => {
+    if (!shown || shown.rows.length === 0) return;
+    clearTimeout(reflow);
+    reflow = window.setTimeout(() => {
+      if (resultEl.clientWidth === laidOutAt.width) return;
+      paint();
+    }, 160);
   });
 
   /*
@@ -370,15 +503,24 @@ const candidates = pollutantIndex.map((p) => ({
     return head + "." + frac + pad(decimals - frac.length);
   }
 
-  function renderTable(
-    columns: string[],
-    kinds: string[],
-    rows: unknown[][],
-  ): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "table-wrap";
-    const table = document.createElement("table");
+  /** Everything about a column that is decided by looking at the whole of it. */
+  interface Shape {
+    kind: ReturnType<typeof columnKind>[];
+    cls: string[];
+    decimals: number[];
+    group: boolean[];
+  }
 
+  /*
+   * Computed once over ALL rows, and that is the point of separating it out.
+   *
+   * When the result is flowed into side-by-side chunks, each chunk renders a
+   * slice — and if the padding and grouping were decided per slice, the same
+   * column would print 0.6 in one half and 0.60 in the other, and the halves
+   * would stop lining up with each other. A column's shape belongs to the
+   * column, not to whichever piece of it is being drawn.
+   */
+  function shapeOf(columns: string[], kinds: string[], rows: unknown[][]): Shape {
     // Alignment comes from the column's declared type, not from sniffing the
     // first value. Sniffing is what left the header of every numeric column at
     // the left edge while its values sat at the right — measured at 106, 272 and
@@ -386,19 +528,6 @@ const candidates = pollutantIndex.map((p) => ({
     const kind = columns.map((_, i) => columnKind(kinds[i] ?? ""));
     const cls = kind.map((k) => (k === "number" ? "num" : k === "date" ? "iso" : ""));
 
-    /*
-     * Two decisions taken per COLUMN rather than per cell, because a column is
-     * the thing a reader compares down.
-     *
-     * `decimals` is the widest fractional part in the column, so every value in
-     * it pads to the same point position.
-     *
-     * `group` is whether to write thousands separators, and the rule is that a
-     * column groups only if something in it has five or more integer digits.
-     * That is not arbitrary: a year is four digits, and 「1,997」 is wrong in a
-     * way that 「341,442,552」 is right. Deciding per column rather than per value
-     * also stops one column printing both 1213 and 34,125.
-     */
     /*
      * A column with an exponential in it pads nothing.
      *
@@ -412,6 +541,16 @@ const candidates = pollutantIndex.map((p) => ({
         kind[i] === "number" &&
         rows.some((r) => typeof r[i] === "number" && !isPlainNumber(r[i])),
     );
+    /*
+     * `decimals` is the widest fractional part in the column, so every value in
+     * it pads to the same point position.
+     *
+     * `group` is whether to write thousands separators, and the rule is that a
+     * column groups only if something in it has five or more integer digits.
+     * That is not arbitrary: a year is four digits, and 「1,997」 is wrong in a
+     * way that 「341,442,552」 is right. Deciding per column rather than per value
+     * also stops one column printing both 1213 and 34,125.
+     */
     const decimals = columns.map((_, i) =>
       kind[i] === "number" && !exponential[i]
         ? rows.reduce((most, r) => Math.max(most, decimalsOf(r[i])), 0)
@@ -425,6 +564,47 @@ const candidates = pollutantIndex.map((p) => ({
           return isPlainNumber(v) && Math.abs(Math.trunc(v)).toString().length >= 5;
         }),
     );
+    return { kind, cls, decimals, group };
+  }
+
+  function renderTable(
+    columns: string[],
+    rows: unknown[][],
+    shape: Shape,
+    opts: { widths?: number[]; caption?: string } = {},
+  ): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    const table = document.createElement("table");
+    const { kind, cls, decimals, group } = shape;
+
+    if (opts.caption) {
+      // Each chunk of a flowed table says which rows it holds, for a reader who
+      // cannot see that the three blocks are one table.
+      const caption = document.createElement("caption");
+      caption.className = "visually-hidden";
+      caption.textContent = opts.caption;
+      table.appendChild(caption);
+    }
+
+    /*
+     * Pinned column widths, measured from the unchunked table.
+     *
+     * The chunks must agree about their columns or the flow reads as three
+     * unrelated tables. The widths come from laying the WHOLE result out once,
+     * so they already accommodate the widest value anywhere in the column and no
+     * chunk can overflow its own share.
+     */
+    if (opts.widths) {
+      table.style.tableLayout = "fixed";
+      const colgroup = document.createElement("colgroup");
+      for (const w of opts.widths) {
+        const col = document.createElement("col");
+        col.style.width = `${w}px`;
+        colgroup.appendChild(col);
+      }
+      table.appendChild(colgroup);
+    }
 
     const head = table.createTHead().insertRow();
     columns.forEach((name, i) => {
@@ -563,12 +743,75 @@ const candidates = pollutantIndex.map((p) => ({
   .result :global(.table-wrap) {
     width: fit-content;
     max-width: 100%;
-    max-height: 26rem;
+    /*
+     * Generous, because the box was doing the opposite of using the space: a
+     * 29-row result showed 10 rows in a 546px window and hid 19 behind a
+     * scrollbar, on a page that scrolls perfectly well by itself. The cap exists
+     * only so a 500-row answer cannot bury the notes underneath it, and at
+     * 85vh that is the only case it still catches.
+     */
+    max-height: min(85vh, 64rem);
     overflow: auto;
   }
 
   .result :global(table) {
     width: auto;
+  }
+
+  /*
+   * A long narrow result flowed into side-by-side columns, and framed ONCE.
+   *
+   * Giving each chunk its own border would read as two or three unrelated
+   * tables. The frame belongs to the group, the chunks are separated by a single
+   * rule, and the whole thing is one object again.
+   */
+  .result :global(.result-flow) {
+    display: grid;
+    grid-template-columns: repeat(var(--chunks, 2), max-content);
+    align-items: start;
+    width: fit-content;
+    max-width: 100%;
+    max-height: min(85vh, 64rem);
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin: var(--space-4) 0;
+    isolation: isolate;
+  }
+
+  .result :global(.result-flow) > :global(.table-wrap) {
+    width: auto;
+    max-width: none;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  /* `--line` and not `--line-soft`: this rule separates two blocks of content,
+     which is a heavier job than separating two rows. */
+  .result :global(.result-flow) > :global(.table-wrap) + :global(.table-wrap) {
+    border-left: 1px solid var(--line);
+  }
+
+  /*
+   * One system for separating rows, not two.
+   *
+   * Every row carried a hairline AND a stripe, which is the table equivalent of
+   * underlining bold text. The stripe now does it alone — it is the one that
+   * follows the row all the way across a flowed table without drawing a line
+   * through the vertical rule between chunks.
+   */
+  .result :global(td) {
+    border-bottom: 0;
+  }
+
+  /* The header keeps a real rule, because that boundary is the one that matters:
+     it separates the names from the data, and it has to stay put when the rows
+     scroll under it. */
+  .result :global(thead th) {
+    box-shadow: inset 0 -1px 0 var(--rule);
   }
 
   /*
