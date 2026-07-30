@@ -247,7 +247,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
         <div class="plot-keys">
           {
             rmseSeries.map((s, si) => (
-              <span style={`top:${n(rmseLabelY[si], 3)}%;color:${s.colour}`}>{s.label}</span>
+              <span style={`top:${n(rmseLabelY[si], 3)}%;--mark:${s.colour}`}>{s.label}</span>
             ))
           }
         </div>
@@ -344,7 +344,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
         <div class="plot-keys">
           {
             metricSeries.map((s, si) => (
-              <span style={`top:${n(metricLabelY[si], 3)}%;color:${s.colour}`}>{s.label}</span>
+              <span style={`top:${n(metricLabelY[si], 3)}%;--mark:${s.colour}`}>{s.label}</span>
             ))
           }
         </div>
@@ -556,7 +556,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
         <div class="plot-keys">
           {
             sarSeries.map((s, si) => (
-              <span style={`top:${n(sarLabelY[si], 3)}%;color:${s.colour}`}>{s.label}</span>
+              <span style={`top:${n(sarLabelY[si], 3)}%;--mark:${s.colour}`}>{s.label}</span>
             ))
           }
         </div>
@@ -628,7 +628,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     font-weight: 600;
   }
   td.worse {
-    color: var(--c5);
+    color: var(--c5-ink);
     font-weight: 600;
   }
 </style>

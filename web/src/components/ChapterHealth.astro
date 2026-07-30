@@ -169,7 +169,7 @@ const fn = functions[0];
         <div class="plot-keys">
           {
             series.map((s, i) => (
-              <span style={`top:${n(labelY[i], 3)}%;color:${COLOURS[i % COLOURS.length]}`}>
+              <span style={`top:${n(labelY[i], 3)}%;--mark:${COLOURS[i % COLOURS.length]}`}>
                 {s.label}
               </span>
             ))
@@ -248,7 +248,7 @@ const fn = functions[0];
             spreadShare.map((v, i) => (
               <span
                 class="plot-pt"
-                style={`left:${n(xYear(years[i]), 3)}%;top:${n(yShare(v), 3)}%;color:var(--c6)`}
+                style={`left:${n(xYear(years[i]), 3)}%;top:${n(yShare(v), 3)}%;color:var(--c6-ink)`}
                 title={`${years[i]}: ${n(v * 100, 1)}%`}
               />
             ))

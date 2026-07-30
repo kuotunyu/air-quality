@@ -1,0 +1,99 @@
+---
+/**
+ * Chapter 10 — what is published, under what licence, and why nothing is filled.
+ *
+ * Lifted out of `pages/index.astro` unchanged when the document became ten
+ * routes.
+ */
+---
+
+<!-- ═══════════ 9. 資料與方法 ═══════════ -->
+<section id="data" class="page">
+  <p class="eyebrow">第十章</p>
+  <h2>資料與方法</h2>
+
+  <p class="lede">
+    所有數字都可以自己重算。原始資料來自環境部空氣品質監測網公開的年度逐時檔，
+    管線、品管規則、分析程式全部開源。
+  </p>
+
+  {/*
+    A list, not three cards.
+
+    Three cards across this column gave each description 298px, which is
+    eleven Chinese characters a line — the narrowest measure on the site, in a
+    section whose whole job is explaining what you can download. And the three
+    are a sequence rather than a set of alternatives: the same observations at
+    coarsening resolution. A term-and-description list says that, and gives the
+    prose a width it can be read at.
+  */}
+  <dl class="layers">
+    <dt>L0 站-月</dt>
+    <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
+
+    <dt>L1 站-日</dt>
+    <dd>每個測項一個 Parquet，共 54.6 MB。給 DuckDB-WASM 或桌面工具用。</dd>
+
+    <dt>L2 站-時</dt>
+    <dd>
+      3.41 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
+      只發衍生產物與完整管線，跑一次 <code>twair ingest</code> 加
+      <code>twair build</code> 就能自己重建。
+    </dd>
+  </dl>
+
+  <div class="note caveat">
+    <strong>關於缺值。</strong>
+    這個專案不補值。無效值標記但不刪除、超出物理範圍的值保留原數字以供檢視、
+    覆蓋率不足的聚合直接<strong>不給平均值</strong>——寧可留一個洞，
+    也不給一個有偏誤的數字。網站上每條線的中斷都是真的中斷。
+  </div>
+
+  <div class="note">
+    <strong>逐時 PM2.5 的官方但書。</strong>
+    環境部 ReadMe 載明：PM2.5 自動監測（貝他射線衰減法）的小時值僅供預警參考，
+    不宜直接與 24 小時空氣品質標準比較。本站的日均、年均由小時值聚合而來，
+    引用時請一併理解這個限制。
+  </div>
+</section>
+
+<style>
+/*
+ * Term beside description, hairline between rows. The term column sizes to
+ * its content so the descriptions all start on one line, and they are capped
+ * at the page measure like every other paragraph rather than stretching to
+ * whatever the column happens to be.
+ */
+.layers {
+  display: grid;
+  gap: 0 var(--space-4);
+  margin: var(--space-4) 0;
+}
+@media (min-width: 40rem) {
+  .layers {
+    grid-template-columns: auto minmax(0, var(--measure));
+  }
+}
+.layers dt {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-soft);
+}
+.layers dd {
+  margin: 0;
+  color: var(--text-muted);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-soft);
+  text-wrap: pretty;
+}
+/* On one column the term and its description are one row, so only the term
+   carries the rule. */
+@media (max-width: 39.999rem) {
+  .layers dd {
+    border-top: 0;
+    padding-top: 0;
+  }
+}
+</style>

@@ -92,7 +92,7 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
 
       {
         visibleGuides.map((guide) => (
-          <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;color:${guide.colour}`}>
+          <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour}`}>
             {guide.label}
           </span>
         ))

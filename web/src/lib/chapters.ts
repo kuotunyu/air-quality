@@ -1,0 +1,141 @@
+/**
+ * The document's table of contents, and the only place its order lives.
+ *
+ * This exists because the site stopped being one page. Ten chapters in one
+ * scroll measured 38,291px — 42 screens at a laptop height — and the top nav's
+ * eleven anchors were the only way through it. Long-form does not mean
+ * unbounded: at that length the scrollbar thumb is four pixels tall, "where am
+ * I" has no answer, and a reviewer who wants to judge the work in thirty
+ * seconds has nothing to judge it from but the first fold.
+ *
+ * So each chapter is a route, and this array is what the nav, the entry page's
+ * index, and every chapter's prev/next footer all read from. One array means
+ * the three can never disagree about the order or the numbering — which they
+ * would, because the numbering has already been renumbered once by hand across
+ * eight files when a chapter was inserted in the middle.
+ *
+ * `claim` is deliberately not a number. A figure typed into a navigation file
+ * is a figure with no test behind it, and this repository has a rule about
+ * that: it would be correct on the day it was written and quietly wrong after
+ * the next pipeline run. So each line says what the chapter settles, and the
+ * chapter itself carries the measurement.
+ */
+
+export interface Chapter {
+  /** Position in the document. Rendered as 「第 n 章」, so it is the numbering. */
+  n: number;
+  /** URL segment. Also the `id` of the chapter's own section, so in-page
+   *  anchors from other chapters keep working as `/slug#id`. */
+  slug: string;
+  /** Short enough for the top nav on a phone. */
+  nav: string;
+  /** The chapter's heading, repeated here for the index and for `<title>`. */
+  title: string;
+  /** One sentence: what a reader gets by opening it. */
+  claim: string;
+}
+
+export const CHAPTERS: readonly Chapter[] = [
+  {
+    n: 1,
+    slug: "trend",
+    nav: "趨勢",
+    title: "長期趨勢與氣象校正",
+    claim: "全台 PM2.5 確實在降，但監測網同期一直在長大——扣掉這件事，再扣掉天氣，剩下的才是排放。",
+  },
+  {
+    n: 2,
+    slug: "stations",
+    nav: "測站統計",
+    title: "測站個別統計",
+    claim: "選一個測站，看它最近一個資料完整到可以比較的年份，以及它在全國的位置。",
+  },
+  {
+    n: 3,
+    slug: "space",
+    nav: "空間結構",
+    title: "空間結構與官方分區",
+    claim: "當年的「分區各跑一次」其實移除了大部分的空間相依——但它刊出的 t 值來自合併式模型。",
+  },
+  {
+    n: 4,
+    slug: "sources",
+    nav: "污染來向",
+    title: "污染物的來向",
+    claim: "把濃度按風速與風向拆開，高濃度集中在哪幾個方位就看得出來。",
+  },
+  {
+    n: 5,
+    slug: "detection",
+    nav: "偵測極限",
+    title: "政策效應的偵測極限",
+    claim: "一個方法能看見多小的效應，是可以先量出來的——量完才知道哪些「沒有顯著」其實是看不見。",
+  },
+  {
+    n: 6,
+    slug: "forecast",
+    nav: "預測技巧",
+    title: "預測技巧與有效期距",
+    claim: "往前看能走多遠還算有用，以及為什麼一小時後最該有用的模型會輸給一行規則。",
+  },
+  {
+    n: 7,
+    slug: "health",
+    nav: "健康負擔",
+    title: "健康負擔與它的假設",
+    claim: "可歸因比例算得出來，但它取決於一個幾乎從不被說出口的選擇：拿什麼當比較基準。",
+  },
+  {
+    n: 8,
+    slug: "methods",
+    nav: "方法學對照",
+    title: "方法選擇的量化代價",
+    claim: "同一份資料做兩次，一次照 2018 年的做法，一次照現在的——逐項量出每個方法選擇的代價。",
+  },
+  {
+    n: 9,
+    slug: "explore",
+    nav: "資料查詢",
+    title: "自己查",
+    claim: "在瀏覽器裡直接對 Parquet 下 SQL，不經過任何伺服器。",
+  },
+  {
+    n: 10,
+    slug: "data",
+    nav: "資料與方法",
+    title: "資料與方法",
+    claim: "三層資料的內容、授權，以及這個專案為什麼不補值。",
+  },
+] as const;
+
+/** 「第一章」 rather than 「第 1 章」: the numeral is Chinese in running text. */
+const NUMERALS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"] as const;
+
+export function chapterLabel(n: number): string {
+  return `第${NUMERALS[n] ?? n}章`;
+}
+
+export function chapterBySlug(slug: string): Chapter {
+  const found = CHAPTERS.find((c) => c.slug === slug);
+  if (!found) throw new Error(`unknown chapter slug: ${slug}`);
+  return found;
+}
+
+/** The chapters either side, for the footer. `null` at the two ends. */
+export function neighbours(slug: string): { prev: Chapter | null; next: Chapter | null } {
+  const at = CHAPTERS.findIndex((c) => c.slug === slug);
+  if (at === -1) throw new Error(`unknown chapter slug: ${slug}`);
+  return { prev: CHAPTERS[at - 1] ?? null, next: CHAPTERS[at + 1] ?? null };
+}
+
+/**
+ * A site-root-relative href.
+ *
+ * GitHub Pages serves this under `/<repo>/`, so a bare `/trend` would 404 there
+ * while working locally — the failure mode that only appears in production.
+ * `BASE_URL` carries the prefix Astro was configured with.
+ */
+export function href(path = ""): string {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  return path ? `${base}/${path.replace(/^\//, "")}` : base || "/";
+}

@@ -220,7 +220,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
       <div class="verdict">
         <div class="stat">
-          <span class="stat-value" style="color:var(--c5)">{n(retained * 100, 1)}%</span>
+          <span class="stat-value" style="color:var(--c5-ink)">{n(retained * 100, 1)}%</span>
           <span class="stat-label">月平均保留的變異比例</span>
           <span class="stat-note">
             標準差 {n(hourlySd)} → {n(monthlySd)} μg/m³
@@ -658,7 +658,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
           <div class="plot-keys">
             {
               GAP_SERIES.map((series, index) => (
-                <span style={`top:${n(gLabelY[index], 3)}%;color:${series.colour}`}>
+                <span style={`top:${n(gLabelY[index], 3)}%;--mark:${series.colour}`}>
                   {series.label}
                 </span>
               ))
@@ -856,17 +856,17 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     margin-bottom: 0.5rem;
   }
   .tag.bad {
-    color: var(--c5);
+    color: var(--c5-ink);
   }
   .tag.good {
-    color: var(--c1);
+    color: var(--c1-ink);
   }
   td.bad,
   .row-bad td {
-    color: var(--c5);
+    color: var(--c5-ink);
   }
   td.good {
-    color: var(--c2);
+    color: var(--c2-ink);
   }
   .small {
     font-size: var(--text-sm);

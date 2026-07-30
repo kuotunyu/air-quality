@@ -1,0 +1,217 @@
+---
+/**
+ * Chapter 1 — the trend, and the two corrections it has to survive.
+ *
+ * Lifted out of `pages/index.astro` unchanged when the document became ten
+ * routes; the frontmatter here is exactly the part of that page's frontmatter
+ * this chapter used.
+ */
+import TrendChart from "./TrendChart.astro";
+import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
+import { n } from "../lib/chart";
+
+const firstYear = trend.years[0];
+const lastYear = trend.years[trend.years.length - 1];
+const firstValue = trend.all_stations[0] as number;
+const lastValue = trend.all_stations[trend.all_stations.length - 1] as number;
+
+const balancedSince = trend.panel.balanced_since as number;
+const balancedCount = (trend.panel.balanced_stations as string[]).length;
+
+// How far apart the two ways of computing a national mean actually land, over
+// the years where both exist. This is the number that decides whether the
+// network-growth caveat changes the story or merely qualifies it.
+const overlap = trend.years
+  .map((year, i) => ({ year, a: trend.all_stations[i], b: trend.balanced[i] }))
+  .filter((row) => row.a != null && row.b != null);
+const maxGap = Math.max(...overlap.map((r) => Math.abs((r.a as number) - (r.b as number))));
+
+// --- the second correction: how much of the fall was the weather -----------
+// Both lines come from M4's own monthly output, so the gap between them cannot
+// be the station set. `weather_share_of_fall` is the level difference across
+// this panel; `median_weather_share` is the median of per-station slope
+// ratios. Two different aggregations of the same fits, reported together
+// because their agreement is worth more than either alone.
+const dw = deweatherEvidence;
+const dwYears = dw.series.map((r) => r.year);
+const dwObserved = dw.series.map((r) => r.observed);
+const dwNormalised = dw.series.map((r) => r.normalised);
+const dwShare = dw.panel.weather_share_of_fall * 100;
+const dwGapNow = dwNormalised[dwNormalised.length - 1] - dwObserved[dwObserved.length - 1];
+// The year the observed line drops through the normalised one: before it the
+// weather was making things worse than average, after it better.
+const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normalised)?.year;
+
+const airzoneSeries = (trendByAirzone.series as {
+  name: string;
+  years: number[];
+  mean: (number | null)[];
+}[]).map((s, i) => ({
+  key: s.name,
+  label: s.name.replace("空品區", ""),
+  values: trend.years.map((year) => {
+    const at = s.years.indexOf(year);
+    return at === -1 ? null : s.mean[at];
+  }),
+  colour: `var(--c${i % 7})`,
+}));
+---
+
+<!-- ═══════════ 1. 趨勢 ═══════════ -->
+<section id="trend" class="page">
+  <p class="eyebrow">第一章</p>
+  <h2>長期趨勢與氣象校正</h2>
+
+  <p class="lede">
+    {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
+    {n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
+    <strong>監測網的測站數在同期間持續增加</strong>。
+  </p>
+
+  <p>
+    1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，
+    1998 年只有 5 個實驗性測點，2005 年才成為全國網絡。
+    拿「當年有回報的所有測站」平均，比較的是不同年份的不同地方，
+    趨勢裡有一部分來自測站網的組成改變，而非濃度改變。
+  </p>
+
+  <p>
+    所以這裡畫兩條線。<strong>全部測站</strong>是多數報導引用的數字；
+    <strong>固定樣本</strong>只保留 {balancedSince} 年以來每一年都有可比較資料的
+    {balancedCount} 個測站，前後比的是同一批地方。
+  </p>
+
+  <figure>
+    <TrendChart
+      years={trend.years}
+      series={[
+        {
+          key: "all",
+          label: "全部測站",
+          values: trend.all_stations,
+          colour: "var(--c1)",
+        },
+        {
+          key: "balanced",
+          label: `固定樣本（${balancedCount} 站，${balancedSince}–）`,
+          values: trend.balanced,
+          colour: "var(--c3)",
+          dash: "5 3",
+        },
+      ]}
+      guides={[
+        { value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" },
+        { value: 5, label: "WHO 年均指引 5", colour: "var(--who)" },
+      ]}
+      unit="μg/m³"
+    />
+    <figcaption>
+      全台 PM2.5 年均值。線在中斷處是真的斷開——那一年沒有足以計算的資料，
+      而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
+    </figcaption>
+  </figure>
+
+  <div class="note">
+    <strong>此項校正未改變結論，而陰性結果同樣需要報告。</strong>
+    兩條線在重疊年份的最大差距為 {n(maxGap, 2)} μg/m³。
+    {balancedSince} 年以後的下降因此不能歸因於後期加入的測站較為清潔；
+    在固定的測站集合上，下降同樣成立。若兩條線分岔，結論就必須修正。
+  </div>
+
+  <h3>氣象正規化：分離天氣與排放</h3>
+
+  <p>
+    上一個校正量到的差異在誤差範圍內。這一個不是——它改變下降幅度的解讀。
+  </p>
+
+  <p>
+    同樣一場東北季風，可以把中部的濃度壓下來，也可以把它悶住。
+    一年的空氣看起來變好，可能是排放真的少了，也可能只是那幾年的風比較幫忙。
+    要分開這兩件事，做法是<strong>把天氣抽掉再看一次</strong>：
+    用隨機森林學會「這個測站在什麼氣象條件下會有多少 PM2.5」，
+    然後對每一個時間點，把氣象變數從整段期間隨機重抽、預測很多次再平均。
+    得到的序列可以讀成「如果每一年的天氣都是這 18 年的平均，濃度會是多少」。
+  </p>
+
+  <figure>
+    <TrendChart
+      years={dwYears}
+      series={[
+        {
+          key: "observed",
+          label: "實際觀測",
+          values: dwObserved,
+          colour: "var(--c1)",
+        },
+        {
+          key: "normalised",
+          label: "氣象正規化後",
+          values: dwNormalised,
+          colour: "var(--c5)",
+          dash: "5 3",
+        },
+      ]}
+      guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
+      unit="μg/m³"
+    />
+    <figcaption>
+      {dw.panel.n_stations} 個測站、{dw.panel.balanced_since}–{dwYears[dwYears.length - 1]} 年，
+      兩條線都出自同一批列。實線是實際量到的；虛線是同一批資料在「平均天氣」下的樣子。
+      {dwCrossing && <>兩條線在 {dwCrossing} 年前後交叉。</>}
+    </figcaption>
+  </figure>
+
+  <div class="note caveat">
+    <p>
+      <strong>那個交叉點就是答案。</strong>
+      實際觀測從 {n(dwObserved[0], 1)} 掉到 {n(dwObserved[dwObserved.length - 1], 1)} μg/m³，
+      降了 {n(dw.panel.observed_fall, 1)}。但在平均天氣之下，
+      同一批測站只從 {n(dwNormalised[0], 1)} 掉到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
+      降了 {n(dw.panel.normalised_fall, 1)}。
+      差額 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
+      佔了整個下降的 {n(dwShare, 0)}%</strong>。
+    </p>
+    <p>
+      換句話說：{dwYears[0]} 年的天氣讓空氣看起來比排放本身更糟，
+      {dwYears[dwYears.length - 1]} 年的天氣讓它看起來比排放本身更好
+      （現在這個差距是 {n(dwGapNow, 1)} μg/m³）。
+      <strong>把兩者相加，就是那條實線比虛線陡的原因。</strong>
+    </p>
+  </div>
+
+  <p>
+    這個比例還可以用完全不同的方式再問一次。上面是<strong>全國面板的水準差</strong>；
+    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「天氣佔比」的中位數——
+    那個答案是 <strong>{n(dw.median_weather_share * 100, 1)}%</strong>，
+    與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
+    兩種聚合方式互相獨立，一致比任何單一數字更值得相信。
+    跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%——
+    {dw.n_significant} 個獨立配適的模型落在同一個窄帶裡，
+    是因為整座島共用同一套季風通風機制。
+  </p>
+
+  <div class="note">
+    <p>
+      <strong>這不是因果歸因，界線要劃清楚。</strong>
+      {dw.caveat}
+    </p>
+    <p>
+      還有一件事：正規化後的序列在<strong>年內幾乎是平的</strong>，
+      因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
+      那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像圖壞了。
+    </p>
+  </div>
+
+  <h3>各空品區</h3>
+  <p>
+    下降不是均勻的。中部與雲嘉南的起點高、降幅大；東部與離島本來就低，
+    幾乎沒有下降空間。
+  </p>
+
+  <figure>
+    <TrendChart years={trend.years} series={airzoneSeries} unit="μg/m³" height={360} />
+    <figcaption>
+      各空品區 PM2.5 年均值。同樣只採計年覆蓋率 ≥ 75% 的測站年。
+    </figcaption>
+  </figure>
+</section>

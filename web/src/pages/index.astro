@@ -1,479 +1,160 @@
 ---
+/**
+ * The way in.
+ *
+ * This page used to be the entire document: ten chapters in one scroll, 38,291px
+ * of it, 42 screens at a laptop height. That is not long-form, it is a page with
+ * no structure — the scrollbar thumb was four pixels tall, and PRODUCT.md's
+ * third reader ("wants to judge in thirty seconds whether this work is
+ * rigorous") had nothing to judge but the first fold.
+ *
+ * So the chapters are routes now and this page does the job an entry page should
+ * do: state the finding, show the network, and then lay out what the ten
+ * chapters actually settle — one line each, so the whole argument is legible
+ * before any of it is opened. The index is the substance of this page, not
+ * furniture attached to the top of it.
+ */
 import Base from "../layouts/Base.astro";
-import TrendChart from "../components/TrendChart.astro";
-import StationMap from "../components/StationMap.astro";
-import ChapterSpatial from "../components/ChapterSpatial.astro";
-import ChapterSources from "../components/ChapterSources.astro";
-import ChapterDetection from "../components/ChapterDetection.astro";
-import ChapterForecast from "../components/ChapterForecast.astro";
-import ChapterHealth from "../components/ChapterHealth.astro";
-import ChapterMethods from "../components/ChapterMethods.astro";
-import StationPicker from "../components/StationPicker.astro";
-import Explorer from "../components/Explorer.astro";
-import {
-  stations,
-  cards,
-  stationsWithoutCoordinates,
-  trend,
-  trendByAirzone,
-  cigaretteCaveat,
-  deweatherEvidence,
-} from "../lib/data";
+import Hero from "../components/Hero.astro";
+import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
+import { cards, trend } from "../lib/data";
 import { n } from "../lib/chart";
 
 const latestYear = Math.max(...cards.map((c) => c.year));
-const latest = cards.filter((c) => c.year >= latestYear - 1);
-const overWho = latest.filter((c) => c.annual_mean > 5).length;
-const overTaiwan = latest.filter((c) => c.annual_mean > 15).length;
-
-const sorted = [...latest].sort((a, b) => b.annual_mean - a.annual_mean);
-const dirtiest = sorted[0];
-const cleanest = sorted[sorted.length - 1];
-
-const firstYear = trend.years[0];
-const lastYear = trend.years[trend.years.length - 1];
-const firstValue = trend.all_stations[0] as number;
+const comparable = cards.filter((c) => c.year >= latestYear - 1);
 const lastValue = trend.all_stations[trend.all_stations.length - 1] as number;
-
 const balancedSince = trend.panel.balanced_since as number;
-const balancedCount = (trend.panel.balanced_stations as string[]).length;
-
-// The headline decline is quoted from the balanced window, not from the whole
-// record: before 2006 the PM2.5 network was five experimental sites, and a
-// percentage anchored there would be a statement about those five places.
 const balancedStart = trend.years.indexOf(balancedSince);
 const declineFrom = trend.all_stations[balancedStart] as number;
 const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
-
-// How far apart the two ways of computing a national mean actually land, over
-// the years where both exist. This is the number that decides whether the
-// network-growth caveat changes the story or merely qualifies it.
-const overlap = trend.years
-  .map((year, i) => ({ year, a: trend.all_stations[i], b: trend.balanced[i] }))
-  .filter((row) => row.a != null && row.b != null);
-const maxGap = Math.max(...overlap.map((r) => Math.abs((r.a as number) - (r.b as number))));
-
-// --- the second correction: how much of the fall was the weather -----------
-// Both lines come from M4's own monthly output, so the gap between them cannot
-// be the station set. `weather_share_of_fall` is the level difference across
-// this panel; `median_weather_share` is the median of per-station slope
-// ratios. Two different aggregations of the same fits, reported together
-// because their agreement is worth more than either alone.
-const dw = deweatherEvidence;
-const dwYears = dw.series.map((r) => r.year);
-const dwObserved = dw.series.map((r) => r.observed);
-const dwNormalised = dw.series.map((r) => r.normalised);
-const dwShare = dw.panel.weather_share_of_fall * 100;
-const dwGapNow = dwNormalised[dwNormalised.length - 1] - dwObserved[dwObserved.length - 1];
-// The year the observed line drops through the normalised one: before it the
-// weather was making things worse than average, after it better.
-const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normalised)?.year;
-
-const airzoneSeries = (trendByAirzone.series as {
-  name: string;
-  years: number[];
-  mean: (number | null)[];
-}[]).map((s, i) => ({
-  key: s.name,
-  label: s.name.replace("空品區", ""),
-  values: trend.years.map((year) => {
-    const at = s.years.indexOf(year);
-    return at === -1 ? null : s.mean[at];
-  }),
-  colour: `var(--c${i % 7})`,
-}));
 ---
 
 <Base
   title="air-quality — 台灣空氣品質再分析（1982–2025）"
   description="1982–2025 年、3.41 億筆環境部逐時觀測的開放重新分析：完整品管、逐時解析度，以及一章方法學對照。"
 >
-  <!-- ═══════════ 0. Hero ═══════════ -->
-  <section id="hero" class="page">
-    <p class="eyebrow">1982 – 2025 · 82 個測站 · 341,442,552 筆逐時觀測</p>
-    <h1>台灣空氣品質的<br />長期重新分析</h1>
+  <Hero />
+
+  <section id="chapters" class="page">
+    <p class="eyebrow">十章</p>
+    <h2>這份重新分析說了什麼</h2>
 
     <p class="lede">
-      {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
-      {n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。同一份資料也顯示，
-      {latestYear} 年有可比較資料的 {latest.length} 個測站中，
-      <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
-      {overTaiwan} 個超過台灣自己的標準（15 μg/m³）。
-      趨勢與水準是兩個不同的量，這兩項結果並不衝突。
+      每一章各自成頁，可以單獨讀完，也可以按順序讀下去。下面一行一章，
+      寫的是那一章<strong>解決掉什麼</strong>——不是它的標題，是它的結論。
     </p>
 
-    <div class="hero-grid">
-      <StationMap stations={stations} cards={cards} unplaced={stationsWithoutCoordinates} />
-
-      <div class="hero-stats grid">
-        <div class="card stat">
-          <span class="stat-value" style="color:var(--c5)">{n(dirtiest.annual_mean)}</span>
-          <span class="stat-label">{dirtiest.station_name}（{dirtiest.county}）年均最高</span>
-          <span class="stat-note">{dirtiest.year} 年 · μg/m³</span>
-        </div>
-        <div class="card stat">
-          <span class="stat-value" style="color:var(--c1)">{n(cleanest.annual_mean)}</span>
-          <span class="stat-label">{cleanest.station_name}（{cleanest.county}）年均最低</span>
-          <span class="stat-note">{cleanest.year} 年 · μg/m³</span>
-        </div>
-        <div class="card stat">
-          <span class="stat-value">{n(dirtiest.annual_mean / cleanest.annual_mean, 1)}×</span>
-          <span class="stat-label">島內最高與最低的倍數</span>
-          <span class="stat-note">直線距離不到 300 公里</span>
-        </div>
-
-        {/*
-          In the column beside the figure rather than below the whole grid.
-
-          The three cards came to 550px against the figure's 653px, so this
-          column ended in a 500px hole while the same paragraph, sitting in the
-          flow underneath, left another one to its right. Moving it up fills the
-          first and removes the second: the headline numbers and what the project
-          is now read as one block.
-        */}
-        <p class="note">
-          品管規則與資料管線全部開源，本頁每個數字都可獨立重算。
-          <a href="#mistakes">第八章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
-          該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
-          兩者逐項比對，量化每個方法選擇造成的差異。
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══════════ 1. 趨勢 ═══════════ -->
-  <section id="trend" class="page">
-    <p class="eyebrow">第一章</p>
-    <h2>長期趨勢與氣象校正</h2>
-
-    <p class="lede">
-      {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
-      {n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
-      <strong>監測網的測站數在同期間持續增加</strong>。
-    </p>
-
-    <p>
-      1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，
-      1998 年只有 5 個實驗性測點，2005 年才成為全國網絡。
-      拿「當年有回報的所有測站」平均，比較的是不同年份的不同地方，
-      趨勢裡有一部分來自測站網的組成改變，而非濃度改變。
-    </p>
-
-    <p>
-      所以這裡畫兩條線。<strong>全部測站</strong>是多數報導引用的數字；
-      <strong>固定樣本</strong>只保留 {balancedSince} 年以來每一年都有可比較資料的
-      {balancedCount} 個測站，前後比的是同一批地方。
-    </p>
-
-    <figure>
-      <TrendChart
-        years={trend.years}
-        series={[
-          {
-            key: "all",
-            label: "全部測站",
-            values: trend.all_stations,
-            colour: "var(--c1)",
-          },
-          {
-            key: "balanced",
-            label: `固定樣本（${balancedCount} 站，${balancedSince}–）`,
-            values: trend.balanced,
-            colour: "var(--c3)",
-            dash: "5 3",
-          },
-        ]}
-        guides={[
-          { value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" },
-          { value: 5, label: "WHO 年均指引 5", colour: "var(--who)" },
-        ]}
-        unit="μg/m³"
-      />
-      <figcaption>
-        全台 PM2.5 年均值。線在中斷處是真的斷開——那一年沒有足以計算的資料，
-        而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
-      </figcaption>
-    </figure>
-
-    <div class="note">
-      <strong>此項校正未改變結論，而陰性結果同樣需要報告。</strong>
-      兩條線在重疊年份的最大差距為 {n(maxGap, 2)} μg/m³。
-      {balancedSince} 年以後的下降因此不能歸因於後期加入的測站較為清潔；
-      在固定的測站集合上，下降同樣成立。若兩條線分岔，結論就必須修正。
-    </div>
-
-    <h3>氣象正規化：分離天氣與排放</h3>
-
-    <p>
-      上一個校正量到的差異在誤差範圍內。這一個不是——它改變下降幅度的解讀。
-    </p>
-
-    <p>
-      同樣一場東北季風，可以把中部的濃度壓下來，也可以把它悶住。
-      一年的空氣看起來變好，可能是排放真的少了，也可能只是那幾年的風比較幫忙。
-      要分開這兩件事，做法是<strong>把天氣抽掉再看一次</strong>：
-      用隨機森林學會「這個測站在什麼氣象條件下會有多少 PM2.5」，
-      然後對每一個時間點，把氣象變數從整段期間隨機重抽、預測很多次再平均。
-      得到的序列可以讀成「如果每一年的天氣都是這 18 年的平均，濃度會是多少」。
-    </p>
-
-    <figure>
-      <TrendChart
-        years={dwYears}
-        series={[
-          {
-            key: "observed",
-            label: "實際觀測",
-            values: dwObserved,
-            colour: "var(--c1)",
-          },
-          {
-            key: "normalised",
-            label: "氣象正規化後",
-            values: dwNormalised,
-            colour: "var(--c5)",
-            dash: "5 3",
-          },
-        ]}
-        guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
-        unit="μg/m³"
-      />
-      <figcaption>
-        {dw.panel.n_stations} 個測站、{dw.panel.balanced_since}–{dwYears[dwYears.length - 1]} 年，
-        兩條線都出自同一批列。實線是實際量到的；虛線是同一批資料在「平均天氣」下的樣子。
-        {dwCrossing && <>兩條線在 {dwCrossing} 年前後交叉。</>}
-      </figcaption>
-    </figure>
-
-    <div class="note caveat">
-      <p>
-        <strong>那個交叉點就是答案。</strong>
-        實際觀測從 {n(dwObserved[0], 1)} 掉到 {n(dwObserved[dwObserved.length - 1], 1)} μg/m³，
-        降了 {n(dw.panel.observed_fall, 1)}。但在平均天氣之下，
-        同一批測站只從 {n(dwNormalised[0], 1)} 掉到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
-        降了 {n(dw.panel.normalised_fall, 1)}。
-        差額 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
-        佔了整個下降的 {n(dwShare, 0)}%</strong>。
-      </p>
-      <p>
-        換句話說：{dwYears[0]} 年的天氣讓空氣看起來比排放本身更糟，
-        {dwYears[dwYears.length - 1]} 年的天氣讓它看起來比排放本身更好
-        （現在這個差距是 {n(dwGapNow, 1)} μg/m³）。
-        <strong>把兩者相加，就是那條實線比虛線陡的原因。</strong>
-      </p>
-    </div>
-
-    <p>
-      這個比例還可以用完全不同的方式再問一次。上面是<strong>全國面板的水準差</strong>；
-      另一種是對 {dw.n_significant} 個測站各自估斜率，再取「天氣佔比」的中位數——
-      那個答案是 <strong>{n(dw.median_weather_share * 100, 1)}%</strong>，
-      與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
-      兩種聚合方式互相獨立，一致比任何單一數字更值得相信。
-      跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%——
-      {dw.n_significant} 個獨立配適的模型落在同一個窄帶裡，
-      是因為整座島共用同一套季風通風機制。
-    </p>
+    <ol class="toc">
+      {
+        CHAPTERS.map((c) => (
+          <li>
+            <a href={href(c.slug)}>
+              <span class="toc-n">{chapterLabel(c.n)}</span>
+              <span class="toc-body">
+                <span class="toc-title">{c.title}</span>
+                <span class="toc-claim">{c.claim}</span>
+              </span>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
 
     <div class="note">
       <p>
-        <strong>這不是因果歸因，界線要劃清楚。</strong>
-        {dw.caveat}
+        <strong>先證明能重現，再說它錯。</strong>
+        <a href={href("methods")}>第八章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
+        該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
+        復刻先跑一遍原方法，證明數字對得上，才逐項量化每個方法選擇造成的差異。
       </p>
       <p>
-        還有一件事：正規化後的序列在<strong>年內幾乎是平的</strong>，
-        因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
-        那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像圖壞了。
+        {balancedSince} 年以來全台 PM2.5 年均值從 {n(declineFrom)} 降到 {n(lastValue)} μg/m³
+        （少了 {n(declinePct, 0)}%），而 {latestYear} 年有可比較資料的 {comparable.length} 個測站裡
+        仍有 {comparable.filter((c) => c.annual_mean > 5).length} 個高於 WHO 的年均指引值。
+        趨勢與水準是兩個量，兩者並不衝突——第一章處理前者，第二章處理後者。
       </p>
-    </div>
-
-    <h3>各空品區</h3>
-    <p>
-      下降不是均勻的。中部與雲嘉南的起點高、降幅大；東部與離島本來就低，
-      幾乎沒有下降空間。
-    </p>
-
-    <figure>
-      <TrendChart years={trend.years} series={airzoneSeries} unit="μg/m³" height={360} />
-      <figcaption>
-        各空品區 PM2.5 年均值。同樣只採計年覆蓋率 ≥ 75% 的測站年。
-      </figcaption>
-    </figure>
-  </section>
-
-  <!-- ═══════════ 2. 你住的地方 ═══════════ -->
-  <section id="yours" class="page">
-    <p class="eyebrow">第二章</p>
-    <h2>測站個別統計</h2>
-    <p class="lede">
-      選一個測站，看它最近一個「資料完整到可以比較」的年份。
-      已停用的測站給的是它停用前最後一個完整年份。
-    </p>
-
-    <StationPicker cards={cards} caveat={cigaretteCaveat} />
-  </section>
-
-  <!-- ═══════════ 3. 空氣從哪來 ═══════════ -->
-  <ChapterSpatial />
-
-  <ChapterSources />
-
-  <!-- ═══════════ 4. 偵測極限 ═══════════ -->
-  <ChapterDetection />
-
-  <!-- ═══════════ 5. 預測範圍 ═══════════ -->
-  <ChapterForecast />
-
-  <!-- ═══════════ 6. 健康負擔 ═══════════ -->
-  <ChapterHealth />
-
-  <!-- ═══════════ 7. 方法學對照 ═══════════ -->
-  <ChapterMethods />
-
-  <!-- ═══════════ 8. 資料探索器 ═══════════ -->
-  <Explorer />
-
-  <!-- ═══════════ 9. 資料與方法 ═══════════ -->
-  <section id="data" class="page">
-    <p class="eyebrow">第十章</p>
-    <h2>資料與方法</h2>
-
-    <p class="lede">
-      所有數字都可以自己重算。原始資料來自環境部空氣品質監測網公開的年度逐時檔，
-      管線、品管規則、分析程式全部開源。
-    </p>
-
-    {/*
-      A list, not three cards.
-
-      Three cards across this column gave each description 298px, which is
-      eleven Chinese characters a line — the narrowest measure on the site, in a
-      section whose whole job is explaining what you can download. And the three
-      are a sequence rather than a set of alternatives: the same observations at
-      coarsening resolution. A term-and-description list says that, and gives the
-      prose a width it can be read at.
-    */}
-    <dl class="layers">
-      <dt>L0 站-月</dt>
-      <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
-
-      <dt>L1 站-日</dt>
-      <dd>每個測項一個 Parquet，共 54.6 MB。給 DuckDB-WASM 或桌面工具用。</dd>
-
-      <dt>L2 站-時</dt>
-      <dd>
-        3.41 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
-        只發衍生產物與完整管線，跑一次 <code>twair ingest</code> 加
-        <code>twair build</code> 就能自己重建。
-      </dd>
-    </dl>
-
-    <div class="note caveat">
-      <strong>關於缺值。</strong>
-      這個專案不補值。無效值標記但不刪除、超出物理範圍的值保留原數字以供檢視、
-      覆蓋率不足的聚合直接<strong>不給平均值</strong>——寧可留一個洞，
-      也不給一個有偏誤的數字。網站上每條線的中斷都是真的中斷。
-    </div>
-
-    <div class="note">
-      <strong>逐時 PM2.5 的官方但書。</strong>
-      環境部 ReadMe 載明：PM2.5 自動監測（貝他射線衰減法）的小時值僅供預警參考，
-      不宜直接與 24 小時空氣品質標準比較。本站的日均、年均由小時值聚合而來，
-      引用時請一併理解這個限制。
     </div>
   </section>
 </Base>
 
 <style>
-  .qualified {
-    color: var(--text-muted);
-  }
-  .hero-grid {
-    display: grid;
-    gap: 2rem;
-    margin: 2.5rem 0;
-    align-items: start;
-  }
-  @media (min-width: 52rem) {
-    .hero-grid {
-      /* The map was capped at 340px and drew 73 stations into it, which is
-         what made it feel packed. With a coastline behind them it also has a
-         shape to fill, so it gets a real share of the fold. */
-      grid-template-columns: minmax(260px, 22rem) 1fr;
-      gap: 3rem;
-    }
-    /*
-     * Explicit placement, because the figure now ships two regions: the map and
-     * the prose about it. The map takes the narrow column; its notes drop to a
-     * full-width row underneath and pick up the page measure there, instead of
-     * wrapping at 20 characters inside a 22rem column.
-     */
-    /*
-     * `:global` on the two the figure owns, and not on `.hero-stats`.
-     *
-     * Astro scopes a component's styles by stamping its own id on both the
-     * selector and its own elements, so a rule written here silently fails to
-     * match anything rendered by StationMap — which is what happened: the notes
-     * row stayed in column one at 462px and kept the ragged measure this change
-     * exists to remove.
-     */
-    .hero-grid > :global(.map-wrap) {
-      grid-area: 1 / 1;
-    }
-    .hero-grid > .hero-stats {
-      grid-area: 1 / 2;
-    }
-    .hero-grid > :global(.map-notes) {
-      grid-area: 2 / 1 / auto / -1;
-    }
-  }
-  .hero-stats {
-    gap: 0.8rem;
-  }
-  .small {
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-    margin: 0;
-  }
-  .card h3 {
-    margin-bottom: 0.35rem;
+  /*
+   * The index is a numbered list because the document is a sequence — the
+   * numbers carry the reading order, which is information the reader needs.
+   * (Numbered markers as decoration on unordered sections would be scaffolding;
+   * these are an actual ordinal.)
+   *
+   * Rows rather than cards. Ten cards in a grid would give every chapter the
+   * same weight and the same shape, and would put each claim in a column about
+   * fourteen Chinese characters wide. A row lets the claim have the page's own
+   * measure, which is the width it was written for.
+   */
+  .toc {
+    list-style: none;
+    margin: var(--space-5) 0 var(--space-4);
+    padding: 0;
+    counter-reset: none;
   }
 
-  /*
-   * Term beside description, hairline between rows. The term column sizes to
-   * its content so the descriptions all start on one line, and they are capped
-   * at the page measure like every other paragraph rather than stretching to
-   * whatever the column happens to be.
-   */
-  .layers {
+  .toc li {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .toc li:last-child {
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .toc a {
     display: grid;
-    gap: 0 var(--space-4);
-    margin: var(--space-4) 0;
+    gap: 0.1rem var(--space-4);
+    padding: var(--space-3) 0;
+    text-decoration: none;
+    color: var(--text);
   }
-  @media (min-width: 40rem) {
-    .layers {
-      grid-template-columns: auto minmax(0, var(--measure));
+
+  /* The chapter number sizes to its own content and the title column takes the
+     rest, so every title starts on one vertical line down the list. */
+  @media (min-width: 34rem) {
+    .toc a {
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: baseline;
     }
   }
-  .layers dt {
+
+  .toc-n {
+    font-size: var(--text-sm);
     font-weight: 650;
-    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
     white-space: nowrap;
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--line-soft);
+    font-variant-numeric: tabular-nums;
   }
-  .layers dd {
-    margin: 0;
+
+  .toc-body {
+    display: grid;
+    gap: 0.2rem;
+    max-width: var(--measure);
+  }
+
+  .toc-title {
+    font-size: var(--text-lg);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .toc-claim {
     color: var(--text-muted);
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--line-soft);
-    text-wrap: pretty;
+    text-align: justify;
+    line-break: strict;
   }
-  /* On one column the term and its description are one row, so only the term
-     carries the rule. */
-  @media (max-width: 39.999rem) {
-    .layers dd {
-      border-top: 0;
-      padding-top: 0;
-    }
+
+  /* The whole row is the target, so the hover has to be on the row: an underline
+     under the title alone would suggest only the title is clickable. */
+  .toc a:hover .toc-title,
+  .toc a:focus-visible .toc-title {
+    color: var(--accent);
+  }
+
+  .toc a:hover .toc-n {
+    color: var(--accent);
   }
 </style>

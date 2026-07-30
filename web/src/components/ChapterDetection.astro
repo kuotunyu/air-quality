@@ -13,6 +13,7 @@
  */
 import detection from "../../public/data/story/detection-limit.json";
 import { linear, n } from "../lib/chart";
+import { href } from "../lib/chapters";
 
 const events = detection.events as {
   event: string;
@@ -230,7 +231,7 @@ const shortName = (name: string) =>
         <p>
           一條法規生效之後就一直生效，它不是一個有前後的視窗，而是一次制度轉變。
           該改變的是下降的<strong>速率</strong>。所以空污法修正改用分段迴歸，
-          跑在<a href="#trend">第一章</a>那條氣象正規化序列的逐月版本上——
+          跑在<a href={href("trend")}>第一章</a>那條氣象正規化序列的逐月版本上——
           那條線平滑（重抽樣把季節循環一起移除了，所以第一章只畫年度），
           解析不出十週的封城，卻正好適合問一個多年的下降有沒有轉折。
         </p>
@@ -276,7 +277,7 @@ const shortName = (name: string) =>
   }
   /* The real estimates are HTML dots now, so this is a colour, not a fill. */
   .plot-pt.real {
-    color: var(--c3);
+    color: var(--c3-ink);
     opacity: 0.8;
   }
   /* A strip has no y scale, so it has no y gutter and no key column. */
@@ -294,7 +295,7 @@ const shortName = (name: string) =>
     font-weight: 600;
   }
   .k-real {
-    color: var(--c3);
+    color: var(--c3-ink);
     font-weight: 600;
   }
   td.dim,
@@ -305,7 +306,7 @@ const shortName = (name: string) =>
     font-weight: 600;
   }
   td.worse {
-    color: var(--c4);
+    color: var(--c4-ink);
   }
   .small {
     font-size: var(--text-sm);

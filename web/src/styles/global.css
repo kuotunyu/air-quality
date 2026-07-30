@@ -2,23 +2,33 @@
  * Chalky, dense, restrained. A Morandi palette.
  *
  * One decision still governs everything: colour encodes concentration, so
- * nothing else may use saturated colour. What changed is the register. The
- * ramp used to be Tailwind-bright — #3b82f6 through #ef4444 — which is the
- * colour of a dashboard, not of a document you read for twenty minutes. Every
- * hue is now pulled down to Morandi chroma (0.058–0.095 in OKLCH, roughly a
- * third of what it was), and the greys carry a faint sage tint rather than the
- * cold blue they had.
+ * nothing else may use saturated colour. Chroma stays in the Morandi band
+ * (0.052–0.092 in OKLCH, about a third of the Tailwind-bright ramp this
+ * started from) — the colour of a document you read for twenty minutes, not of
+ * a dashboard.
  *
  * The hue *ordering* is untouched, because that is the encoding: cool through
  * warm to plum, low concentration to high, along the blue–yellow axis that
  * survives the common colour blindnesses. Muting a scale is a change of
  * register; reordering it would be a change of meaning.
  *
- * Every value below was solved rather than picked: for each token, the
- * lightest — that is, the most muted — lightness that still clears 4.5:1
- * against the most demanding surface it can land on (the chart card in light,
- * the raised card in dark). Morandi as far as the contrast floor allows, and
- * not one step further. Verified on five grounds in both themes.
+ * **Where this palette stops being Morandi, and why.** Morandi's own logic is
+ * close values — that is what makes those paintings calm. Applied to a data
+ * encoding it is fatal, and it had been applied: every ramp hue was solved for
+ * "the lightest lightness that still clears 4.5:1", a constraint with one
+ * answer per hue, so all seven landed within 0.018 of each other in lightness.
+ * Seven isoluminant hues cannot say "low to high" — hue reads as category,
+ * lightness reads as quantity — and isoluminant neighbours give the eye no
+ * value edge, which is what made the page tiring rather than calm. So the
+ * interface is Morandi (muted, tinted greys, close values) and the ramp is not:
+ * across the data scale lightness moves monotonically, 0.21 of it, and the
+ * ordering is carried twice.
+ *
+ * Values are written in `oklch()` rather than hex, so the three things that
+ * matter about each one — how light, how colourful, which hue — are readable
+ * in the source instead of being recoverable only by conversion. Every contrast
+ * claim below was measured in the browser against the composited backdrop, not
+ * computed from the token in isolation.
  *
  * Light is the default now. The reading situation is a desk in daytime, nine
  * chapters of prose and a dozen figures; that is a paper, and papers are light.
@@ -46,46 +56,107 @@
   font-size: clamp(18.2px, 17.2px + 0.34vw, 21px);
 
   /*
-   * Chroma zero. No hue at all, in either theme.
+   * A trace of hue, not none.
    *
-   * The sage tint was a Morandi reference, and it read as green — which on a
-   * page whose one rule is "colour encodes concentration" is the wrong thing to
-   * read. With the greys at chroma 0 the ramp is now the only thing anywhere on
-   * the page that has a hue, which is what the rule actually asks for.
+   * These were chroma 0 — mathematically neutral grey. That fixed a real
+   * problem (a sage tint at readable chroma looked green, on a page whose one
+   * rule is that hue means concentration) but it overshot: a surface at exactly
+   * zero chroma is the one grey the eye reads as dead. Morandi's greys are
+   * never neutral; they are greys that remember a colour.
+   *
+   * So the neutrals carry C 0.004–0.010, an order of magnitude below the ramp
+   * and below the threshold where anyone names a hue. The direction is the
+   * ramp's cool anchor (h 250) rather than warm, for a reason that matters
+   * here: 250 is the LOW-concentration end, so even if a reader did somehow
+   * read hue off a surface, it could not be mistaken for a high reading.
    */
-  --bg: #f5f5f5;
-  --bg-raised: #fefefe;
-  --bg-sunken: #ececec;
-  --line: #cfcfcf;
-  --line-soft: #e3e3e3;
+  --bg: oklch(0.970 0.004 250);
+  --bg-raised: oklch(0.993 0.003 250);
+  --bg-sunken: oklch(0.945 0.005 250);
+  --line: oklch(0.858 0.008 250);
+  --line-soft: oklch(0.918 0.006 250);
   /* The chapter divider, and the only line on the page that carries meaning
      rather than just separating two boxes. `--line` measures 1.63:1 against the
      body — fine for a table rule you are already looking at, not fine for the
      one mark that tells you a chapter changed. Solved at the lightest value that
-     still clears the 3:1 non-text threshold on `--bg`: 3.17:1 here. */
-  --rule: #8a8a8a;
+     still clears the 3:1 non-text threshold on `--bg`. */
+  --rule: oklch(0.635 0.010 250);
 
-  --text: #292929;
-  --text-muted: #5c5c5c;
-  --text-faint: #676767;
+  /* `--text-muted` and `--text-faint` used to sit 0.04 apart in lightness,
+     which is not a step anyone can see. Spread so the three inks read as three.
+     `--text-faint` is solved against `--bg-sunken` rather than `--bg`, because
+     the plot area is sunken and that is where almost every faint label lives —
+     solved against the page it measured 4.51 there and 4.19 on the surface it
+     actually sits on, which is 144 axis labels failing on a token that looked
+     fine in isolation. */
+  --text: oklch(0.280 0.008 250);
+  --text-muted: oklch(0.455 0.010 250);
+  --text-faint: oklch(0.522 0.010 250);
 
-  /* Concentration ramp, low to high. Hue order is the encoding and is
-     unchanged; chroma is Morandi (0.058–0.095), and each lightness is the
-     lightest that clears 4.5:1 on --bg-sunken, the darkest surface a chart
-     line lands on. Deuteranopes read the blue-to-yellow axis, so the ramp
-     never rests on red-versus-green. */
-  --c0: #486e94;
-  --c1: #39727c;
-  --c2: #4d735a;
-  --c3: #7f6735;
-  --c4: #925e3a;
-  --c5: #9d574c;
-  --c6: #895d7a;
+  /*
+   * Concentration ramp, low to high — and the one place on this page where
+   * Morandi's own logic must NOT be followed.
+   *
+   * Morandi palettes are close-valued: that is what makes them calm. A data
+   * encoding that is close-valued simply stops encoding. The previous ramp
+   * solved every hue for "the lightest lightness that still clears 4.5:1",
+   * and that constraint has one solution per hue — so all seven converged onto
+   * the same lightness. Measured: L 0.518 to 0.536, a spread of 0.018 across
+   * the whole scale. Two consequences, and the reader feels both:
+   *
+   *   - magnitude became unreadable. The visual system reads quantity mostly
+   *     through lightness; hue alone reads as category. Seven isoluminant hues
+   *     say "seven kinds of thing", not "low to high".
+   *   - it was actively uncomfortable to look at. Adjacent hues at equal
+   *     lightness give the eye no value edge to focus on, so boundaries
+   *     shimmer instead of resolving.
+   *
+   * Now the lightness is monotone across the scale and the hue order is
+   * untouched, which means the ordering is carried twice — once in hue, once in
+   * value. Chroma stays inside the Morandi band (0.052–0.092) and rises toward
+   * the high end, so the top of the scale is the most insistent colour on the
+   * page. Deuteranopes read the blue-to-yellow axis, so the ramp still never
+   * rests on red-versus-green, and now they also get the value ramp.
+   */
+  --c0: oklch(0.606 0.054 249);
+  --c1: oklch(0.585 0.058 210);
+  --c2: oklch(0.550 0.060 155);
+  --c3: oklch(0.515 0.072 84);
+  --c4: oklch(0.480 0.082 56);
+  --c5: oklch(0.445 0.092 30);
+  --c6: oklch(0.410 0.086 340);
 
-  /* Reference lines are deliberately not part of the ramp. */
-  --who: #39727c;
-  --taiwan: #7f6735;
-  --accent: #406e95;
+  /* Reference lines are deliberately not part of the ramp: they are annotation,
+     so they sit at one shared lightness (a guideline is not a quantity) and at
+     lower chroma than the data they cross. */
+  --who: oklch(0.545 0.050 210);
+  --taiwan: oklch(0.545 0.062 60);
+  --accent: oklch(0.505 0.085 250);
+
+  /* Which extreme a data colour is darkened (or lightened) toward to become
+     legible as text. It is the opposite end from this theme's paper, which is
+     why it is a token rather than a literal in the mix. */
+  --ink-mix: oklch(0.16 0.01 250);
+
+  /*
+   * The ramp again, for when a data colour has to be TYPE rather than a mark.
+   *
+   * Derived rather than hand-picked, so the two can never drift apart: same
+   * hue, same order, pulled toward `--ink-mix` until it clears 4.5:1. A label,
+   * a table cell and a tag can therefore say "this is the c5 series" at full
+   * legibility while the line and the dot keep the true c5.
+   *
+   * This exists because the ramp's light end is light BY DESIGN — that is what
+   * gives the scale its value ordering — and light is what fails as text. The
+   * two requirements are genuinely incompatible in one token, so there are two.
+   */
+  --c0-ink: color-mix(in oklab, var(--c0) 72%, var(--ink-mix));
+  --c1-ink: color-mix(in oklab, var(--c1) 72%, var(--ink-mix));
+  --c2-ink: color-mix(in oklab, var(--c2) 74%, var(--ink-mix));
+  --c3-ink: color-mix(in oklab, var(--c3) 78%, var(--ink-mix));
+  --c4-ink: color-mix(in oklab, var(--c4) 82%, var(--ink-mix));
+  --c5-ink: color-mix(in oklab, var(--c5) 86%, var(--ink-mix));
+  --c6-ink: color-mix(in oklab, var(--c6) 90%, var(--ink-mix));
 
   /*
    * Surfaces that carry a caveat or a withheld result. Tinted rather than
@@ -104,11 +175,11 @@
    * a reader has to hunt for. WCAG puts meaningful non-text graphics at 3:1,
    * and these are solved to exactly that.
    */
-  --map-line: #868686;
+  --map-line: oklch(0.618 0.007 250);
 
-  --tint-neutral: #efefef;
-  --tint-caution: #f7f0e2;
-  --tint-caution-edge: #decfb0;
+  --tint-neutral: oklch(0.948 0.005 250);
+  --tint-caution: oklch(0.958 0.022 85);
+  --tint-caution-edge: oklch(0.860 0.048 85);
 
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
@@ -142,8 +213,13 @@
    * a body of 1 — every step within 15% of its neighbour, which is why nothing
    * read as a level. `h3` at 1.15rem sat 1.4px above body text.
    */
-  --text-xs: 0.84rem;
-  --text-sm: 0.93rem;
+  /* The small end was both small and compressed. Measured at a 21px root:
+     `--text-xs` rendered 17.6px and `--text-sm` 19.5px, against a 21px body —
+     so the two "small" steps were 1.075x and 1.19x apart from body while the
+     steps above body are 1.2x and 1.44x. The scale had a flat bottom and a
+     committed top. Both smalls move up, and the gap between them widens. */
+  --text-xs: 0.9rem;
+  --text-sm: 0.96rem;
   --text-base: 1rem;
   --text-lg: 1.2rem;
   --text-xl: 1.44rem;
@@ -163,10 +239,15 @@
    * Measured after pinning: 139 pieces of chart text between 12 and 14px, in a
    * document whose smallest running text is 16.4px and whose captions are
    * 18.1px — an axis label smaller than the sentence describing it.
+   *
+   * Raised again for the same reason, one level up: 17px next to a 21px body is
+   * an axis label 19% smaller than the sentence describing it, and 148 text
+   * nodes on the page still sat at that size. A figure's annotation should not
+   * be the smallest type in the document.
    */
-  --chart-tick: 17px;
-  --chart-label: 17px;
-  --chart-micro: 16px;
+  --chart-tick: 19px;
+  --chart-label: 19px;
+  --chart-micro: 18px;
 
   /* Spacing rhythm. Related things sit one step apart, unrelated things three;
      using the same gap everywhere is what makes a page read as undifferentiated. */
@@ -210,40 +291,49 @@
  * themes encode the same thing; only the lightness moves, and here it moves the
  * other way, toward Morandi's dusty pastels.
  *
- * The greys are chroma zero here too, so the two themes are recognisably one
- * palette: same hue order, same absence of hue everywhere else.
+ * The greys carry the same trace of hue at the same cool anchor, so the two
+ * themes are recognisably one palette: same hue order, same faint direction.
+ *
+ * The lightness ramp runs the OTHER WAY here, and that is not a slip. A
+ * sequential scale has to move away from its ground: on a chalky page low
+ * concentration is the lightest colour and high is the darkest, and on a
+ * near-black page that ordering would bury the top of the scale in the
+ * background. Hue order is identical in both, so both encode the same thing;
+ * only the direction of the value ramp follows the paper.
  */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171717;
-    --bg-raised: #232323;
-    --bg-sunken: #0f0f0f;
-    --line: #3c3c3c;
-    --line-soft: #2c2c2c;
-    /* Same solve against the dark body: 3.37:1. */
-    --rule: #6b6b6b;
+    --bg: oklch(0.205 0.005 250);
+    --bg-raised: oklch(0.262 0.006 250);
+    --bg-sunken: oklch(0.168 0.005 250);
+    --line: oklch(0.362 0.009 250);
+    --line-soft: oklch(0.286 0.007 250);
+    /* Same solve against the dark body. */
+    --rule: oklch(0.530 0.010 250);
 
-    --text: #e9e9e9;
-    --text-muted: #b7b7b7;
-    --text-faint: #a0a0a0;
+    --text: oklch(0.935 0.005 250);
+    --text-muted: oklch(0.780 0.008 250);
+    --text-faint: oklch(0.700 0.009 250);
 
-    --c0: #6990b8;
-    --c1: #5c96a0;
-    --c2: #6f957b;
-    --c3: #a28956;
-    --c4: #b7815b;
-    --c5: #c3796d;
-    --c6: #ad7f9d;
+    --c0: oklch(0.598 0.055 249);
+    --c1: oklch(0.620 0.058 210);
+    --c2: oklch(0.655 0.058 155);
+    --c3: oklch(0.690 0.070 84);
+    --c4: oklch(0.725 0.080 56);
+    --c5: oklch(0.760 0.088 30);
+    --c6: oklch(0.795 0.078 340);
 
-    --who: #5c96a0;
-    --taiwan: #a28956;
-    --accent: #6291ba;
+    --who: oklch(0.665 0.050 210);
+    --taiwan: oklch(0.700 0.062 60);
+    --accent: oklch(0.700 0.075 250);
 
-    --map-line: #616160;
+    --ink-mix: oklch(0.99 0.004 250);
 
-    --tint-neutral: #202020;
-    --tint-caution: #2a251b;
-    --tint-caution-edge: #54472c;
+    --map-line: oklch(0.542 0.009 250);
+
+    --tint-neutral: oklch(0.245 0.006 250);
+    --tint-caution: oklch(0.258 0.022 85);
+    --tint-caution-edge: oklch(0.402 0.048 85);
   }
 }
 
@@ -680,6 +770,25 @@ figcaption {
   position: absolute;
   white-space: nowrap;
   line-height: 1;
+}
+
+/*
+ * A series label is text, and text painted in a mark colour cannot be trusted.
+ *
+ * Giving the ramp a real lightness range means its light end is, by design,
+ * light — and light is exactly what fails as type. Measured after the ramp
+ * change: 156 elements dropped below 4.5:1, every one of them a line-end
+ * series label wearing its own series colour.
+ *
+ * So the mark colour arrives as `--mark` and the ink is derived from it here,
+ * mixed toward whichever extreme this theme's paper is furthest from. The line,
+ * the dot and the label still read as one series — same hue — while the label
+ * alone is dark enough to be read. The dots keep `color:` directly, because a
+ * dot is a mark and answers to the 3:1 graphics threshold, not to 4.5:1.
+ */
+.plot-keys span,
+.plot-note {
+  color: color-mix(in oklab, var(--mark, currentColor) 72%, var(--ink-mix));
 }
 
 .plot-y span {

@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import { generatedAt, gitSha } from "../lib/data";
+import { CHAPTERS, href } from "../lib/chapters";
 
 interface Props {
   title: string;
@@ -10,19 +11,16 @@ interface Props {
 const { title, description } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const sections = [
-  { id: "hero", label: "全台" },
-  { id: "trend", label: "趨勢" },
-  { id: "yours", label: "測站統計" },
-  { id: "space", label: "空間結構" },
-  { id: "sources", label: "污染來向" },
-  { id: "detection", label: "偵測極限" },
-  { id: "forecast", label: "預測技巧" },
-  { id: "health", label: "健康負擔" },
-  { id: "mistakes", label: "方法學對照" },
-  { id: "explore", label: "資料查詢" },
-  { id: "data", label: "資料" },
-];
+/*
+ * Which chapter is open, so the nav can say so.
+ *
+ * `Astro.url.pathname` carries the configured base on a project site, so the
+ * comparison is made on the last segment rather than on the whole path — that
+ * way it is right both at `/trend` locally and at `/air-quality/trend` on
+ * Pages, which is the mismatch that only shows up in production.
+ */
+const segment = Astro.url.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
+const current = CHAPTERS.find((c) => c.slug === segment)?.slug ?? null;
 ---
 
 <!doctype html>
@@ -39,16 +37,21 @@ const sections = [
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0e13'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%2322d3ee'/%3E%3C/svg%3E" />
   </head>
   <body>
-    <a href="#hero" class="visually-hidden">跳到主要內容</a>
+    <a href="#main" class="visually-hidden">跳到主要內容</a>
 
     <nav class="topbar" aria-label="章節">
       <div class="topbar-inner page">
         <a class="brand" href={base || "/"}>air-<span>quality</span></a>
         <ul>
           {
-            sections.map((s) => (
+            CHAPTERS.map((c) => (
               <li>
-                <a href={`#${s.id}`}>{s.label}</a>
+                <a
+                  href={href(c.slug)}
+                  aria-current={current === c.slug ? "page" : undefined}
+                >
+                  {c.nav}
+                </a>
               </li>
             ))
           }
@@ -57,7 +60,40 @@ const sections = [
       <div class="progress" aria-hidden="true"></div>
     </nav>
 
-    <main>
+    {/*
+      Bring the open chapter into view in the nav strip.
+
+      With ten routes the bar is wider than a phone and scrolls horizontally, so
+      on 第八章 the marked item sits off-screen to the right and the navigation
+      shows the reader everything except where they are. Four lines, no
+      dependency, and `instant` because this is not a transition the reader
+      asked for — it is the bar being drawn in the right place to begin with.
+
+      Without JavaScript the strip simply starts at the left, which is the
+      behaviour it had before. Nothing here gates content on script.
+    */}
+    <script is:inline>
+      (() => {
+        const strip = document.querySelector(".topbar ul");
+        const here = document.querySelector('.topbar a[aria-current="page"]');
+        if (!strip || !here) return;
+        // Set scrollLeft on the strip rather than calling scrollIntoView: that
+        // method is free to scroll any ancestor, including the document, and the
+        // one thing this must not do is move the page the reader just opened.
+        //
+        // Measured from bounding rects, not `offsetLeft`. `.topbar` is sticky,
+        // which makes it a positioned ancestor, so `offsetLeft` is the distance
+        // from the BAR — brand and page padding included — rather than from the
+        // scroller. Using it centred 趨勢 at scrollLeft 36 when the right answer
+        // was 0, and left 方法學對照 cut off at the edge.
+        const strip_rect = strip.getBoundingClientRect();
+        const here_rect = here.getBoundingClientRect();
+        strip.scrollLeft +=
+          here_rect.left - strip_rect.left - (strip_rect.width - here_rect.width) / 2;
+      })();
+    </script>
+
+    <main id="main">
       <slot />
     </main>
 
@@ -94,11 +130,11 @@ const sections = [
       /*
        * Reading progress, drawn on the bar the reader is already looking at.
        *
-       * This document is about thirty screens deep, and the honest answer to
-       * "why does this feel long" is that it is long — nine chapters and ten
-       * thousand characters. What it was missing is any way to tell how much of
-       * that is left, which is the difference between a long read and an
-       * endless one.
+       * Per chapter now, not per document. When this was one 42-screen page the
+       * bar was answering "how much of the whole thing is left"; with a route
+       * per chapter it answers "how much of this chapter is left", which is the
+       * question a reader on a 5-screen page actually has. The chapter's own
+       * prev/next footer answers the other one.
        *
        * Driven by a scroll-progress timeline, so there is no scroll listener
        * and nothing to keep in sync; where the timeline is unsupported the rule
@@ -179,6 +215,23 @@ const sections = [
       }
       .topbar a:hover {
         color: var(--text);
+      }
+      /* The nav went from eleven in-page anchors to eleven links to other pages,
+         and a list of links to elsewhere has to say which one is here — otherwise
+         the reader's own position is the one thing the navigation does not tell
+         them. Weight and ink, plus an underline that sits on the bar's own edge
+         rather than under the word, so the marker cannot be mistaken for a hover
+         state. */
+      .topbar a[aria-current="page"] {
+        color: var(--text);
+        font-weight: 650;
+      }
+      .topbar a[aria-current="page"]::after {
+        content: "";
+        display: block;
+        height: 2px;
+        margin-top: 0.42rem;
+        background: var(--accent);
       }
       footer {
         border-top: 1px solid var(--line-soft);

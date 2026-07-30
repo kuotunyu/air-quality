@@ -1,0 +1,139 @@
+---
+/**
+ * One chapter, one page.
+ *
+ * Everything a chapter page needs beyond its own content: the title in the tab,
+ * and the footer that says where you are in a ten-part document and where to go
+ * next. The chapter's own `<section>` still carries its marker and heading, so a
+ * chapter component is unchanged by being routed — that is the point of doing
+ * the split this way rather than rewriting ten components.
+ *
+ * The prev/next pair is not decoration. A sequential document read one page at a
+ * time has to answer "what comes after this" without sending the reader back to
+ * an index, and it is the only affordance that makes ten routes feel like one
+ * document rather than ten pages that happen to share a stylesheet.
+ */
+import Base from "./Base.astro";
+import { CHAPTERS, chapterBySlug, chapterLabel, href, neighbours } from "../lib/chapters";
+
+interface Props {
+  slug: string;
+  /** Overrides the registry's `claim` for the page description when a chapter
+   *  wants a longer one. Most do not. */
+  description?: string;
+}
+
+const { slug, description } = Astro.props;
+const chapter = chapterBySlug(slug);
+const { prev, next } = neighbours(slug);
+---
+
+<Base
+  title={`${chapterLabel(chapter.n)}　${chapter.title} — air-quality`}
+  description={description ?? chapter.claim}
+>
+  <slot />
+
+  <nav class="chapter-nav page" aria-label="章節導覽">
+    <a class="step" href={href()} data-dir="up">
+      <span class="step-role">目錄</span>
+      <span class="step-title">全部 {CHAPTERS.length} 章</span>
+    </a>
+
+    {
+      prev ? (
+        <a class="step" href={href(prev.slug)} data-dir="prev">
+          <span class="step-role">← {chapterLabel(prev.n)}</span>
+          <span class="step-title">{prev.title}</span>
+        </a>
+      ) : (
+        <span class="step is-end">
+          <span class="step-role">序</span>
+          <span class="step-title">這是第一章</span>
+        </span>
+      )
+    }
+
+    {
+      next ? (
+        <a class="step" href={href(next.slug)} data-dir="next">
+          <span class="step-role">{chapterLabel(next.n)} →</span>
+          <span class="step-title">{next.title}</span>
+        </a>
+      ) : (
+        <span class="step is-end">
+          <span class="step-role">跋</span>
+          <span class="step-title">這是最後一章</span>
+        </span>
+      )
+    }
+  </nav>
+</Base>
+
+<style>
+  .chapter-nav {
+    display: grid;
+    gap: var(--space-3);
+    padding-block: clamp(2rem, 4vw, 3rem);
+    border-top: 1px solid var(--line-soft);
+  }
+
+  /* Three across once there is room, and in reading order: index, back, on.
+     Below that they stack, because a 「方法選擇的量化代價」 does not fit a third
+     of 375px and truncating a chapter title to make a grid work is the wrong
+     trade. */
+  @media (min-width: 46rem) {
+    .chapter-nav {
+      grid-template-columns: auto 1fr 1fr;
+      gap: var(--space-4);
+    }
+    /* Next sits hard right so the forward direction is where the eye expects it. */
+    .step[data-dir="next"],
+    .step.is-end:last-child {
+      text-align: right;
+    }
+  }
+
+  .step {
+    display: grid;
+    gap: 0.15rem;
+    padding: var(--space-3) 0;
+    text-decoration: none;
+    color: var(--text);
+    border-top: 1px solid transparent;
+    transition: border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .step-role {
+    font-size: var(--text-sm);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step-title {
+    font-size: var(--text-lg);
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  a.step:hover .step-title,
+  a.step:focus-visible .step-title {
+    color: var(--accent);
+  }
+
+  a.step:hover {
+    border-top-color: var(--rule);
+  }
+
+  .step.is-end .step-title {
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .step {
+      transition: none;
+    }
+  }
+</style>

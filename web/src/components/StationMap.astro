@@ -126,8 +126,16 @@ const unitsPerPx = width / MIN_RENDER_PX;
 // own `line-height`, because inheriting the body's 1.7 made every box 27px tall
 // against an estimate of 17 and let two labels overlap on a map that had been
 // checked and declared clear.
-const charWidth = 16 * unitsPerPx;
-const labelHeight = 16 * 1.15 * unitsPerPx + 4 * unitsPerPx;
+// Must equal the rendered `--chart-micro` that `.county-label` sets below. It
+// is repeated here rather than read, because this maths runs at build time and
+// the CSS variable does not exist until the browser has the stylesheet — so the
+// two can only be kept in step by being changed together. They have already
+// drifted once: the label inherited the body's 1.7 line-height while this
+// assumed 1.15, every box came out 27px against an estimate of 17, and two
+// labels overlapped on a map that had been checked and declared clear.
+const LABEL_PX = 18;
+const charWidth = LABEL_PX * unitsPerPx;
+const labelHeight = LABEL_PX * 1.15 * unitsPerPx + 4 * unitsPerPx;
 
 const labelled: { name: string; x: number; y: number }[] = [];
 const boxes: [number, number, number, number][] = [];
