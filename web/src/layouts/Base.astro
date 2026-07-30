@@ -187,7 +187,11 @@ const sections = [
       }
       footer p {
         margin: 0 0 0.4rem;
-        max-width: none;
+        /* Not `none`. Unbounded, the provenance line ran the full 1,145px
+           column at about 50 characters — the longest measure on the page, in
+           the smallest type on it. It is prose, so it reads at the same width
+           as prose. */
+        max-width: var(--measure);
       }
       footer .dim {
         /* No alpha. `--text-faint` is already tuned to clear 4.5:1 against the

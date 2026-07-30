@@ -120,15 +120,24 @@ const airzoneSeries = (trendByAirzone.series as {
           <span class="stat-label">島內最高與最低的倍數</span>
           <span class="stat-note">直線距離不到 300 公里</span>
         </div>
+
+        {/*
+          In the column beside the figure rather than below the whole grid.
+
+          The three cards came to 550px against the figure's 653px, so this
+          column ended in a 500px hole while the same paragraph, sitting in the
+          flow underneath, left another one to its right. Moving it up fills the
+          first and removes the second: the headline numbers and what the project
+          is now read as one block.
+        */}
+        <p class="note">
+          品管規則與資料管線全部開源，本頁每個數字都可獨立重算。
+          <a href="#mistakes">第七章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
+          該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
+          兩者逐項比對，量化每個方法選擇造成的差異。
+        </p>
       </div>
     </div>
-
-    <p class="note">
-      品管規則與資料管線全部開源，本頁每個數字都可獨立重算。
-      <a href="#mistakes">第七章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
-      該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = 3.41 億。
-      兩者逐項比對，量化每個方法選擇造成的差異。
-    </p>
   </section>
 
   <!-- ═══════════ 1. 趨勢 ═══════════ -->
@@ -324,28 +333,30 @@ const airzoneSeries = (trendByAirzone.series as {
       管線、品管規則、分析程式全部開源。
     </p>
 
-    <div class="grid grid-3">
-      <div class="card">
-        <h3>L0 站-月</h3>
-        <p class="small">
-          每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。
-        </p>
-      </div>
-      <div class="card">
-        <h3>L1 站-日</h3>
-        <p class="small">
-          每個測項一個 Parquet，共 54.6 MB。給 DuckDB-WASM 或桌面工具用。
-        </p>
-      </div>
-      <div class="card">
-        <h3>L2 站-時</h3>
-        <p class="small">
-          3.41 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
-          只發衍生產物與完整管線，跑一次 <code>twair ingest</code> 加
-          <code>twair build</code> 就能自己重建。
-        </p>
-      </div>
-    </div>
+    {/*
+      A list, not three cards.
+
+      Three cards across this column gave each description 298px, which is
+      eleven Chinese characters a line — the narrowest measure on the site, in a
+      section whose whole job is explaining what you can download. And the three
+      are a sequence rather than a set of alternatives: the same observations at
+      coarsening resolution. A term-and-description list says that, and gives the
+      prose a width it can be read at.
+    */}
+    <dl class="layers">
+      <dt>L0 站-月</dt>
+      <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
+
+      <dt>L1 站-日</dt>
+      <dd>每個測項一個 Parquet，共 54.6 MB。給 DuckDB-WASM 或桌面工具用。</dd>
+
+      <dt>L2 站-時</dt>
+      <dd>
+        3.41 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
+        只發衍生產物與完整管線，跑一次 <code>twair ingest</code> 加
+        <code>twair build</code> 就能自己重建。
+      </dd>
+    </dl>
 
     <div class="note caveat">
       <strong>關於缺值。</strong>
@@ -381,6 +392,30 @@ const airzoneSeries = (trendByAirzone.series as {
       grid-template-columns: minmax(260px, 22rem) 1fr;
       gap: 3rem;
     }
+    /*
+     * Explicit placement, because the figure now ships two regions: the map and
+     * the prose about it. The map takes the narrow column; its notes drop to a
+     * full-width row underneath and pick up the page measure there, instead of
+     * wrapping at 20 characters inside a 22rem column.
+     */
+    /*
+     * `:global` on the two the figure owns, and not on `.hero-stats`.
+     *
+     * Astro scopes a component's styles by stamping its own id on both the
+     * selector and its own elements, so a rule written here silently fails to
+     * match anything rendered by StationMap — which is what happened: the notes
+     * row stayed in column one at 462px and kept the ragged measure this change
+     * exists to remove.
+     */
+    .hero-grid > :global(.map-wrap) {
+      grid-area: 1 / 1;
+    }
+    .hero-grid > .hero-stats {
+      grid-area: 1 / 2;
+    }
+    .hero-grid > :global(.map-notes) {
+      grid-area: 2 / 1 / auto / -1;
+    }
   }
   .hero-stats {
     gap: 0.8rem;
@@ -392,5 +427,44 @@ const airzoneSeries = (trendByAirzone.series as {
   }
   .card h3 {
     margin-bottom: 0.35rem;
+  }
+
+  /*
+   * Term beside description, hairline between rows. The term column sizes to
+   * its content so the descriptions all start on one line, and they are capped
+   * at the page measure like every other paragraph rather than stretching to
+   * whatever the column happens to be.
+   */
+  .layers {
+    display: grid;
+    gap: 0 var(--space-4);
+    margin: var(--space-4) 0;
+  }
+  @media (min-width: 40rem) {
+    .layers {
+      grid-template-columns: auto minmax(0, var(--measure));
+    }
+  }
+  .layers dt {
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  .layers dd {
+    margin: 0;
+    color: var(--text-muted);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--line-soft);
+    text-wrap: pretty;
+  }
+  /* On one column the term and its description are one row, so only the term
+     carries the rule. */
+  @media (max-width: 39.999rem) {
+    .layers dd {
+      border-top: 0;
+      padding-top: 0;
+    }
   }
 </style>

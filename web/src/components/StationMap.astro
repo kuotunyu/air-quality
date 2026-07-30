@@ -227,7 +227,20 @@ const dots = main.map((s) => {
     }
     <span class="legend-item unit">μg/m³ 年均</span>
   </div>
+</div>
 
+{/*
+  A sibling region rather than part of the figure.
+
+  These two paragraphs are prose, and inside the hero's 22rem figure column they
+  wrapped at 20-24 Chinese characters a line while every other paragraph on the
+  page ran at 40 — three different measures stacked vertically, which is most of
+  why the page read as untidy. They were also what made the figure column 1,060px
+  tall against the 550px of statistics beside it, leaving a 510x620px hole.
+
+  The parent places this at the page measure; see `.hero-grid` in index.astro.
+*/}
+<div class="map-notes">
   <p class="aside">
     縣市界為內政部國土測繪中心「直轄市、縣市界線（TWD97 經緯度）」1140318 版，
     原始比例尺 1:5000，依政府資料開放授權條款第 1 版使用。
@@ -259,6 +272,11 @@ const dots = main.map((s) => {
   .map-wrap {
     display: flex;
     flex-direction: column;
+  }
+
+  /* Placed by the parent; on its own it is just prose at the page measure. */
+  .map-notes {
+    max-width: var(--measure);
   }
 
   /*

@@ -63,6 +63,14 @@ jobs:
           test -f dist/data/story/pitfalls.json || { echo "chapter 5 evidence missing"; exit 1; }
           echo "data layer present: $(du -sh dist/data | cut -f1)"
 
+      # A source newline is whitespace in HTML, and Chinese has no inter-word
+      # spaces — so every wrapped source line used to become a visible gap
+      # mid-sentence. 248 of them, invisible to the type checker, the tests and
+      # anyone not reading the Chinese. Checked on the real output because the
+      # middleware that closes them only runs at render time.
+      - name: No invented spaces inside Chinese sentences
+        run: python scripts/check_cjk_spacing.py
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
