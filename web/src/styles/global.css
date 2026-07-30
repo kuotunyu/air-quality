@@ -115,6 +115,27 @@
     "PingFang TC", "Microsoft JhengHei", sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+  /* Numbers are data, and data on this site is content — but they were set in
+     `--font-mono`, which on Windows resolves to Cascadia Mono: a terminal
+     face, boxy at weight 600, with a heavy centred period that made 「19.6」
+     read as a typo. A monospace face was only ever doing one job here —
+     aligning digits — and `font-variant-numeric: tabular-nums` does that job
+     in a text face (Segoe UI, SF Pro and Noto all carry real tabular figures).
+     `--font-mono` stays for code and terminal output only; the Explorer's SQL
+     box keeps it on purpose, because there it IS a terminal.
+
+     This is not an alias of `--font-sans`, and the difference was measured:
+     `ui-sans-serif` and `system-ui` are locale-aware, so on a zh-TW Windows
+     they resolve straight to Microsoft JhengHei and the "Segoe UI" written
+     after them never gets a glyph. Canvas-measuring 「19.6」 against each
+     candidate face identified the renderer: 81.66px = JhengHei, not Segoe's
+     70.39. For prose that is the right outcome — the text is Chinese. For a
+     figure it is not, so here the Latin faces come FIRST and the generics
+     after; digits land in Segoe UI / SF Pro, and any CJK character in the same
+     run still falls through to the CJK faces. */
+  --font-numeric:
+    "Segoe UI", -apple-system, ui-sans-serif, system-ui, "Noto Sans TC",
+    "PingFang TC", "Microsoft JhengHei", sans-serif;
 
   /*
    * Modular scale, ratio ~1.26. The previous scale ran from 0.78 to 1.15 around
@@ -519,7 +540,7 @@ section > :last-child > :last-child:last-child {
 }
 
 .stat-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   font-size: clamp(1.8rem, 4.2vw, 2.5rem);
   font-weight: 600;
   line-height: 1.05;
@@ -665,7 +686,7 @@ figcaption {
   right: 0;
   transform: translateY(-50%);
   font-size: var(--chart-tick);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   color: var(--text-faint);
 }
@@ -674,7 +695,7 @@ figcaption {
   top: 0.15em;
   transform: translateX(-50%);
   font-size: var(--chart-tick);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   color: var(--text-faint);
 }
@@ -761,7 +782,7 @@ figcaption {
   right: 0.35em;
   transform: translateY(-100%);
   font-size: var(--chart-label);
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   max-width: 100%;
   white-space: normal;
@@ -849,7 +870,7 @@ th {
 td.num,
 th.num {
   text-align: right;
-  font-family: var(--font-mono);
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
 }
 
