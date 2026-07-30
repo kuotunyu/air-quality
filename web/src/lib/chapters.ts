@@ -115,6 +115,11 @@ export function chapterLabel(n: number): string {
   return `第${NUMERALS[n] ?? n}章`;
 }
 
+/** The numeral alone, for the rail — where 「第一章」 plus a title will not fit. */
+export function chapterNumeral(n: number): string {
+  return NUMERALS[n] ?? String(n);
+}
+
 export function chapterBySlug(slug: string): Chapter {
   const found = CHAPTERS.find((c) => c.slug === slug);
   if (!found) throw new Error(`unknown chapter slug: ${slug}`);

@@ -1,7 +1,7 @@
 ---
 import "../styles/global.css";
 import { generatedAt, gitSha } from "../lib/data";
-import { CHAPTERS, chapterLabel, href, neighbours } from "../lib/chapters";
+import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
 
 interface Props {
   title: string;
@@ -21,16 +21,6 @@ const { title, description } = Astro.props;
 const segment = Astro.url.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
 const here = CHAPTERS.find((c) => c.slug === segment) ?? null;
 
-/*
- * The two moves a reader in a ten-part document actually wants, resolved here so
- * the bar can offer them without anyone opening a menu to find them.
- *
- * On the entry page there is no previous chapter and "next" is where the document
- * starts, which is why `next` falls back to the first chapter rather than to
- * nothing: an entry page whose forward control is missing gives the reader no
- * button to press.
- */
-const step = here ? neighbours(here.slug) : { prev: null, next: CHAPTERS[0] };
 ---
 
 <!doctype html>
@@ -49,188 +39,154 @@ const step = here ? neighbours(here.slug) : { prev: null, next: CHAPTERS[0] };
   <body>
     <a href="#main" class="visually-hidden">跳到主要內容</a>
 
-    <nav class="topbar" aria-label="章節">
-      <div class="topbar-inner page">
-        <a class="brand" href={href()}>air-<span>quality</span></a>
+    {/*
+      A rail, not a dropdown.
 
-        {/*
-          Where you are IS the control that shows where else you could go.
+      The chapter list has now been a squeezed row of ten links, then a menu
+      behind a button. Both had the same defect from opposite directions: the row
+      could not give ten destinations a readable size, and the menu could give
+      them one but only to a reader who thought to go looking. A rail resolves it
+      by not being a control at all — the ten chapters are simply on the page,
+      with the current one marked, so there is nothing to discover and nothing to
+      open.
 
-          The previous version put the chapter title in the bar as plain text and
-          a separate 目錄 button beside it, and the objection was the right one:
-          nothing suggests that a reader should go looking in a menu. So the
-          label and the trigger are now one thing. Clicking where you are to see
-          the other places you could be is the instinct people already have —
-          it is how a breadcrumb, a file path and a tab strip all behave.
+      The checkbox is the whole mobile mechanism, and it is deliberate: no
+      script, so the rail works when JavaScript does not, which PRODUCT.md
+      requires. Below 62rem it is a drawer with a labelled button; above, the
+      button is gone and the list is just there.
+    */}
+    <input id="rail" type="checkbox" class="rail-switch" />
 
-          The chevron points DOWN when closed. It pointed right, inherited from
-          the site's disclosure styling, and a right-pointing chevron on a
-          navigation control reads as "go" rather than "opens".
-        */}
-        <details class="menu">
-          <summary>
+    <div class="shell">
+      <header class="rail">
+        <div class="rail-top">
+          <a class="brand" href={href()}>air-<span>quality</span></a>
+          <label class="rail-shut" for="rail" aria-label="收起章節">
+            <span aria-hidden="true">✕</span>
+          </label>
+        </div>
+
+        <nav aria-label="章節">
+          <ol>
+            {
+              CHAPTERS.map((c) => (
+                <li>
+                  <a
+                    href={href(c.slug)}
+                    aria-current={here?.slug === c.slug ? "page" : undefined}
+                  >
+                    <span class="rail-n" aria-hidden="true">{chapterNumeral(c.n)}</span>
+                    <span class="rail-t">{c.title}</span>
+                  </a>
+                </li>
+              ))
+            }
+          </ol>
+        </nav>
+
+        {/* Reading progress, on the rail's own edge rather than across the top.
+            Driven by a scroll timeline, so there is no listener to keep in sync;
+            where the timeline is unsupported the bar simply stays at zero
+            height, which is a line nobody notices rather than a broken control. */}
+        <div class="progress" aria-hidden="true"></div>
+      </header>
+
+      {/* Dismisses the drawer by tapping away from it. A label, so it needs no
+          script either. */}
+      <label class="rail-veil" for="rail" aria-hidden="true"></label>
+
+      <div class="column">
+        <div class="handle">
+          <label class="rail-open" for="rail">
+            <span class="rail-open-bars" aria-hidden="true"></span>
+            章節
+          </label>
+          <p class="handle-at">
             {
               here ? (
                 <>
-                  <span class="at-n">{chapterLabel(here.n)}</span>
-                  <span class="at-t">{here.nav}</span>
+                  <span class="handle-n">{chapterLabel(here.n)}</span>
+                  <span class="handle-t">{here.nav}</span>
                 </>
               ) : (
-                <span class="at-t">全部 {CHAPTERS.length} 章</span>
+                <span class="handle-t">台灣空氣品質再分析</span>
               )
             }
-          </summary>
-
-          <div class="menu-panel">
-            <ol>
-              {
-                CHAPTERS.map((c) => (
-                  <li>
-                    <a
-                      href={href(c.slug)}
-                      aria-current={here?.slug === c.slug ? "page" : undefined}
-                    >
-                      <span class="menu-n">{chapterLabel(c.n)}</span>
-                      <span class="menu-t">{c.title}</span>
-                    </a>
-                  </li>
-                ))
-              }
-            </ol>
-          </div>
-        </details>
-
-        {/*
-          And the move most readers want, spelled out rather than hidden.
-
-          A labelled forward control needs no discovery at all: 「下一章」 is not
-          a thing anyone has to work out. Back is icon-only because it is the
-          rarer move and the label would cost the forward one its words on a
-          narrow screen. Both name their destination to a screen reader.
-        */}
-        <div class="steps">
-          {
-            step.prev && (
-              <a
-                class="step-btn"
-                href={href(step.prev.slug)}
-                aria-label={`前一章：${step.prev.title}`}
-                title={`前一章：${step.prev.title}`}
-              >
-                <span class="step-arrow" aria-hidden="true">←</span>
-              </a>
-            )
-          }
-          {
-            step.next && (
-              <a
-                class="step-btn is-next"
-                href={href(step.next.slug)}
-                aria-label={`${here ? "下一章" : "開始讀"}：${step.next.title}`}
-                title={`${here ? "下一章" : "開始讀"}：${step.next.title}`}
-              >
-                <span class="step-word">{here ? "下一章" : "開始讀"}</span>
-                <span class="step-arrow" aria-hidden="true">→</span>
-              </a>
-            )
-          }
+          </p>
         </div>
-      </div>
-      <div class="progress" aria-hidden="true"></div>
-    </nav>
 
-    <main id="main">
-      <slot />
-    </main>
+        <main id="main">
+          <slot />
+        </main>
 
-    <footer>
-      <div class="page">
-        <p class="mono">
-          資料：環境部空氣品質監測網 1982–2025 逐時觀測，341,442,552 筆。
-          管線與分析全部開源。
-        </p>
-        {/*
-          "資料匯出於", not "匯出於". The commit is the one the *data layers*
-          were exported at, and the page is rebuilt on every push — so on any
-          given day this sha is usually older than the code that rendered the
-          page around it. Unqualified, it reads as the build's provenance and
-          quietly overstates what is being traced.
-        */}
-        <p class="mono dim">
-          資料匯出於 {generatedAt.slice(0, 10)}
-          {gitSha ? ` · ${gitSha}` : ""}
-        </p>
+        <footer>
+          <div class="page">
+            <p class="mono">
+              資料：環境部空氣品質監測網 1982–2025 逐時觀測，341,442,552 筆。
+              管線與分析全部開源。
+            </p>
+            {/*
+              "資料匯出於", not "匯出於". The commit is the one the *data layers*
+              were exported at, and the page is rebuilt on every push — so on any
+              given day this sha is usually older than the code that rendered the
+              page around it. Unqualified, it reads as the build's provenance and
+              quietly overstates what is being traced.
+            */}
+            <p class="mono dim">
+              資料匯出於 {generatedAt.slice(0, 10)}
+              {gitSha ? ` · ${gitSha}` : ""}
+            </p>
+          </div>
+        </footer>
       </div>
-    </footer>
+    </div>
 
     <style>
-      .topbar {
-        position: sticky;
-        top: 0;
-        z-index: 50;
-        backdrop-filter: blur(12px);
-        background: color-mix(in srgb, var(--bg) 86%, transparent);
-        border-bottom: 1px solid var(--line-soft);
+      /* ── the shell ──────────────────────────────────────────────────────── */
+
+      .shell {
+        display: grid;
+        min-height: 100vh;
       }
 
       /*
-       * Reading progress, drawn on the bar the reader is already looking at.
-       *
-       * Per chapter now, not per document. When this was one 42-screen page the
-       * bar was answering "how much of the whole thing is left"; with a route
-       * per chapter it answers "how much of this chapter is left", which is the
-       * question a reader on a 5-screen page actually has. The chapter's own
-       * prev/next footer answers the other one.
-       *
-       * Driven by a scroll-progress timeline, so there is no scroll listener
-       * and nothing to keep in sync; where the timeline is unsupported the rule
-       * simply never applies and the bar stays at zero width, which is a line
-       * nobody notices rather than a broken control.
+       * The rail width is the one number that decides how the page reads, so it
+       * is a clamp rather than a guess: never so narrow that a chapter title
+       * wraps to three lines, never so wide that it competes with the column it
+       * serves.
        */
-      .progress {
-        position: absolute;
-        left: 0;
-        bottom: -1px;
-        height: 2px;
-        width: 0;
-        background: var(--accent);
-        transform-origin: left;
-      }
-
-      @supports (animation-timeline: scroll()) {
-        .progress {
-          width: 100%;
-          transform: scaleX(0);
-          animation: read linear;
-          animation-timeline: scroll(root block);
+      @media (min-width: 62rem) {
+        .shell {
+          grid-template-columns: clamp(13rem, 17vw, 15.5rem) minmax(0, 1fr);
         }
       }
 
-      @keyframes read {
-        to {
-          transform: scaleX(1);
+      .rail {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+        padding: var(--space-4) var(--space-3) var(--space-5);
+        background: var(--bg-sunken);
+        border-right: 1px solid var(--line-soft);
+      }
+
+      @media (min-width: 62rem) {
+        .rail {
+          /* Sticky, and its own scroller: ten chapters fit, but an eleventh
+             should scroll the rail rather than the page. */
+          position: sticky;
+          top: 0;
+          max-height: 100vh;
+          overflow-y: auto;
         }
       }
 
-      /* The bar reports position rather than drawing attention, and it is
-         driven by scrolling rather than by time — but honour the preference
-         anyway and let it jump instead of glide. */
-      @media (prefers-reduced-motion: reduce) {
-        .progress {
-          transition: none;
-        }
-      }
-      .topbar-inner {
+      .rail-top {
         display: flex;
         align-items: center;
-        gap: clamp(0.9rem, 2.5vw, 2rem);
-        /* Room for a 44px target with air around it. The bar was 3.2rem holding
-           a 25px text run. */
-        min-height: 3.4rem;
-        /* The panel below anchors to this, so it has to be the containing block —
-           and nothing here may clip, or the menu is cut off the way the old
-           scrolling strip cut off its own links. */
-        position: relative;
+        justify-content: space-between;
+        gap: var(--space-3);
       }
 
       .brand {
@@ -247,244 +203,273 @@ const step = here ? neighbours(here.slug) : { prev: null, next: CHAPTERS[0] };
         font-weight: 500;
       }
 
-      /* ── where you are, and it is the menu trigger ────────────────────── */
+      /* ── the chapter list ───────────────────────────────────────────────── */
 
-      /*
-       * The chapter label lives inside the `<summary>` now, so the styling that
-       * used to sit on a separate `.whereami` paragraph belongs to the button.
-       */
-      .at-n {
-        font-size: var(--text-sm);
-        color: var(--text-faint);
-        white-space: nowrap;
-        font-variant-numeric: tabular-nums;
-        font-weight: 400;
-      }
-
-      .at-t {
-        font-size: var(--text-lg);
-        font-weight: 650;
-        letter-spacing: -0.012em;
-        color: var(--text);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        min-width: 0;
-      }
-
-      /* ── the contents menu ────────────────────────────────────────────────── */
-
-      /*
-       * The site's own `<details>` styling already is a bordered raised box with
-       * a chevron that rotates when it opens, so this reuses it rather than
-       * building a second one — which also means the menu and the chapters'
-       * disclosures stay recognisably the same control.
-       *
-       * What has to be undone is the parts that assume a full-width block: the
-       * vertical margin (which added 42px to a sticky bar), and the bottom border
-       * an open summary grows to meet content directly beneath it. This panel
-       * floats, so there is nothing beneath the summary to meet.
-       */
-      .menu {
+      .rail nav ol {
+        list-style: none;
         margin: 0;
-        /* Takes the slack, so the forward control stays pinned right whatever
-           the chapter is called. */
-        margin-right: auto;
-        min-width: 0;
-        position: relative;
+        padding: 0;
+        display: grid;
+        gap: 1px;
       }
 
-      .menu > summary {
-        /* Was `--text-sm` at `--space-2` padding: a 34px control. The measured
-           complaint was that nothing in the bar looked clickable, and a 44px box
-           at body size is the answer to it. */
-        min-height: 2.45rem;
-        padding: 0 0.8rem;
-        font-size: var(--text-base);
-        color: var(--text);
-        gap: 0.55em;
+      .rail nav a {
+        display: grid;
+        grid-template-columns: 1.35em minmax(0, 1fr);
+        gap: 0 0.6rem;
         align-items: baseline;
+        padding: 0.5rem 0.6rem;
+        border-radius: calc(var(--radius) - 4px);
+        text-decoration: none;
+        color: var(--text-muted);
+        font-size: var(--text-sm);
+        line-height: 1.45;
+        transition:
+          background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+          color 160ms cubic-bezier(0.22, 1, 0.36, 1);
       }
 
-      /* Baseline-aligned text needs the chevron pulled back onto the centre. */
-      .menu > summary::before {
-        align-self: center;
-        order: 2;
-        margin-left: 0.15em;
+      .rail nav a:hover,
+      .rail nav a:focus-visible {
+        background: var(--bg-raised);
+        color: var(--text);
+      }
+
+      .rail-n {
+        color: var(--text-faint);
+        text-align: center;
       }
 
       /*
-       * Down when closed, up when open. The site's disclosure rule points this
-       * chevron right at rest, which is correct for "expands downward into the
-       * flow" and wrong for a control in a navigation bar, where a right-pointing
-       * arrow means "takes you somewhere".
+       * The chapter being read. Marked three ways on purpose — ink, weight and a
+       * bar on the leading edge — because it is the only thing in the rail that
+       * has to be findable without being read.
+       *
+       * The bar is an inset `box-shadow`, not `border-left`. A coloured left
+       * border is the accent every generated interface reaches for, and it also
+       * squares off one side of a rounded row; an inset shadow sits inside the
+       * row shape instead of replacing part of it.
        */
-      .menu > summary::before {
-        transform: rotate(45deg);
+      .rail nav a[aria-current="page"] {
+        background: var(--bg-raised);
+        color: var(--text);
+        font-weight: 650;
+        box-shadow: inset 0.18rem 0 0 0 var(--accent);
       }
 
-      .menu[open] > summary::before {
-        transform: rotate(-135deg);
+      .rail nav a[aria-current="page"] .rail-n {
+        color: var(--accent);
       }
 
-      .menu[open] > summary {
-        border-bottom: 0;
-        border-radius: var(--radius);
+      /* ── reading progress, on the rail edge ─────────────────────────────── */
+
+      .progress {
+        position: absolute;
+        right: -1px;
+        top: 0;
+        width: 2px;
+        height: 0;
+        background: var(--accent);
+        transform-origin: top;
       }
 
-      .menu > summary:focus-visible {
+      @supports (animation-timeline: scroll()) {
+        .progress {
+          height: 100%;
+          transform: scaleY(0);
+          animation: read linear;
+          animation-timeline: scroll(root block);
+        }
+      }
+
+      @keyframes read {
+        to {
+          transform: scaleY(1);
+        }
+      }
+
+      /* Below the rail breakpoint the rail is a drawer, so a bar down its edge
+         would be reporting progress on something that is not on screen. */
+      @media (max-width: 61.999rem) {
+        .progress {
+          display: none;
+        }
+      }
+
+      /* ── the mobile drawer ──────────────────────────────────────────────── */
+
+      /* Off-screen rather than `display: none`, so it stays operable by keyboard
+         and appears in the accessibility tree exactly once. */
+      /*
+       * Off-screen rather than `display: none`, and NOT `aria-hidden`: a
+       * `<label>` is not focusable, so hiding the checkbox from the keyboard left
+       * the drawer with no keyboard route at all. The `<label for>` gives it its
+       * accessible name, and the focus ring is drawn on the label the reader can
+       * actually see.
+       */
+      .rail-switch {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        margin: 0;
+      }
+
+      .rail-switch:focus-visible ~ .shell .rail-open {
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
 
-      .menu-panel {
-        position: absolute;
-        top: calc(100% + 0.5rem);
-        /*
-         * Opens rightward from the trigger's left edge, not leftward from its
-         * right. The trigger moved to the left of the bar when it absorbed the
-         * chapter label, and a panel anchored `right: 0` then hangs off the left
-         * of the screen — measured at 375px it started at -163px. Anchoring left
-         * and clamping the width to the viewport is the version that cannot do
-         * that at any width.
-         */
-        left: 0;
-        z-index: var(--z-overlay);
-        width: min(24rem, calc(100vw - 2rem));
-        max-height: min(70vh, 34rem);
-        overflow-y: auto;
-        background: var(--bg-raised);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        /* A defined shadow, not a border plus a wide soft glow: the panel needs
-           to sit above the page, and 10px of blur says so without haze. */
-        box-shadow: 0 6px 10px oklch(0 0 0 / 0.09);
+      /* The column has to be allowed to shrink, or a wide table inside it sets
+         the grid track and pushes the whole page sideways. */
+      .column {
+        min-width: 0;
       }
 
-      .menu-panel ol {
-        margin: 0;
-        padding: 0.35rem;
-        list-style: none;
-      }
-
-      .menu-panel a {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        align-items: baseline;
-        gap: 0 0.7rem;
-        /* Every row is a comfortable target rather than a line of text that
-           happens to be a link. */
-        padding: 0.6rem 0.7rem;
-        border-radius: calc(var(--radius) - 4px);
-        text-decoration: none;
-        color: var(--text);
-      }
-
-      .menu-panel a:hover,
-      .menu-panel a:focus-visible {
-        background: var(--bg-sunken);
-      }
-
-      .menu-n {
-        font-size: var(--text-sm);
-        color: var(--text-faint);
-        white-space: nowrap;
-        font-variant-numeric: tabular-nums;
-      }
-
-      .menu-t {
-        font-size: var(--text-base);
-      }
-
-      /* The chapter you are on, marked in the list as well as in the bar. */
-      .menu-panel a[aria-current="page"] {
-        background: var(--tint-neutral);
-      }
-
-      .menu-panel a[aria-current="page"] .menu-t {
-        font-weight: 650;
-      }
-
-      .menu-panel a[aria-current="page"] .menu-n {
-        color: var(--accent);
-      }
-
-      /* ── forward and back ─────────────────────────────────────────────── */
-
-      .steps {
+      .handle {
         display: flex;
         align-items: center;
-        gap: 0.4rem;
+        gap: var(--space-3);
+        padding: 0.55rem clamp(1.15rem, 4vw, 2.75rem);
+        border-bottom: 1px solid var(--line-soft);
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(10px);
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky);
+      }
+
+      .rail-open {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5em;
+        min-height: 2.4rem;
+        padding: 0 0.8rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg-raised);
+        color: var(--text);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
         flex: none;
       }
 
-      .step-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4em;
-        min-height: 2.45rem;
-        padding: 0 0.7rem;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: var(--bg-raised);
-        color: var(--text-muted);
-        text-decoration: none;
-        font-size: var(--text-sm);
-        font-weight: 600;
-        white-space: nowrap;
-        transition:
-          border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-          background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
-          color 180ms cubic-bezier(0.22, 1, 0.36, 1);
-      }
-
-      .step-btn:hover,
-      .step-btn:focus-visible {
+      .rail-open:hover {
         border-color: var(--rule);
         background: var(--bg-sunken);
+      }
+
+      /* Three rules drawn rather than typed: a glyph would inherit the font
+         metrics and never sit on the centre of the label beside it. */
+      .rail-open-bars {
+        width: 0.85em;
+        height: 0.62em;
+        flex: none;
+        border-top: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        position: relative;
+      }
+
+      .rail-open-bars::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(50% - 1px);
+        border-top: 2px solid currentColor;
+      }
+
+      .handle-at {
+        margin: 0;
+        min-width: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 0.5em;
+        overflow: hidden;
+      }
+
+      .handle-n {
+        font-size: var(--text-sm);
+        color: var(--text-faint);
+        white-space: nowrap;
+      }
+
+      .handle-t {
+        font-weight: 650;
         color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
-      /* The forward move is the one most readers want, so it is the one with
-         words on it. */
-      .step-btn.is-next {
-        color: var(--text);
+      .rail-shut,
+      .rail-veil {
+        display: none;
       }
 
-      .step-arrow {
-        font-size: var(--text-base);
-        line-height: 1;
-      }
-
-      /* Below 34rem the label would push the chapter title to an ellipsis of two
-         characters. The arrow alone still says which way it goes, and the
-         accessible name keeps the destination. */
-      @media (max-width: 34rem) {
-        .step-word {
-          position: absolute;
-          width: 1px;
-          height: 1px;
-          overflow: hidden;
-          clip-path: inset(50%);
-          white-space: nowrap;
+      @media (max-width: 61.999rem) {
+        .rail {
+          position: fixed;
+          inset: 0 auto 0 0;
+          z-index: var(--z-overlay);
+          width: min(19rem, 84vw);
+          border-right: 1px solid var(--line);
+          transform: translateX(-100%);
+          transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+          overflow-y: auto;
         }
-        .step-btn {
-          padding: 0 0.55rem;
+
+        .rail-switch:checked ~ .shell .rail {
+          transform: translateX(0);
+        }
+
+        .rail-shut {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 2.2rem;
+          height: 2.2rem;
+          margin-right: -0.4rem;
+          border-radius: var(--radius);
+          color: var(--text-muted);
+          cursor: pointer;
+          font-size: var(--text-base);
+        }
+
+        .rail-shut:hover {
+          background: var(--bg-raised);
+          color: var(--text);
+        }
+
+        .rail-switch:checked ~ .shell .rail-veil {
+          display: block;
+          position: fixed;
+          inset: 0;
+          z-index: calc(var(--z-overlay) - 1);
+          background: oklch(0 0 0 / 0.42);
+        }
+
+        /* Titles can be full length in a drawer: it is 19rem wide there, not 13. */
+        .rail nav a {
+          font-size: var(--text-base);
+          padding: 0.6rem 0.7rem;
+        }
+      }
+
+      /* Above the breakpoint the rail is simply present, so every control whose
+         only job is to reveal it has nothing left to do. */
+      @media (min-width: 62rem) {
+        .handle {
+          display: none;
         }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .step-btn {
+        .rail,
+        .rail nav a {
           transition: none;
-        }
-      }
-
-      /* Below this the chapter title and a bordered button cannot share the row
-         with the brand without one of them truncating to nothing. The brand is
-         the thing a reader can afford to lose: they know what site they are on. */
-      @media (max-width: 26rem) {
-        .brand {
-          display: none;
         }
       }
 

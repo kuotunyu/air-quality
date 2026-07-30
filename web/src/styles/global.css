@@ -273,26 +273,26 @@
    * that a full-width figure genuinely fills.
    */
   /*
-   * The reading measure, and it is CENTRED in its column rather than flush left.
+   * The reading measure — and the column is now sized TO it, rather than the
+   * blocks being sized inside a wider one. Three attempts at one problem:
    *
-   * The cap itself is not negotiable: measured, 39rem gave 33 CJK characters a
-   * line, which is where Chinese body text belongs. What was wrong is where the
-   * leftover went. The column's content box is 1,145px at 1440, so every capped
-   * paragraph left 326px of nothing on its right while the figures beside it ran
-   * the full width — and 326px of one-sided emptiness does not read as a margin,
-   * it reads as a block that failed to fill. It was asked about twice.
+   *   1. Prose capped at the measure, flush left in a 1,145px column. Every
+   *      paragraph left 326px of nothing on its right while the figures beside
+   *      it ran full width. Read as a block that failed to fill; asked about.
+   *   2. The same blocks centred. That balanced the leftover but bought an
+   *      indent: measured, prose sat 132px right of its own headings and
+   *      figures, which reads as an essay's first line, not as a margin.
+   *   3. This. The container IS the text column, so headings, prose and figures
+   *      share one left edge and one width, and the leftover is page margin
+   *      outside the column — where a margin belongs. Nothing is indented from
+   *      anything, and there is no one-sided void, because there is nothing
+   *      inside the column that is narrower than the column.
    *
-   * Centring the capped blocks splits that leftover in two. Same measure, same
-   * line length, but the space is now on both sides, which is what a margin is.
-   * Figures still take the whole column on purpose: a chart wants width, and a
-   * paragraph does not, so the two being different widths is the design rather
-   * than a mistake in it.
-   *
-   * 42rem rather than 39 because the leftover is worth reducing as well as
-   * balancing: 35 characters a line is still inside the comfortable range.
+   * The charts give up width for it (882px rather than 1,145px) and that is the
+   * right trade: they are fluid and already legible at 375px, whereas an
+   * alignment that changes by element type is a thing every reader sees.
    */
   --measure: 42rem;
-  --page: 60rem;
   --radius: 10px;
 
   /* Named so a stacking order is a decision rather than an escalating number. */
@@ -474,7 +474,6 @@ h4 {
 p {
   margin: 0 0 var(--space-3);
   max-width: var(--measure);
-  margin-inline: auto;
   text-wrap: pretty;
   /* A pasted URL is one unbreakable word; at 335px one of them was 19px wider
      than the column it sat in. */
@@ -554,9 +553,19 @@ code,
  * rather than merely fixed.
  */
 .page {
-  max-width: var(--page);
+  /*
+   * The column IS the measure, and it is derived rather than declared so the two
+   * cannot drift. There used to be a separate --page of 60rem: the container was
+   * 1,145px of content while prose capped at 819px, which is where the 326px of
+   * one-sided emptiness came from. Deriving the max-width from --measure plus its
+   * own padding makes the content box exactly one measure wide, always — so
+   * headings, prose and figures share one left edge and one width, and the page
+   * margin is outside the column where a margin belongs.
+   */
+  --page-pad: clamp(1.15rem, 4vw, 2.75rem);
+  max-width: calc(var(--measure) + 2 * var(--page-pad));
   margin: 0 auto;
-  padding-inline: clamp(1.15rem, 4vw, 2.75rem);
+  padding-inline: var(--page-pad);
 }
 
 /* A chapter boundary used to be built out of four things stacked up: a hairline
@@ -634,7 +643,6 @@ section > :last-child > :last-child:last-child {
   line-height: 1.65;
   color: var(--text-muted);
   max-width: var(--measure);
-  margin-inline: auto;
   margin-bottom: var(--space-4);
 }
 
@@ -719,7 +727,6 @@ figcaption {
   color: var(--text-muted);
   margin-top: var(--space-2);
   max-width: var(--measure);
-  margin-inline: auto;
 }
 
 .chart {
@@ -1188,7 +1195,7 @@ button:hover {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
-  margin: var(--space-3) auto;
+  margin: var(--space-3) 0;
   color: var(--text-muted);
   font-size: var(--text-base);
   line-height: 1.62;
