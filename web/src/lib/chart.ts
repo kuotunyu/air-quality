@@ -269,7 +269,9 @@ export function spreadLabels(values: number[], gap = 17, bounds?: [number, numbe
    * the range instead of overflowing it, which is the least-bad answer and
    * still monotone, so the reading order never lies.
    */
-  if (bounds) {
+  // An empty set is a legitimate call — a chart whose legend sits inside the
+  // plot has no end labels to spread — and the bounds pass indexes the ends.
+  if (bounds && order.length > 0) {
     const [lo, hi] = bounds;
     const last = order[order.length - 1];
     if (last.y > hi) {

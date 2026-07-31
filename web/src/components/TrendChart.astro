@@ -120,7 +120,7 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
  * Last reported rather than last in the array: a series that stops early ends
  * where its data ends, and putting its label at a null would silently move it.
  */
-const keys = (keyStyle === "none" ? [] : series)
+const keys = (keyStyle === "none" || keyStyle === "named" ? [] : series)
   .map((s) => {
     for (let i = s.values.length - 1; i >= 0; i -= 1) {
       const value = s.values[i];
@@ -165,6 +165,59 @@ function stepPath(values: (number | null)[]): string {
   return parts.join(" ");
 }
 
+
+/*
+ * Where the legend goes, decided by looking at the data rather than by me.
+ *
+ * It has been in three wrong places. Under the plot, where reading it meant
+ * leaving the chart. Then as eight labels stacked at the right edge — but these
+ * lines CONVERGE, so the one place they are least separated is exactly where I
+ * was piling their names, and the result was a wall of text with leaders fanning
+ * out of it. Meanwhile the chart had a quarter of itself standing empty.
+ *
+ * So: score the four corners by how much data actually falls in them, and put
+ * the block in the emptiest. A corner is scored on every drawn point plus the
+ * reference lines, because a guide crossing the box is just as much in the way
+ * as a series is.
+ *
+ * The box is deliberately generous (46% x 48%). Under-reserving would let the
+ * legend sit "in an empty corner" while its last row overlapped a line, which
+ * is the failure this is meant to end.
+ */
+const CORNERS = [
+  { at: "tl", x0: 0, x1: 46, y0: 0, y1: 48 },
+  { at: "tr", x0: 54, x1: 100, y0: 0, y1: 48 },
+  { at: "bl", x0: 0, x1: 46, y0: 52, y1: 100 },
+  { at: "br", x0: 54, x1: 100, y0: 52, y1: 100 },
+] as const;
+
+const occupancy = (box: (typeof CORNERS)[number]) => {
+  let hits = 0;
+  const inside = (px: number, py: number) =>
+    px >= box.x0 && px <= box.x1 && py >= box.y0 && py <= box.y1;
+  series.forEach((s) =>
+    s.values.forEach((v, i) => {
+      if (v != null && Number.isFinite(v) && inside(x(i), y(v))) hits += 1;
+    }),
+  );
+  visibleGuides.forEach((g) => {
+    const level = guideLevel(g);
+    if (level == null) return;
+    // A flat guide spans the whole width, so it is in the box whenever its
+    // height is; a stepped one is checked year by year.
+    if (g.values) {
+      g.values.forEach((v, i) => {
+        if (v != null && inside(x(i), y(v))) hits += 1;
+      });
+    } else if (y(level) >= box.y0 && y(level) <= box.y1) {
+      hits += 4;
+    }
+  });
+  return hits;
+};
+
+const legendAt = [...CORNERS].sort((a, b) => occupancy(a) - occupancy(b))[0].at;
+
 const keyText = (k: { series: Props["series"][number]; value: number }) =>
   keyStyle === "named" ? `${k.series.label} ${n(k.value, 1)}` : n(k.value, 1);
 // +18 for the leader's landing strip, which `labelGutter` cannot know about.
@@ -180,7 +233,7 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
       {/* On the axis it measures. It used to be the last entry of the legend,
           which put the units in a row of series names at the bottom of the
           figure — a long way from the numbers they belong to. */}
-      <span class="y-unit">{unit}</span>
+      {!(legend && series.length > 1) && <span class="y-unit">{unit}</span>}
       {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
     </div>
 
@@ -257,6 +310,38 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
       }
     </div>
 
+    {/* The block the corner scoring chose. Name, its own colour, and the
+        latest value — so the legend answers "which line" and "how much" in
+        one place, inside the chart, where the chart is empty. */}
+    {
+      legend && series.length > 1 && (
+        <div class={`plot-legend at-${legendAt}`} data-rows={series.length > 5 ? "many" : "few"}>
+          <p class="plot-legend-unit">{unit}</p>
+          <ul>
+            {series.map((s) => {
+              let last: number | null = null;
+              for (let i = s.values.length - 1; i >= 0; i -= 1) {
+                const v = s.values[i];
+                if (v != null && Number.isFinite(v)) {
+                  last = v;
+                  break;
+                }
+              }
+              return (
+                <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
+                  <span class="plot-legend-swatch" />
+                  <span class="plot-legend-name">{s.label}</span>
+                  {keys.length === 0 && (
+                    <span class="plot-legend-value">{last == null ? "—" : n(last, 1)}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )
+    }
+
     <div class="plot-keys" data-keys={keyStyle}>
       {/*
         Leaders, because the labels cannot always sit where their lines end.
@@ -308,14 +393,8 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
       end labels exist to remove. The guides and the unit stay either way:
       neither is a line with a label on it.
     */}
-    {
-      (legend ? series : []).map((s) => (
-        <span class="legend-item">
-          <span class="swatch" style={`background:${s.colour}`} />
-          {s.label}
-        </span>
-      ))
-    }
+    {/* Series are named inside the plot, in whichever corner the data left
+        free, so nothing about them belongs down here any more. */}
     {/* Only guides the plot could NOT label in place. A visible one already
         carries its name on the line itself, and listing it again below was the
         same sentence twice — 「台灣年均標準 15」 appeared both across the plot
@@ -333,33 +412,22 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
 </div>
 
 <style>
-  /*
-   * The end labels are an annotation of where a line ENDS, so they only exist
-   * while they can sit there.
-   *
-   * Below 26rem `global.css` turns `.plot-keys` from a column into a flow row
-   * under the plot, which is right for the components that put series NAMES in
-   * it — a name is still a name in a row. These are bare values, and a row of
-   * bare numbers beside a legend that already names every series is two things
-   * saying half a sentence each. The numbers are in the prose either way.
-   */
-  /* Reference-line labels, on whichever side the caller says is empty. */
+  /* Reference-line labels, on whichever side the caller says is empty. The
+     default is the right, and a chart whose lines end there puts the label on
+     top of them — measured, 「台灣年均標準 15」 landed across 「高屏 16.7」. */
   .plot-note.note-left {
     right: auto;
     left: 0.35em;
     text-align: left;
   }
 
-  /* The unit sits above the topmost tick rather than beside one. `bottom`
-     rather than `top`, so it hangs off the axis head instead of overlapping
-     the first gridline whatever the tick values turn out to be. */
+  /* The unit, when there is no in-plot legend to carry it. Anchored to the
+     gutter's LEFT edge and allowed to run right into the empty band above the
+     plot; anchored right it grew leftwards instead, and 67px of text in a 39px
+     gutter had 15px of card padding to spare at 1920 and none at 375. */
   .y-unit {
     top: auto;
     bottom: calc(100% + 0.35em);
-    /* Anchored to the gutter's LEFT edge and allowed to run right, into the
-       empty band above the plot. Anchored right it grew leftwards instead —
-       measured 67px of text hanging out of a 39px gutter, which had 15px of
-       card padding to spare at 1920 and would not have at 375. */
     left: 0;
     right: auto;
     transform: none;
@@ -368,6 +436,80 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     white-space: nowrap;
   }
 
+  /*
+   * The legend, inside the plot, in whichever corner the data left free — the
+   * corner is scored in the frontmatter, not chosen here.
+   *
+   * Positioned against `.plot`, so the offsets step over the gutters that
+   * `.plot-area` sits between: `--y-w` on the left, `--key-w` on the right, and
+   * the x-axis row underneath. Both are inline custom properties set by this
+   * component, so the arithmetic cannot drift from the grid it describes.
+   */
+  .plot-legend {
+    position: absolute;
+    z-index: 1;
+    padding: 0.45rem 0.7rem;
+    border-radius: calc(var(--radius) - 4px);
+    background: color-mix(in srgb, var(--bg-sunken) 86%, transparent);
+    line-height: 1.35;
+  }
+
+  .plot-legend.at-tl { top: 0; left: calc(var(--y-w, 0px) + var(--space-2)); }
+  .plot-legend.at-tr { top: 0; right: calc(var(--key-w, 0px) + var(--space-2)); }
+  .plot-legend.at-bl { bottom: calc(1.5em + var(--space-1)); left: calc(var(--y-w, 0px) + var(--space-2)); }
+  .plot-legend.at-br { bottom: calc(1.5em + var(--space-1)); right: calc(var(--key-w, 0px) + var(--space-2)); }
+
+  .plot-legend-unit {
+    margin: 0 0 0.25rem;
+    font-size: var(--text-sm);
+    color: var(--text-faint);
+    font-family: var(--font-numeric);
+  }
+
+  .plot-legend ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    /* Grid items stretch by default, so each row took the block's full width
+       and the block took its widest possible row — 333px inside a 259px plot. */
+    justify-items: start;
+    gap: 0.1rem 1rem;
+    grid-template-columns: auto;
+  }
+
+  /* Two columns once the list is long enough to read as a wall rather than a
+     list. Eight in one column is a wall; two fours is a block. */
+  .plot-legend[data-rows="many"] ul {
+    grid-auto-flow: column;
+    grid-template-rows: repeat(4, auto);
+  }
+
+  .plot-legend li {
+    display: grid;
+    grid-template-columns: 0.7em auto auto;
+    align-items: baseline;
+    gap: 0 0.45em;
+    font-size: var(--chart-label);
+    color: var(--mark-ink);
+    white-space: nowrap;
+  }
+
+  .plot-legend-swatch {
+    width: 0.7em;
+    height: 0.7em;
+    border-radius: 2px;
+    background: var(--mark);
+  }
+
+  .plot-legend-value {
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    justify-self: end;
+  }
+
+  /* Leaders, from a line's true height to its displaced label. */
   .key-leaders {
     position: absolute;
     inset: 0;
@@ -388,42 +530,58 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     padding-left: 0.85em;
   }
 
-  /* In the collapsed row the keys are a legend, not annotations of a line end,
-     so there is nothing for a leader to join. */
+  /*
+   * A phone has no empty corner to give. Measured at 375px: the plot area is
+   * 200px wide and an eight-row block is 338px, so "in the emptiest corner"
+   * became "hanging out of both sides of the chart". Below the width the rest
+   * of this chart reflows at, the legend stops floating and becomes a row —
+   * the same move `.plot-keys` already makes, for the same reason.
+   *
+   * This block is LAST on purpose. An earlier version sat above the base rules
+   * it was overriding, so at equal specificity the base won and only the
+   * declarations with no base counterpart took effect.
+   */
   @container (max-width: 26rem) {
-    /* Reference-line labels, on whichever side the caller says is empty. */
-  .plot-note.note-left {
-    right: auto;
-    left: 0.35em;
-    text-align: left;
-  }
-
-  /* The unit sits above the topmost tick rather than beside one. `bottom`
-     rather than `top`, so it hangs off the axis head instead of overlapping
-     the first gridline whatever the tick values turn out to be. */
-  .y-unit {
-    top: auto;
-    bottom: calc(100% + 0.35em);
-    /* Anchored to the gutter's LEFT edge and allowed to run right, into the
-       empty band above the plot. Anchored right it grew leftwards instead —
-       measured 67px of text hanging out of a 39px gutter, which had 15px of
-       card padding to spare at 1920 and would not have at 375. */
-    left: 0;
-    right: auto;
-    transform: none;
-    font-size: var(--chart-tick);
-    color: var(--text-faint);
-    white-space: nowrap;
-  }
-
-  .key-leaders {
-      display: none;
+    .plot-legend {
+      position: static;
+      grid-area: 4 / 1 / auto / -1;
+      margin-top: var(--space-2);
+      padding: 0;
+      background: none;
     }
-    .plot-keys span {
-      padding-left: 0;
+
+    .plot-legend ul,
+    .plot-legend[data-rows="many"] ul {
+      display: flex;
+      flex-wrap: wrap;
+      grid-auto-flow: row;
+      gap: var(--space-1) var(--space-3);
     }
+
+    /* `nowrap` is right beside a plot, where a wrapped label would step on the
+       data. Down here the block is in the flow with nothing under it, and one
+       label genuinely cannot fit: 「固定樣本（68 站，2006–）」 measures 294px
+       against a 259px plot, which is what was pushing the page sideways. */
+    .plot-legend li {
+      white-space: normal;
+    }
+
+    .plot-legend-name {
+      overflow-wrap: anywhere;
+    }
+
+    /* Bare values in a row, beside nothing that names them, say half a
+       sentence. The legend below carries the names. */
     .plot-keys[data-keys="value"] {
       display: none;
+    }
+
+    .key-leaders {
+      display: none;
+    }
+
+    .plot-keys span {
+      padding-left: 0;
     }
   }
 
@@ -433,6 +591,7 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     height: 0;
     border-radius: 0;
   }
+
   .unit {
     color: var(--text-faint);
     font-family: var(--font-numeric);

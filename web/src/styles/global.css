@@ -1091,6 +1091,8 @@ main {
  * uses the full column instead of 77% of it.
  */
 .plot {
+  /* The in-plot legend is positioned against this box; see TrendChart. */
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-rows: var(--plot-h, 320px) auto;

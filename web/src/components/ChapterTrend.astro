@@ -174,9 +174,18 @@ const airzoneSeries = (trendByAirzone.series as {
  */
 const TW_PM25_ADDED = 2012;
 const TW_PM25_TIGHTENED = 2024;
-const taiwanAnnual = trend.years.map((year) =>
-  year < TW_PM25_ADDED ? null : year < TW_PM25_TIGHTENED ? 15 : 12,
-);
+/*
+ * Built per chart, from THAT chart's own year axis.
+ *
+ * It was built once from `trend.years` (1998–2025, 28 entries) and handed to
+ * every figure, including the de-weathering one whose axis is `dwYears`
+ * (2008–2025, 18). `stepPath` walks the array by index, so index 27 was placed
+ * at 27/17 = 159% of a plot that ends at 100 — measured, the guide ran 117px
+ * past the right edge of its own plot area. A reference line has to be indexed
+ * against the axis it is drawn on.
+ */
+const taiwanAnnualFor = (years: number[]) =>
+  years.map((year) => (year < TW_PM25_ADDED ? null : year < TW_PM25_TIGHTENED ? 15 : 12));
 
 ---
 
@@ -222,7 +231,7 @@ const taiwanAnnual = trend.years.map((year) =>
         },
       ]}
       guides={[
-        { values: taiwanAnnual, label: "台灣年均標準", colour: "var(--taiwan)" },
+        { values: taiwanAnnualFor(trend.years), label: "台灣年均標準", colour: "var(--taiwan)" },
         { value: 5, label: "WHO 年均指引 5", colour: "var(--who)" },
       ]}
       unit="μg/m³"
@@ -273,7 +282,7 @@ const taiwanAnnual = trend.years.map((year) =>
           dash: "5 3",
         },
       ]}
-      guides={[{ values: taiwanAnnual, label: "台灣年均標準", colour: "var(--taiwan)" }]}
+      guides={[{ values: taiwanAnnualFor(dwYears), label: "台灣年均標準", colour: "var(--taiwan)" }]}
       unit="μg/m³"
     />
     <figcaption>
@@ -352,11 +361,13 @@ const taiwanAnnual = trend.years.map((year) =>
     <TrendChart
       years={trend.years}
       series={airzoneSeries}
-      guides={[{ values: taiwanAnnual, label: "台灣年均標準", colour: "var(--taiwan)" }]}
+      guides={[{ values: taiwanAnnualFor(trend.years), label: "台灣年均標準", colour: "var(--taiwan)" }]}
       unit="μg/m³"
       height={620}
-      keys="named"
-      legend={false}
+      {/* No end labels: eight of them stacked at the right edge was the wall
+          this figure just came out of. The names live in the in-plot legend,
+          which places itself wherever the eight lines left room. */}
+      keys="none"
       notesAt="left"
     />
     <figcaption>
