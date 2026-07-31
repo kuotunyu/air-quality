@@ -1,0 +1,251 @@
+---
+/**
+ * The eight air-quality zones, one panel each.
+ *
+ * This replaces a single chart with eight lines in it, and the reason is that
+ * the single chart could not be read. Measured on the shipped page: eight lines
+ * resolving to THREE distinct colours, told apart by three dash patterns, with
+ * the only key a legend below the plot. So identifying a zone meant carrying a
+ * colour and a dash pattern from the legend up into a bundle of converging
+ * lines, eight times.
+ *
+ * That was made worse by a change of mine — colouring each zone by its own
+ * concentration rather than by its rank, which is the honest mapping and which
+ * collapsed eight zones into three bins, because in 2025 the zones genuinely do
+ * sit in three bins. The mapping was right and the chart was wrong; a chart that
+ * needs eight distinguishable colours is a chart asking colour to do a job it
+ * cannot do at eight.
+ *
+ * A panel per zone removes the question. Each zone is named in text directly
+ * above its own line, so nothing has to be matched to anything. The other seven
+ * stay in the panel as hairlines, which is what keeps this a comparison rather
+ * than eight unrelated sparklines — the reader sees one zone against the
+ * ensemble in the same glance.
+ *
+ * Colour is then free to do the one thing this site uses it for. Every line is
+ * `concentrationColour` of the zone's own latest value, so the panels sort
+ * themselves by hue exactly the way the entry map does, and the three-bin
+ * outcome stops being a collision and becomes the finding: eight zones, three
+ * bins, and you can see which is which without reading a number.
+ *
+ * A `<figcaption>`'s worth of chrome per panel would drown the data at this
+ * size, so each carries three things only: the zone, where it started, and
+ * where it is now.
+ */
+import { concentrationColour, linePath, n, padded } from "../lib/chart";
+
+interface Props {
+  years: number[];
+  series: { name: string; years: number[]; mean: (number | null)[] }[];
+  /** Drawn in every panel, so the eight share one reference. */
+  guide: number;
+  guideLabel: string;
+}
+
+const { years, series, guide, guideLabel } = Astro.props;
+
+const zones = series
+  .map((s) => {
+    // Re-indexed onto the shared year axis, so every panel's x means the same
+    // thing. A year this zone never reported stays null and `linePath` breaks.
+    const values = years.map((year) => {
+      const at = s.years.indexOf(year);
+      return at === -1 ? null : s.mean[at];
+    });
+    const present = values.filter((v): v is number => v != null);
+    return {
+      name: s.name.replace("空品區", ""),
+      values,
+      first: present[0],
+      last: present[present.length - 1],
+    };
+  })
+  .filter((z) => Number.isFinite(z.first) && Number.isFinite(z.last))
+  // Dirtiest first: the zones the chapter's prose is about are the ones a
+  // reader looks for, and reading order is the cheapest way to put them first.
+  .sort((a, b) => b.last - a.last);
+
+// ONE domain for all eight panels. Per-panel scaling would make every zone look
+// identical — the whole point is that they are not.
+const everyValue = zones.flatMap((z) => z.values).concat([guide]);
+const [lo, hi] = padded(everyValue, { zero: true });
+
+const x = (index: number) => (years.length < 2 ? 50 : (index / (years.length - 1)) * 100);
+const y = (value: number) => (1 - (value - lo) / (hi - lo || 1)) * 100;
+
+const guideY = n(y(guide), 3);
+// Every zone's path, computed once and reused as the backdrop of all eight
+// panels rather than recomputed eight times.
+const paths = zones.map((z) => linePath(z.values, x, y));
+---
+
+<div class="zones">
+  {
+    zones.map((zone, index) => (
+      <div class="zone">
+        <p class="zone-head">
+          <span class="zone-name">{zone.name}</span>
+          <span class="zone-now" style={`--mark:${concentrationColour(zone.last)}`}>
+            {n(zone.last, 1)}
+          </span>
+        </p>
+
+        <div class="zone-plot">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <line
+              x1="0"
+              x2="100"
+              y1={guideY}
+              y2={guideY}
+              class="zone-guide"
+              vector-effect="non-scaling-stroke"
+            />
+            {paths.map((d, other) =>
+              other === index ? null : (
+                <path d={d} class="zone-ghost" vector-effect="non-scaling-stroke" />
+              ),
+            )}
+            <path
+              d={paths[index]}
+              class="zone-line"
+              stroke={concentrationColour(zone.last)}
+              vector-effect="non-scaling-stroke"
+            />
+          </svg>
+        </div>
+
+        <p class="zone-foot">
+          {n(zone.first, 1)} <span aria-hidden="true">→</span>
+          <span class="visually-hidden">降到</span> {n(zone.last, 1)}
+        </p>
+      </div>
+    ))
+  }
+</div>
+
+<p class="zones-axis">
+  <span>{years[0]}</span>
+  <span class="zones-guide-key">虛線為{guideLabel}</span>
+  <span>{years[years.length - 1]}</span>
+</p>
+
+<style>
+  /*
+   * `auto-fit` with a floor, so the count follows the column rather than a
+   * breakpoint: four across in a full-width chapter, two in a phone. The floor
+   * is the width at which a 28-year line still shows its shape.
+   */
+  .zones {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(10.5rem, 100%), 1fr));
+    gap: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background-color: var(--bg-sunken);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .zone {
+    min-width: 0;
+  }
+
+  .zone-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1);
+    margin: 0 0 0.3rem;
+    line-height: 1.3;
+  }
+
+  .zone-name {
+    font-size: var(--text-sm);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* The number wears its own concentration colour — the same token the line
+     does — so the panel says "this zone, this level" twice without a legend. */
+  .zone-now {
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-sm);
+    color: var(--mark);
+  }
+
+  .zone-plot {
+    position: relative;
+    height: 82px;
+  }
+
+  .zone-plot > svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  /* The other seven. Deliberately below the 3:1 mark threshold and named here
+     for the same reason the placebo lines are: this is context, not a reading,
+     and at eight overlapping paths density is the only thing it communicates. */
+  .zone-ghost {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1;
+    opacity: 0.55;
+  }
+
+  .zone-line {
+    fill: none;
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .zone-guide {
+    stroke: var(--rule);
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+  }
+
+  /*
+   * `--text-sm`, not `--text-xs`, and this was measured rather than chosen.
+   *
+   * At 375px `--text-xs` renders 18.65px, and the smallest type anywhere else
+   * on the site is the footer at 18.70. So this footnote would have become the
+   * smallest text in the document — which is the exact thing the accessibility
+   * note forbids: a figure's annotation should not be the smallest字 in the
+   * document. It also costs nothing here; the panel has the room.
+   */
+  .zone-foot {
+    margin: 0.3rem 0 0;
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--text-sm);
+    color: var(--text-faint);
+  }
+
+  .zones-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin: var(--space-2) 0 0;
+    padding-inline: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--text-faint);
+    font-family: var(--font-numeric);
+  }
+
+  .zones-guide-key {
+    color: var(--text-faint);
+  }
+
+  /* Eight panels of hairlines is a lot of ink to ask a printer for, and the
+     ghosts are the part that carries least. */
+  @media print {
+    .zone-ghost {
+      opacity: 0.35;
+    }
+  }
+</style>
