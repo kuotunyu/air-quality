@@ -59,7 +59,7 @@
    * Media queries are unaffected: `rem` inside a media query always resolves
    * against the initial 16px, never against this, so `40rem` stays 640px.
    */
-  font-size: clamp(18.2px, 17.2px + 0.34vw, 21px);
+  font-size: clamp(20.4px, 19.3px + 0.38vw, 23.5px);
 
   /*
    * A trace of hue, not none.
@@ -76,11 +76,11 @@
    * here: 250 is the LOW-concentration end, so even if a reader did somehow
    * read hue off a surface, it could not be mistaken for a high reading.
    */
-  --bg: oklch(0.970 0.004 250);
-  --bg-raised: oklch(0.993 0.003 250);
-  --bg-sunken: oklch(0.945 0.005 250);
-  --line: oklch(0.858 0.008 250);
-  --line-soft: oklch(0.918 0.006 250);
+  --bg: oklch(0.970 0.009 250);
+  --bg-raised: oklch(0.993 0.012 250);
+  --bg-sunken: oklch(0.945 0.009 250);
+  --line: oklch(0.858 0.009 250);
+  --line-soft: oklch(0.918 0.009 250);
   /* The chapter divider, and the only line on the page that carries meaning
      rather than just separating two boxes. `--line` measures 1.63:1 against the
      body — fine for a table rule you are already looking at, not fine for the
@@ -89,7 +89,7 @@
      measured 2.92 against `--bg`, because the earlier solve checked it against
      the page and this mark also sits on `--bg-sunken`. Re-solved against the
      worst of the three surfaces. */
-  --rule: oklch(0.628 0.010 250);
+  --rule: oklch(0.628 0.012 250);
 
   /*
    * The three inks, solved against APCA rather than against a WCAG ratio.
@@ -112,9 +112,9 @@
    * on purpose: it labels axes and figures, and pushing it to 80 would leave
    * the three inks too close to read as three levels.
    */
-  --text: oklch(0.252 0.008 250);
-  --text-muted: oklch(0.404 0.010 250);
-  --text-faint: oklch(0.493 0.010 250);
+  --text: oklch(0.252 0.010 250);
+  --text-muted: oklch(0.404 0.012 250);
+  --text-faint: oklch(0.493 0.012 250);
 
   /*
    * Concentration ramp, low to high — and the one place on this page where
@@ -197,7 +197,7 @@
   --c3: oklch(0.475 0.088 82);
   --c4: oklch(0.429 0.088 34);
   --c5: oklch(0.383 0.092 11);
-  --c6: oklch(0.336 0.133 338);
+  --c6: oklch(0.336 0.133 346);
 
   /*
    * Reference lines are annotation, not quantity — and they are now neutral,
@@ -208,8 +208,8 @@
    * nothing else, and both lines already carry their own text label. Two
    * lightnesses so the pair is still a pair, each clearing 3:1.
    */
-  --who: oklch(0.628 0.010 250);
-  --taiwan: oklch(0.430 0.010 250);
+  --who: oklch(0.628 0.012 250);
+  --taiwan: oklch(0.430 0.012 250);
   /*
    * Every link on the site, so it is prose and answers to prose thresholds.
    *
@@ -273,10 +273,10 @@
    * a reader has to hunt for. WCAG puts meaningful non-text graphics at 3:1,
    * and these are solved to exactly that.
    */
-  --map-line: oklch(0.618 0.007 250);
+  --map-line: oklch(0.628 0.012 250);
 
   /* The zebra stripe. A recess on light paper; see the rule that uses it. */
-  --table-stripe: oklch(0.945 0.004 250);
+  --table-stripe: oklch(0.945 0.009 250);
 
   --tint-neutral: oklch(0.948 0.005 250);
   --tint-caution: oklch(0.958 0.022 85);
@@ -346,9 +346,9 @@
    * nodes on the page still sat at that size. A figure's annotation should not
    * be the smallest type in the document.
    */
-  --chart-tick: 19px;
-  --chart-label: 19px;
-  --chart-micro: 18px;
+  --chart-tick: 21px;
+  --chart-label: 21px;
+  --chart-micro: 20px;
 
   /* Spacing rhythm. Related things sit one step apart, unrelated things three;
      using the same gap everywhere is what makes a page read as undifferentiated. */
@@ -423,23 +423,23 @@
  */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: oklch(0.205 0.005 250);
-    --bg-raised: oklch(0.262 0.006 250);
-    --bg-sunken: oklch(0.168 0.005 250);
-    --line: oklch(0.362 0.009 250);
-    --line-soft: oklch(0.286 0.007 250);
+    --bg: oklch(0.205 0.009 250);
+    --bg-raised: oklch(0.262 0.009 250);
+    --bg-sunken: oklch(0.168 0.012 250);
+    --line: oklch(0.362 0.010 250);
+    --line-soft: oklch(0.286 0.009 250);
     /* Same solve against the dark body — and same correction: 0.530 measured
        2.92 against `--bg-sunken`, not the 3:1 it was supposed to be. */
-    --rule: oklch(0.536 0.010 250);
+    --rule: oklch(0.536 0.012 250);
 
     /* Solved to the same Lc 92 / 80 / 70 as the light theme, and these are the
        tokens that moved furthest. WCAG had rated this theme the better-
        contrasted of the two; APCA put muted at Lc 60.8, which is large-text
        territory, and faint at 47.1, barely above the floor for text that
        carries meaning at all. */
-    --text: oklch(0.940 0.008 250);
-    --text-muted: oklch(0.881 0.010 250);
-    --text-faint: oklch(0.830 0.010 250);
+    --text: oklch(0.940 0.010 250);
+    --text-muted: oklch(0.881 0.012 250);
+    --text-faint: oklch(0.830 0.012 250);
 
     /* Same solve as the light ramp, and it had more room to work with: the dark
        theme's lightness band sits where sRGB is wider, so chroma could rise as
@@ -451,10 +451,10 @@
     --c3: oklch(0.709 0.131 82);
     --c4: oklch(0.757 0.090 52);
     --c5: oklch(0.804 0.088 12);
-    --c6: oklch(0.852 0.091 338);
+    --c6: oklch(0.852 0.091 346);
 
-    --who: oklch(0.536 0.010 250);
-    --taiwan: oklch(0.760 0.010 250);
+    --who: oklch(0.536 0.012 250);
+    --taiwan: oklch(0.760 0.012 250);
     --accent: oklch(0.871 0.056 250);
 
     --ink-mix: oklch(0.99 0.004 250);
@@ -479,10 +479,10 @@
     --c5-ink: color-mix(in oklab, var(--c5) 68%, var(--ink-mix));
     --c6-ink: color-mix(in oklab, var(--c6) 89%, var(--ink-mix));
 
-    --map-line: oklch(0.542 0.009 250);
+    --map-line: oklch(0.536 0.012 250);
 
     /* And a lift on dark paper — away from the page either way. */
-    --table-stripe: oklch(0.262 0.005 250);
+    --table-stripe: oklch(0.262 0.009 250);
 
     --tint-neutral: oklch(0.245 0.006 250);
     --tint-caution: oklch(0.258 0.022 85);

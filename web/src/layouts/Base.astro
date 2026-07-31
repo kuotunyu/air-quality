@@ -227,7 +227,21 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
        */
       @media (min-width: 62rem) {
         .shell {
-          grid-template-columns: clamp(13rem, 17vw, 15.5rem) minmax(0, 1fr);
+          /*
+           * The floor is what decides whether a chapter title wraps, and a
+           * wrapped title is what pushed the rail past the fold.
+           *
+           * Measured at 1366x768 with the larger type: the six nine-character
+           * titles need 203px of label and were given 170, so every one of them
+           * ran to two lines and the rail grew to 934px inside a 768px window —
+           * on `/data` the current-chapter marker, which is the one thing the
+           * rail exists to do, sat 114px below the fold. Unwrapped the rail
+           * measures 607px and needs no scrolling at all.
+           *
+           * 13.9rem is the width the widest label needs plus the numeral column,
+           * the gap and both paddings — solved, not rounded up by eye.
+           */
+          grid-template-columns: clamp(13.9rem, 17vw, 15.5rem) minmax(0, 1fr);
         }
       }
 
