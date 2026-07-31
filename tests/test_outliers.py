@@ -242,7 +242,9 @@ class TestRuns:
 
 class TestBoundaries:
     def _parts(self, values: Sequence[float]) -> tuple[pl.DataFrame, pl.DataFrame]:
-        present = _hourly(values).with_columns(pl.lit(True).alias("is_usable"))
+        present = _hourly(values).with_columns(
+            pl.lit(True).alias("is_usable"), pl.lit(False).alias("is_rejected")
+        )
         marked = score_hours(_hourly(values).lazy(), min_samples=5, min_zscore=3.0)
         return marked, present
 
@@ -271,7 +273,7 @@ class TestBoundaries:
         assert row["right_boundary"] == "absent"
         assert row["censored"] is True
 
-    def test_an_hour_present_but_unusable_is_not_reported_as_absent(self) -> None:
+    def test_an_hour_present_with_no_number_is_not_reported_as_absent(self) -> None:
         marked, present = self._parts(_noise(30) + [80.0] * 2 + _noise(5))
         cut = marked["ts_local"][32]
         marked = marked.filter(pl.col("ts_local") != cut)
@@ -281,7 +283,25 @@ class TestBoundaries:
 
         runs = classify_boundaries(delimit_runs(marked), marked, present)
 
-        assert runs.row(0, named=True)["right_boundary"] == "unusable"
+        assert runs.row(0, named=True)["right_boundary"] == "value_null"
+
+    def test_an_hour_the_agency_rejected_is_named_as_such(self) -> None:
+        """The nearest thing to an independent check the module has.
+
+        While this and a plain null shared one reason, the question "did the
+        agency throw out the hour next door?" could not be asked at all.
+        """
+        marked, present = self._parts(_noise(30) + [80.0] * 2 + _noise(5))
+        cut = marked["ts_local"][32]
+        marked = marked.filter(pl.col("ts_local") != cut)
+        present = present.with_columns(
+            pl.when(pl.col("ts_local") == cut).then(False).otherwise(True).alias("is_usable"),
+            pl.when(pl.col("ts_local") == cut).then(True).otherwise(False).alias("is_rejected"),
+        )
+
+        runs = classify_boundaries(delimit_runs(marked), marked, present)
+
+        assert runs.row(0, named=True)["right_boundary"] == "agency_rejected"
 
     def test_a_run_cut_by_the_requested_span_says_so_rather_than_blaming_the_record(
         self,
@@ -363,7 +383,18 @@ class TestCorroborationCounts:
             schema={"station_name": pl.Utf8, "neighbor_name": pl.Utf8, "km": pl.Float64}
         )
         ledger = pl.DataFrame(
-            {"station_name": ["西屯"], "n_neighbours": [0], "has_coordinates": [True]}
+            {
+                "station_name": ["西屯"],
+                "n_neighbours": [0],
+                "km_nearest_neighbour": [None],
+                "has_coordinates": [True],
+            },
+            schema={
+                "station_name": pl.Utf8,
+                "n_neighbours": pl.UInt32,
+                "km_nearest_neighbour": pl.Float64,
+                "has_coordinates": pl.Boolean,
+            },
         )
 
         out = corroborate(runs, marked, edges, ledger, lag_hours=1, null_shift_days=(14,))
@@ -380,7 +411,18 @@ class TestCorroborationCounts:
             schema={"station_name": pl.Utf8, "neighbor_name": pl.Utf8, "km": pl.Float64}
         )
         ledger = pl.DataFrame(
-            {"station_name": ["西屯"], "n_neighbours": [0], "has_coordinates": [True]}
+            {
+                "station_name": ["西屯"],
+                "n_neighbours": [0],
+                "km_nearest_neighbour": [None],
+                "has_coordinates": [True],
+            },
+            schema={
+                "station_name": pl.Utf8,
+                "n_neighbours": pl.UInt32,
+                "km_nearest_neighbour": pl.Float64,
+                "has_coordinates": pl.Boolean,
+            },
         )
 
         out = corroborate(runs, marked, edges, ledger, lag_hours=1, null_shift_days=(14,))
@@ -406,6 +448,7 @@ class TestNeighboursMustMoveTheSameWay:
             {
                 "station_name": ["西屯", "忠明"],
                 "n_neighbours": [1, 1],
+                "km_nearest_neighbour": [3.0, 3.0],
                 "has_coordinates": [True, True],
             }
         )
@@ -427,6 +470,7 @@ class TestNeighboursMustMoveTheSameWay:
             {
                 "station_name": ["西屯", "忠明"],
                 "n_neighbours": [1, 1],
+                "km_nearest_neighbour": [3.0, 3.0],
                 "has_coordinates": [True, True],
             }
         )
@@ -458,6 +502,7 @@ class TestTheNullHasItsOwnDenominator:
             {
                 "station_name": ["西屯", "忠明"],
                 "n_neighbours": [1, 1],
+                "km_nearest_neighbour": [3.0, 3.0],
                 "has_coordinates": [True, True],
             }
         )
@@ -525,11 +570,25 @@ class TestVerdictOrder:
         assert out["verdict_reason"][0] == "no_coordinates"
 
     def test_no_scoreable_neighbour_is_absence_of_evidence(self) -> None:
-        """Not evidence of an instrument spike — the distinction the gate exists for."""
+        """Not evidence of a lone spike — the distinction the gate exists for."""
         out = self._run(n_neighbors_scoreable=0)
 
         assert out["verdict"][0] == "uncheckable"
-        assert out["verdict_reason"][0] == "no_scoreable_neighbour"
+        assert out["verdict_reason"][0] == "too_few_scoreable_neighbours"
+
+    def test_a_high_run_that_could_not_have_reached_an_episode_is_not_judged(self) -> None:
+        """One scoreable neighbour cannot make three stations, so there was no
+        alternative for the verdict to have chosen."""
+        out = self._run(n_neighbors_scoreable=1, n_neighbors_elevated=0)
+
+        assert out["verdict"][0] == "uncheckable"
+        assert out["verdict_reason"][0] == "too_few_scoreable_neighbours"
+
+    def test_a_low_run_keeps_the_bar_at_zero(self) -> None:
+        """It was never eligible for the episode verdict, so nothing is unreachable."""
+        out = self._run(direction="low", n_neighbors_scoreable=1, duration_hours=1)
+
+        assert out["verdict"][0] == "uncorroborated_short_rise"
 
     def test_a_one_hour_rise_at_four_stations_is_still_an_episode(self) -> None:
         """Extent, not brevity, is the spec's discriminator."""
@@ -559,13 +618,63 @@ class TestVerdictOrder:
     def test_short_and_alone_is_the_specs_suspect_case(self) -> None:
         out = self._run(duration_hours=2, n_neighbors_elevated=0)
 
-        assert out["verdict"][0] == "suspected_instrument"
+        assert out["verdict"][0] == "uncorroborated_short_rise"
 
     def test_a_long_lone_excursion_is_named_but_not_explained(self) -> None:
         """The residual the spec does not describe keeps its own label."""
         out = self._run(duration_hours=9, n_neighbors_elevated=0)
 
-        assert out["verdict"][0] == "isolated_sustained"
+        assert out["verdict"][0] == "uncorroborated_sustained_rise"
+
+
+class TestTheLedgerSurvivesANewColumn:
+    """The end-to-end shape nothing was testing.
+
+    Adding `km_nearest_neighbour` to the ledger left the frame that carries the
+    unplaceable stations one column short, and `run_outliers` raised ShapeError
+    on the shipped configuration while all 655 tests passed — because every one
+    of them called a helper and none of them called the function. The frame is
+    now derived from the ledger's own schema, and this asserts that property
+    rather than the column list, so the next column added is covered too.
+    """
+
+    GEO = pl.DataFrame(
+        {
+            "station_name": ["西屯", "忠明"],
+            "lat": [24.162, 24.152],
+            "lon": [120.616, 120.641],
+        }
+    )
+
+    def test_an_unplaceable_station_can_be_appended_to_whatever_the_ledger_carries(
+        self,
+    ) -> None:
+        _, ledger = neighbour_edges(radius_km=20.0, geography=self.GEO)
+        measured = [c for c in ledger.columns if c not in ("station_name", "has_coordinates")]
+
+        extra = (
+            pl.DataFrame({"station_name": ["萬里"]}, schema={"station_name": pl.Utf8})
+            .with_columns(
+                *[pl.lit(None, dtype=ledger.schema[name]).alias(name) for name in measured],
+                pl.lit(False).alias("has_coordinates"),
+            )
+            .select(ledger.columns)
+        )
+
+        combined = pl.concat([ledger, extra], how="vertical")
+
+        assert combined.height == 3
+        assert combined.schema == ledger.schema
+        unplaceable = combined.filter(pl.col("station_name") == "萬里").row(0, named=True)
+        for name in measured:
+            assert unplaceable[name] is None, f"{name} must be null, not a measured zero"
+
+    def test_the_ledger_carries_the_distance_that_explains_the_verdict_rate(self) -> None:
+        """r = 0.76 between this and a station's uncorroborated share."""
+        _, ledger = neighbour_edges(radius_km=20.0, geography=self.GEO)
+
+        assert "km_nearest_neighbour" in ledger.columns
+        assert ledger["km_nearest_neighbour"].min() > 0
 
 
 class TestBaselineCell:

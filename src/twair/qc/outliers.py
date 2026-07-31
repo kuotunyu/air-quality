@@ -50,8 +50,24 @@ the local level is a statement about a reading, not about the air.
 
 What it may not conclude
 ------------------------
-* A ``suspected_instrument`` run is not a diagnosed instrument fault. It is a
-  short rise that its neighbours did not share, which is what was measured.
+* A ``uncorroborated_short_rise`` run is not an instrument fault, and it is named
+  the way it is because an earlier name said it was. Measured with the method
+  `qc/sentinels.py` uses — the separately valid wind and rain recorded at the
+  same station-hour — this class is **not distinguishable** from
+  ``regional_episode``: relative to ordinary hours at the same stations both are
+  stagnant and dry, and the gap between the two classes is 17-34% of the gap
+  each has from background, with the sign reversing on P(wind < 0.5 m/s) so that
+  the uncorroborated class is the calmer one. Its month-of-year profile matches
+  ``uncorroborated_sustained_rise`` almost exactly (both peak Jul-Aug on five of
+  six measurands) rather than looking like a fault, which has no season. What
+  was measured is that the rise was short and the neighbours did not share it.
+  That is all the name now says.
+* A station's share of uncorroborated verdicts is substantially a property of
+  where it was built. Across the six measurands the correlation between a
+  station's nearest-neighbour distance and its uncorroborated-short-rise share
+  is r = 0.76; binned, 6.2% under 5 km against 28.1% beyond 20 km. Ranking
+  stations or years by that share ranks network geometry and build-out unless
+  ``km_nearest_neighbour`` is held constant, which is why it ships on every run.
 * A ``regional_episode`` is not 沙塵, not 境外傳輸 and not an inversion. Naming
   an origin needs the trajectory model this repository deliberately does not
   have (see `analysis/sources.py`), and the hypothesis in the conf/qc.yaml
@@ -120,6 +136,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "BASELINE_CELL",
     "BOUNDARY_REASONS",
+    "OUTPUT_TABLES",
     "VERDICTS",
     "OutlierReport",
     "classify_boundaries",
@@ -157,28 +174,30 @@ INVALID_FLAGS: tuple[str, ...] = (
 )
 
 Verdict = Literal[
-    "suspected_instrument",
+    "uncorroborated_short_rise",
     "regional_episode",
-    "isolated_sustained",
+    "uncorroborated_sustained_rise",
     "uncheckable",
 ]
 VERDICTS: tuple[Verdict, ...] = (
-    "suspected_instrument",
+    "uncorroborated_short_rise",
     "regional_episode",
-    "isolated_sustained",
+    "uncorroborated_sustained_rise",
     "uncheckable",
 )
 
-#: Why a run stopped where it did. Five reasons, not a censored/not-censored
+#: Why a run stopped where it did. Six reasons, not a censored/not-censored
 #: bit: the reason a run ended is itself a finding, and only the first of these
 #: means the excursion actually ended.
 BOUNDARY_REASONS: tuple[str, ...] = (
     "below_threshold",
     "unscored",
-    "unusable",
+    "agency_rejected",
+    "value_null",
     "absent",
     "series_edge",
     "outside_requested_span",
+    "direction_reversal",
 )
 
 
@@ -257,7 +276,7 @@ class OutlierReport:
     def suspect_rate(self) -> float | None:
         """Suspected-instrument runs as a share of runs that got a verdict."""
         judged = self.total_runs - self.verdicts.get("uncheckable", 0)
-        return None if judged == 0 else self.verdicts.get("suspected_instrument", 0) / judged
+        return None if judged == 0 else self.verdicts.get("uncorroborated_short_rise", 0) / judged
 
     def summary(self) -> str:
         high = self.high_rate
@@ -324,6 +343,18 @@ def neighbour_edges(
     ledger = (
         pl.DataFrame({STATION: names})
         .join(edges.group_by(STATION).len(name="n_neighbours"), on=STATION, how="left")
+        # Distance to the nearest placed station, kept rather than discarded.
+        # A station's share of uncorroborated verdicts is largely a function of
+        # how far away its nearest neighbour is — measured across the six
+        # measurands, Pearson r = 0.76 between nearest-neighbour distance and a
+        # station's uncorroborated-short-rise share, rising from 6.2% under 5 km
+        # to 28.1% beyond 20 km. Without this column a reader ranking stations
+        # by that share is ranking network geometry with no way to see it.
+        .join(
+            edges.group_by(STATION).agg(pl.col("km").min().alias("km_nearest_neighbour")),
+            on=STATION,
+            how="left",
+        )
         # A placed station with no edge measured zero neighbours inside the
         # radius. That is a number; an unplaceable station has none.
         .with_columns(
@@ -386,10 +417,13 @@ def score_hours(frame: pl.LazyFrame, *, min_samples: int, min_zscore: float) -> 
             # detector is a band-pass and this column is where that shows.
             # Contamination also inflates the MAD: about 10% of a thirty-point
             # cell lifts the scale roughly 14%, which deflates every z in it.
-            (
+            pl.when(pl.col("robust_z").is_not_null())
+            .then(
                 pl.col("excursion").fill_null(value=False).sum().over(BASELINE_CELL)
                 / pl.col("n_cell")
-            ).alias("elevated_share_of_cell")
+            )
+            .otherwise(None)
+            .alias("elevated_share_of_cell")
         )
     )
     return scored.collect()
@@ -514,7 +548,9 @@ def classify_boundaries(
         pl.col(TIMESTAMP).max().alias("_span_hi"),
     )
     lookup = present.join(
-        marked.select(STATION, TIMESTAMP, "excursion"), on=[STATION, TIMESTAMP], how="left"
+        marked.select(STATION, TIMESTAMP, "excursion", "direction"),
+        on=[STATION, TIMESTAMP],
+        how="left",
     )
 
     def requested_miss(hour_col: str) -> pl.Expr:
@@ -532,7 +568,9 @@ def classify_boundaries(
                 STATION,
                 pl.col(TIMESTAMP).alias(hour_col),
                 pl.col("is_usable").alias(f"_{side}_usable"),
+                pl.col("is_rejected").alias(f"_{side}_rejected"),
                 pl.col("excursion").alias(f"_{side}_tested"),
+                pl.col("direction").alias(f"_{side}_direction"),
             ),
             on=[STATION, hour_col],
             how="left",
@@ -546,10 +584,21 @@ def classify_boundaries(
             .then(pl.lit("series_edge"))
             .when(pl.col(f"_{side}_usable").is_null())
             .then(pl.lit("absent"))
+            # Split, because these two are the difference between "the agency
+            # looked at this hour and threw it out" and "there was no number".
+            # The first is the nearest thing to an independent check the module
+            # has, and while both were called `unusable` it could not be run.
+            .when(~pl.col(f"_{side}_usable") & pl.col(f"_{side}_rejected"))
+            .then(pl.lit("agency_rejected"))
             .when(~pl.col(f"_{side}_usable"))
-            .then(pl.lit("unusable"))
+            .then(pl.lit("value_null"))
             .when(pl.col(f"_{side}_tested").is_null())
             .then(pl.lit("unscored"))
+            # Tested, and it WAS an excursion — the other way. Measured on the
+            # whole store, 472 boundary hours across 463 runs. Calling those
+            # `below_threshold` says the hour was ordinary, and it was not.
+            .when(pl.col(f"_{side}_tested") & (pl.col(f"_{side}_direction") != pl.col("direction")))
+            .then(pl.lit("direction_reversal"))
             .otherwise(pl.lit("below_threshold"))
             .alias(f"{side}_boundary")
         )
@@ -719,6 +768,7 @@ def corroborate(
             pl.lit(0, dtype=pl.UInt32).alias("n_null_shifts_measurable"),
         )
 
+    out = out.join(ledger.select(STATION, "km_nearest_neighbour"), on=STATION, how="left")
     placed = set(ledger.filter(pl.col("has_coordinates"))[STATION].to_list())
     counts = ("n_neighbors_placed", "n_neighbors_scoreable", "n_neighbors_elevated")
     return (
@@ -745,6 +795,12 @@ def corroborate(
             .then(pl.col("n_neighbors_elevated_null"))
             .otherwise(None)
             .alias("n_neighbors_elevated_null"),
+            # Same rule as the counts above it: an unplaceable station did not
+            # try four calendars and find them empty, it had no calendar.
+            pl.when(pl.col("has_coordinates"))
+            .then(pl.col("n_null_shifts_measurable"))
+            .otherwise(None)
+            .alias("n_null_shifts_measurable"),
         )
         .with_columns(
             (pl.col("n_neighbors_elevated") - pl.col("n_neighbors_elevated_null")).alias(
@@ -762,7 +818,14 @@ def verdict_expr(
     The order is load-bearing:
 
     1. no coordinates          — nothing about neighbours can be said at all
-    2. no scoreable neighbour  — absence of evidence, not evidence of a spike
+    2. too few scoreable neighbours — absence of evidence, not evidence of a
+       lone spike. The bar is ``min_stations - 1`` rather than one, because a
+       high run with a single scoreable neighbour cannot reach
+       ``regional_episode`` whatever that neighbour did: the verdict would
+       record the station's situation, not a comparison. Measured on the first
+       whole-store pass, 19,105 runs sat in that unreachable support and were
+       judged anyway. Low runs keep the bar at zero, since they are never
+       eligible for the episode verdict in the first place.
     3. synchronous rise        — **before** the duration test, because a
        one-hour rise seen at four stations is still network-wide; the spec's
        discriminator is extent, not brevity. High tail only: several stations
@@ -773,6 +836,10 @@ def verdict_expr(
     5. short and uncorroborated — the spec's 可疑
     6. otherwise                — the residual the spec does not describe, left
        named but unexplained rather than given a mechanism nobody measured
+
+    Steps 5 and 6 are one population cut at ``max_duration_hours``. They share a
+    seasonal profile and they share their meteorology; only the length differs.
+    The two names differ only in the word that describes the length.
     """
     stations_rising = pl.col("n_neighbors_elevated") + 1
     high = pl.col("direction") == "high"
@@ -780,7 +847,9 @@ def verdict_expr(
     verdict = (
         pl.when(~pl.col("has_coordinates"))
         .then(pl.lit("uncheckable"))
-        .when(pl.col("n_neighbors_scoreable") == 0)
+        .when(high & (pl.col("n_neighbors_scoreable") < min_stations - 1))
+        .then(pl.lit("uncheckable"))
+        .when(~high & (pl.col("n_neighbors_scoreable") == 0))
         .then(pl.lit("uncheckable"))
         .when(high & (stations_rising >= min_stations))
         .then(pl.lit("regional_episode"))
@@ -790,14 +859,16 @@ def verdict_expr(
             (pl.col("duration_hours") <= max_duration_hours)
             & (pl.col("n_neighbors_elevated") < min_neighbor_corroboration)
         )
-        .then(pl.lit("suspected_instrument"))
-        .otherwise(pl.lit("isolated_sustained"))
+        .then(pl.lit("uncorroborated_short_rise"))
+        .otherwise(pl.lit("uncorroborated_sustained_rise"))
         .alias("verdict")
     )
     reason = (
         pl.when(~pl.col("has_coordinates"))
         .then(pl.lit("no_coordinates"))
-        .when(pl.col("n_neighbors_scoreable") == 0)
+        .when(high & (pl.col("n_neighbors_scoreable") < min_stations - 1))
+        .then(pl.lit("too_few_scoreable_neighbours"))
+        .when(~high & (pl.col("n_neighbors_scoreable") == 0))
         .then(pl.lit("no_scoreable_neighbour"))
         .when(high & (stations_rising >= min_stations))
         .then(pl.lit("synchronous_rise"))
@@ -949,9 +1020,9 @@ def _hour_rates(marked: pl.DataFrame, pollutant: str) -> pl.DataFrame:
             .median()
             .alias("median_cell_size"),
             pl.col("elevated_share_of_cell").max().alias("max_elevated_share_of_cell"),
-            (pl.col("elevated_share_of_cell") >= 0.25)
-            .sum()
-            .cast(pl.UInt32)
+            pl.when(pl.col("robust_z").is_not_null().any())
+            .then((pl.col("elevated_share_of_cell") >= 0.25).sum().cast(pl.UInt32))
+            .otherwise(None)
             .alias("hours_in_quarter_contaminated_cells"),
         )
         .with_columns(
@@ -1044,6 +1115,7 @@ def run_outliers(
                 TIMESTAMP,
                 pl.col("value").cast(pl.Float64),
                 usable().alias("is_usable"),
+                pl.col("flag").cast(pl.Utf8).is_in(INVALID_FLAGS).alias("is_rejected"),
             )
             .collect()
         )
@@ -1138,21 +1210,24 @@ def run_outliers(
     # coverage is looking for, so they go in the table, not only in a note.
     unplaceable = sorted(observed_stations - set(ledger[STATION].to_list()))
     if unplaceable:
+        # Built from the ledger's own schema rather than from a literal, so a
+        # column added to `neighbour_edges` cannot desynchronise the two. It
+        # did: adding `km_nearest_neighbour` there left this frame one column
+        # short and `run_outliers` raised ShapeError on the shipped config,
+        # while every one of the 655 tests still passed — because none of them
+        # ran this function end to end.
+        measured = [name for name in ledger.columns if name not in (STATION, "has_coordinates")]
         ledger = pl.concat(
             [
                 ledger,
-                pl.DataFrame(
-                    {
-                        STATION: unplaceable,
-                        "n_neighbours": [None] * len(unplaceable),
-                        "has_coordinates": [False] * len(unplaceable),
-                    },
-                    schema={
-                        STATION: pl.Utf8,
-                        "n_neighbours": pl.UInt32,
-                        "has_coordinates": pl.Boolean,
-                    },
-                ),
+                pl.DataFrame({STATION: unplaceable}, schema={STATION: ledger.schema[STATION]})
+                .with_columns(
+                    # Every measured column is null: not one of these was zero,
+                    # none of them was measurable.
+                    *[pl.lit(None, dtype=ledger.schema[name]).alias(name) for name in measured],
+                    pl.lit(False).alias("has_coordinates"),
+                )
+                .select(ledger.columns),
             ],
             how="vertical",
         ).sort(STATION)
@@ -1171,10 +1246,29 @@ def run_outliers(
         for name, frames in collected.items()
         if frames
     }
+    # Month-of-year per verdict, published rather than left to be derived. It is
+    # the check that separates the two "alone" classes from the corroborated
+    # one, and it is the module's strongest positive result: on the first
+    # whole-store pass, `regional_episode` peaked in November-December for the
+    # particle and combustion tracers — the north-east monsoon season — and in
+    # June for O3, the photochemical one. A statistic that had merely relabelled
+    # noise would not have put the ozone phase opposite the particle phase. The
+    # two uncorroborated classes share one profile, peaking in July-August on
+    # five of six measurands, which is why their names differ only in length.
+    if "runs" in tables:
+        tables["verdict_seasonality"] = (
+            tables["runs"]
+            .with_columns(pl.col("t_start").dt.month().cast(pl.Int8).alias("month"))
+            .group_by("pollutant", "verdict", "direction", "month")
+            .agg(pl.len().cast(pl.UInt32).alias("runs"))
+            .sort("pollutant", "verdict", "direction", "month")
+        )
     tables["station_coverage"] = ledger
     tables["parameters"] = pl.DataFrame(
         {
             "parameter": [
+                "pollutants",
+                "years",
                 "min_samples",
                 "min_zscore",
                 "neighbor_radius_km",
@@ -1185,6 +1279,12 @@ def run_outliers(
                 "null_shift_days",
             ],
             "value": [
+                # Without these two a reader cannot tell "this measurand was
+                # scanned and produced nothing" from "this measurand was never
+                # scanned", and a directory of parquet says nothing about which
+                # span it describes.
+                ",".join(requested),
+                f"{years[0]}:{years[1]}",
                 str(min_samples),
                 str(min_zscore),
                 str(radius_km),
@@ -1196,6 +1296,12 @@ def run_outliers(
             ],
         }
     )
+
+    tables["notes"] = pl.DataFrame({"note": list(notes)}, schema={"note": pl.Utf8})
+    # An empty run table still has a shape. A reader who loads a zero-column
+    # parquet learns that the file was written; one who loads this learns what
+    # the run looked for and did not find.
+    tables.setdefault("runs", _empty_runs())
 
     report = OutlierReport(
         pollutants=tuple(requested),
@@ -1226,13 +1332,41 @@ def run_outliers(
     return tables, report
 
 
+#: Every table a run is expected to produce. Named here so a run that produces
+#: nothing for one of them still writes an empty frame over the last run's file:
+#: an empty table is a finding, a stale one from a different span is a lie, and
+#: the two are indistinguishable once they sit side by side in a directory.
+OUTPUT_TABLES: tuple[str, ...] = (
+    "runs",
+    "hour_rates",
+    "agency_agreement",
+    "unscored_deviation",
+    "verdict_seasonality",
+    "station_coverage",
+    "parameters",
+    "notes",
+)
+
+
 def write_outlier_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
-    """Persist one parquet per table under ``data/outputs/qc_outliers/``."""
+    """Persist one parquet per table under ``data/outputs/qc_outliers/``.
+
+    Every name in :data:`OUTPUT_TABLES` is written on every run, empty or not.
+    Skipping the empty ones left the previous run's file in place beside the new
+    ones, so the directory could describe two different spans at once with
+    nothing in it naming either — which is exactly what happened during this
+    module's own review.
+    """
     destination = outputs_dir("qc_outliers")
     destination.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
+    for name in OUTPUT_TABLES:
+        frame = tables.get(name, pl.DataFrame())
+        path = destination / f"{name}.parquet"
+        frame.write_parquet(path, compression="zstd")
+        written[name] = path
     for name, frame in tables.items():
-        if frame.height == 0:
+        if name in written:
             continue
         path = destination / f"{name}.parquet"
         frame.write_parquet(path, compression="zstd")

@@ -96,6 +96,7 @@ flowchart TD
     end
 
     subgraph Analytics [Analysis Modules]
+        L -->|twair qc outliers| N_out[Isolated Excursion vs Network Episode]
         M -->|M1| N[2018 Method Replication]
         M -->|M2-M3| O[Hourly Drivers & Pitfall Analysis]
         M -->|M4-M5| P[Weather Normalization & Causal Policy Inference]
