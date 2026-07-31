@@ -27,7 +27,9 @@ window also starves itself on exactly the hours that matter: a three-day outage
 removes most of a 25-hour window but only ~3 of ~30 cell members. Measured
 scoreable fractions of the agency's own rejected readings, PM2.5 2015: 99.2% /
 96.9% / 74.4% per rejection category under the cell, against 57.1% / 59.6% /
-4.9% under the rolling window.
+4.9% under the rolling window. Both of those comparisons are reproducible —
+``uv run python scripts/compare_outlier_baselines.py`` runs them here rather
+than citing a review.
 
 What the threshold is not
 -------------------------
@@ -50,7 +52,7 @@ the local level is a statement about a reading, not about the air.
 
 What it may not conclude
 ------------------------
-* A ``uncorroborated_short_rise`` run is not an instrument fault, and it is named
+* An ``uncorroborated_short_rise`` run is not an instrument fault, and it is named
   the way it is because an earlier name said it was. Measured with the method
   `qc/sentinels.py` uses — the separately valid wind and rain recorded at the
   same station-hour — this class is **not distinguishable** from
@@ -63,11 +65,18 @@ What it may not conclude
   was measured is that the rise was short and the neighbours did not share it.
   That is all the name now says.
 * A station's share of uncorroborated verdicts is substantially a property of
-  where it was built. Across the six measurands the correlation between a
-  station's nearest-neighbour distance and its uncorroborated-short-rise share
-  is r = 0.76; binned, 6.2% under 5 km against 28.1% beyond 20 km. Ranking
-  stations or years by that share ranks network geometry and build-out unless
-  ``km_nearest_neighbour`` is held constant, which is why it ships on every run.
+  where it was built, and the size of that depends on which runs you look at.
+  Among stations with at least 200 high runs: **r = +0.61** between a station's
+  nearest-neighbour distance and its uncorroborated-short-rise share over runs
+  that received a verdict, **+0.75** once restricted to hours with at least five
+  scoreable neighbours, and **+0.34** over every high run including the refused
+  ones. The last is lowest because ``too_few_scoreable_neighbours`` now removes
+  the most isolated stations from the judged population — their median nearest
+  neighbour is 32.2 km against 8.3 km for all high runs — so the ≥20 km band
+  comes out *lowest* on the shipped output (6.1%) while the 10-20 km band is
+  highest (18.0%). Ranking stations or years by that share still ranks network
+  geometry and build-out unless ``km_nearest_neighbour`` is held constant, which
+  is why it ships on every run.
 * A ``regional_episode`` is not 沙塵, not 境外傳輸 and not an inversion. Naming
   an origin needs the trajectory model this repository deliberately does not
   have (see `analysis/sources.py`), and the hypothesis in the conf/qc.yaml
