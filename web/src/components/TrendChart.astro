@@ -1,5 +1,15 @@
 ---
-import { linePath, markInk, n, padded, ticks, yGutter } from "../lib/chart";
+import {
+  labelGutter,
+  linePath,
+  markInk,
+  n,
+  padded,
+  points,
+  spreadLabels,
+  ticks,
+  yGutter,
+} from "../lib/chart";
 
 interface Props {
   years: number[];
@@ -37,10 +47,49 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
   const index = Math.round((k * (years.length - 1)) / Math.max(labelCount - 1, 1));
   return { year: years[index], index };
 });
+
+/*
+ * Where each line ends, written at the end of the line.
+ *
+ * This component had no key gutter at all — its only identifier was the legend
+ * under the plot, so knowing which line was which meant holding a colour in
+ * your head and looking away from the chart to spend it. That is most of why
+ * "the colours are too similar" hurt as much as it did: hue was carrying the
+ * entire join between a name and a line, and the reader had to make that join
+ * by memory. Four other components on this site already use `.plot-keys`; this
+ * one, which draws the chapter's headline figures, never did.
+ *
+ * The label is the VALUE, not the name. The legend above already gives names,
+ * and the number is the thing a reader is looking for anyway — so the two do
+ * different jobs instead of saying the same word twice.
+ *
+ * Last reported rather than last in the array: a series that stops early ends
+ * where its data ends, and putting its label at a null would silently move it.
+ */
+const keys = series
+  .map((s) => {
+    for (let i = s.values.length - 1; i >= 0; i -= 1) {
+      const value = s.values[i];
+      if (value != null && Number.isFinite(value)) return { series: s, value };
+    }
+    return null;
+  })
+  .filter((k): k is { series: Props["series"][number]; value: number } => k != null);
+
+// `spreadLabels` works in the caller's units, and these are percentages of the
+// plot box — so the 26px minimum gap has to be converted to one.
+const keyY = spreadLabels(
+  keys.map((k) => y(k.value)),
+  (26 / height) * 100,
+);
+const keyWidth = labelGutter(keys.map((k) => n(k.value, 1)));
 ---
 
 <div class="chart">
-  <div class="plot" style={`--plot-h:${height}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px`}>
+  <div
+    class="plot"
+    style={`--plot-h:${height}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px;--key-w:${keyWidth}px`}
+  >
     <div class="plot-y">
       {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
     </div>
@@ -90,10 +139,43 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
         }
       </svg>
 
+      {/*
+        Data points, as HTML rather than `<circle>`. The marks layer is
+        stretched by `preserveAspectRatio="none"`, which turns a circle into an
+        ellipse; a span with `border-radius: 50%` stays round by construction —
+        the same reason `.plot-pt` exists for the other charts.
+
+        They matter more than they look: a line alone does not say where it was
+        measured, so a reader cannot tell an annual series from a smooth curve
+        drawn through it.
+      */}
+      {
+        series.map((s) =>
+          points(s.values, x, y).map((pt) => (
+            <span
+              class="plot-pt"
+              style={`left:${n(pt.x, 3)}%;top:${n(pt.y, 3)}%;color:${s.colour}`}
+            />
+          )),
+        )
+      }
+
       {
         visibleGuides.map((guide) => (
           <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
             {guide.label}
+          </span>
+        ))
+      }
+    </div>
+
+    <div class="plot-keys">
+      {
+        keys.map((k, i) => (
+          <span
+            style={`top:${n(keyY[i], 3)}%;--mark:${k.series.colour};--mark-ink:${markInk(k.series.colour)}`}
+          >
+            {n(k.value, 1)}
           </span>
         ))
       }
@@ -126,6 +208,22 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
 </div>
 
 <style>
+  /*
+   * The end labels are an annotation of where a line ENDS, so they only exist
+   * while they can sit there.
+   *
+   * Below 26rem `global.css` turns `.plot-keys` from a column into a flow row
+   * under the plot, which is right for the components that put series NAMES in
+   * it — a name is still a name in a row. These are bare values, and a row of
+   * bare numbers beside a legend that already names every series is two things
+   * saying half a sentence each. The numbers are in the prose either way.
+   */
+  @container (max-width: 26rem) {
+    .plot-keys {
+      display: none;
+    }
+  }
+
   .swatch.dashed {
     background: transparent;
     border-bottom: 2px dashed;
