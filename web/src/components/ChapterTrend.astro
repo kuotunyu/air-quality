@@ -8,7 +8,7 @@
  */
 import TrendChart from "./TrendChart.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
-import { concentrationColour, n } from "../lib/chart";
+import { n } from "../lib/chart";
 
 const firstYear = trend.years[0];
 const lastYear = trend.years[trend.years.length - 1];
@@ -153,7 +153,7 @@ const airzoneSeries = (trendByAirzone.series as {
     level: [...s.mean].reverse().find((v) => v != null) ?? -Infinity,
   }))
   .sort((a, b) => b.level - a.level)
-  .map((s) => ({ ...s, colour: concentrationColour(s.level) }));
+  .map((s, i) => ({ ...s, colour: `var(--k${i})` }));
 
 
 ---
@@ -332,14 +332,15 @@ const airzoneSeries = (trendByAirzone.series as {
       series={airzoneSeries}
       guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
       unit="μg/m³"
-      height={460}
+      height={620}
       keys="named"
       legend={false}
+      notesAt="left"
     />
     <figcaption>
       各空品區 PM2.5 年均值。每條線在自己的末端寫著自己的名字與 2025 年的值，
-      所以不需要對照圖例。顏色是該區最新年均值的濃度分帶（與入口地圖同一組分界），
-      用來分群而不是用來指認——八條線的身分由標籤承擔。
+      並以自己的顏色連回線上，所以不需要對照圖例。八個顏色是為了「彼此分得開」解出來的
+      （最接近的一對 dE00 18.9，含綠色盲與紅色盲模擬），與濃度分帶無關。
       同樣只採計年覆蓋率 ≥ 75% 的測站年。
     </figcaption>
   </figure>

@@ -152,8 +152,10 @@ export function markInk(colour: string): string {
   // `k` as well as `c` since the categorical set arrived: every `--kN` has a
   // solved `-ink` twin by the same rule, and without this arm a categorical
   // series label would silently fall through to `--text-muted` and lose the
-  // one thing tying it to its line.
-  const named = /^var\(--([ck][0-6])\)$/.exec(colour.trim());
+  // one thing tying it to its line. `0-7` because the categorical set grew to
+  // eight — `0-6` would have silently dropped `--k7`, which is exactly the kind
+  // of quiet fallback this comment exists to prevent.
+  const named = /^var\(--([ck][0-7])\)$/.exec(colour.trim());
   return named ? `var(--${named[1]}-ink)` : "var(--text-muted)";
 }
 
@@ -203,7 +205,7 @@ export const concentrationLegend = PM25_BREAKS.map((breakpoint, index) => ({
  * bit over half. Being 10px generous costs nothing, and being short would put a
  * label back outside the card.
  */
-export function labelGutter(labels: (string | number)[], size = 18, pad = 16): number {
+export function labelGutter(labels: (string | number)[], size = 24, pad = 16): number {
   const width = (label: string | number) =>
     [...String(label)].reduce(
       (sum, ch) => sum + (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56),
@@ -228,7 +230,9 @@ export function labelGutter(labels: (string | number)[], size = 18, pad = 16): n
  */
 export function yGutter(labels: (string | number)[]): number {
   // Must track `--chart-tick` in global.css. Both are px because the plot is.
-  return labelGutter(labels, 21, 12);
+  // 21 -> 24 on 2026-08-01 with the token; left behind, every y gutter on the
+  // site would have been sized for type 14% smaller than the type in it.
+  return labelGutter(labels, 24, 12);
 }
 
 /**

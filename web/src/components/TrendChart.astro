@@ -28,6 +28,16 @@ interface Props {
    */
   keys?: "value" | "named" | "none";
   legend?: boolean;
+  /*
+   * Which side of the plot the reference-line labels sit on.
+   *
+   * They default right, which is where they have always been — and on a chart
+   * whose lines END at the right, that is on top of the end labels. Measured on
+   * the zone figure: 「台灣年均標準 15」 landed directly across 「高屏 16.7」 and
+   * 「雲嘉南 15.7」. The caller knows which half of its own plot is empty; this
+   * component cannot.
+   */
+  notesAt?: "left" | "right";
 }
 
 const {
@@ -38,6 +48,7 @@ const {
   height = 300,
   keys: keyStyle = "value",
   legend = true,
+  notesAt = "right",
 } = Astro.props;
 
 // Everything below is in percent of the plot box, not pixels. The box has no
@@ -113,6 +124,10 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     style={`--plot-h:${height}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px;--key-w:${keyWidth}px`}
   >
     <div class="plot-y">
+      {/* On the axis it measures. It used to be the last entry of the legend,
+          which put the units in a row of series names at the bottom of the
+          figure — a long way from the numbers they belong to. */}
+      <span class="y-unit">{unit}</span>
       {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
     </div>
 
@@ -184,7 +199,7 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
 
       {
         visibleGuides.map((guide) => (
-          <span class="plot-note" style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
+          <span class={`plot-note note-${notesAt}`} style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
             {guide.label}
           </span>
         ))
@@ -258,7 +273,7 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
         </span>
       ))
     }
-    <span class="legend-item unit">{unit}</span>
+
   </div>
 </div>
 
@@ -273,6 +288,31 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
    * bare numbers beside a legend that already names every series is two things
    * saying half a sentence each. The numbers are in the prose either way.
    */
+  /* Reference-line labels, on whichever side the caller says is empty. */
+  .plot-note.note-left {
+    right: auto;
+    left: 0.35em;
+    text-align: left;
+  }
+
+  /* The unit sits above the topmost tick rather than beside one. `bottom`
+     rather than `top`, so it hangs off the axis head instead of overlapping
+     the first gridline whatever the tick values turn out to be. */
+  .y-unit {
+    top: auto;
+    bottom: calc(100% + 0.35em);
+    /* Anchored to the gutter's LEFT edge and allowed to run right, into the
+       empty band above the plot. Anchored right it grew leftwards instead —
+       measured 67px of text hanging out of a 39px gutter, which had 15px of
+       card padding to spare at 1920 and would not have at 375. */
+    left: 0;
+    right: auto;
+    transform: none;
+    font-size: var(--chart-tick);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
   .key-leaders {
     position: absolute;
     inset: 0;
@@ -296,7 +336,32 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
   /* In the collapsed row the keys are a legend, not annotations of a line end,
      so there is nothing for a leader to join. */
   @container (max-width: 26rem) {
-    .key-leaders {
+    /* Reference-line labels, on whichever side the caller says is empty. */
+  .plot-note.note-left {
+    right: auto;
+    left: 0.35em;
+    text-align: left;
+  }
+
+  /* The unit sits above the topmost tick rather than beside one. `bottom`
+     rather than `top`, so it hangs off the axis head instead of overlapping
+     the first gridline whatever the tick values turn out to be. */
+  .y-unit {
+    top: auto;
+    bottom: calc(100% + 0.35em);
+    /* Anchored to the gutter's LEFT edge and allowed to run right, into the
+       empty band above the plot. Anchored right it grew leftwards instead —
+       measured 67px of text hanging out of a 39px gutter, which had 15px of
+       card padding to spare at 1920 and would not have at 375. */
+    left: 0;
+    right: auto;
+    transform: none;
+    font-size: var(--chart-tick);
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
+  .key-leaders {
       display: none;
     }
     .plot-keys span {
