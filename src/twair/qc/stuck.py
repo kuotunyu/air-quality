@@ -61,11 +61,59 @@ The second is the one that matters for the rest of the project: a frozen
 reading is not a gap, so nothing about coverage or completeness can see it, and
 it is not extreme, so `qc/outliers.py` cannot see it either.
 
+Not every flatline is a frozen sensor
+-------------------------------------
+The largest movements this module implies are not faults at all, and finding
+that out is what ``entered_from_below`` and ``value_share`` exist for.
+
+On **2010-03-21** nine stations — 馬祖, 萬里, 金門, 汐止, 菜寮, 林口, 新莊,
+板橋, 永和 — each hold PM10 at **exactly 1000 µg/m³** for 7 to 27 hours. 馬祖
+arrives there by climbing: 180, 274, 318, 370, 507, 756, then 1000 for
+twenty-seven hours. The network median that day is 319.5 against 69.0 the day
+before, and its maximum is 1,724. That is the March 2010 dust event, and 1000 is
+not a reading — it is where nine instruments stopped being able to count.
+
+Exactly 1000 is anomalously common: among usable PM10 readings between 980 and
+1020 the median value occurs twice, and **1000 occurs 175 times — a 117-fold
+pile-up**. The agency knows it, rejecting 96.9% of all PM10 readings at exactly
+1000 (13,266 of 13,441); the 175 that came through flagged ``valid`` sit at the
+peak of the largest dust event in the record.
+
+A value at a ceiling is **right-censored**, and its consequence runs opposite to
+a freeze. A frozen reading drags a mean toward a stale value; a censored one
+means the true concentration was **higher** than what is recorded, so every
+maximum, worst-day and exceedance count over those hours is a lower bound.
+``conf/pollutants.yaml`` puts PM10's domain at [0, 2000] and readings above 1000
+do exist and stay valid to 2000, so the ceiling belongs to particular
+instruments rather than to the measurand.
+
+This module does not classify. It publishes ``entered_from``,
+``entered_from_below`` and ``value_share`` so the cases can be told apart by
+whoever reads the table, and declines to name them itself.
+
+Those columns have to be read together, and ``entered_from_below`` alone will
+not do it — it is true of both examples above. What separates them is the size
+of the step into the plateau and how ordinary the value is at that station:
+
+======================  ==============  ======  ==============================
+run                     entered from    step    share of that station's readings
+======================  ==============  ======  ==============================
+馬祖 PM10 1000, 27 h    756             +244    0.35%
+陽明 PM10 12, 327 h     11              +1      9.9%
+======================  ==============  ======  ==============================
+
+A ceiling is a value the station reaches only in extremis and then cannot pass;
+a freeze is a value it sits at all the time and then stops leaving. Measured
+over the accepted mid-range flatlines, 15,372 of 55,308 were entered from below
+at all, so the flag narrows the field without deciding it.
+
 What it may not conclude
 ------------------------
 * A long run is not a diagnosed frozen sensor. It is a reading that did not
-  change for N hours, which is what was measured. Whether the instrument or the
-  air was still is not in this table.
+  change for N hours, which is what was measured. Whether the instrument froze,
+  reached its ceiling, or the air genuinely held still is not in this table —
+  see the 2010-03-21 case above, where the answer is the second one and
+  treating it as the first would have deleted the peak of a dust storm.
 * The rate depends strongly on the measurand's own resolution. Measured at six
   hours and away from zero, the agency rejected 40.2% of NO2 runs and 2.6% of
   CO runs — CO is recorded to 0.1 ppm on a small range, so it repeats by
@@ -194,7 +242,15 @@ def stuck_runs(frame: pl.DataFrame, *, min_length_hours: int) -> pl.DataFrame:
     ordered = frame.sort(*KEY, TIMESTAMP)
     unchanged = (pl.col("value") == pl.col("value").shift(1).over(KEY)).fill_null(value=False)
     one_hour = (pl.col(TIMESTAMP).diff().over(KEY) == pl.duration(hours=1)).fill_null(value=False)
-    ordered = ordered.with_columns((~(unchanged & one_hour)).cum_sum().over(KEY).alias("_run"))
+    ordered = ordered.with_columns(
+        (~(unchanged & one_hour)).cum_sum().over(KEY).alias("_run"),
+        # The reading the run was entered from, and how common its own value is
+        # among everything that measurand recorded. Together these separate a
+        # sensor that froze from one that reached its ceiling — the difference
+        # is not cosmetic; see the module docstring and 2010-03-21.
+        pl.col("value").shift(1).over(KEY).alias("_before"),
+        (pl.len().over([*KEY, "value"]) / pl.len().over(KEY)).alias("_value_share"),
+    )
 
     rejected = pl.col("flag").is_in(INVALID_FLAGS)
     return (
@@ -206,12 +262,17 @@ def stuck_runs(frame: pl.DataFrame, *, min_length_hours: int) -> pl.DataFrame:
             pl.col(TIMESTAMP).max().alias("t_end"),
             rejected.mean().alias("agency_rejected"),
             (pl.col("generation") == "modern_csv_utf8").all().alias("_modern"),
+            pl.col("_before").first().alias("entered_from"),
+            pl.col("_value_share").first().alias("value_share"),
             pl.col(TIMESTAMP).min().dt.year().cast(pl.Int32).alias("obs_year"),
         )
         .filter(pl.col("length_hours") >= min_length_hours)
         .with_columns(
             (pl.col("value") == 0).alias("at_zero"),
             (pl.col("value") < 0).alias("negative"),
+            # A plateau reached by climbing into it has the shape of a bound,
+            # not of a sensor that stopped wherever it happened to be.
+            (pl.col("entered_from") < pl.col("value")).alias("entered_from_below"),
             # Not measurable in the modern generation: a rejected reading
             # there has no number, so it is absent from this frame entirely and
             # a run of accepted hours is all that could ever remain.
@@ -238,6 +299,9 @@ def _empty_runs() -> pl.DataFrame:
             "obs_year": pl.Int32,
             "at_zero": pl.Boolean,
             "negative": pl.Boolean,
+            "entered_from": pl.Float64,
+            "value_share": pl.Float64,
+            "entered_from_below": pl.Boolean,
         }
     )
 

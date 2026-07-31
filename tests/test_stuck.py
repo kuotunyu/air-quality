@@ -150,6 +150,42 @@ class TestZeroAndNegative:
         assert runs["value"].to_list() == [-99.0]
 
 
+class TestCeilingVersusFreeze:
+    """The distinction that stops a dust storm being called a broken sensor.
+
+    On 2010-03-21 nine stations held PM10 at exactly 1000 for hours. Each
+    climbed into it — 馬祖 read 180, 274, 318, 370, 507, 756 and then 1000 for
+    27 hours. That is a bound, not a sensor that stopped where it happened to
+    be, and the two must not arrive in the same column.
+    """
+
+    def test_a_plateau_climbed_into_is_marked_as_entered_from_below(self) -> None:
+        runs = stuck_runs(
+            _frame([180.0, 274.0, 370.0, 507.0, 756.0, *([1000.0] * 8)]), min_length_hours=6
+        )
+
+        row = runs.row(0, named=True)
+        assert row["value"] == 1000.0
+        assert row["entered_from"] == 756.0
+        assert row["entered_from_below"] is True
+
+    def test_a_freeze_at_the_level_it_was_already_at_is_not(self) -> None:
+        """陽明 read 12, 12, 12, 9, 3, 11 and then froze at 12 — it did not climb."""
+        runs = stuck_runs(_frame([12.0, 9.0, 3.0, 30.0, *([12.0] * 8)]), min_length_hours=6)
+
+        row = runs.row(0, named=True)
+        assert row["entered_from"] == 30.0
+        assert row["entered_from_below"] is False
+
+    def test_how_common_the_value_is_travels_with_the_run(self) -> None:
+        """A ceiling value piles up; exactly 1000 outnumbers its neighbours 117x."""
+        frame = _frame([1000.0] * 8 + [1.0, 2.0])
+
+        runs = stuck_runs(frame, min_length_hours=6)
+
+        assert runs.row(0, named=True)["value_share"] == pytest.approx(0.8)
+
+
 class TestCalibration:
     def test_the_curve_covers_lengths_below_the_threshold(self) -> None:
         """A threshold justified only by data above itself is not justified.
