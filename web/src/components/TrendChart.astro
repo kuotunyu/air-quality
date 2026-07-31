@@ -1,6 +1,5 @@
 ---
 import {
-  labelGutter,
   linePath,
   smoothPath,
   markInk,
@@ -36,7 +35,6 @@ interface Props {
    * walking: then the label IS the identification and the legend goes away, so
    * nothing on the chart has to be matched to anything beside it.
    */
-  keys?: "value" | "named" | "none";
   legend?: boolean;
   /*
    * Which side of the plot the reference-line labels sit on.
@@ -56,7 +54,6 @@ const {
   guides = [],
   unit,
   height = 300,
-  keys: keyStyle = "value",
   legend = true,
   notesAt = "right",
 } = Astro.props;
@@ -104,42 +101,15 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
 });
 
 /*
- * Where each line ends, written at the end of the line.
+ * No end labels.
  *
- * This component had no key gutter at all — its only identifier was the legend
- * under the plot, so knowing which line was which meant holding a colour in
- * your head and looking away from the chart to spend it. That is most of why
- * "the colours are too similar" hurt as much as it did: hue was carrying the
- * entire join between a name and a line, and the reader had to make that join
- * by memory. Four other components on this site already use `.plot-keys`; this
- * one, which draws the chapter's headline figures, never did.
- *
- * The label is the VALUE, not the name. The legend above already gives names,
- * and the number is the thing a reader is looking for anyway — so the two do
- * different jobs instead of saying the same word twice.
- *
- * Last reported rather than last in the array: a series that stops early ends
- * where its data ends, and putting its label at a null would silently move it.
+ * They were the value at the end of each line, then the value plus the name,
+ * and the owner is right that at the right-hand edge they were never anything
+ * but a stack. With the legend now inside the plot carrying both the name AND
+ * the latest value, the gutter was printing the same numbers a second time in
+ * the worst available position. The whole mechanism — gutter, spread, leaders
+ * — is gone, and the plot gets the width back.
  */
-const keys = (keyStyle === "none" || keyStyle === "named" ? [] : series)
-  .map((s) => {
-    for (let i = s.values.length - 1; i >= 0; i -= 1) {
-      const value = s.values[i];
-      if (value != null && Number.isFinite(value)) return { series: s, value };
-    }
-    return null;
-  })
-  .filter((k): k is { series: Props["series"][number]; value: number } => k != null);
-
-// `spreadLabels` works in the caller's units, and these are percentages of the
-// plot box — so the 26px minimum gap has to be converted to one.
-const keyY = spreadLabels(
-  keys.map((k) => y(k.value)),
-  (26 / height) * 100,
-  // Percent of the plot box, with half a label's worth of margin at each end so
-  // the first and last still sit fully inside it.
-  [(13 / height) * 100, 100 - (13 / height) * 100],
-);
 /*
  * A limit that changed on a date is a step, not a ramp. Drawn horizontal then
  * vertical, so the year the standard moved shows as the standard moving rather
@@ -158,7 +128,6 @@ function stepPath(values: (number | null)[]): string {
     if (!open) {
       parts.push(`M${px} ${py}`);
     } else {
-      // Horizontal at the previous level to this year, then the step.
       parts.push(`H${px}`, `V${py}`);
     }
     open = true;
@@ -166,6 +135,19 @@ function stepPath(values: (number | null)[]): string {
   return parts.join(" ");
 }
 
+/*
+ * Reference-line labels get the same de-overlap the series labels used to.
+ *
+ * Two limits ten units apart on a 300px plot put two 36px pills 35px apart —
+ * measured, a one-pixel collision. The line each one names is still drawn at
+ * its true height; only the label moves, which is the same bargain every
+ * annotated chart makes.
+ */
+const noteY = spreadLabels(
+  visibleGuides.map((g) => y(guideLevel(g) as number)),
+  (38 / height) * 100,
+  [(19 / height) * 100, 100 - (19 / height) * 100],
+);
 
 /*
  * Where the legend goes, decided by looking at the data rather than by me.
@@ -219,15 +201,12 @@ const occupancy = (box: (typeof CORNERS)[number]) => {
 
 const legendAt = [...CORNERS].sort((a, b) => occupancy(a) - occupancy(b))[0].at;
 
-const keyText = (k: { series: Props["series"][number]; value: number }) =>
-  keyStyle === "named" ? `${k.series.label} ${n(k.value, 1)}` : n(k.value, 1);
-const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
 ---
 
 <div class="chart">
   <div
     class="plot"
-    style={`--plot-h:${height}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px;--key-w:${keyWidth}px`}
+    style={`--plot-h:${height}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px`}
   >
     <div class="plot-y">
       {/* On the axis it measures. It used to be the last entry of the legend,
@@ -291,8 +270,8 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
         interval is in the x axis and in the caption, which is where it belongs.
       */}
       {
-        visibleGuides.map((guide) => (
-          <span class={`plot-note note-${notesAt}`} style={`top:${n(y(guideLevel(guide) as number), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
+        visibleGuides.map((guide, gi) => (
+          <span class={`plot-note note-${notesAt}`} style={`top:${n(noteY[gi], 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
             {guide.label}
           </span>
         ))
@@ -320,28 +299,20 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
                 <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
                   <span class="plot-legend-swatch" />
                   <span class="plot-legend-name">{s.label}</span>
-                  {keys.length === 0 && (
-                    <span class="plot-legend-value">{last == null ? "—" : n(last, 1)}</span>
-                  )}
+                  <span class="plot-legend-value">{last == null ? "—" : n(last, 1)}</span>
                 </li>
               );
             })}
+            {visibleGuides.map((g) => (
+              <li class="guide-row" style={`--mark:${g.colour};--mark-ink:${markInk(g.colour)}`}>
+                <span class="plot-legend-swatch dashed" />
+                <span class="plot-legend-name">{g.label}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )
     }
-
-    <div class="plot-keys" data-keys={keyStyle}>
-      {
-        keys.map((k, i) => (
-          <span
-            style={`top:${n(keyY[i], 3)}%;--mark:${k.series.colour};--mark-ink:${markInk(k.series.colour)}`}
-          >
-            {keyText(k)}
-          </span>
-        ))
-      }
-    </div>
 
     <div class="plot-x" data-n={xTicks.length}>
       {xTicks.map(({ year, index }) => <span style={`left:${n(x(index), 3)}%`}>{year}</span>)}
@@ -349,13 +320,9 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
   </div>
 
   <div class="legend">
-    {/*
-      Series entries only while something still needs naming here. With
-      `keys="named"` every line carries its own name at its own end, and
-      repeating all eight below the plot would rebuild the legend-matching the
-      end labels exist to remove. The guides and the unit stay either way:
-      neither is a line with a label on it.
-    */}
+    {/* Everything is named inside the plot now — series in the in-plot legend,
+        reference lines on their own lines. This row only ever holds a guide the
+        plot could not label, which on these charts means none. */}
     {/* Series are named inside the plot, in whichever corner the data left
         free, so nothing about them belongs down here any more. */}
     {/* Only guides the plot could NOT label in place. A visible one already
@@ -375,9 +342,30 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
 </div>
 
 <style>
-  /* Reference-line labels, on whichever side the caller says is empty. The
-     default is the right, and a chart whose lines end there puts the label on
-     top of them — measured, 「台灣年均標準 15」 landed across 「高屏 16.7」. */
+  /*
+   * Reference-line labels.
+   *
+   * They were plain text sitting on the line, which put grey words across the
+   * gridlines and the data at whatever height the limit happened to be — the
+   * owner's words were "意義不明". Two changes, both taken from the annotation
+   * style in their own project (`backgroundColor` + `padding` + `borderRadius`
+   * on a markArea label):
+   *
+   *   1. A pill. The backing lifts the words off whatever is behind them, so
+   *      the label reads as an annotation ON the chart rather than as a stray
+   *      series that lost its line.
+   *   2. It sits ABOVE its own line rather than across it, and carries the
+   *      value in the text — a reference line is only worth drawing if the
+   *      reader can see what it is worth without hunting for the axis.
+   */
+  .plot-note {
+    padding: 0.12em 0.5em;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-sunken) 88%, transparent);
+    /* Above the line, not on it. `.plot-note` already translates -100%. */
+    margin-top: -0.28em;
+  }
+
   .plot-note.note-left {
     right: auto;
     left: 0.35em;
@@ -465,6 +453,24 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
     background: var(--mark);
   }
 
+  .plot-legend-swatch.dashed {
+    background: none;
+    border-bottom: 2px dashed var(--mark);
+    height: 0;
+    border-radius: 0;
+    align-self: center;
+  }
+
+  /*
+   * The reference lines are named on the plot at any width that can hold a
+   * pill, so this row is the narrow fallback and nothing else.
+   */
+  /* `.plot-legend li` is class-plus-element and out-specifies a bare class, so
+     this has to match at least as hard or the row never hides. */
+  .plot-legend li.guide-row {
+    display: none;
+  }
+
   .plot-legend-value {
     font-family: var(--font-numeric);
     font-variant-numeric: tabular-nums;
@@ -473,27 +479,11 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
   }
 
   /*
-   * The value sits beside the point it belongs to, and nothing is drawn to
-   * connect them.
-   *
-   * There were leaders here, on the argument that a displaced label needs a
-   * line back to its own point. The owner's own charts do not draw one — they
-   * set `distance: 8` and let `labelLayout: moveOverlap: "shiftY"` nudge a
-   * collision apart — and they are right: with the label a few pixels off the
-   * end of its line, in that line's colour, the join is already made, and a
-   * fan of connector lines is more marks for the reader to resolve rather than
-   * fewer. `spreadLabels` is the shiftY; the leaders are gone.
-   */
-  .plot-keys span {
-    padding-left: 0.35em;
-  }
-
-  /*
    * A phone has no empty corner to give. Measured at 375px: the plot area is
    * 200px wide and an eight-row block is 338px, so "in the emptiest corner"
    * became "hanging out of both sides of the chart". Below the width the rest
    * of this chart reflows at, the legend stops floating and becomes a row —
-   * the same move `.plot-keys` already makes, for the same reason.
+   * the same move the other charts' `.plot-keys` makes, for the same reason.
    *
    * This block is LAST on purpose. An earlier version sat above the base rules
    * it was overriding, so at equal specificity the base won and only the
@@ -528,15 +518,21 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
       overflow-wrap: anywhere;
     }
 
-    /* Bare values in a row, beside nothing that names them, say half a
-       sentence. The legend below carries the names. */
-    .plot-keys[data-keys="value"] {
+    /*
+     * Below this width the pills cannot sit beside their own lines: measured
+     * at 375px, both wrap to two lines at 66px tall while the two limits they
+     * name are 54px apart on a 300px plot. No amount of nudging fixes an
+     * arithmetic shortfall, so the labels move into the legend, where a row
+     * costs nothing, and the dashed lines stay on the plot unlabelled.
+     */
+    .plot-note {
       display: none;
     }
 
-    .plot-keys span {
-      padding-left: 0;
+    .plot-legend li.guide-row {
+      display: grid;
     }
+
   }
 
   .swatch.dashed {

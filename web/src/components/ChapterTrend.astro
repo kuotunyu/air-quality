@@ -231,10 +231,11 @@ const taiwanAnnualFor = (years: number[]) =>
         },
       ]}
       guides={[
-        { values: taiwanAnnualFor(trend.years), label: "台灣年均標準", colour: "var(--taiwan)" },
+        { values: taiwanAnnualFor(trend.years), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" },
         { value: 5, label: "WHO 年均指引 5", colour: "var(--who)" },
       ]}
       unit="μg/m³"
+      notesAt="left"
     />
     <figcaption>
       全台 PM2.5 年均值。線在中斷處是真的斷開——那一年沒有足以計算的資料，
@@ -282,8 +283,9 @@ const taiwanAnnualFor = (years: number[]) =>
           dash: "5 3",
         },
       ]}
-      guides={[{ values: taiwanAnnualFor(dwYears), label: "台灣年均標準", colour: "var(--taiwan)" }]}
+      guides={[{ values: taiwanAnnualFor(dwYears), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" }]}
       unit="μg/m³"
+      notesAt="left"
     />
     <figcaption>
       {dw.panel.n_stations} 個測站、{dw.panel.balanced_since}–{dwYears[dwYears.length - 1]} 年，
@@ -361,10 +363,9 @@ const taiwanAnnualFor = (years: number[]) =>
     <TrendChart
       years={trend.years}
       series={airzoneSeries}
-      guides={[{ values: taiwanAnnualFor(trend.years), label: "台灣年均標準", colour: "var(--taiwan)" }]}
+      guides={[{ values: taiwanAnnualFor(trend.years), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" }]}
       unit="μg/m³"
       height={620}
-      keys="none"
       notesAt="left"
     />
     <figcaption>
