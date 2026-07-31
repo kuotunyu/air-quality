@@ -195,9 +195,13 @@ VERDICTS: tuple[Verdict, ...] = (
     "uncheckable",
 )
 
-#: Why a run stopped where it did. Six reasons, not a censored/not-censored
-#: bit: the reason a run ended is itself a finding, and only the first of these
-#: means the excursion actually ended.
+#: Why a run stopped where it did — not a censored/not-censored bit, because the
+#: reason a run ended is itself a finding. Only ``below_threshold`` means the
+#: excursion ended; every other value means the record did, and they are kept
+#: apart because they are not the same event. No count is written here: this
+#: comment said "five" while the tuple held six, and then "six" while it held
+#: eight. `tests/test_outliers.py` checks the tuple against what
+#: `classify_boundaries` can actually emit instead.
 BOUNDARY_REASONS: tuple[str, ...] = (
     "below_threshold",
     "unscored",
@@ -353,12 +357,13 @@ def neighbour_edges(
         pl.DataFrame({STATION: names})
         .join(edges.group_by(STATION).len(name="n_neighbours"), on=STATION, how="left")
         # Distance to the nearest placed station, kept rather than discarded.
-        # A station's share of uncorroborated verdicts is largely a function of
-        # how far away its nearest neighbour is — measured across the six
-        # measurands, Pearson r = 0.76 between nearest-neighbour distance and a
-        # station's uncorroborated-short-rise share, rising from 6.2% under 5 km
-        # to 28.1% beyond 20 km. Without this column a reader ranking stations
-        # by that share is ranking network geometry with no way to see it.
+        # A station's share of uncorroborated verdicts is substantially a
+        # function of how far away its nearest neighbour is; the module
+        # docstring carries the measured correlations and, more importantly,
+        # the population each one was measured over, because the same statistic
+        # ranges from +0.34 to +0.75 across four defensible populations of the
+        # very same output. Without this column a reader ranking stations by
+        # that share is ranking network geometry with no way to see it.
         .join(
             edges.group_by(STATION).agg(pl.col("km").min().alias("km_nearest_neighbour")),
             on=STATION,

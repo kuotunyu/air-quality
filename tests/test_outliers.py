@@ -9,6 +9,7 @@ that a censored run is never called short.
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
@@ -17,6 +18,7 @@ import pytest
 
 from twair.qc.outliers import (
     BASELINE_CELL,
+    BOUNDARY_REASONS,
     MAD_TO_SIGMA,
     classify_boundaries,
     corroborate,
@@ -325,6 +327,26 @@ class TestBoundaries:
 
         assert runs.row(0, named=True)["right_boundary"] == "series_edge"
         assert runs.row(0, named=True)["censored"] is True
+
+
+class TestBoundaryVocabulary:
+    def test_every_reason_the_classifier_emits_is_declared(self) -> None:
+        """The comment above BOUNDARY_REASONS said five, then six, while the
+        tuple held six and then eight. A count in prose rots; this does not."""
+        emitted = {
+            reason
+            for line in (
+                pathlib.Path("src/twair/qc/outliers.py").read_text(encoding="utf-8").splitlines()
+            )
+            if (stripped := line.strip()).startswith(".then(pl.lit(")
+            and (reason := stripped[len(".then(pl.lit(") + 1 : -3]) in set(BOUNDARY_REASONS)
+        }
+
+        assert emitted, "no boundary reason literals found — has the chain moved?"
+        assert emitted <= set(BOUNDARY_REASONS)
+
+    def test_below_threshold_is_first_because_only_it_means_the_run_ended(self) -> None:
+        assert BOUNDARY_REASONS[0] == "below_threshold"
 
 
 class TestNeighbourEdges:
