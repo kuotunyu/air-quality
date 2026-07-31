@@ -1,0 +1,414 @@
+---
+/**
+ * Two controls under every figure: open it larger, and take it away as a PNG.
+ *
+ * Injected by script rather than written into each figure, for two reasons.
+ * The first is that neither control has any meaning without JavaScript — a
+ * `<dialog>` that cannot be opened and a canvas that cannot be drawn — and this
+ * site's rule is that the document reads with script off. Markup that renders
+ * two dead buttons in that case is worse than no markup. The second is that the
+ * figures are in eight different components; a rule that finds them by shape
+ * cannot be forgotten when a ninth is written.
+ *
+ * ## Why the PNG is not a serialised `<svg>`
+ *
+ * A chart here is deliberately two layers — SVG marks stretched over a
+ * normalised grid, with every label, guide note and data point as positioned
+ * HTML on top (see the note above `.plot` in `global.css`). Serialising the
+ * `<svg>` alone would export the lines and nothing that says what they are: no
+ * axis, no legend, no units, and stretched by a `preserveAspectRatio="none"`
+ * that only makes sense against the box the browser laid out.
+ *
+ * So the export takes the whole figure — both layers and the caption — through
+ * `<foreignObject>`, which is the one way to hand a laid-out DOM subtree to a
+ * raster. That costs an inlined copy of the stylesheet, because an SVG loaded
+ * as an image is a separate document and reaches nothing from this one. It buys
+ * a PNG that is the figure, including the breaks: a null still renders as a hole
+ * because it is the same `linePath` output, not a re-draw that could bridge one.
+ */
+---
+
+<dialog class="fig-zoom" aria-label="放大檢視">
+  <div class="fig-zoom-head">
+    <p class="fig-zoom-name"></p>
+    <button type="button" class="fig-shut">關閉</button>
+  </div>
+  <div class="fig-zoom-body"></div>
+</dialog>
+
+<p class="fig-say visually-hidden" role="status" aria-live="polite"></p>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>(".fig-zoom");
+  const stage = dialog?.querySelector<HTMLElement>(".fig-zoom-body");
+  const plate = dialog?.querySelector<HTMLElement>(".fig-zoom-name");
+  const shut = dialog?.querySelector<HTMLButtonElement>(".fig-shut");
+  const say = document.querySelector<HTMLElement>(".fig-say");
+
+  /*
+   * What counts as a figure.
+   *
+   * Every `<figure>` in the document, plus the entry map — which is not one,
+   * because it is a cell of the hero's grid and a `<figure>`'s own margins
+   * would move it. Marking it by class costs one selector and no layout.
+   */
+  const ROOTS = "main figure, main .map-wrap";
+
+  /*
+   * Everything runs inside one function taking the four elements as arguments,
+   * rather than under an `if` that has already proved them non-null. A function
+   * declaration is hoisted, so the compiler cannot know it runs only after the
+   * check — narrowing does not reach into it, and each of the four read as
+   * possibly null at every use. Parameters carry the proof instead.
+   */
+  function start(
+    dialog: HTMLDialogElement,
+    stage: HTMLElement,
+    plate: HTMLElement,
+    shut: HTMLButtonElement,
+    say: HTMLElement,
+  ) {
+    /** Move the figure into the dialog, and remember how to put it back. */
+    let held: {
+      root: HTMLElement;
+      slot: HTMLElement;
+      plots: { el: HTMLElement; height: string }[];
+    } | null = null;
+
+    function equip(root: HTMLElement, index: number) {
+      const name = figureName(root, index);
+
+      const tools = document.createElement("div");
+      tools.className = "fig-tools";
+
+      const bigger = control("放大", name);
+      bigger.dataset.figAct = "zoom";
+      bigger.addEventListener("click", () => open(root, name));
+
+      const png = control("下載 PNG", name);
+      png.addEventListener("click", () => save(root, png, index));
+
+      tools.append(bigger, png);
+      root.append(tools);
+    }
+
+    function control(label: string, name: string): HTMLButtonElement {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "fig-tool";
+      button.textContent = label;
+      /*
+       * A page carries up to three of these, and「放大」three times over is a
+       * list of identical controls to anyone reading the buttons rather than
+       * the page. The label says which figure it acts on.
+       */
+      button.setAttribute("aria-label", `${label}：${name}`);
+      return button;
+    }
+
+    /** A short name for a figure, taken from what it already says. */
+    function figureName(root: HTMLElement, index: number): string {
+      const caption = root.querySelector("figcaption")?.textContent ?? "";
+      const described =
+        root.querySelector("svg[aria-label]")?.getAttribute("aria-label") ?? "";
+      const source = (caption || described).replace(/\s+/g, " ").trim();
+      if (!source) return `圖 ${index + 1}`;
+      /*
+       * The first sentence, and only a full stop ends one.
+       *
+       * Breaking at any punctuation was tried and it cut a caption reading
+       *「61 個測站、2008–2025 年，兩條線都出自同一批列。」down to「61 個測站」,
+       * which names no figure on this site. These captions open by saying what
+       * the figure is, so the sentence is the label and the comma is inside it.
+       */
+      const stop = source.indexOf("。");
+      const head = stop > 0 ? source.slice(0, stop) : source;
+      return head.length > 28 ? `${head.slice(0, 28)}…` : head;
+    }
+
+    // ── 放大 ────────────────────────────────────────────────────────────────
+
+    /*
+     * The figure is MOVED into the dialog, not copied.
+     *
+     * Two of these figures are driven by scripts that reach their parts with
+     * `getElementById` — the CBPF picker and the entry map. A clone would put a
+     * second element with each of those ids in the document, and the control
+     * that used to work would start addressing whichever copy came first.
+     * Moving keeps every id unique and every listener attached, at the price of
+     * a placeholder holding the gap in the page.
+     */
+    function open(root: HTMLElement, name: string) {
+      if (held) return;
+      const slot = document.createElement("div");
+      slot.className = "fig-parked";
+      slot.style.height = `${root.getBoundingClientRect().height}px`;
+      root.replaceWith(slot);
+      stage.replaceChildren(root);
+      plate.textContent = name;
+      dialog.showModal();
+      held = { root, slot, plots: grow(root) };
+    }
+
+    /*
+     * Give the marks the room the dialog just bought.
+     *
+     * `--plot-h` is the only fixed dimension a chart has; everything else is a
+     * percentage of the box, so a wider box already redraws at the new width and
+     * the x axis un-thins itself (see the container queries on `.plot-x`).
+     * Height has to be asked for. The factor is measured after the move, so it
+     * is the real ratio rather than a guess, and it never goes below 1 — the
+     * control says 放大.
+     */
+    function grow(root: HTMLElement) {
+      const plots = Array.from(root.querySelectorAll<HTMLElement>(".plot"));
+      const kept = plots.map((el) => ({
+        el,
+        height: el.style.getPropertyValue("--plot-h"),
+      }));
+      const marks = plots.reduce(
+        (sum, el) => sum + el.getBoundingClientRect().height,
+        0,
+      );
+      if (marks <= 0) return kept;
+
+      const rest = root.getBoundingClientRect().height - marks;
+      const room = stage.clientHeight - rest;
+      const factor = Math.min(Math.max(room / marks, 1), 3);
+      kept.forEach(({ el }) => {
+        const now = parseFloat(
+          getComputedStyle(el).getPropertyValue("--plot-h"),
+        );
+        if (Number.isFinite(now)) {
+          el.style.setProperty("--plot-h", `${Math.round(now * factor)}px`);
+        }
+      });
+      return kept;
+    }
+
+    /*
+     * Put the figure back where it came from. Safe to call twice.
+     *
+     * Idempotent because it is called from three places, and it is called from
+     * three places rather than only from the `close` event because that event
+     * cannot be relied on to arrive. Measured: with no visible viewport,
+     * `dialog.open` went false while `close` never fired — the same
+     * viewport-less condition recorded in the note above `@keyframes enter`,
+     * and here it would have left the figure inside a shut dialog with a
+     * placeholder standing in for it on the page. The two paths a reader can
+     * actually take now restore on the spot and wait for nothing; the event
+     * stays for Escape, which the platform owns.
+     */
+    function restore() {
+      if (!held) return;
+      const { root, slot, plots } = held;
+      held = null;
+      plots.forEach(({ el, height }) => {
+        if (height) el.style.setProperty("--plot-h", height);
+        else el.style.removeProperty("--plot-h");
+      });
+      slot.replaceWith(root);
+    }
+
+    shut.addEventListener("click", () => {
+      dialog.close();
+      restore();
+    });
+
+    // Clicking the scrim closes it. The dialog's own box is the only child that
+    // can be the target, so anything landing on the element itself is outside.
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) {
+        dialog.close();
+        restore();
+      }
+    });
+
+    dialog.addEventListener("close", restore);
+
+    // ── 下載 PNG ────────────────────────────────────────────────────────────
+
+    let sheets: string | null = null;
+
+    /** Every rule in the document, because the export document has none. */
+    function stylesheetText(): string {
+      if (sheets !== null) return sheets;
+      let css = "";
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          for (const rule of Array.from(sheet.cssRules)) css += `${rule.cssText}\n`;
+        } catch {
+          // A cross-origin sheet cannot be read through the CSSOM. This site
+          // loads none; if one ever appears the export loses its rules rather
+          // than throwing away the whole figure.
+        }
+      }
+      sheets = css;
+      return css;
+    }
+
+    /*
+     * The theme the reader is actually in, as literal values.
+     *
+     * Media queries inside an SVG loaded as an image are evaluated against the
+     * image, which has no reader and no system preference — so
+     * `prefers-color-scheme` answers light there whatever the page is showing.
+     * Resolving every custom property against the live document and emitting
+     * them last pins the export to what is on the screen.
+     */
+    function pinnedTheme(css: string): string {
+      const root = getComputedStyle(document.documentElement);
+      const names = new Set(css.match(/--[\w-]+/g) ?? []);
+      let out = "";
+      for (const name of names) {
+        const value = root.getPropertyValue(name);
+        if (value) out += `${name}:${value};`;
+      }
+      return out;
+    }
+
+    // The serialised figure is parsed as XML, where these two are markup.
+    const esc = (text: string) =>
+      text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+    async function render(root: HTMLElement): Promise<HTMLCanvasElement> {
+      const box = root.getBoundingClientRect();
+      // Enough that the card's own border is not the edge of the file.
+      const pad = 18;
+
+      /*
+       * The controls are dropped from the copy, so their height has to come off
+       * the frame too — measured, the first version left 42px of empty
+       * background along the bottom of every export.
+       *
+       * Nothing else moves, and that is why the toolbar is appended last rather
+       * than inserted before the caption: removing a trailing element changes
+       * no other element's position, so the copy lays out identically to what
+       * is on the screen.
+       */
+      const tools = root.querySelector<HTMLElement>(".fig-tools");
+      const shed = tools
+        ? tools.getBoundingClientRect().height +
+          parseFloat(getComputedStyle(tools).marginTop || "0")
+        : 0;
+      const inner = Math.max(box.height - shed, 1);
+
+      const w = Math.ceil(box.width) + pad * 2;
+      const h = Math.ceil(inner) + pad * 2;
+      // Two at minimum, so the file survives being placed at half its size in
+      // something else; the reader's own ratio when that is higher.
+      const scale = Math.min(Math.max(window.devicePixelRatio || 1, 2), 3);
+
+      const copy = root.cloneNode(true) as HTMLElement;
+      copy.querySelectorAll(".fig-tools").forEach((el) => el.remove());
+      copy.style.margin = "0";
+
+      const host = document.createElement("div");
+      host.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+      host.append(copy);
+
+      const css = stylesheetText();
+      const field =
+        getComputedStyle(document.body).backgroundColor ||
+        getComputedStyle(document.documentElement).backgroundColor;
+
+      /*
+       * Animations are switched off in the copy, not left to run.
+       *
+       * The entrance animation carries `backwards` fill, and the note above
+       * `@keyframes enter` records what that does where no clock advances: the
+       * `from` state is held indefinitely. That was made harmless on this site
+       * by animating position only — so an export would be legible but seven
+       * pixels out of place. Off is exact.
+       */
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}" viewBox="0 0 ${w} ${h}">` +
+        `<style>${esc(css)}\n:root{${esc(pinnedTheme(css))}}\n` +
+        `*,*::before,*::after{animation:none!important;transition:none!important}</style>` +
+        `<rect width="100%" height="100%" fill="${field}"/>` +
+        `<foreignObject x="${pad}" y="${pad}" width="${box.width}" height="${inner}">` +
+        new XMLSerializer().serializeToString(host) +
+        `</foreignObject></svg>`;
+
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("圖像無法算繪"));
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("沒有 2d context");
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    }
+
+    /*
+     * Where it came from, in the name.
+     *
+     * These files get dropped into other documents, and by then the only thing
+     * left saying which chapter a chart is from is its filename. The page comes
+     * off the path with the deployment's base removed, so it is `trend` both at
+     * `/trend` locally and at `/air-quality/trend` on Pages.
+     */
+    const BASE = import.meta.env.BASE_URL.replace(/\/*$/, "/");
+
+    function filename(index: number): string {
+      const page =
+        location.pathname.slice(BASE.length).replace(/\/+$/, "") || "index";
+      return `air-quality-${page}-${index + 1}.png`;
+    }
+
+    async function save(
+      root: HTMLElement,
+      button: HTMLButtonElement,
+      index: number,
+    ) {
+      const settled = button.textContent ?? "下載 PNG";
+      button.disabled = true;
+      button.textContent = "產生中…";
+      try {
+        const canvas = await render(root);
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/png"),
+        );
+        if (!blob) throw new Error("canvas 沒有回傳 blob");
+
+        const name = filename(index);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        // The click hands the blob over asynchronously, so the handle is
+        // released on a timer rather than on the next line.
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+        say.textContent = `已產生 ${name}，${canvas.width}×${canvas.height}`;
+      } catch (error) {
+        // Said out loud rather than only in the console: the button was pressed
+        // and something has to answer it.
+        button.textContent = "無法產生";
+        say.textContent = "這張圖無法輸出成 PNG";
+        console.error(error);
+        setTimeout(() => {
+          button.textContent = settled;
+        }, 4000);
+        return;
+      } finally {
+        button.disabled = false;
+      }
+      button.textContent = settled;
+    }
+
+    // Last, so every handler above exists before anything can be pressed.
+    Array.from(document.querySelectorAll<HTMLElement>(ROOTS)).forEach(equip);
+  }
+
+  if (dialog && stage && plate && shut && say) {
+    start(dialog, stage, plate, shut, say);
+  }
+</script>

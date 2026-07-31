@@ -148,92 +148,104 @@ const legend = BREAKS.map((b, i) => ({
     <span id="cbpf-signature" class="badge">{SIGNATURE[start.signature] ?? start.signature}</span>
   </div>
 
-  <div class="plot-row">
-    <div class="chart polar">
-      <div class="polar-box">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-labelledby="cbpf-caption">
-        <defs>
-          <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <line x1="0" y1="0" x2="0" y2="6" class="hatch-line" />
-          </pattern>
-        </defs>
+  {/*
+    A figure, because it was already claiming to be one.
+
+    The caption below is a `<figcaption>`, and its parent measured as
+    `section.page` — a `<figcaption>` outside a `<figure>` is not valid HTML,
+    and `aria-labelledby` was pointing an `<svg role="img">` at a caption the
+    accessibility tree had no reason to associate with it. The station picker
+    stays outside: it is a control on the figure, not part of it, and a
+    `<select>` has no business inside an exported image.
+  */}
+  <figure>
+    <div class="plot-row">
+      <div class="chart polar">
+        <div class="polar-box">
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-labelledby="cbpf-caption">
+          <defs>
+            <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="6" class="hatch-line" />
+            </pattern>
+          </defs>
+          {
+            cells.map((c) => (
+              <path
+                d={c.d}
+                class="cell"
+                data-key={c.key}
+                fill={fillFor(start.probability[data.sectors.indexOf(c.sector)][data.speed_bins.indexOf(c.speed)])}
+              >
+                <title>{compass(c.sector)} · {c.speed} m/s</title>
+              </path>
+            ))
+          }
+          <circle cx={CX} cy={CY} r={R_INNER - 2} class="hub" />
+        </svg>
+
         {
-          cells.map((c) => (
-            <path
-              d={c.d}
-              class="cell"
-              data-key={c.key}
-              fill={fillFor(start.probability[data.sectors.indexOf(c.sector)][data.speed_bins.indexOf(c.speed)])}
-            >
-              <title>{compass(c.sector)} · {c.speed} m/s</title>
-            </path>
-          ))
+          data.sectors.map((s) => {
+            const a = ((s - 90) * Math.PI) / 180;
+            return (
+              <span
+                class="bearing"
+                style={`left:${(50 + LABEL_R * 100 * Math.cos(a)).toFixed(2)}%;top:${(50 + LABEL_R * 100 * Math.sin(a)).toFixed(2)}%`}
+              >
+                {s === 0 ? "北" : s === 90 ? "東" : s === 180 ? "南" : s === 270 ? "西" : s}
+              </span>
+            );
+          })
         }
-        <circle cx={CX} cy={CY} r={R_INNER - 2} class="hub" />
-      </svg>
 
-      {
-        data.sectors.map((s) => {
-          const a = ((s - 90) * Math.PI) / 180;
-          return (
-            <span
-              class="bearing"
-              style={`left:${(50 + LABEL_R * 100 * Math.cos(a)).toFixed(2)}%;top:${(50 + LABEL_R * 100 * Math.sin(a)).toFixed(2)}%`}
-            >
-              {s === 0 ? "北" : s === 90 ? "東" : s === 180 ? "南" : s === 270 ? "西" : s}
-            </span>
-          );
-        })
-      }
+        <span class="hub-text">
+          <span class="hub-label">靜風</span>
+          <span class="hub-value" id="cbpf-calm">{(start.calm_fraction * 100).toFixed(1)}%</span>
+        </span>
+        </div>
+      </div>
 
-      <span class="hub-text">
-        <span class="hub-label">靜風</span>
-        <span class="hub-value" id="cbpf-calm">{(start.calm_fraction * 100).toFixed(1)}%</span>
-      </span>
+      <div class="readout">
+        <div class="stat">
+          <span class="stat-value" id="cbpf-threshold">{start.threshold.toFixed(1)}</span>
+          <span class="stat-label">高值門檻 μg/m³</span>
+          <span class="stat-note">該站自己的第 {n(data.percentile, 0)} 百分位</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="cbpf-peak">
+            {start.peak_sector == null ? "—" : compass(start.peak_sector)}
+          </span>
+          <span class="stat-label">機率最高的方位</span>
+          <span class="stat-note" id="cbpf-peak-speed">風速 {start.peak_speed} m/s</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="cbpf-resultant">{start.resultant.toFixed(3)}</span>
+          <span class="stat-label">方向集中度</span>
+          <span class="stat-note">0 = 四面八方；1 = 只有一個方位</span>
+        </div>
+
+        <div class="legend">
+          {
+            legend.map((l) => (
+              <span class="legend-item">
+                <span class="swatch" style={`background:${l.colour}`} />
+                {l.label}
+              </span>
+            ))
+          }
+          <span class="legend-item">
+            <span class="swatch hatched" />
+            時數不足
+          </span>
+        </div>
       </div>
     </div>
 
-    <div class="readout">
-      <div class="stat">
-        <span class="stat-value" id="cbpf-threshold">{start.threshold.toFixed(1)}</span>
-        <span class="stat-label">高值門檻 μg/m³</span>
-        <span class="stat-note">該站自己的第 {n(data.percentile, 0)} 百分位</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="cbpf-peak">
-          {start.peak_sector == null ? "—" : compass(start.peak_sector)}
-        </span>
-        <span class="stat-label">機率最高的方位</span>
-        <span class="stat-note" id="cbpf-peak-speed">風速 {start.peak_speed} m/s</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value" id="cbpf-resultant">{start.resultant.toFixed(3)}</span>
-        <span class="stat-label">方向集中度</span>
-        <span class="stat-note">0 = 四面八方；1 = 只有一個方位</span>
-      </div>
-
-      <div class="legend">
-        {
-          legend.map((l) => (
-            <span class="legend-item">
-              <span class="swatch" style={`background:${l.colour}`} />
-              {l.label}
-            </span>
-          ))
-        }
-        <span class="legend-item">
-          <span class="swatch hatched" />
-          時數不足
-        </span>
-      </div>
-    </div>
-  </div>
-
-  <figcaption id="cbpf-caption">
-    CBPF 極座標圖。<strong>沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，
-    機率不予報告</strong>——那是「不知道」，不是「乾淨」。
-    全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
-  </figcaption>
+    <figcaption id="cbpf-caption">
+      CBPF 極座標圖。<strong>沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，
+      機率不予報告</strong>——那是「不知道」，不是「乾淨」。
+      全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
+    </figcaption>
+  </figure>
 
   <h2>近源與遠源的風速特徵</h2>
 

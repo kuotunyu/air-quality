@@ -9,6 +9,7 @@ import {
   stations,
 } from "../lib/data";
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
+import FigureTools from "../components/FigureTools.astro";
 
 interface Props {
   title: string;
@@ -210,6 +211,11 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         </footer>
       </div>
     </div>
+
+    {/* Adds 放大 and 下載 PNG to every figure, and holds the dialog the first
+        one opens into. Outside `.shell` because a `<dialog>` in the top layer
+        belongs to the document rather than to the column it was opened from. */}
+    <FigureTools />
 
     <style>
       /* ── the shell ──────────────────────────────────────────────────────── */

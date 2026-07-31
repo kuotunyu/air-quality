@@ -1540,6 +1540,141 @@ button:hover {
   border: 0;
 }
 
+/* ---------- figure tools ---------- */
+
+/*
+ * Two controls under every figure — open it larger, save it as a PNG. Injected
+ * by `FigureTools.astro`; the reasoning about why they are script and not
+ * markup is there.
+ *
+ * They sit BELOW the caption rather than between it and the chart. The print
+ * rules already state that a caption belongs to its figure and must not be
+ * split from it, and a row of controls wedged between the two is that split
+ * made permanent. Below, the whole figure stays one block and the controls read
+ * as acting on all of it.
+ *
+ * Quiet by default and only conventional on hover or focus, because the site's
+ * one rule about interface colour is that the data is the only thing with any.
+ * Fourteen figures times two buttons is twenty-eight controls in a document
+ * whose subject is not its own interface.
+ */
+.fig-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.fig-tool {
+  /*
+   * `--text-sm`, which is what every other control here uses, and not a step
+   * smaller. The accessibility floor is measured — 18.7px at 375px — and a
+   * button set in `--text-xs` would become the smallest text on the page.
+   */
+  padding: 0.32rem 0.7rem;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: var(--line-soft);
+}
+
+.fig-tool:hover,
+.fig-tool:focus-visible {
+  color: var(--text);
+  background: var(--bg-raised);
+  border-color: var(--text-faint);
+}
+
+/* Holds the gap in the page while the figure is in the dialog, so nothing
+   below it moves and the reader comes back to the same scroll position. */
+.fig-parked {
+  width: 100%;
+}
+
+/*
+ * The enlarged view.
+ *
+ * A `<dialog>` and not a positioned overlay: the top layer is above every
+ * stacking context on the page, so the one thing that cannot happen is the
+ * figure being clipped by an ancestor's `overflow` — which is what the site's
+ * scroll boxes and sticky headers would otherwise do. Escape, the focus trap
+ * and the return of focus all come with it.
+ */
+.fig-zoom {
+  /* The UA rule that hides a closed dialog is `display: none`, so this cannot
+     be unconditional. */
+  display: none;
+  width: min(96vw, 1600px);
+  max-width: none;
+  max-height: 92vh;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.fig-zoom[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  /*
+   * `minmax(0, 1fr)` and not the default `auto` column.
+   *
+   * An `auto` track is sized by its contents' minimum, and the entry map's
+   * legend asks for 490px before it will wrap. Measured at 375px: the dialog
+   * box was 360px and the panel inside it 556px, so the figure hung out of both
+   * sides of the modal it had just been opened into. A zero floor lets the
+   * track shrink to the dialog and the legend wrap the way it already does on
+   * the page.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+/* A literal, not a token. `::backdrop` inherits from its originating element
+   only in recent engines; where it does not, a token resolves to nothing and a
+   modal scrim that paints nothing is not a modal. Neutral black works over
+   both themes because it is a scrim, not a surface. */
+.fig-zoom::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+.fig-zoom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.fig-zoom-name {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fig-zoom-body {
+  overflow: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+/* The figure's own top margin is spacing between paragraphs, and there are no
+   paragraphs here. */
+.fig-zoom-body > figure,
+.fig-zoom-body > .map-wrap {
+  margin: 0;
+}
+
+/* 放大 inside the enlarged view would do nothing; 下載 PNG still does, and now
+   at the larger size, which is a reason to open this before saving. */
+.fig-zoom-body [data-fig-act="zoom"] {
+  display: none;
+}
+
 /* ---------- print ---------- */
 
 /*
@@ -1581,6 +1716,12 @@ button:hover {
   .shell {
     display: block;
     min-height: 0;
+  }
+
+  /* Two controls a sheet of paper cannot honour: it opens no dialogs and has
+     nowhere to save a file. The figure they belong to prints without them. */
+  .fig-tools {
+    display: none !important;
   }
 
   /* The measure on paper is the paper, not a 42rem column inside it. */
