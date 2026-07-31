@@ -117,7 +117,7 @@ const cellFor = (method: string, buffer: number) =>
 
 <section id="space" class="page">
   <p class="eyebrow">第三章</p>
-  <h2>空間結構與官方分區</h2>
+  <h1>空間結構與官方分區</h1>
   <p class="lede">
     原始清單把這個缺陷記成「78 個測站的空間維度沒用」。動手量了之後，這句話需要修正：
     當年的做法是按空品區分層、每區各跑一次——所以誠實的問題不是「有沒有用空間」，
@@ -140,7 +140,7 @@ const cellFor = (method: string, buffer: number) =>
     不可交換，所以不能用排列檢定），權重 {network.weights}。
   </p>
 
-  <h3>先看距離，再看任何單一數字</h3>
+  <h2>先看距離，再看任何單一數字</h2>
 
   <p>
     Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變——
@@ -173,7 +173,7 @@ const cellFor = (method: string, buffer: number) =>
     </figcaption>
   </figure>
 
-  <h3>五種空間控制，各買到多少</h3>
+  <h2>五種空間控制，各買到多少</h2>
 
   <p>
     同一個設計矩陣、同一批資料，只換空間控制的強度。報告的是每月殘差 I 的平均
@@ -223,7 +223,7 @@ const cellFor = (method: string, buffer: number) =>
     </div>
   )}
 
-  <h3>官方分區比純地理多知道什麼？</h3>
+  <h2>官方分區比純地理多知道什麼？</h2>
 
   <p>
     這個檢定的虛無不是隨機重貼標籤——任何連續的分割都會勝過它，勝出並不具鑑別力。
@@ -252,7 +252,7 @@ const cellFor = (method: string, buffer: number) =>
     </p>
   </div>
 
-  <h3>相依散在整個場，不在少數熱點</h3>
+  <h2>相依散在整個場，不在少數熱點</h2>
 
   <p>
     LISA（局部 Moran，同一套模擬虛無）逐站檢查殘差相依的所在位置：{lisa.stations} 站中
@@ -263,7 +263,7 @@ const cellFor = (method: string, buffer: number) =>
     而不是排除幾個「異常站」即可。
   </p>
 
-  <h3>把 t 統計量重新標價</h3>
+  <h2>把 t 統計量重新標價</h2>
 
   <p>
     係數完全不動、設計完全不動，只換共變異估計量——這樣得出的前後對照才對得上
@@ -316,7 +316,7 @@ const cellFor = (method: string, buffer: number) =>
 
   {fieldMethods.length > 0 && (
     <>
-      <h3>測站之間的空白能不能誠實地補？</h3>
+      <h2>測站之間的空白能不能誠實地補？</h2>
 
       <p>
         全台 1 公里濃度場是計畫書上的目標，但測站最近鄰距離從 0.6 到 67 公里，

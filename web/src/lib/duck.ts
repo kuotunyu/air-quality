@@ -33,6 +33,15 @@ let dbPromise: Promise<AsyncDuckDB> | null = null;
 export async function getDb(onProgress?: (message: string) => void): Promise<AsyncDuckDB> {
   if (dbPromise) return dbPromise;
 
+  /*
+   * Cleared if it rejects, or the failure is permanent.
+   *
+   * `if (dbPromise) return dbPromise` returns the cached promise whether it
+   * resolved OR rejected — so a reader whose connection dropped partway through
+   * the 8 MB of WebAssembly saw an error, pressed the button again, and got the
+   * identical error without a single byte being re-requested. The body ran once
+   * no matter how many times they tried.
+   */
   dbPromise = (async () => {
     onProgress?.("載入查詢引擎");
     // Dynamic, not top-level. A static import puts ~190 KB of DuckDB's
@@ -54,6 +63,11 @@ export async function getDb(onProgress?: (message: string) => void): Promise<Asy
     return db;
   })();
 
+  dbPromise = dbPromise.catch((error) => {
+    dbPromise = null;
+    throw error;
+  });
+
   return dbPromise;
 }
 
@@ -71,9 +85,21 @@ export interface Candidate {
  * *probed* rather than trusted. A table the reader can see in the list is a
  * table that exists; there is no way for this UI to advertise a 404.
  *
- * DuckDB then reads them over HTTP range requests, so a query touching one
- * station and one year fetches kilobytes rather than the whole file. That is
- * the entire reason L1 is Parquet and not JSON.
+ * DuckDB then reads them over HTTP, and Parquet is the format because its footer
+ * lets a reader seek rather than scan.
+ *
+ * What is MEASURED: Pages serves these with `Accept-Ranges: bytes` and does not
+ * gzip them (`Content-Type: application/octet-stream`, no `Content-Encoding`),
+ * and a mid-file `Range: bytes=1000000-1000031` returns `206 Partial Content`
+ * with exactly 32 bytes. So range reads are possible here.
+ *
+ * What is NOT measured, and therefore not claimed: how much a given query
+ * actually transfers. This comment used to say a query touching one station and
+ * one year "fetches kilobytes rather than the whole file". DuckDB issues those
+ * requests from inside its Web Worker, where neither a patched `window.fetch`
+ * nor the page's network log can see them, so that sentence was a reasonable
+ * belief about a library rather than something anyone here had checked — and on
+ * this site a number nobody has checked does not get stated.
  */
 export async function attachTables(
   db: AsyncDuckDB,

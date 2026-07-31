@@ -576,32 +576,57 @@ h1 {
    * still wraps below about 430px, where twelve characters cannot fit whatever
    * the size — that is the column, not a choice.
    */
-  font-size: clamp(1.55rem, 3.4vw, 2.05rem);
+  /*
+   * The default `h1` is a CHAPTER title, because ten of the eleven routes are
+   * chapters. Ten of them had no `h1` at all — their outline started at `h2`,
+   * which is an axe `page-has-heading-one` failure and leaves a screen-reader
+   * user asking for the top-level heading and getting nothing. Every chapter's
+   * headings moved up a level, so the sizes move down one to match: what a
+   * reader sees is unchanged, what the outline says is now true.
+   */
+  font-size: var(--text-2xl);
   font-weight: 700;
   /* Floor is -0.04em; CJK needs less negative tracking than Latin display, and
      below about -0.02em the glyphs start to collide rather than tighten. */
   letter-spacing: -0.018em;
 }
+
+/*
+ * The document's own title, which is a different job from a chapter's.
+ *
+ * Only the entry page has one, and it is the one heading allowed to be display
+ * sized. Down from a 2.4rem ceiling that rendered 50.4px: 50px over the body was
+ * a ratio of 2.4, more hierarchy than a twelve-character title needs, and the
+ * title carried a hard `<br />` so it set as two lines using 39% of its column.
+ */
+#hero h1 {
+  font-size: clamp(1.55rem, 3.4vw, 2.05rem);
+}
+
 h2 {
-  font-size: var(--text-2xl);
+  font-size: var(--text-xl);
   font-weight: 650;
   letter-spacing: -0.012em;
-}
-h3 {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: -0.006em;
   /* A subheading needs the space above it to belong to the section it opens,
      not to the paragraph it follows. */
   margin-top: var(--space-4);
 }
+h3 {
+  font-size: var(--text-base);
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: -0.006em;
+  margin: var(--space-4) 0 var(--space-2);
+}
 
 /* Two headings in a row is a group, not a new section. */
-h2 + h3,
-h3 + h4 {
+h1 + h2,
+h2 + h3 {
   margin-top: var(--space-3);
 }
 
+/* No chapter emits an `h4` any more — they all moved up a level. Kept for any
+   markup that still reaches for one. */
 h4 {
   font-size: var(--text-base);
   font-weight: 650;
@@ -1063,10 +1088,46 @@ figcaption {
  * count it is redundant, and for an even one it stops the axis losing the value
  * a reader is most likely to be looking for.
  */
-@container (max-width: 36rem) {
-  .plot-x:not(.keep) span:nth-child(even):not(:last-child) {
-    display: none;
-  }
+/*
+ * The threshold has to scale with the number of labels, because that is what
+ * decides whether they collide.
+ *
+ * One flat `36rem` used to gate this, chosen for a nine-label year axis. But
+ * 36rem is 846px and the widest `.plot-x` this site can produce is 715px, so the
+ * tier was UNCONDITIONALLY ON — at every viewport, on every chart. Measured on
+ * /methods: a five-label axis 602px wide permanently showed `1h / 4-12h / >48h`
+ * and hid `2-3h` and `13-48h`, two names that appear nowhere else on the page,
+ * on the figure that prices this project's headline complaint about imputation.
+ * Another five-label axis at 503px lost `6時` and `18時`.
+ *
+ * `data-n` carries the label count from the build, and each tier is that count
+ * times 3.4rem — roughly the widest label this site produces plus a gap. So a
+ * five-label axis thins below 17rem and a nine-label one below 30.6rem, which is
+ * what "would these overlap" actually means.
+ */
+@container (max-width: 13.6rem) {
+  .plot-x[data-n="4"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+}
+@container (max-width: 17rem) {
+  .plot-x[data-n="5"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+}
+@container (max-width: 20.4rem) {
+  .plot-x[data-n="6"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+}
+@container (max-width: 23.8rem) {
+  .plot-x[data-n="7"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+}
+@container (max-width: 27.2rem) {
+  .plot-x[data-n="8"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+}
+@container (max-width: 30.6rem) {
+  .plot-x[data-n="9"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+}
+@container (max-width: 34rem) {
+  .plot-x[data-n="10"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  /* No `data-n` means a caller that has not been updated; keep the old
+     behaviour rather than silently letting labels overlap. */
+  .plot-x:not([data-n]):not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
 
 @container (max-width: 16rem) {
@@ -1429,6 +1490,42 @@ button:hover {
   height: 12px;
   border-radius: 3px;
   flex: none;
+}
+
+/*
+ * The skip link: hidden until it has focus, then a real control.
+ *
+ * It used `.visually-hidden`, which has no `:focus` escape — so the first tab
+ * stop on all eleven pages moved focus to a 1x1 box clipped to nothing at
+ * (-1, -1). A keyboard reader pressed Tab once and the focus ring vanished. The
+ * link was correct, well named, and had never been visible to anyone who used
+ * it: WCAG 2.4.7.
+ *
+ * Every one of the five declarations that hide it has to be undone, not just
+ * `clip` — a `width: 1px` box would still show nothing.
+ */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: var(--z-overlay);
+}
+
+.skip:focus,
+.skip:focus-visible {
+  left: var(--space-3);
+  top: var(--space-3);
+  width: auto;
+  height: auto;
+  clip: auto;
+  clip-path: none;
+  padding: 0.6rem 1rem;
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  text-decoration: none;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.18);
 }
 
 .visually-hidden {

@@ -71,6 +71,20 @@ const opening = [
     趨勢與水準是兩個不同的量，這兩項結果並不衝突。
   </p>
 
+  {/*
+    The container is the WRAPPER, not the grid.
+
+    `container-type` sat on `.hero-grid` while the `@container` block below
+    styled `.hero-grid` — and an element cannot query the container it is itself
+    establishing. The result was not that nothing happened, which is why it
+    survived: the block also styles the grid's CHILDREN, and those DO sit inside
+    the container, so their `grid-area` placements applied while the
+    `grid-template-columns` that was supposed to size those columns did not.
+    Measured at 1440: two auto-sized columns of 446px and 499px instead of the
+    clamp, and `.map-notes` — which asks to span both — stuck at 446px inside a
+    983px figure.
+  */}
+  <div class="hero-figure">
   <div class="hero-grid" style="--enter:3">
     <StationMap stations={stations} cards={cards} unplaced={stationsWithoutCoordinates} />
 
@@ -139,6 +153,7 @@ const opening = [
       </p>
     </div>
   </div>
+  </div>
 </section>
 
 <style>
@@ -201,6 +216,17 @@ const opening = [
   gap: var(--space-4);
   margin: var(--space-4) 0 var(--space-5);
   align-items: start;
+}
+
+/*
+ * The query container, and the only reason this element exists.
+ *
+ * `container-type` used to sit on `.hero-grid` itself while the `@container`
+ * block queried `.hero-grid` — see the note in the markup. A wrapper is the
+ * whole fix: the grid is now a descendant of the container, so it can be asked
+ * how wide its own room is.
+ */
+.hero-figure {
   /*
    * Queried on the CONTAINER, not the viewport, and that distinction was
    * expensive to learn. The old rule was `@media (min-width: 52rem)`, written

@@ -69,7 +69,7 @@ const shortName = (name: string) =>
 
 <section id="detection" class="page">
   <p class="eyebrow">第五章</p>
-  <h2>事件效應的偵測極限</h2>
+  <h1>事件效應的偵測極限</h1>
 
   <p class="lede">
     這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」——
@@ -90,7 +90,7 @@ const shortName = (name: string) =>
     這叫安慰劑檢定，它問的是：這個方法在應該找不到東西的時候，會找到多少？
   </div>
 
-  <h3>結果</h3>
+  <h2>結果</h2>
 
   <div class="table-wrap">
     <table>
@@ -129,7 +129,7 @@ const shortName = (name: string) =>
     <strong>三個事件的實際通過數都低於機率預期。</strong>
   </p>
 
-  <h3>估計值與其安慰劑分布的對照</h3>
+  <h2>估計值與其安慰劑分布的對照</h2>
 
   <p>
     下面每一條帶狀圖是一個事件。<span class="k-pl">淡色的短線</span>是安慰劑——
@@ -210,7 +210,7 @@ const shortName = (name: string) =>
     答案是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)}。
   </div>
 
-  <h3>都會測站：百分比變化與標準化效應量</h3>
+  <h2>都會測站：百分比變化與標準化效應量</h2>
 
   <p>
     封城期間的都會測站：前金 −23.4%、左營 −18.5%、古亭 −9.9%。
@@ -218,7 +218,7 @@ const shortName = (name: string) =>
     <strong>−0.24、−0.52、−0.12</strong>——全部深深落在安慰劑散布之內。
   </p>
 
-  <h3>空間檢定</h3>
+  <h2>空間檢定</h2>
 
   <p>{spatial.why}</p>
 
@@ -254,7 +254,7 @@ const shortName = (name: string) =>
   {
     breaks.length > 0 && (
       <>
-        <h3>制度轉變：分段趨勢的斜率檢定</h3>
+        <h2>制度轉變：分段趨勢的斜率檢定</h2>
         <p>
           一條法規生效之後就一直生效，它不是一個有前後的視窗，而是一次制度轉變。
           該改變的是下降的<strong>速率</strong>。所以空污法修正改用分段迴歸，

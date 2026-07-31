@@ -101,7 +101,7 @@ const candidates = pollutantIndex.map((p) => ({
 
 <section id="explore" class="page">
   <p class="eyebrow">第九章</p>
-  <h2>資料查詢</h2>
+  <h1>資料查詢</h1>
 
   <p class="lede">
     這是一個在讀者瀏覽器內執行的資料庫。沒有查詢伺服器，沒有 API 金鑰，
@@ -277,7 +277,10 @@ const candidates = pollutantIndex.map((p) => ({
       shown = { columns, kinds, rows, total, truncated };
       paint();
     } catch (error) {
-      setStatus("");
+      // Say so. This set the status to empty, which on a live region announces
+      // nothing at all — a screen-reader user pressed the button and heard
+      // silence whether it had worked or failed.
+      setStatus("查詢失敗");
       // A failed preparation must not be cached, or every later attempt
       // returns the same error without retrying.
       attached = null;
@@ -865,7 +868,17 @@ const candidates = pollutantIndex.map((p) => ({
     font-size: var(--text-sm);
     color: var(--text-muted);
   }
-  .error {
+  /*
+   * `:global`, because this element is built in JavaScript.
+   *
+   * Astro scopes a component's styles by stamping `data-astro-cid-*` on the
+   * elements IN ITS TEMPLATE. The error `<pre>` is created by `document.
+   * createElement` at runtime, so it never carried the attribute and this rule
+   * — the only styling the site's one failure surface has — never matched it. A
+   * failed query rendered as a bare user-agent `<pre>`: no frame, no surface,
+   * wrong face, and at 375px its unwrapped text pushed the page 297px sideways.
+   */
+  .result :global(.error) {
     color: var(--c5-ink);
     font-family: var(--font-mono);
     font-size: var(--text-sm);

@@ -63,14 +63,14 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
         hidden={card.station_name !== initial.station_name}
       >
         <header>
-          <h3>
+          <h2>
             {card.station_name}
             <span class="place">
               {card.county}
               {card.township ? ` ${card.township}` : ""}
               {card.station_type ? ` · ${stationType(card.station_type)}` : ""}
             </span>
-          </h3>
+          </h2>
           <span class="year num">{card.year} 年</span>
         </header>
 
@@ -162,7 +162,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     padding-bottom: 1rem;
     border-bottom: 1px solid var(--line-soft);
   }
-  .report h3 {
+  .report h2 {
     margin: 0;
     display: flex;
     align-items: baseline;

@@ -18,7 +18,7 @@
  * and that term would dominate the error while reading as the solid part.
  */
 import health from "../../public/data/story/health.json";
-import { labelGutter, linear, markInk, n, spreadLabels, ticks } from "../lib/chart";
+import { labelGutter, linear, markInk, n, spreadLabels, ticks, yGutter } from "../lib/chart";
 
 const series = health.series as {
   name: string;
@@ -118,7 +118,7 @@ const fn = functions[0];
 
 <section id="health" class="page">
   <p class="eyebrow">第七章</p>
-  <h2>健康負擔估計的假設敏感度</h2>
+  <h1>健康負擔估計的假設敏感度</h1>
 
   <p class="lede">
     「空污每年造成 N 人死亡」這種句子裡藏著三個選擇：用哪條暴露反應函數、
@@ -138,13 +138,13 @@ const fn = functions[0];
     <p>反事實濃度就是「以什麼濃度作為比較基準」。它幾乎從來不會跟著結論一起被說明。</p>
   </div>
 
-  <h3>四種反事實濃度下的可歸因比例</h3>
+  <h2>四種反事實濃度下的可歸因比例</h2>
 
   <figure>
     <div class="chart">
       <div
         class="plot"
-        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(series.map((s) => s.label))}px`}
+        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(series.map((s) => s.label))}px;--y-w:${yGutter(pafTicks.map((t) => `${n(t * 100, 0)}%`))}px`}
       >
         <div class="plot-y">
           {pafTicks.map((t) => <span style={`top:${n(yPaf(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
@@ -188,7 +188,7 @@ const fn = functions[0];
           }
         </div>
 
-        <div class="plot-x">
+        <div class="plot-x" data-n={yearTicks.length}>
           {yearTicks.map((y) => <span style={`left:${n(xYear(y), 3)}%`}>{y}</span>)}
         </div>
       </div>
@@ -203,7 +203,7 @@ const fn = functions[0];
 
   <div class="grid grid-2">
     <div class="card">
-      <h3>下降幅度對假設穩健</h3>
+      <h2>下降幅度對假設穩健</h2>
       <p class="small">
         {headline.first_year} 年是 {n(headline.first_range[0] * 100, 1)}–{
           n(headline.first_range[1] * 100, 1)
@@ -214,7 +214,7 @@ const fn = functions[0];
       </p>
     </div>
     <div class="card">
-      <h3>當前水準對假設不穩健</h3>
+      <h2>當前水準對假設不穩健</h2>
       <p class="small">
         {headline.last_year} 年的答案是 {n(headline.last_range[0] * 100, 1)}% 還是
         {" "}{n(headline.last_range[1] * 100, 1)}%，
@@ -224,7 +224,7 @@ const fn = functions[0];
     </div>
   </div>
 
-  <h3>假設佔估計值的比重隨濃度下降而上升</h3>
+  <h2>假設佔估計值的比重隨濃度下降而上升</h2>
 
   <p>
     上面那個範圍的<strong>絕對寬度</strong>幾乎沒動（大約 3.6 到 4.2 個百分點）。
@@ -233,7 +233,7 @@ const fn = functions[0];
 
   <figure>
     <div class="chart">
-      <div class="plot" style={`--plot-h:${PLOT_H2}px`}>
+      <div class="plot" style={`--plot-h:${PLOT_H2}px;--y-w:${yGutter(shareTicks.map((t) => `${n(t * 100, 0)}%`))}px`}>
         <div class="plot-y">
           {shareTicks.map((t) => <span style={`top:${n(yShare(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
         </div>
@@ -267,7 +267,7 @@ const fn = functions[0];
           }
         </div>
 
-        <div class="plot-x">
+        <div class="plot-x" data-n={yearTicks.length}>
           {yearTicks.map((y) => <span style={`left:${n(xYear(y), 3)}%`}>{y}</span>)}
         </div>
       </div>
@@ -290,7 +290,7 @@ const fn = functions[0];
     </p>
   </div>
 
-  <h3>採用的暴露反應函數</h3>
+  <h2>採用的暴露反應函數</h2>
 
   <div class="table-wrap">
     <table>
@@ -332,19 +332,19 @@ const fn = functions[0];
     {" "}{n(extrapolation.ceiling_ugm3, 0)} μg/m³ 以上。{extrapolation.why}
   </div>
 
-  <h3>固定測站樣本</h3>
+  <h2>固定測站樣本</h2>
 
   <p class="small">{panel.why}</p>
 
-  <h3>兩項刻意不做的推論</h3>
+  <h2>兩項刻意不做的推論</h2>
 
   <div class="grid grid-2">
     <div class="card">
-      <h3>不報死亡人數</h3>
+      <h2>不報死亡人數</h2>
       <p class="small">{notReported.deaths}</p>
     </div>
     <div class="card">
-      <h3>不宣稱這是誰的暴露</h3>
+      <h2>不宣稱這是誰的暴露</h2>
       <p class="small">{notReported.exposure}</p>
     </div>
   </div>

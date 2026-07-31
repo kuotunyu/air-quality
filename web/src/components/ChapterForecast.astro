@@ -14,7 +14,7 @@
  */
 import forecast from "../../public/data/story/forecast.json";
 import { sarimaEvidence } from "../lib/data";
-import { labelGutter, linear, markInk, n, spreadLabels, ticks } from "../lib/chart";
+import { labelGutter, linear, markInk, n, spreadLabels, ticks, yGutter } from "../lib/chart";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -176,7 +176,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
 <section id="forecast" class="page">
   <p class="eyebrow">第六章</p>
-  <h2>預測技巧與有效期距</h2>
+  <h1>預測技巧與有效期距</h1>
 
   <p class="lede">
     上一章量的是<strong>回頭看</strong>能分辨多小的效應。這一章量的是
@@ -192,13 +192,13 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     {n(totalRows / 1e6, 2)} 百萬列測試資料，74 站，2015–2025。
   </p>
 
-  <h3>絕對誤差（μg/m³）</h3>
+  <h2>絕對誤差（μg/m³）</h2>
 
   <figure>
     <div class="chart">
       <div
         class="plot"
-        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(rmseSeries.map((s) => s.label))}px`}
+        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(rmseSeries.map((s) => s.label))}px;--y-w:${yGutter(rmseTicks.map((t) => n(t, 0)))}px`}
       >
         <div class="plot-y">
           {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{n(t, 0)}</span>)}
@@ -252,7 +252,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-x">
+        <div class="plot-x" data-n={horizons.length}>
           {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
       </div>
@@ -273,7 +273,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     {" "}{n(last.climatology_rmse, 2)} 略低。
   </div>
 
-  <h3>同一批結果的三個無單位指標</h3>
+  <h2>同一批結果的三個無單位指標</h2>
 
   <p>
     R² 和 skill 都是無單位的比例，1 是完美、0 是「跟被比較的東西一樣」，
@@ -284,7 +284,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     <div class="chart">
       <div
         class="plot"
-        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(metricSeries.map((s) => s.label))}px`}
+        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(metricSeries.map((s) => s.label))}px;--y-w:${yGutter(metricTicks.map((t) => n(t, 1)))}px`}
       >
         <div class="plot-y">
           {metricTicks.map((t) => <span style={`top:${n(yMetric(t), 3)}%`}>{n(t, 1)}</span>)}
@@ -349,7 +349,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-x">
+        <div class="plot-x" data-n={horizons.length}>
           {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
       </div>
@@ -364,22 +364,22 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     {
       reading.map((r) => (
         <div class="card">
-          <h3>{r.claim}</h3>
+          <h2>{r.claim}</h2>
           <p class="small">{r.detail}</p>
         </div>
       ))
     }
   </div>
 
-  <h3>為何需要兩條基準線</h3>
+  <h2>為何需要兩條基準線</h2>
 
   <div class="grid grid-2">
     {
       baselines.map((b) => (
         <div class="card">
-          <h3>
+          <h2>
             {b.name} <span class="dim">{b.label}</span>
-          </h3>
+          </h2>
           <p class="small">{b.what}</p>
           <p class="small dim">{b.why}</p>
         </div>
@@ -437,7 +437,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     )
   }
 
-  <h3>洩漏防護與驗證</h3>
+  <h2>洩漏防護與驗證</h2>
 
   <p class="small">{forecast.leakage_note}</p>
 
@@ -450,7 +450,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     沒有任何一個可疑地接近 1。
   </p>
 
-  <h3>被跳過的那個模型（D10）</h3>
+  <h2>被跳過的那個模型（D10）</h2>
 
   <p class="lede">
     原專題第 {sar.quote_page} 頁：「{sar.quote}」。
@@ -468,7 +468,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     中位數 {sar.fits.median_seconds} 秒、{sar.fits.median_observed.toLocaleString()} 個有效觀測點。
   </p>
 
-  <h4>一、那個不便，定價</h4>
+  <h3>一、那個不便，定價</h3>
 
   <div class="table-wrap">
     <table>
@@ -501,13 +501,13 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     所以原文說它不便——<strong>這件事是對的</strong>。
   </div>
 
-  <h4>二、那個不便，買到了什麼</h4>
+  <h3>二、那個不便，買到了什麼</h3>
 
   <figure>
     <div class="chart">
       <div
         class="plot"
-        style={`--plot-h:${SAR_H}px;--key-w:${labelGutter(sarSeries.map((s) => s.label))}px`}
+        style={`--plot-h:${SAR_H}px;--key-w:${labelGutter(sarSeries.map((s) => s.label))}px;--y-w:${yGutter(sarTicks.map((t) => n(t, 0)))}px`}
       >
         <div class="plot-y">
           {sarTicks.map((t) => <span style={`top:${n(ySar(t), 3)}%`}>{n(t, 0)}</span>)}
@@ -561,7 +561,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-x">
+        <div class="plot-x" data-n={sar.horizons.length}>
           {sar.horizons.map((h, i) => <span style={`left:${n(sarX(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
       </div>

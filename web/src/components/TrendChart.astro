@@ -1,5 +1,5 @@
 ---
-import { linePath, markInk, n, padded, ticks } from "../lib/chart";
+import { linePath, markInk, n, padded, ticks, yGutter } from "../lib/chart";
 
 interface Props {
   years: number[];
@@ -40,7 +40,7 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
 ---
 
 <div class="chart">
-  <div class="plot" style={`--plot-h:${height}px`}>
+  <div class="plot" style={`--plot-h:${height}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px`}>
     <div class="plot-y">
       {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
     </div>
@@ -99,7 +99,7 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
       }
     </div>
 
-    <div class="plot-x">
+    <div class="plot-x" data-n={xTicks.length}>
       {xTicks.map(({ year, index }) => <span style={`left:${n(x(index), 3)}%`}>{year}</span>)}
     </div>
   </div>

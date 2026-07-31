@@ -209,6 +209,25 @@ export function labelGutter(labels: (string | number)[], size = 18, pad = 16): n
 }
 
 /**
+ * Width the y-axis gutter needs for its own labels.
+ *
+ * `.plot-y` reads `var(--y-w, calc(3.4 * var(--chart-tick)))`, and until now
+ * NOTHING in this repository ever set `--y-w` — the token appeared exactly once,
+ * as that fallback. So every chart on the site reserved 3.4 tick-heights for its
+ * y labels whatever they said: a fixed 71px, whether the widest label was 「50」
+ * or 「100%」. Measured at 375px that left the plot area 140px inside a 244px
+ * card, 57% of the figure spent on a gutter three times wider than its contents.
+ *
+ * Same estimator as `labelGutter`, at the tick size rather than the default, and
+ * with a smaller pad: this gutter holds one right-aligned number and a gap to the
+ * axis, not a legend.
+ */
+export function yGutter(labels: (string | number)[]): number {
+  // Must track `--chart-tick` in global.css. Both are px because the plot is.
+  return labelGutter(labels, 21, 12);
+}
+
+/**
  * Push inline series labels apart so they stay readable where lines converge.
  *
  * Needed because convergence is usually the finding. In chapter 5 R² and skill
