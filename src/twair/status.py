@@ -94,6 +94,12 @@ MODULES: tuple[Module, ...] = (
         "isolated excursions against network episodes",
         feeds_web=False,
     ),
+    Module(
+        "qc_stuck",
+        "twair qc stuck",
+        "readings that stopped changing — the outlier module's blind spot",
+        feeds_web=False,
+    ),
 )
 
 
