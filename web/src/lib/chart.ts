@@ -66,6 +66,62 @@ export function linePath(
   return parts.join(" ");
 }
 
+/**
+ * The same path, drawn as a smooth curve.
+ *
+ * Ported from the owner's own traffic-accident project, which sets ECharts'
+ * `smooth: 0.25` on every series. It is most of why those charts read as calm:
+ * a polyline through fifteen or twenty-eight annual points is a sequence of
+ * corners, and the eye reads every corner as an event.
+ *
+ * Catmull-Rom through the points, converted to cubic Bézier, at the same 0.25
+ * tension. Two properties matter and both are kept: the curve passes exactly
+ * through every measured point — it is a smoothing of the LINE, never of the
+ * data — and a null still ends the subpath, so a gap is still a gap.
+ */
+export function smoothPath(
+  values: (number | null | undefined)[],
+  x: (index: number) => number,
+  y: (value: number) => number,
+  tension = 0.25,
+): string {
+  const runs: { x: number; y: number }[][] = [];
+  let run: { x: number; y: number }[] = [];
+  values.forEach((value, index) => {
+    if (value == null || !Number.isFinite(value)) {
+      if (run.length) runs.push(run);
+      run = [];
+      return;
+    }
+    run.push({ x: x(index), y: y(value) });
+  });
+  if (run.length) runs.push(run);
+
+  return runs
+    .map((points) => {
+      if (points.length === 1) {
+        // A lone reading is still a reading; draw it as a zero-length segment
+        // so it is visible rather than silently dropped.
+        const p = points[0];
+        return `M${n(p.x, 2)} ${n(p.y, 2)} L${n(p.x, 2)} ${n(p.y, 2)}`;
+      }
+      let d = `M${n(points[0].x, 2)} ${n(points[0].y, 2)}`;
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const p0 = points[i - 1] ?? points[i];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[i + 2] ?? p2;
+        const c1x = p1.x + ((p2.x - p0.x) / 6) * tension * 4;
+        const c1y = p1.y + ((p2.y - p0.y) / 6) * tension * 4;
+        const c2x = p2.x - ((p3.x - p1.x) / 6) * tension * 4;
+        const c2y = p2.y - ((p3.y - p1.y) / 6) * tension * 4;
+        d += ` C${n(c1x, 2)} ${n(c1y, 2)}, ${n(c2x, 2)} ${n(c2y, 2)}, ${n(p2.x, 2)} ${n(p2.y, 2)}`;
+      }
+      return d;
+    })
+    .join(" ");
+}
+
 /** Points for a scatter overlay, skipping nulls. */
 export function points(
   values: (number | null | undefined)[],

@@ -364,17 +364,13 @@ const taiwanAnnualFor = (years: number[]) =>
       guides={[{ values: taiwanAnnualFor(trend.years), label: "台灣年均標準", colour: "var(--taiwan)" }]}
       unit="μg/m³"
       height={620}
-      {/* No end labels: eight of them stacked at the right edge was the wall
-          this figure just came out of. The names live in the in-plot legend,
-          which places itself wherever the eight lines left room. */}
       keys="none"
       notesAt="left"
     />
     <figcaption>
-      各空品區 PM2.5 年均值。每條線在自己的末端寫著自己的名字與 2025 年的值，
-      並以自己的顏色連回線上，所以不需要對照圖例。八個顏色是為了「彼此分得開」解出來的
-      （最接近的一對 dE00 18.9，含綠色盲與紅色盲模擬），與濃度分帶無關。
-      同樣只採計年覆蓋率 ≥ 75% 的測站年。
+      各空品區 PM2.5 年均值。八條線的名字與 2025 年的值列在圖內的圖例裡，
+      圖例放在資料最少的那一角。線經過平滑（僅平滑線條，每個量到的點仍在線上），
+      不畫資料點。同樣只採計年覆蓋率 ≥ 75% 的測站年。
     </figcaption>
   </figure>
 </section>

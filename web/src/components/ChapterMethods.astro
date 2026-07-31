@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { labelGutter, linePath, linear, markInk, n, padded, spreadLabels, ticks, yGutter } from "../lib/chart";
+import { labelGutter, linePath, linear, smoothPath, markInk, n, padded, spreadLabels, ticks, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -635,7 +635,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               {
                 GAP_SERIES.map((series) => (
                   <path
-                    d={linePath(series.values, (i) => gx(i), (v) => gy(v))}
+                    d={smoothPath(series.values, (i) => gx(i), (v) => gy(v))}
                     class="plot-line"
                     stroke={series.colour}
                     stroke-dasharray={series.dash}

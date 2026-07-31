@@ -2,6 +2,7 @@
 import {
   labelGutter,
   linePath,
+  smoothPath,
   markInk,
   n,
   padded,
@@ -270,7 +271,7 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
         {
           series.map((s) => (
             <path
-              d={linePath(s.values, x, y)}
+              d={smoothPath(s.values, x, y)}
               class="plot-line"
               stroke={s.colour}
               stroke-dasharray={s.dash}
@@ -281,26 +282,15 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
       </svg>
 
       {/*
-        Data points, as HTML rather than `<circle>`. The marks layer is
-        stretched by `preserveAspectRatio="none"`, which turns a circle into an
-        ellipse; a span with `border-radius: 50%` stays round by construction —
-        the same reason `.plot-pt` exists for the other charts.
+        No data points.
 
-        They matter more than they look: a line alone does not say where it was
-        measured, so a reader cannot tell an annual series from a smooth curve
-        drawn through it.
+        They were added a round ago on the argument that a line does not say
+        where it was measured. The owner's own charts set `showSymbol: false`
+        and are far easier to look at, and the reason is visible once counted:
+        at 28 years times eight series this figure was drawing 224 dots, and
+        every one of them is a corner for the eye to stop on. The measurement
+        interval is in the x axis and in the caption, which is where it belongs.
       */}
-      {
-        series.map((s) =>
-          points(s.values, x, y).map((pt) => (
-            <span
-              class="plot-pt"
-              style={`left:${n(pt.x, 3)}%;top:${n(pt.y, 3)}%;color:${s.colour}`}
-            />
-          )),
-        )
-      }
-
       {
         visibleGuides.map((guide) => (
           <span class={`plot-note note-${notesAt}`} style={`top:${n(y(guideLevel(guide) as number), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>

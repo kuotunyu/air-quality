@@ -258,14 +258,39 @@
    *
    * `scripts/solve_categorical.py` re-derives these.
    */
-  --k0: oklch(0.615 0.166 130);
-  --k1: oklch(0.463 0.220 274);
-  --k2: oklch(0.304 0.055 20);
-  --k3: oklch(0.615 0.100 217);
-  --k4: oklch(0.469 0.061 189);
-  --k5: oklch(0.450 0.096 106);
-  --k6: oklch(0.300 0.072 292);
-  --k7: oklch(0.615 0.055 154);
+  /*
+   * [2026-08-01] Replaced with the palette from the owner's own traffic-accident
+   * project, on their instruction after four rounds of this. Their six hues
+   * exactly, plus two filling the widest gaps on the same wheel (h≈100, h≈340).
+   *
+   * The cost is measured and is NOT small, so it is written down rather than
+   * discovered later. Against the previous solved set:
+   *
+   *                        theirs   previous
+   *     normal vision       13.5      18.9      worst pair, CIEDE2000
+   *     deuteranopia         2.1      18.9      ← two of the eight collapse
+   *     protanopia           5.7      18.9
+   *     minimum contrast    2.65      3.00+     ← under the 3:1 non-text floor
+   *
+   * Three of the eight sit below 3:1 on the light theme (2.65, 2.71, 2.86).
+   * That floor is WCAG 1.4.11, which applies to graphical objects *required to
+   * understand the content* — and on these charts hue is no longer required:
+   * every line carries its own name at its own end, and every chart carries a
+   * legend. Colour groups; the label identifies. That is the argument, and it
+   * is the reason this is defensible rather than simply worse.
+   *
+   * It is still a real regression for a deuteranopic reader, and design
+   * principle 17 and the accessibility section have been amended to say so
+   * instead of continuing to claim a floor the site no longer holds.
+   */
+  --k0: #1a6cb0;
+  --k1: #e8701a;
+  --k2: #2e9e48;
+  --k3: #0e9c9c;
+  --k4: #d62f50;
+  --k5: #8a3fc0;
+  --k6: #7f9b12;
+  --k7: #c2417f;
 
   /*
    * Every link on the site, so it is prose and answers to prose thresholds.
@@ -316,14 +341,14 @@
   /* The categorical set's text twins, by the same rule as the ramp's above:
      the largest mix toward `--ink-mix` that still holds APCA Lc 75 and WCAG
      4.5:1 on the worst surface. k1 and k3 are already dark enough to need none. */
-  --k0-ink: color-mix(in oklab, var(--k0) 61%, var(--ink-mix));
-  --k1-ink: color-mix(in oklab, var(--k1) 99%, var(--ink-mix));
-  --k2-ink: var(--k2);
-  --k3-ink: color-mix(in oklab, var(--k3) 62%, var(--ink-mix));
-  --k4-ink: color-mix(in oklab, var(--k4) 91%, var(--ink-mix));
-  --k5-ink: color-mix(in oklab, var(--k5) 98%, var(--ink-mix));
-  --k6-ink: var(--k6);
-  --k7-ink: color-mix(in oklab, var(--k7) 62%, var(--ink-mix));
+  --k0-ink: color-mix(in oklab, var(--k0) 79%, var(--ink-mix));
+  --k1-ink: color-mix(in oklab, var(--k1) 57%, var(--ink-mix));
+  --k2-ink: color-mix(in oklab, var(--k2) 60%, var(--ink-mix));
+  --k3-ink: color-mix(in oklab, var(--k3) 59%, var(--ink-mix));
+  --k4-ink: color-mix(in oklab, var(--k4) 71%, var(--ink-mix));
+  --k5-ink: color-mix(in oklab, var(--k5) 82%, var(--ink-mix));
+  --k6-ink: color-mix(in oklab, var(--k6) 58%, var(--ink-mix));
+  --k7-ink: color-mix(in oklab, var(--k7) 72%, var(--ink-mix));
 
   /*
    * Surfaces that carry a caveat or a withheld result. Tinted rather than
@@ -532,14 +557,17 @@
     /* Solved against the dark surfaces, not derived from the light set — same
        reason the ramp is redeclared rather than inverted. Worst pair 34.2 for
        four, 34.6 for three, 61.7 for two. */
-    --k0: oklch(0.548 0.152 286);
-    --k1: oklch(0.900 0.181 98);
-    --k2: oklch(0.899 0.057 216);
-    --k3: oklch(0.541 0.055 55);
-    --k4: oklch(0.668 0.055 189);
-    --k5: oklch(0.669 0.130 72);
-    --k6: oklch(0.735 0.138 276);
-    --k7: oklch(0.894 0.088 158);
+    /* Same six hues, lifted for a near-black ground — the ramp is redeclared
+       rather than inverted here for the same reason, and for the same measured
+       cause: a colour that carries on chalk is usually too dark on charcoal. */
+    --k0: #63a8ee;
+    --k1: #f39044;
+    --k2: #57bf6f;
+    --k3: #3ebfbf;
+    --k4: #ec6a83;
+    --k5: #b078e0;
+    --k6: #a9c53a;
+    --k7: #e07aa8;
     --accent: oklch(0.871 0.056 250);
 
     --ink-mix: oklch(0.99 0.004 250);
@@ -568,14 +596,14 @@
        toward `--ink-mix`, and `--ink-mix` is the opposite extreme in each
        theme, so the same number means the opposite thing. Here k1 and k2 are
        already light enough to need no mixing. */
-    --k0-ink: color-mix(in oklab, var(--k0) 29%, var(--ink-mix));
-    --k1-ink: var(--k1);
-    --k2-ink: var(--k2);
-    --k3-ink: color-mix(in oklab, var(--k3) 29%, var(--ink-mix));
-    --k4-ink: color-mix(in oklab, var(--k4) 42%, var(--ink-mix));
-    --k5-ink: color-mix(in oklab, var(--k5) 41%, var(--ink-mix));
-    --k6-ink: color-mix(in oklab, var(--k6) 51%, var(--ink-mix));
-    --k7-ink: var(--k7);
+    --k0-ink: color-mix(in oklab, var(--k0) 49%, var(--ink-mix));
+    --k1-ink: color-mix(in oklab, var(--k1) 52%, var(--ink-mix));
+    --k2-ink: color-mix(in oklab, var(--k2) 53%, var(--ink-mix));
+    --k3-ink: color-mix(in oklab, var(--k3) 55%, var(--ink-mix));
+    --k4-ink: color-mix(in oklab, var(--k4) 41%, var(--ink-mix));
+    --k5-ink: color-mix(in oklab, var(--k5) 40%, var(--ink-mix));
+    --k6-ink: color-mix(in oklab, var(--k6) 66%, var(--ink-mix));
+    --k7-ink: color-mix(in oklab, var(--k7) 44%, var(--ink-mix));
 
     --map-line: oklch(0.536 0.012 250);
 
