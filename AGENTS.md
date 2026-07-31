@@ -12,7 +12,7 @@ Read this before changing anything. It is short on purpose.
 
 ## What this project is
 
-44 years (1982–2025) of Taiwanese hourly air-quality data — 341,442,552
+44 years (1982–2025) of Taiwanese hourly air-quality data — 340,371,384
 observations — parsed into a canonical Parquet store, analysed, and published
 as a static website.
 
@@ -99,7 +99,7 @@ Run all three. All three must pass.
 ```bash
 uv run pytest -q
 ```
-Currently **595 passed, 3 deselected**. This number must **not go down**.
+Currently **607 passed, 3 deselected**. This number must **not go down**.
 
 > Raise it in the same commit that adds tests. This line said 299 for long
 > enough that the real figure reached 470 — a floor 171 tests below reality,

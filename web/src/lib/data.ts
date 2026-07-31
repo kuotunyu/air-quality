@@ -227,8 +227,14 @@ export const recordSpan = ((): { first: number; last: number } => {
  * page rather than being deleted for being unprovable. But it lives in one place
  * now, it is labelled as the one declared figure on the site, and the measured
  * value supersedes it automatically the moment `export_meta` provides one.
+ *
+ * It was not right. The run it came from counted the 1999 archive twice for ten
+ * 雲嘉南 stations, which the agency filed under 北部空品區 as well — 1,071,168
+ * station-hours stored twice, 0.31% of the total. "It came from a real run" was
+ * the whole of the argument for it, and a real run is exactly what produced it.
+ * The store now holds 340,371,384 rows and no duplicate keys.
  */
-const DECLARED_HOURLY_OBSERVATIONS = 341_442_552;
+const DECLARED_HOURLY_OBSERVATIONS = 340_371_384;
 
 export const hourlyObservations =
   (meta as { hourly_observations?: number | null }).hourly_observations ??
@@ -239,14 +245,14 @@ export const hourlyObservationsMeasured =
   (meta as { hourly_observations?: number | null }).hourly_observations != null;
 
 /**
- * The same count in the form running prose wants: 「3.41 億」.
+ * The same count in the form running prose wants: 「3.40 億」.
  *
  * Two spellings of one number is how the six copies drifted apart in the first
  * place, so both spellings come from here.
  */
 export const hourlyObservationsShort = `${(hourlyObservations / 1e8).toFixed(2)} 億`;
 
-/** Full digits, grouped: 「341,442,552」. */
+/** Full digits, grouped: 「340,371,384」. */
 export const hourlyObservationsFull = hourlyObservations.toLocaleString("en-US");
 export const gitSha = meta.git_sha as string | null;
 

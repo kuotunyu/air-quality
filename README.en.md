@@ -23,7 +23,7 @@ Dataset — *not yet uploaded* ·
 ## What is this?
 
 An open, quality-controlled reanalysis of **44 years** of Taiwanese air-quality
-monitoring — 1982 to 2025, 341,442,552 hourly observations across 82 stations.
+monitoring — 1982 to 2025, 340,371,384 hourly observations across 82 stations.
 Three things come out of it:
 
 1. **A dataset that did not previously exist.** Taiwan's ministry publishes the

@@ -13,6 +13,7 @@ import polars as pl
 from twair.qc.flags import Flag
 
 __all__ = [
+    "KEY_COLUMNS",
     "OBSERVATION_SCHEMA",
     "PARTITION_SCHEMA",
     "SchemaError",
@@ -46,6 +47,10 @@ OBSERVATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 }
 
 REQUIRED_COLUMNS = tuple(OBSERVATION_SCHEMA)
+
+# The primary key of the long table, named once so the writer, the validator
+# and the de-duplication pass cannot drift apart on what "one row" means.
+KEY_COLUMNS = ("station_name", "ts_local", "pollutant")
 
 # What a Parquet partition actually stores: year and month live in the path,
 # not the file. Anything that rewrites a partition in place must conform to
@@ -112,6 +117,21 @@ def validate(frame: pl.DataFrame, *, context: str = "") -> pl.DataFrame:
     unknown = set(frame["flag"].cast(pl.Utf8).unique().to_list()) - VALID_FLAGS
     if unknown:
         raise SchemaError(f"unknown flag values{where}: {sorted(unknown)}")
+
+    # The one invariant this module's own first paragraph states, and the one
+    # it did not check. It was violated: the 1999 archive files ten 雲嘉南
+    # stations under 北部空品區 as well as their own zone, the parser read both
+    # members, and 1,071,168 station-hours were stored twice. Nothing failed.
+    # The means were unaffected — duplicating every row leaves an average
+    # alone — but every count built on them doubled, so 33,104 station-days
+    # reported a coverage ratio above 1.0 (max 2.0) and 578 daily means were
+    # published that the 16-of-24 rule should have withheld.
+    duplicates = int(frame.select(KEY_COLUMNS).is_duplicated().sum())
+    if duplicates:
+        raise SchemaError(
+            f"{duplicates} rows duplicate a {tuple(KEY_COLUMNS)} key{where} — "
+            "the long table is one row per station, timestamp and pollutant"
+        )
 
     # A valid reading must actually have a number behind it.
     orphans = frame.filter(

@@ -18,7 +18,7 @@ Chinese.
 
 Only whitespace **between two CJK characters** counts. A space between Chinese
 and Latin or a digit is correct typography and must survive — 「第 1 版」,
-「8 年月平均」, 「N = 3.41 億」 are all expected to still be there, and this
+「8 年月平均」, 「N = 3.40 億」 are all expected to still be there, and this
 script asserts that too, so a transform that fixed the gaps by deleting every
 space would fail here rather than pass.
 
@@ -76,7 +76,7 @@ NUL = "\x00"
 MUST_KEEP = (
     ("第 1 版", "index.html"),
     ("8 年月平均", "index.html"),
-    ("3.41 億", "index.html"),
+    ("3.40 億", "index.html"),
     ("165 公尺", "index.html"),
     ("N = 7,286", "methods/index.html"),
     ("N = 7,286", "index.html"),

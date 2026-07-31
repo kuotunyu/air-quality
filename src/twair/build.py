@@ -23,6 +23,7 @@ from twair.qc.consistency import check_consistency, check_ranges
 from twair.qc.flags import Flag
 from twair.qc.rainfall import apply_no_rain_zero
 from twair.qc.sentinels import apply_sentinels
+from twair.store.schema import KEY_COLUMNS
 from twair.store.writer import write_observations
 
 log = logging.getLogger(__name__)
@@ -44,6 +45,8 @@ class YearResult:
     out_of_range: int = 0
     retained_invalid: int = 0
     """Invalid readings whose value survived — only the legacy suffix form allows this."""
+    duplicate_rows: int = 0
+    """Rows dropped because the archive filed the same member under two zones."""
     consistency_checked: int = 0
     consistency_violations: int = 0
     unparseable: dict[str, int] = field(default_factory=dict)
@@ -65,6 +68,59 @@ def discover_archives(years: range | None = None) -> list[tuple[int, Path]]:
         if years is None or year in years:
             found.append((year, path))
     return sorted(found, key=lambda item: -item[0])
+
+
+def collapse_duplicate_members(frame: pl.DataFrame) -> tuple[pl.DataFrame, int]:
+    """Drop rows an archive filed twice, and refuse if the two copies disagree.
+
+    The 1999 package ships ten 雲嘉南 stations' files under 北部空品區 as well
+    as under their own zone — 88年北部空品區/88年新營站_20081006.csv and
+    88年雲嘉南空品區/88年新營站_20081006.csv, same basename, same bytes. The
+    parser reads every member, so each of those station-hours was stored twice:
+    1,071,168 duplicated keys, every one at multiplicity exactly two.
+
+    ``derive_airzones`` already knew about the mis-filing — its comment names
+    臺南, 臺西 and 嘉義 — and resolved the zone by majority. What nobody
+    noticed is that reading the second member also read the readings again.
+
+    Collapsing is only honest because the two copies agree bit for bit: across
+    all 1,071,168 keys, zero disagree on ``value`` and zero on ``flag``; only
+    ``source_member`` differs. If a future archive ever ships two copies that
+    disagree, that is a different problem and this raises rather than picking
+    one. Which of two identical rows survives is arbitrary, so it is made
+    deterministic by sorting on ``source_member`` — the zone is not decided
+    here in any case, and ``derive_airzones`` still sees both members through
+    its own scan of the store.
+    """
+    duplicated = frame.select(KEY_COLUMNS).is_duplicated()
+    if not duplicated.any():
+        return frame, 0
+
+    disagreeing = (
+        frame.filter(duplicated)
+        .group_by(KEY_COLUMNS)
+        .agg(
+            # n_unique counts null as a value, so (null, 5) reads as 2 and
+            # (null, null) as 1 — which is what "do they agree" means here.
+            pl.col("value").n_unique().alias("values"),
+            pl.col("flag").n_unique().alias("flags"),
+            pl.col("source_member").unique().sort().alias("members"),
+        )
+        .filter((pl.col("values") > 1) | (pl.col("flags") > 1))
+    )
+    if not disagreeing.is_empty():
+        first = disagreeing.row(0, named=True)
+        raise ValueError(
+            f"{disagreeing.height} duplicated keys carry different readings — "
+            f"e.g. {first['station_name']} {first['ts_local']} {first['pollutant']} "
+            f"from {first['members']}. Two copies of one hour that disagree is not "
+            "a packaging artefact and must not be collapsed."
+        )
+
+    collapsed = frame.sort("source_member").unique(
+        subset=KEY_COLUMNS, keep="first", maintain_order=True
+    )
+    return collapsed, frame.height - collapsed.height
 
 
 def _unparseable_tokens(frame: pl.DataFrame, *, limit: int = 20) -> dict[str, int]:
@@ -114,6 +170,10 @@ def _build_year(result: YearResult, archive: Path, *, root: Path | None) -> Year
             "format; inspect with describe_archive()"
         )
         return result
+
+    # Before anything counts rows: a member the archive filed under two zone
+    # folders would otherwise be counted twice by every QC tally below.
+    parsed, result.duplicate_rows = collapse_duplicate_members(parsed)
 
     # Order matters. Sentinels first (888/999 are not measurements, so they
     # must not be judged against a 0-360 range), then no-rain zeros (which
@@ -199,10 +259,16 @@ def _report(results: list[YearResult]) -> None:
 
     total_rows = sum(r.rows for r in ok)
     total_sentinels = sum(r.sentinels for r in ok)
+    total_duplicates = sum(r.duplicate_rows for r in ok)
     console.print(
         f"  [green]{len(ok)}[/green] built, [red]{len(failed)}[/red] failed — "
         f"{total_rows:,} rows, {total_sentinels:,} wind sentinels"
     )
+    if total_duplicates:
+        console.print(
+            f"  [yellow]{total_duplicates:,} row(s) dropped[/yellow] as duplicate members: "
+            + ", ".join(f"{r.year} ({r.duplicate_rows:,})" for r in ok if r.duplicate_rows)
+        )
     for r in failed:
         console.print(f"  [red]FAILED[/red] {r.year}: {r.error}")
 
@@ -223,6 +289,7 @@ def _report(results: list[YearResult]) -> None:
                 "sentinels": r.sentinels,
                 "out_of_range": r.out_of_range,
                 "retained_invalid": r.retained_invalid,
+                "duplicate_rows": r.duplicate_rows,
                 "consistency_checked": r.consistency_checked,
                 "consistency_violations": r.consistency_violations,
                 "error": r.error or "",

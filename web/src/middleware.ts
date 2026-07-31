@@ -18,7 +18,7 @@
  * The rule is deliberately the narrowest one that fixes it: whitespace is
  * removed **only between two CJK characters**. A space between Chinese and
  * Latin or a digit is good typography and stays — 「第 1 版」, 「8 年月平均」,
- * 「N = 3.41 億」 are all untouched. So is U+3000, which is a real character
+ * 「N = 3.40 億」 are all untouched. So is U+3000, which is a real character
  * someone might have typed on purpose rather than a wrap artefact.
  *
  * `<script>`, `<style>`, `<pre>`, `<code>` and `<textarea>` are skipped

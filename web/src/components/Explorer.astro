@@ -551,7 +551,7 @@ const candidates = pollutantIndex.map((p) => ({
      * `group` is whether to write thousands separators, and the rule is that a
      * column groups only if something in it has five or more integer digits.
      * That is not arbitrary: a year is four digits, and 「1,997」 is wrong in a
-     * way that 「341,442,552」 is right. Deciding per column rather than per value
+     * way that 「340,371,384」 is right. Deciding per column rather than per value
      * also stops one column printing both 1213 and 34,125.
      */
     const decimals = columns.map((_, i) =>
