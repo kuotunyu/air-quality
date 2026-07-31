@@ -972,6 +972,55 @@ figcaption {
   max-width: var(--measure);
 }
 
+/*
+ * ---------- figures leave the measure; prose does not ----------
+ *
+ * A reading measure is a constraint on TEXT. It exists because an eye returning
+ * to the start of the next line loses its place past about 75 characters. A
+ * chart has no lines to return to, and holding it to the same width buys
+ * nothing and costs the thing charts are for.
+ *
+ * Measured at a 1920 viewport before this rule: the column offered 1,578px, the
+ * figure used 987 — **62.5%** — with 231px standing empty on each side of it.
+ * Two readers in a row said the charts were uncomfortable to look at, and both
+ * times my answer had been about colour. It was about width.
+ *
+ * This does NOT reopen the two layouts design principle 10 rejected, and the
+ * difference is symmetry. Those were (1) prose left-aligned in a wide column,
+ * which left one ragged edge and read as unfilled, and (2) prose centred inside
+ * a wide column, which indented prose relative to its own headings. Here
+ * headings and prose are untouched and still share one left edge; only figures
+ * widen, and they widen EQUALLY in both directions, so the overhang reads as a
+ * deliberate register rather than as something failing to line up. The
+ * stylesheet was already built for it: `figcaption` has been capped at
+ * `--measure` all along, which only means anything if the figure around it can
+ * be wider.
+ *
+ * The amount is computed, not stepped. `--room` is what the column actually has
+ * beyond one measure, so this needs no breakpoints and cannot overflow by
+ * construction: when there is no room the clamp returns 0 and nothing moves,
+ * which is every width below about 64rem including every phone.
+ *
+ * `cqw` and not `vw`, for the reason design principle 13 gives: the rail eats a
+ * fixed slice, so the viewport stopped describing this box a long time ago.
+ */
+main {
+  container-type: inline-size;
+}
+
+/* The child combinator is load-bearing: this is only for figures standing in
+   the section's own flow. A figure inside a layout — `.two-up` puts one in a
+   grid cell beside a note — is sized by that layout, and pulling it sideways
+   would drag it out of its own track. */
+.page > figure {
+  --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
+  /* Less 1.5rem so the figure never runs to the column's own edge, and capped
+     at 8rem so a 4K display gets a wide chart rather than a stretched one. */
+  --bleed: clamp(0px, calc(var(--room) - 1.5rem), 8rem);
+  width: calc(100% + 2 * var(--bleed));
+  margin-inline: calc(-1 * var(--bleed));
+}
+
 .chart {
   border: 1px solid var(--line);
   border-radius: var(--radius);
