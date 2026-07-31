@@ -17,9 +17,28 @@ interface Props {
   guides?: { value: number; label: string; colour: string }[];
   unit: string;
   height?: number;
+  /*
+   * What the end-of-line label says.
+   *
+   * "value" when a legend above already names the series — two or three lines,
+   * where the name is cheap to carry and the number is what is being looked
+   * for. "named" when there are too many series for a legend to be worth
+   * walking: then the label IS the identification and the legend goes away, so
+   * nothing on the chart has to be matched to anything beside it.
+   */
+  keys?: "value" | "named" | "none";
+  legend?: boolean;
 }
 
-const { years, series, guides = [], unit, height = 300 } = Astro.props;
+const {
+  years,
+  series,
+  guides = [],
+  unit,
+  height = 300,
+  keys: keyStyle = "value",
+  legend = true,
+} = Astro.props;
 
 // Everything below is in percent of the plot box, not pixels. The box has no
 // width until the browser lays it out, so a percentage is the only coordinate
@@ -66,7 +85,7 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
  * Last reported rather than last in the array: a series that stops early ends
  * where its data ends, and putting its label at a null would silently move it.
  */
-const keys = series
+const keys = (keyStyle === "none" ? [] : series)
   .map((s) => {
     for (let i = s.values.length - 1; i >= 0; i -= 1) {
       const value = s.values[i];
@@ -82,7 +101,10 @@ const keyY = spreadLabels(
   keys.map((k) => y(k.value)),
   (26 / height) * 100,
 );
-const keyWidth = labelGutter(keys.map((k) => n(k.value, 1)));
+const keyText = (k: { series: Props["series"][number]; value: number }) =>
+  keyStyle === "named" ? `${k.series.label} ${n(k.value, 1)}` : n(k.value, 1);
+// +18 for the leader's landing strip, which `labelGutter` cannot know about.
+const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
 ---
 
 <div class="chart">
@@ -169,13 +191,39 @@ const keyWidth = labelGutter(keys.map((k) => n(k.value, 1)));
       }
     </div>
 
-    <div class="plot-keys">
+    <div class="plot-keys" data-keys={keyStyle}>
+      {/*
+        Leaders, because the labels cannot always sit where their lines end.
+        `spreadLabels` needs 26px between labels to keep them legible, and eight
+        of them need 182px — while the eight lines converge into a 61px band by
+        2025. Measured, that leaves the bottom label 124px from its own line.
+        Reading order alone does disambiguate them (the labels come out in the
+        same top-to-bottom order as the line ends), but 124px is far enough to
+        have to reason about it, and a chart should not need reasoning about.
+
+        Drawn in the gutter's own percentage space, from the line's true height
+        on the left edge to the label's height — so each is an actual join
+        rather than a decoration.
+      */}
+      {
+        keys.length > 0 && (
+          <svg class="key-leaders" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {keys.map((k, i) => (
+              <path
+                d={`M0 ${n(y(k.value), 3)} L58 ${n(keyY[i], 3)}`}
+                stroke={k.series.colour}
+                vector-effect="non-scaling-stroke"
+              />
+            ))}
+          </svg>
+        )
+      }
       {
         keys.map((k, i) => (
           <span
             style={`top:${n(keyY[i], 3)}%;--mark:${k.series.colour};--mark-ink:${markInk(k.series.colour)}`}
           >
-            {n(k.value, 1)}
+            {keyText(k)}
           </span>
         ))
       }
@@ -187,8 +235,15 @@ const keyWidth = labelGutter(keys.map((k) => n(k.value, 1)));
   </div>
 
   <div class="legend">
+    {/*
+      Series entries only while something still needs naming here. With
+      `keys="named"` every line carries its own name at its own end, and
+      repeating all eight below the plot would rebuild the legend-matching the
+      end labels exist to remove. The guides and the unit stay either way:
+      neither is a line with a label on it.
+    */}
     {
-      series.map((s) => (
+      (legend ? series : []).map((s) => (
         <span class="legend-item">
           <span class="swatch" style={`background:${s.colour}`} />
           {s.label}
@@ -218,8 +273,36 @@ const keyWidth = labelGutter(keys.map((k) => n(k.value, 1)));
    * bare numbers beside a legend that already names every series is two things
    * saying half a sentence each. The numbers are in the prose either way.
    */
+  .key-leaders {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .key-leaders path {
+    fill: none;
+    stroke-width: 1;
+    opacity: 0.55;
+  }
+
+  /* Room for the leader to land in, ahead of the text. */
+  .plot-keys span {
+    padding-left: 0.85em;
+  }
+
+  /* In the collapsed row the keys are a legend, not annotations of a line end,
+     so there is nothing for a leader to join. */
   @container (max-width: 26rem) {
-    .plot-keys {
+    .key-leaders {
+      display: none;
+    }
+    .plot-keys span {
+      padding-left: 0;
+    }
+    .plot-keys[data-keys="value"] {
       display: none;
     }
   }

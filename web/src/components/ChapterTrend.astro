@@ -7,9 +7,8 @@
  * this chapter used.
  */
 import TrendChart from "./TrendChart.astro";
-import AirzonePanels from "./AirzonePanels.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
-import { n } from "../lib/chart";
+import { concentrationColour, n } from "../lib/chart";
 
 const firstYear = trend.years[0];
 const lastYear = trend.years[trend.years.length - 1];
@@ -76,9 +75,12 @@ const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normal
  * measured zero end labels. Colour was the only identifier, and there were
  * three of it.
  *
- * So the figure is `AirzonePanels` now — one panel per zone, each named in text
- * above its own line, the other seven behind it as hairlines. See that
- * component for why that also frees the colour to mean what it means elsewhere.
+ *   5. Eight small panels, one per zone, each named above its own line. That
+ *      fixed the identification and broke everything else: the same area cut
+ *      into eight, every plot 82px tall, and the colours no better than they
+ *      had been. Cutting up a chart that is too small does not make it bigger.
+ *   6. One chart again, and each LINE carries its own name and value at its own
+ *      end. See the note on `airzoneSeries` below.
  */
 /*
  * What the zones actually did, for the sentence that describes them.
@@ -112,6 +114,46 @@ const azStillTop = azStats.every((z) => z.last <= azTop.last);
 // Smallest relative fall, and where that leaves it in the current ranking.
 const azLeast = azStats.reduce((lo, z) => (z.drop < lo.drop ? z : lo));
 const azLeastRank = azStats.filter((z) => z.last > azLeast.last).length + 1;
+
+
+/*
+ * The eight zones, as eight lines that each say their own name.
+ *
+ * Third attempt at this figure, and the first two failed the same way from
+ * opposite ends. One chart with eight lines and a legend underneath could not
+ * be read, because identifying a zone meant carrying a colour down to the
+ * legend and back. Eight small panels fixed the identification and broke
+ * everything else: the same area cut into eight, each plot 82px tall, and the
+ * colours no better than before. Slicing a chart that is too small does not
+ * make it bigger.
+ *
+ * What was missing both times is that a line can carry its own name. With the
+ * name and the value sitting at the end of each line, nothing on this chart has
+ * to be matched to anything beside it — so the legend goes, and colour stops
+ * being the identifier it was never able to be at eight.
+ *
+ * Colour is `concentrationColour` of the zone's own latest value, which puts it
+ * in the same three bands the entry map uses. That is deliberately NOT the
+ * identifier: the y position already says the level and the label already says
+ * the name, so hue is here to group, not to name. Eight distinguishable hues do
+ * not exist in this palette and asking for them was the original mistake.
+ */
+const airzoneSeries = (trendByAirzone.series as {
+  name: string;
+  years: number[];
+  mean: (number | null)[];
+}[])
+  .map((s) => ({
+    key: s.name,
+    label: s.name.replace("空品區", ""),
+    values: trend.years.map((year) => {
+      const at = s.years.indexOf(year);
+      return at === -1 ? null : s.mean[at];
+    }),
+    level: [...s.mean].reverse().find((v) => v != null) ?? -Infinity,
+  }))
+  .sort((a, b) => b.level - a.level)
+  .map((s) => ({ ...s, colour: concentrationColour(s.level) }));
 
 
 ---
@@ -285,16 +327,20 @@ const azLeastRank = azStats.filter((z) => z.last > azLeast.last).length + 1;
   </p>
 
   <figure>
-    <AirzonePanels
+    <TrendChart
       years={trend.years}
-      series={trendByAirzone.series as { name: string; years: number[]; mean: (number | null)[] }[]}
-      guide={15}
-      guideLabel="台灣年均標準 15"
+      series={airzoneSeries}
+      guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
+      unit="μg/m³"
+      height={460}
+      keys="named"
+      legend={false}
     />
     <figcaption>
-      各空品區 PM2.5 年均值，一區一格，縱軸八格共用。每格的淡線是另外七區，
-      所以看得到這一區在整體裡的位置。顏色是該區最新年均值的濃度分帶，
-      與入口地圖同一組分界。同樣只採計年覆蓋率 ≥ 75% 的測站年。
+      各空品區 PM2.5 年均值。每條線在自己的末端寫著自己的名字與 2025 年的值，
+      所以不需要對照圖例。顏色是該區最新年均值的濃度分帶（與入口地圖同一組分界），
+      用來分群而不是用來指認——八條線的身分由標籤承擔。
+      同樣只採計年覆蓋率 ≥ 75% 的測站年。
     </figcaption>
   </figure>
 </section>
