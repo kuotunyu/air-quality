@@ -221,8 +221,7 @@ const legendAt = [...CORNERS].sort((a, b) => occupancy(a) - occupancy(b))[0].at;
 
 const keyText = (k: { series: Props["series"][number]; value: number }) =>
   keyStyle === "named" ? `${k.series.label} ${n(k.value, 1)}` : n(k.value, 1);
-// +18 for the leader's landing strip, which `labelGutter` cannot know about.
-const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
+const keyWidth = keys.length ? labelGutter(keys.map(keyText)) : 0;
 ---
 
 <div class="chart">
@@ -333,32 +332,6 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     }
 
     <div class="plot-keys" data-keys={keyStyle}>
-      {/*
-        Leaders, because the labels cannot always sit where their lines end.
-        `spreadLabels` needs 26px between labels to keep them legible, and eight
-        of them need 182px — while the eight lines converge into a 61px band by
-        2025. Measured, that leaves the bottom label 124px from its own line.
-        Reading order alone does disambiguate them (the labels come out in the
-        same top-to-bottom order as the line ends), but 124px is far enough to
-        have to reason about it, and a chart should not need reasoning about.
-
-        Drawn in the gutter's own percentage space, from the line's true height
-        on the left edge to the label's height — so each is an actual join
-        rather than a decoration.
-      */}
-      {
-        keys.length > 0 && (
-          <svg class="key-leaders" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            {keys.map((k, i) => (
-              <path
-                d={`M0 ${n(y(k.value), 3)} L58 ${n(keyY[i], 3)}`}
-                stroke={k.series.colour}
-                vector-effect="non-scaling-stroke"
-              />
-            ))}
-          </svg>
-        )
-      }
       {
         keys.map((k, i) => (
           <span
@@ -499,25 +472,20 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     justify-self: end;
   }
 
-  /* Leaders, from a line's true height to its displaced label. */
-  .key-leaders {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-    pointer-events: none;
-  }
-
-  .key-leaders path {
-    fill: none;
-    stroke-width: 1;
-    opacity: 0.55;
-  }
-
-  /* Room for the leader to land in, ahead of the text. */
+  /*
+   * The value sits beside the point it belongs to, and nothing is drawn to
+   * connect them.
+   *
+   * There were leaders here, on the argument that a displaced label needs a
+   * line back to its own point. The owner's own charts do not draw one — they
+   * set `distance: 8` and let `labelLayout: moveOverlap: "shiftY"` nudge a
+   * collision apart — and they are right: with the label a few pixels off the
+   * end of its line, in that line's colour, the join is already made, and a
+   * fan of connector lines is more marks for the reader to resolve rather than
+   * fewer. `spreadLabels` is the shiftY; the leaders are gone.
+   */
   .plot-keys span {
-    padding-left: 0.85em;
+    padding-left: 0.35em;
   }
 
   /*
@@ -563,10 +531,6 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
     /* Bare values in a row, beside nothing that names them, say half a
        sentence. The legend below carries the names. */
     .plot-keys[data-keys="value"] {
-      display: none;
-    }
-
-    .key-leaders {
       display: none;
     }
 
