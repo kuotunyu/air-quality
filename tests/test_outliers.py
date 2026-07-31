@@ -283,6 +283,21 @@ class TestBoundaries:
 
         assert runs.row(0, named=True)["right_boundary"] == "unusable"
 
+    def test_a_run_cut_by_the_requested_span_says_so_rather_than_blaming_the_record(
+        self,
+    ) -> None:
+        """One is a fact about the network; the other is a property of the command line."""
+        marked, present = self._parts([*_noise(30), 80.0, 80.0])
+        last = START + timedelta(hours=marked.height - 1)
+
+        runs = classify_boundaries(
+            delimit_runs(marked), marked, present, span=(START, last - timedelta(hours=1))
+        )
+
+        row = runs.row(0, named=True)
+        assert row["right_boundary"] == "outside_requested_span"
+        assert row["censored"] is True
+
     def test_a_run_at_the_end_of_the_record_is_a_series_edge(self) -> None:
         marked, present = self._parts(_noise(30) + [80.0] * 2)
 
@@ -373,6 +388,111 @@ class TestCorroborationCounts:
         row = out.row(0, named=True)
         assert row["has_coordinates"] is True
         assert row["n_neighbors_placed"] == 0
+
+
+class TestNeighboursMustMoveTheSameWay:
+    def test_a_neighbour_dipping_low_does_not_corroborate_a_high_run(self) -> None:
+        """多站同步**上升**. A neighbour falling is not a neighbour rising.
+
+        The bug this pins was invisible: the neighbour frame carried a
+        `direction` column that nothing read, so any excursion at a neighbour
+        counted, in either direction.
+        """
+        rising = _hourly([*_noise(30), 90.0, 90.0], station="西屯")
+        falling = _hourly([*_noise(30), -50.0, -50.0], station="忠明")
+        marked = score_hours(pl.concat([rising, falling]).lazy(), min_samples=5, min_zscore=3.0)
+        edges = pl.DataFrame({"station_name": ["西屯"], "neighbor_name": ["忠明"], "km": [3.0]})
+        ledger = pl.DataFrame(
+            {
+                "station_name": ["西屯", "忠明"],
+                "n_neighbours": [1, 1],
+                "has_coordinates": [True, True],
+            }
+        )
+        runs = delimit_runs(marked).filter(pl.col("station_name") == "西屯")
+
+        out = corroborate(runs, marked, edges, ledger, lag_hours=1, null_shift_days=())
+
+        row = out.row(0, named=True)
+        assert row["direction"] == "high"
+        assert row["n_neighbors_scoreable"] == 1, "the neighbour was testable"
+        assert row["n_neighbors_elevated"] == 0, "but it moved the other way"
+
+    def test_a_neighbour_rising_with_it_does_corroborate(self) -> None:
+        rising = _hourly([*_noise(30), 90.0, 90.0], station="西屯")
+        also = _hourly([*_noise(30), 90.0, 90.0], station="忠明")
+        marked = score_hours(pl.concat([rising, also]).lazy(), min_samples=5, min_zscore=3.0)
+        edges = pl.DataFrame({"station_name": ["西屯"], "neighbor_name": ["忠明"], "km": [3.0]})
+        ledger = pl.DataFrame(
+            {
+                "station_name": ["西屯", "忠明"],
+                "n_neighbours": [1, 1],
+                "has_coordinates": [True, True],
+            }
+        )
+        runs = delimit_runs(marked).filter(pl.col("station_name") == "西屯")
+
+        out = corroborate(runs, marked, edges, ledger, lag_hours=1, null_shift_days=())
+
+        assert out.row(0, named=True)["n_neighbors_elevated"] == 1
+
+
+class TestTheNullHasItsOwnDenominator:
+    """The null is the module's defence against its own headline claim.
+
+    A shift that lands outside the scanned span has no neighbour data to look
+    at. Counting that as "the shifted calendar saw nothing" hands the largest
+    excess to exactly the runs with no comparison behind them — measured on a
+    single-year span before this was fixed, runs in the first 42 days had a
+    shifted denominator of 0.036 neighbours against an observed 15.9.
+    """
+
+    def _parts(self) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+        marked = score_hours(
+            _hourly([*_noise(30), 80.0, 80.0]).lazy(), min_samples=5, min_zscore=3.0
+        )
+        edges = pl.DataFrame(
+            {"station_name": ["西屯"], "neighbor_name": ["忠明"], "km": [3.0]},
+        )
+        ledger = pl.DataFrame(
+            {
+                "station_name": ["西屯", "忠明"],
+                "n_neighbours": [1, 1],
+                "has_coordinates": [True, True],
+            }
+        )
+        return marked, edges, ledger
+
+    def test_a_shift_with_no_neighbour_data_is_not_counted_as_a_quiet_calendar(self) -> None:
+        marked, edges, ledger = self._parts()
+        runs = delimit_runs(marked)
+
+        # The fixture holds one station only, so every shifted window falls on
+        # nothing at all — which must read as "no null was computed".
+        out = corroborate(runs, marked, edges, ledger, lag_hours=1, null_shift_days=(14, 28))
+
+        row = out.row(0, named=True)
+        assert row["n_null_shifts_measurable"] == 0
+        assert row["n_neighbors_elevated_null"] is None
+        assert row["corroboration_excess"] is None
+
+    def test_the_null_denominator_ships_beside_the_null_count(self) -> None:
+        """Two counts taken over different denominators are not comparable."""
+        marked, edges, ledger = self._parts()
+
+        out = corroborate(
+            delimit_runs(marked), marked, edges, ledger, lag_hours=1, null_shift_days=(14,)
+        )
+
+        assert "n_neighbors_scoreable_null" in out.columns
+        assert "n_neighbors_scoreable" in out.columns
+
+    def test_the_shipped_shifts_run_in_both_directions(self) -> None:
+        """A backwards-only null is undefined at the start of the span."""
+        shifts = outliers_conf()["null_shift_days"]
+
+        assert any(days < 0 for days in shifts)
+        assert any(days > 0 for days in shifts)
 
 
 class TestVerdictOrder:

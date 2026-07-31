@@ -33,7 +33,9 @@ What the threshold is not
 -------------------------
 ``min_zscore: 3.0`` is a **rank threshold on a skewed distribution**, not a
 Gaussian tail probability. A Gaussian one-sided z ≥ 3 is 0.135% of hours; the
-measured rate on agency-accepted PM2.5 2015 hours is **3.11%**. Hourly pollutant
+measured rate on agency-accepted PM2.5 2015 hours is **3.11% on the high tail
+and 3.18% counting either** — the second is what ``hour_rates.excursion_rate``
+and every ``base_rate`` in ``agency_agreement`` carry. Hourly pollutant
 distributions are strongly right-skewed and the scale is estimated from ~30
 points, which fattens the tail on its own. Absolute counts of excursions are
 therefore large, and only the rate against the accepted-hour base rate — both
@@ -66,26 +68,38 @@ What it may not conclude
   detector is a band-pass, and ``elevated_share_of_cell`` is published so a
   reader can see which cells scored their own episode.
 * No agreement figure exists from 2018 onwards. The modern archives replace an
-  invalidated reading with the flag itself, so those rows carry no number:
-  measured, 1,132,936 invalidation-flagged rows from 2018 to 2025, **zero** with
-  a value. Those years appear with a zero denominator rather than being absent.
+  invalidated reading with the flag itself, so those rows carry no number.
+  Measured 2018-2025: **1,132,936** invalidation-flagged rows across every
+  measurand in the store and **555,559** across the six this module scans —
+  **zero** with a value in either case. Those years appear in
+  ``agency_agreement.parquet`` with a zero denominator rather than being absent,
+  because a missing row reads as "not measured" and a zero row reads as
+  "nothing to measure".
 
 The corroboration null
 ----------------------
 "Several stations rose together" means nothing without knowing how often
 several stations rise together anyway. Every run therefore carries
 ``n_neighbors_elevated_null`` — the same count recomputed against each
-neighbour's own excursion series shifted by whole weeks, which preserves each
-neighbour's rate, its clustering and its seasonal phase and destroys only the
-synchrony — and ``corroboration_excess``, the difference. Classification uses
-the observed count, and the excess is what says whether the observed count meant
-anything.
+neighbour's own excursion series shifted by whole weeks in both directions,
+which preserves each neighbour's rate, its clustering and its seasonal phase and
+destroys only the synchrony — and ``corroboration_excess``, the difference.
+Classification uses the observed count, and the excess is what says whether the
+observed count meant anything.
+
+The shifts run forwards as well as backwards because a backwards-only null is
+undefined at the start of the scanned span, and a null that could not be
+computed must not arrive as a zero: that would hand the largest excess to
+exactly the runs with no comparison behind them. Where a shift lands outside the
+data it is dropped rather than counted, ``n_null_shifts_measurable`` says how
+many survived, and a run with none gets a null excess.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -164,6 +178,7 @@ BOUNDARY_REASONS: tuple[str, ...] = (
     "unusable",
     "absent",
     "series_edge",
+    "outside_requested_span",
 )
 
 
@@ -215,7 +230,7 @@ class OutlierReport:
         return sum(self.scored_hours.values())
 
     @property
-    def elevated_rate(self) -> float | None:
+    def high_rate(self) -> float | None:
         """High-tail hours as a share of scored hours, or None over nothing.
 
         Publishing 0.0 for an empty denominator would read as "nothing was
@@ -225,18 +240,34 @@ class OutlierReport:
         return None if scored == 0 else sum(self.high_hours.values()) / scored
 
     @property
+    def excursion_rate(self) -> float | None:
+        """Either tail, which is what `hour_rates.excursion_rate` publishes.
+
+        Named apart from :attr:`high_rate` on purpose. The two differ — 3.11%
+        against 3.18% for PM2.5 2015 — and a summary line that says "elevated"
+        while the table beside it computes something else is how two numbers
+        that should agree stop agreeing without anyone noticing.
+        """
+        scored = self.total_scored
+        if scored == 0:
+            return None
+        return (sum(self.high_hours.values()) + sum(self.low_hours.values())) / scored
+
+    @property
     def suspect_rate(self) -> float | None:
         """Suspected-instrument runs as a share of runs that got a verdict."""
         judged = self.total_runs - self.verdicts.get("uncheckable", 0)
         return None if judged == 0 else self.verdicts.get("suspected_instrument", 0) / judged
 
     def summary(self) -> str:
-        rate = self.elevated_rate
+        high = self.high_rate
+        either = self.excursion_rate
         suspect = self.suspect_rate
         parts = [
             f"{len(self.pollutants)} measurand(s), {self.years[0]}-{self.years[1]}",
             f"{self.total_scored:,} hours scored",
-            f"elevated {'—' if rate is None else f'{rate:.2%}'}",
+            f"excursions {'—' if either is None else f'{either:.2%}'}"
+            f" ({'—' if high is None else f'{high:.2%}'} high)",
             f"{self.total_runs:,} runs",
             f"suspect {'—' if suspect is None else f'{suspect:.1%}'} of judged",
         ]
@@ -445,16 +476,28 @@ def _empty_runs() -> pl.DataFrame:
 
 
 def classify_boundaries(
-    runs: pl.DataFrame, marked: pl.DataFrame, present: pl.DataFrame
+    runs: pl.DataFrame,
+    marked: pl.DataFrame,
+    present: pl.DataFrame,
+    *,
+    span: tuple[datetime, datetime] | None = None,
 ) -> pl.DataFrame:
     """Say why each run ended, and refuse to call a censored run short.
 
     Only ``below_threshold`` means the excursion actually ended. Everything else
     means the record stopped: the hour was present but never tested, present but
-    unusable, absent from the store, or outside the station's observed span for
-    this measurand. A censored run's duration is a **lower bound**, so the
-    "<2h therefore suspicious" test must not be applied to it — this is what
-    stops a null from silently ending a run and being read as brevity.
+    unusable, absent from the store, outside the station's observed span for
+    this measurand, or outside the span the caller asked for. A censored run's
+    duration is a **lower bound**, so the "<2h therefore suspicious" test must
+    not be applied to it — this is what stops a null from silently ending a run
+    and being read as brevity.
+
+    The last two reasons are kept apart because only one of them is a fact about
+    the data. A run touching 1 January of a one-year request is censored by the
+    request; a run touching the first hour a station ever reported is censored by
+    the record. Both stop a verdict, and calling the first one `series_edge`
+    would put a property of the command line into a column that reads as a
+    property of the network.
     """
     if runs.is_empty():
         return runs.with_columns(
@@ -474,6 +517,11 @@ def classify_boundaries(
         marked.select(STATION, TIMESTAMP, "excursion"), on=[STATION, TIMESTAMP], how="left"
     )
 
+    def requested_miss(hour_col: str) -> pl.Expr:
+        if span is None:
+            return pl.lit(False)
+        return (pl.col(hour_col) < span[0]) | (pl.col(hour_col) > span[1])
+
     out = runs.join(spans, on=STATION, how="left").with_columns(
         (pl.col("t_start") - pl.duration(hours=1)).alias("_before"),
         (pl.col("t_end") + pl.duration(hours=1)).alias("_after"),
@@ -492,7 +540,9 @@ def classify_boundaries(
             # Ordered: outside the record first, then absent, then present but
             # unusable, then present and usable but never tested, and only
             # then "we tested it and it was ordinary".
-            pl.when(pl.col(hour_col).is_between(pl.col("_span_lo"), pl.col("_span_hi")).not_())
+            pl.when(requested_miss(hour_col))
+            .then(pl.lit("outside_requested_span"))
+            .when(pl.col(hour_col).is_between(pl.col("_span_lo"), pl.col("_span_hi")).not_())
             .then(pl.lit("series_edge"))
             .when(pl.col(f"_{side}_usable").is_null())
             .then(pl.lit("absent"))
@@ -548,6 +598,10 @@ def corroborate(
     not travel-time matching; that would need the trajectory model this
     repository deliberately does not have.
 
+    A neighbour counts as responding only if it is excursing **in the same
+    direction** as the run. Several stations reading below their own level is
+    not several stations rising together.
+
     ``null_shift_days`` gives the same count against each neighbour's series
     shifted by whole weeks. That preserves every neighbour's own rate, its run
     clustering and its diurnal and seasonal phase, and destroys only synchrony —
@@ -560,6 +614,11 @@ def corroborate(
     windows = runs.select(
         STATION,
         "run_id",
+        # The run's own direction travels with it: 多站同步**上升** means the
+        # neighbours have to be moving the same way. Without this a high run
+        # whose neighbours all dipped below their own level would be counted as
+        # a corroborated regional episode, which is the opposite of the claim.
+        pl.col("direction").alias("_run_direction"),
         pl.datetime_ranges(
             pl.col("t_start") - pl.duration(hours=lag_hours),
             pl.col("t_end") + pl.duration(hours=lag_hours),
@@ -596,7 +655,10 @@ def corroborate(
                 .cast(pl.UInt32)
                 .alias(f"n_scoreable{suffix}"),
                 pl.col("neighbor_name")
-                .filter(pl.col("_excursion").fill_null(value=False))
+                .filter(
+                    pl.col("_excursion").fill_null(value=False)
+                    & (pl.col("_direction") == pl.col("_run_direction"))
+                )
                 .n_unique()
                 .cast(pl.UInt32)
                 .alias(f"n_elevated{suffix}"),
@@ -616,13 +678,46 @@ def corroborate(
     for frame in nulls:
         out = out.join(frame, on=[STATION, "run_id"], how="left")
     if nulls:
-        columns = [f"n_elevated_s{i}" for i in range(len(nulls))]
+        # A shift that lands outside the scanned span has no neighbour data to
+        # look at, so its count is not zero — it is unmeasurable, and averaging
+        # a zero in there would report "the shifted calendar saw nothing" when
+        # the truth is "there was no shifted calendar to see". Measured on a
+        # single-year span, runs in the first 42 days had a shifted denominator
+        # of 0.036 neighbours against an observed 15.9, so their excess came out
+        # as the whole observed count. Each shift is therefore kept only where
+        # it had at least one scoreable neighbour, and a run with no usable
+        # shift at all gets a null excess rather than a flattering one.
+        usable_counts = [
+            pl.when(pl.col(f"n_scoreable_s{i}") > 0)
+            .then(pl.col(f"n_elevated_s{i}"))
+            .otherwise(None)
+            for i in range(len(nulls))
+        ]
+        usable_denominators = [
+            pl.when(pl.col(f"n_scoreable_s{i}") > 0)
+            .then(pl.col(f"n_scoreable_s{i}"))
+            .otherwise(None)
+            for i in range(len(nulls))
+        ]
         out = out.with_columns(
-            pl.mean_horizontal([pl.col(c) for c in columns]).alias("n_neighbors_elevated_null")
-        ).drop([c for i in range(len(nulls)) for c in (f"n_placed_s{i}", f"n_scoreable_s{i}")])
-        out = out.drop(columns)
+            pl.mean_horizontal(usable_counts).alias("n_neighbors_elevated_null"),
+            pl.mean_horizontal(usable_denominators).alias("n_neighbors_scoreable_null"),
+            pl.sum_horizontal(
+                [(pl.col(f"n_scoreable_s{i}") > 0).cast(pl.UInt32) for i in range(len(nulls))]
+            ).alias("n_null_shifts_measurable"),
+        ).drop(
+            [
+                c
+                for i in range(len(nulls))
+                for c in (f"n_placed_s{i}", f"n_scoreable_s{i}", f"n_elevated_s{i}")
+            ]
+        )
     else:  # pragma: no cover - the shipped config always carries shifts
-        out = out.with_columns(pl.lit(None, dtype=pl.Float64).alias("n_neighbors_elevated_null"))
+        out = out.with_columns(
+            pl.lit(None, dtype=pl.Float64).alias("n_neighbors_elevated_null"),
+            pl.lit(None, dtype=pl.Float64).alias("n_neighbors_scoreable_null"),
+            pl.lit(0, dtype=pl.UInt32).alias("n_null_shifts_measurable"),
+        )
 
     placed = set(ledger.filter(pl.col("has_coordinates"))[STATION].to_list())
     counts = ("n_neighbors_placed", "n_neighbors_scoreable", "n_neighbors_elevated")
@@ -640,8 +735,14 @@ def corroborate(
                 .alias(c)
                 for c in counts
             ],
+            # Deliberately NOT filled. The three counts above are filled to zero
+            # for a placed station because an empty radius is a measured zero,
+            # but a shifted calendar that fell outside the scanned span is not a
+            # calendar in which nothing happened — it is no calendar. Filling it
+            # would make `corroboration_excess` equal the whole observed count
+            # for exactly the runs whose null could not be computed.
             pl.when(pl.col("has_coordinates"))
-            .then(pl.col("n_neighbors_elevated_null").fill_null(0.0))
+            .then(pl.col("n_neighbors_elevated_null"))
             .otherwise(None)
             .alias("n_neighbors_elevated_null"),
         )
@@ -840,7 +941,13 @@ def _hour_rates(marked: pl.DataFrame, pollutant: str) -> pl.DataFrame:
             (excursion & (pl.col("direction") == "low")).sum().cast(pl.UInt32).alias("low_hours"),
             (pl.col("unscored_reason") == "thin_cell").sum().cast(pl.UInt32).alias("thin_cell"),
             (pl.col("unscored_reason") == "zero_scale").sum().cast(pl.UInt32).alias("zero_scale"),
-            pl.col("n_cell").median().alias("median_cell_size"),
+            # Over cells, not over hours. Taking the median of `n_cell` across
+            # rows counts every cell once per reading it holds, so it is
+            # weighted by the thing it is measuring and reads high.
+            pl.col("n_cell")
+            .filter(pl.struct(BASELINE_CELL).is_first_distinct())
+            .median()
+            .alias("median_cell_size"),
             pl.col("elevated_share_of_cell").max().alias("max_elevated_share_of_cell"),
             (pl.col("elevated_share_of_cell") >= 0.25)
             .sum()
@@ -907,6 +1014,7 @@ def run_outliers(
     edges, ledger = neighbour_edges(radius_km=radius_km, geography=geography)
 
     notes: list[str] = []
+    observed_stations: set[str] = set()
     collected: dict[str, list[pl.DataFrame]] = {
         "runs": [],
         "hour_rates": [],
@@ -942,6 +1050,7 @@ def run_outliers(
         if present.is_empty():
             notes.append(f"{pollutant}: no rows in {years[0]}-{years[1]}")
             continue
+        observed_stations |= set(present[STATION].unique().to_list())
 
         frame = (
             present.lazy()
@@ -979,7 +1088,12 @@ def run_outliers(
             )
 
         runs = delimit_runs(marked)
-        runs = classify_boundaries(runs, marked, present)
+        runs = classify_boundaries(
+            runs,
+            marked,
+            present,
+            span=(datetime(years[0], 1, 1), datetime(years[1], 12, 31, 23)),
+        )
         runs = corroborate(runs, marked, edges, ledger, lag_hours=lag_hours, null_shift_days=shifts)
         run_counts[pollutant] = runs.height
         if not runs.is_empty():
@@ -1018,11 +1132,34 @@ def run_outliers(
         if not agreement.is_empty():
             collected["agency_agreement"].append(agreement)
 
-    unplaceable = sorted(marked_names_without_coordinates(collected, ledger))
+    # A ledger that lists only the stations the register could place records
+    # every success and no failure. The six stations with decades of
+    # observations and no register entry are exactly what a reader checking
+    # coverage is looking for, so they go in the table, not only in a note.
+    unplaceable = sorted(observed_stations - set(ledger[STATION].to_list()))
     if unplaceable:
+        ledger = pl.concat(
+            [
+                ledger,
+                pl.DataFrame(
+                    {
+                        STATION: unplaceable,
+                        "n_neighbours": [None] * len(unplaceable),
+                        "has_coordinates": [False] * len(unplaceable),
+                    },
+                    schema={
+                        STATION: pl.Utf8,
+                        "n_neighbours": pl.UInt32,
+                        "has_coordinates": pl.Boolean,
+                    },
+                ),
+            ],
+            how="vertical",
+        ).sort(STATION)
         notes.append(
-            f"{len(unplaceable)} station(s) produced runs but have no coordinates and "
-            f"cannot be corroborated: {', '.join(unplaceable)}"
+            f"{len(unplaceable)} station(s) reported in this span but are absent from "
+            f"conf/station_geo.yaml, so no run of theirs can be corroborated: "
+            f"{', '.join(unplaceable)}"
         )
     notes.append(
         f"min_zscore={min_zscore} is a rank threshold on a skewed distribution, not a "
@@ -1087,18 +1224,6 @@ def run_outliers(
     )
     log.info("%s", report.summary())
     return tables, report
-
-
-def marked_names_without_coordinates(
-    collected: dict[str, list[pl.DataFrame]], ledger: pl.DataFrame
-) -> set[str]:
-    """Stations that produced a run and that the register cannot place."""
-    if not collected["runs"]:
-        return set()
-    seen: set[str] = set()
-    for frame in collected["runs"]:
-        seen |= set(frame.filter(~pl.col("has_coordinates"))[STATION].to_list())
-    return seen - set(ledger.filter(pl.col("has_coordinates"))[STATION].to_list())
 
 
 def write_outlier_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
