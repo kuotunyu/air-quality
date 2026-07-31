@@ -65,17 +65,22 @@ const yRmse = linear([0, Math.max(...rmseAll) * 1.12], [100, 0]);
 const rmseTicks = ticks(0, Math.max(...rmseAll) * 1.12, 4);
 
 const rmseSeries = [
-  { key: "model", label: "模型", colour: "var(--c0)", values: horizons.map((h) => h.model_rmse) },
+  {
+    key: "model",
+    label: "模型",
+    colour: "var(--k0)",
+    values: horizons.map((h) => h.model_rmse),
+  },
   {
     key: "persistence",
     label: "persistence",
-    colour: "var(--c5)",
+    colour: "var(--k1)",
     values: horizons.map((h) => h.persistence_rmse),
   },
   {
     key: "climatology",
     label: "climatology",
-    colour: "var(--c3)",
+    colour: "var(--k2)",
     values: horizons.map((h) => h.climatology_rmse),
   },
 ];
@@ -101,18 +106,36 @@ const metricSeries = [
   {
     key: "sp",
     label: "vs persistence",
-    colour: "var(--c5)",
+    colour: "var(--k1)",
     values: horizons.map((h) => h.skill_persistence),
     splits: horizons.map((h) => h.per_split.map((s) => s.skill_persistence)),
   },
   {
     key: "sc",
     label: "vs climatology",
-    colour: "var(--c3)",
+    colour: "var(--k2)",
     values: horizons.map((h) => h.skill_climatology),
     splits: horizons.map((h) => h.per_split.map((s) => s.skill_climatology)),
   },
 ];
+
+/*
+ * A second channel for the same distinction.
+ *
+ * The three baselines are told apart by hue, and hue is the channel a
+ * greyscale print, a projector and ~8% of men have least of. `model` stays
+ * solid because it is the subject of all three figures; the two references
+ * dash. `R2` keeps its own neutral and its own pattern for the same reason it
+ * keeps its own colour — it is not a baseline.
+ */
+const DASH: Record<string, string | undefined> = {
+  model: undefined,
+  persistence: "7 4",
+  climatology: "2 3",
+  r2: undefined,
+  sp: "7 4",
+  sc: "2 3",
+};
 
 const KEY_GAP = (26 / PLOT_H) * 100;
 const rmseLabelY = spreadLabels(
@@ -137,19 +160,19 @@ const sarSeries = [
   {
     key: "sarima",
     label: "SARIMA",
-    colour: "var(--c0)",
+    colour: "var(--k0)",
     values: sar.horizons.map((h) => h.sarima_rmse),
   },
   {
     key: "persistence",
     label: "persistence",
-    colour: "var(--c5)",
+    colour: "var(--k1)",
     values: sar.horizons.map((h) => h.persistence_rmse),
   },
   {
     key: "climatology",
     label: "climatology",
-    colour: "var(--c3)",
+    colour: "var(--k2)",
     values: sar.horizons.map((h) => h.climatology_rmse),
   },
 ];
@@ -225,6 +248,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
                   d={path(s.values, yRmse)}
                   class="plot-line"
                   stroke={s.colour}
+                  stroke-dasharray={DASH[s.key]}
                   vector-effect="non-scaling-stroke"
                 />
               ))
@@ -310,6 +334,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
                   d={path(s.values, yMetric)}
                   class="plot-line"
                   stroke={s.colour}
+                  stroke-dasharray={DASH[s.key]}
                   vector-effect="non-scaling-stroke"
                 />
               ))
@@ -534,6 +559,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
                   d={sarPath(s.values)}
                   class="plot-line"
                   stroke={s.colour}
+                  stroke-dasharray={DASH[s.key]}
                   vector-effect="non-scaling-stroke"
                 />
               ))

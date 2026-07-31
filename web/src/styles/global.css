@@ -210,6 +210,48 @@
    */
   --who: oklch(0.628 0.012 250);
   --taiwan: oklch(0.430 0.012 250);
+
+  /*
+   * The categorical set — for series that are KINDS, not amounts.
+   *
+   * Every coloured series on this site used to come out of the ramp above, and
+   * the ramp means concentration. Chapter 1 teaches the reader that hue is a
+   * μg/m³ bin; chapters 5 to 8 then spent those same hues on gap-filling
+   * methods, forecast baselines and counterfactual scenarios. A forecast
+   * baseline is not 15–25 μg/m³. The hue was saying something false.
+   *
+   * It was also the worst available choice for telling series apart, and
+   * structurally so: a sequential ramp is BUILT so neighbours resemble each
+   * other, so picking members of it for categories selects the closest pairs it
+   * has. Measured, worst pair in each chart as shipped (CIEDE2000, worst of
+   * normal / deuteranopic / protanopic vision, light theme):
+   *
+   *     ChapterMethods    c3 c2 c1     9.7   ← three ADJACENT steps
+   *     ChapterHealth     c6 c4 c2 c0  9.1
+   *     ChapterForecast   c0 c5 c3    16.6
+   *
+   * Solved instead against the opposite objective — maximise the minimum
+   * distance between ANY two members, since there is no order to read — subject
+   * to every member clearing 3:1 on all three surfaces, staying inside the
+   * ramp's own chroma range (0.055–0.135, so this is still Morandi and not
+   * neon), and keeping dE00 ≥ 12 from both neutral guides, because a
+   * near-neutral series would read as a guideline. Worst pair: 33.9 for four,
+   * 34.1 for three, 54.2 for two. Charts take a prefix, so every prefix was
+   * scored, not just the full set.
+   *
+   * Lightness is deliberately NOT monotone here, and that is the whole tell.
+   * The comment above the ramp records that seven isoluminant hues "say 'seven
+   * kinds of thing', not 'low to high'" — which is exactly the sentence a
+   * categorical set needs to say. So a reader can tell from the shape of the
+   * lightness whether a chart's colours mean a quantity or a kind.
+   *
+   * `scripts/solve_categorical.py` re-derives these.
+   */
+  --k0: oklch(0.625 0.114 102);
+  --k1: oklch(0.300 0.113 321);
+  --k2: oklch(0.643 0.135 308);
+  --k3: oklch(0.300 0.055 78);
+
   /*
    * Every link on the site, so it is prose and answers to prose thresholds.
    *
@@ -255,6 +297,14 @@
   --c4-ink: var(--c4);
   --c5-ink: var(--c5);
   --c6-ink: var(--c6);
+
+  /* The categorical set's text twins, by the same rule as the ramp's above:
+     the largest mix toward `--ink-mix` that still holds APCA Lc 75 and WCAG
+     4.5:1 on the worst surface. k1 and k3 are already dark enough to need none. */
+  --k0-ink: color-mix(in oklab, var(--k0) 61%, var(--ink-mix));
+  --k1-ink: var(--k1);
+  --k2-ink: color-mix(in oklab, var(--k2) 61%, var(--ink-mix));
+  --k3-ink: var(--k3);
 
   /*
    * Surfaces that carry a caveat or a withheld result. Tinted rather than
@@ -455,6 +505,14 @@
 
     --who: oklch(0.536 0.012 250);
     --taiwan: oklch(0.760 0.012 250);
+
+    /* Solved against the dark surfaces, not derived from the light set — same
+       reason the ramp is redeclared rather than inverted. Worst pair 34.2 for
+       four, 34.6 for three, 61.7 for two. */
+    --k0: oklch(0.550 0.135 282);
+    --k1: oklch(0.880 0.135 86);
+    --k2: oklch(0.880 0.065 214);
+    --k3: oklch(0.550 0.055 50);
     --accent: oklch(0.871 0.056 250);
 
     --ink-mix: oklch(0.99 0.004 250);
@@ -478,6 +536,15 @@
     --c4-ink: color-mix(in oklab, var(--c4) 55%, var(--ink-mix));
     --c5-ink: color-mix(in oklab, var(--c5) 68%, var(--ink-mix));
     --c6-ink: color-mix(in oklab, var(--c6) 89%, var(--ink-mix));
+
+    /* Redeclared for the same reason the ramp's are: these are percentages
+       toward `--ink-mix`, and `--ink-mix` is the opposite extreme in each
+       theme, so the same number means the opposite thing. Here k1 and k2 are
+       already light enough to need no mixing. */
+    --k0-ink: color-mix(in oklab, var(--k0) 29%, var(--ink-mix));
+    --k1-ink: var(--k1);
+    --k2-ink: var(--k2);
+    --k3-ink: color-mix(in oklab, var(--k3) 30%, var(--ink-mix));
 
     --map-line: oklch(0.536 0.012 250);
 

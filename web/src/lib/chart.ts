@@ -149,7 +149,11 @@ const RAMP = ["--c0", "--c1", "--c2", "--c3", "--c4", "--c5", "--c6"];
  * now, so their label is annotation type and has no series hue to preserve.
  */
 export function markInk(colour: string): string {
-  const named = /^var\(--(c[0-6])\)$/.exec(colour.trim());
+  // `k` as well as `c` since the categorical set arrived: every `--kN` has a
+  // solved `-ink` twin by the same rule, and without this arm a categorical
+  // series label would silently fall through to `--text-muted` and lose the
+  // one thing tying it to its line.
+  const named = /^var\(--([ck][0-6])\)$/.exec(colour.trim());
   return named ? `var(--${named[1]}-ink)` : "var(--text-muted)";
 }
 

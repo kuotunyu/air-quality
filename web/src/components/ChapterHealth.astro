@@ -98,6 +98,18 @@ const yearTicks = Array.from(
 // vision and 9.1 under deuteranopia (light theme); 29.4 and 18.6 in dark.
 const COLOURS = ["var(--c6)", "var(--c4)", "var(--c2)", "var(--c0)"];
 
+// Every other chart on the site that had its series drawn from the ramp moved
+// to the categorical set `--k0`..`--k3`, because a method or a baseline is not
+// a concentration. This one did NOT, and the comment above is why: these four
+// ARE ordered, and the ordering is the argument. Swapping in four unordered
+// hues would have thrown that away to fix a number.
+//
+// The number still wanted fixing. dE00 9.1 under deuteranopia was the weakest
+// pair on the site, on a four-line chart whose point is watching lines
+// diverge. So the distinction is carried a second time, in a channel that
+// survives losing hue entirely — including in greyscale and in print.
+const DASHES = [undefined, "7 4", "2 3", "10 3 2 3"];
+
 const labelY = spreadLabels(
   series.map((s) => yPaf(s.paf[s.paf.length - 1])),
   (26 / PLOT_H) * 100,
@@ -171,6 +183,7 @@ const fn = functions[0];
                   d={path(s.paf, s.years)}
                   class="plot-line"
                   stroke={COLOURS[i % COLOURS.length]}
+                  stroke-dasharray={DASHES[i % DASHES.length]}
                   vector-effect="non-scaling-stroke"
                 />
               ))

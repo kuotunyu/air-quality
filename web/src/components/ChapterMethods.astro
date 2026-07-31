@@ -69,10 +69,16 @@ const gapDist = Object.fromEntries(imputationEvidence.distribution.map((r) => [r
 // A series is null where its strategy declined to answer, and `linePath`
 // breaks at nulls — so interpolation's line simply stops at its 3-hour limit
 // rather than being drawn flat across gaps it never touched.
+// Three gap-filling strategies are three KINDS, so they wear the categorical
+// set. They used to be c3, c2, c1 — three ADJACENT steps of the concentration
+// ramp, which is both a false statement (a strategy is not a μg/m³ bin) and the
+// closest three colours the ramp had to offer: worst pair dE00 9.7, against
+// 34.1 now. Dashes carry the same distinction a second time, so the three are
+// still three in greyscale, in print, and to a reader who sees no hue at all.
 const GAP_SERIES = [
-  { key: "interpolate", label: "線性內插", colour: "var(--c3)" },
-  { key: "iterative", label: "多變量疊代", colour: "var(--c2)" },
-  { key: "neighbor", label: "鄰近測站（當年做法）", colour: "var(--c1)" },
+  { key: "interpolate", label: "線性內插", colour: "var(--k0)", dash: undefined },
+  { key: "iterative", label: "多變量疊代", colour: "var(--k1)", dash: "7 4" },
+  { key: "neighbor", label: "鄰近測站（當年做法）", colour: "var(--k2)", dash: "2 3" },
 ].map((series) => {
   const values = gapBuckets.map(
     (bucket) =>
@@ -632,6 +638,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
                     d={linePath(series.values, (i) => gx(i), (v) => gy(v))}
                     class="plot-line"
                     stroke={series.colour}
+                    stroke-dasharray={series.dash}
                     vector-effect="non-scaling-stroke"
                   />
                 ))

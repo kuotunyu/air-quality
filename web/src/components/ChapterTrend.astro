@@ -8,7 +8,7 @@
  */
 import TrendChart from "./TrendChart.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
-import { n } from "../lib/chart";
+import { concentrationColour, n } from "../lib/chart";
 
 const firstYear = trend.years[0];
 const lastYear = trend.years[trend.years.length - 1];
@@ -62,6 +62,10 @@ const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normal
  *
  * Every line is also labelled at its own end (see TrendChart's `.plot-keys`), so
  * colour is the second identifier here rather than the only one.
+ *
+ * [2026-07-31] The sort survives; the mapping from rank to hue does not. See
+ * the note on the `.map` below — the argument there is about what the colour
+ * refers to, not about the shared step, which was a sound call.
  */
 /*
  * What the zones actually did, for the sentence that describes them.
@@ -96,6 +100,23 @@ const azStillTop = azStats.every((z) => z.last <= azTop.last);
 const azLeast = azStats.reduce((lo, z) => (z.drop < lo.drop ? z : lo));
 const azLeastRank = azStats.filter((z) => z.last > azLeast.last).length + 1;
 
+/*
+ * Patterns, so two zones landing in the same concentration bin still differ.
+ *
+ * Indexed WITHIN the bin, not by position in the whole list. Indexing globally
+ * happened to work on today's data and only by alignment: the bins are runs in
+ * a list sorted by the same value that chooses them, so `i % 4` gives distinct
+ * patterns inside a run only while no run exceeds four. Measured on the shipped
+ * page, the eight zones fall into three bins of 2, 3 and 3 — one more zone in
+ * the middle bin and two lines would have matched on both channels, which is
+ * the same silent collision this chart just came out of.
+ *
+ * Five patterns for a worst case of five; beyond that colour and dash together
+ * stop being unique and the end-labels are the only identifier left. They are
+ * always there, which is why this degrades rather than breaks.
+ */
+const AIRZONE_DASHES = [undefined, "6 4", "2 3", "9 3 2 3", "1 4"];
+
 const airzoneSeries = (trendByAirzone.series as {
   name: string;
   years: number[];
@@ -113,12 +134,47 @@ const airzoneSeries = (trendByAirzone.series as {
     level: [...s.mean].reverse().find((v) => v != null) ?? -Infinity,
   }))
   .sort((a, b) => a.level - b.level)
-  .map((s, i, all) => ({
-    key: s.key,
-    label: s.label,
-    values: s.values,
-    colour: `var(--c${Math.round((i * 6) / Math.max(all.length - 1, 1))})`,
-  }));
+  /*
+   * Now coloured by the zone's own value rather than by its rank in this list.
+   *
+   * **The shared step this replaces was deliberate, and the note above says so.**
+   * Eight zones do not fit seven bins, and putting the repeat between the two
+   * zones that are adjacent in concentration is the right way to spend it. That
+   * reasoning stands; it is not what changed.
+   *
+   * What changed is what the colour REFERS to. Rank and value are different
+   * quantities, and only one of them is the quantity the ramp encodes. A reader
+   * who has learned this chapter's legend reads `--c3` as "15–25 μg/m³", and
+   * under the old rule it meant "fourth of eight" — so a zone's colour could
+   * move because a DIFFERENT zone's data moved, and the legend would still say
+   * 15–25. `concentrationColour` puts the value through the same breaks as the
+   * entry map, so the hue now means the one thing it means everywhere else.
+   *
+   * Two zones sharing a colour then becomes a true statement about them rather
+   * than a consequence of how many slots there were. It also costs variety, and
+   * that is worth saying plainly: the eight zones now use THREE colours rather
+   * than seven, because eight zones in 2025 genuinely do fall into three bins.
+   * The old rule looked more varied by spreading them over a quantity it was
+   * not measuring.
+   *
+   * Colour cannot carry eight series either way, which is why the dash cycle is
+   * here: it separates them with no hue at all, and it is the channel that
+   * survives greyscale, print, and the ~8% of men who lose part of the other.
+   */
+  .map((s, i, all) => {
+    const colour = concentrationColour(s.level);
+    const seenInBin = all
+      .slice(0, i)
+      .filter((other) => concentrationColour(other.level) === colour).length;
+    return {
+      key: s.key,
+      label: s.label,
+      values: s.values,
+      colour,
+      dash: AIRZONE_DASHES[seenInBin % AIRZONE_DASHES.length],
+    };
+  });
+
 ---
 
 <section id="trend" class="page">
@@ -152,13 +208,13 @@ const airzoneSeries = (trendByAirzone.series as {
           key: "all",
           label: "全部測站",
           values: trend.all_stations,
-          colour: "var(--c1)",
+          colour: "var(--k0)",
         },
         {
           key: "balanced",
           label: `固定樣本（${balancedCount} 站，${balancedSince}–）`,
           values: trend.balanced,
-          colour: "var(--c3)",
+          colour: "var(--k1)",
           dash: "5 3",
         },
       ]}
@@ -204,13 +260,13 @@ const airzoneSeries = (trendByAirzone.series as {
           key: "observed",
           label: "實際觀測",
           values: dwObserved,
-          colour: "var(--c1)",
+          colour: "var(--k0)",
         },
         {
           key: "normalised",
           label: "氣象正規化後",
           values: dwNormalised,
-          colour: "var(--c5)",
+          colour: "var(--k1)",
           dash: "5 3",
         },
       ]}
