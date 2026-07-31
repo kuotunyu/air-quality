@@ -30,8 +30,12 @@ from twair.status import (
 )
 
 
-def _artefact(name: str, *, modified: datetime | None, exists: bool = True) -> Artefact:
-    return Artefact(Module(name, f"twair analyze {name}", name), exists, 3, 1024, modified)
+def _artefact(
+    name: str, *, modified: datetime | None, exists: bool = True, feeds_web: bool = True
+) -> Artefact:
+    return Artefact(
+        Module(name, f"twair analyze {name}", name, feeds_web=feeds_web), exists, 3, 1024, modified
+    )
 
 
 def _status(*artefacts: Artefact, export_at: datetime | None) -> Status:
@@ -153,6 +157,29 @@ class TestStaleness:
 
         assert [a.module.directory for a in status.never_run] == ["m9_forecast"]
         assert status.stale_export == ()
+
+    def test_a_module_the_export_does_not_read_is_never_stale(self) -> None:
+        """Otherwise the line cries wolf forever.
+
+        `qc` writes docs/data-quality.md and `qc_outliers` writes a parquet
+        nothing on the site imports, so running either would leave `status`
+        advising an export that could not change a byte. This module already
+        argues that a line people learn to ignore is worse than no line.
+        """
+        status = _status(
+            _artefact("qc_outliers", modified=datetime(2026, 7, 29, tzinfo=UTC), feeds_web=False),
+            export_at=datetime(2026, 7, 28, tzinfo=UTC),
+        )
+
+        assert status.stale_export == ()
+        assert status.next_steps() == []
+
+    def test_the_two_modules_the_site_does_not_read_are_marked_as_such(self) -> None:
+        by_name = {module.directory: module for module in MODULES}
+
+        assert by_name["qc"].feeds_web is False
+        assert by_name["qc_outliers"].feeds_web is False
+        assert by_name["m1_replication"].feeds_web is True
 
 
 class TestNextSteps:

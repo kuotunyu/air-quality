@@ -184,6 +184,29 @@ def qc_report() -> None:
     run_report()
 
 
+@qc_app.command("outliers")
+def qc_outliers(
+    years: str = typer.Option("1982:2025", "--years", "-y", help="Year or range, e.g. 2010:2017."),
+    pollutants: str = typer.Option(
+        None, "--pollutants", help="Comma-separated subset; default from conf/qc.yaml."
+    ),
+) -> None:
+    """Separate short isolated excursions from network-wide episodes."""
+    from twair.qc.outliers import run_outliers, write_outlier_report
+
+    span = _parse_year_range(years)
+    if span is None:  # pragma: no cover - the option carries a default
+        raise typer.BadParameter("--years is required")
+    subset = [p.strip() for p in pollutants.split(",")] if pollutants else None
+
+    tables, report = run_outliers(years=(span.start, span.stop - 1), pollutants=subset)
+    console.print(report.summary())
+    for note in report.notes:
+        console.print(f"  [yellow]{note}[/yellow]")
+    for name, path in write_outlier_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @app.command("repair")
 def repair() -> None:
     """Re-apply quality rules to the built store, without re-parsing archives."""

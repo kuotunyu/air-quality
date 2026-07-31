@@ -59,13 +59,24 @@ class Module:
     directory: str
     reproduce: str
     what: str
+    feeds_web: bool = True
+    """Whether `twair export web` reads this module's outputs.
+
+    The staleness line compares every module's mtime against the export, which
+    is right for the modules the site draws from and permanently wrong for the
+    two that it does not: `qc` writes docs/data-quality.md and `qc_outliers`
+    writes a parquet nothing on the site imports. Running either would leave
+    `twair status` advising an export that could not change a byte — and this
+    file already argues, twenty lines below, that a line people learn to ignore
+    is worse than no line.
+    """
 
 
 # Kept in commit order, so the table reads as the project's own history.
 # `tests/test_status.py` asserts every `reproduce` names something that exists,
 # so a renamed command breaks a test rather than misleading a reader.
 MODULES: tuple[Module, ...] = (
-    Module("qc", "twair qc report", "data-quality measurement over all 44 years"),
+    Module("qc", "twair qc report", "data-quality measurement over all 44 years", feeds_web=False),
     Module("m1_replication", "twair analyze m1", "replication of the 2018 method"),
     Module("m2_drivers", "python scripts/run_m2.py", "hourly redo, 5.13M rows"),
     Module("m3_pitfalls", "twair analyze m3", "six paired method comparisons"),
@@ -77,6 +88,12 @@ MODULES: tuple[Module, ...] = (
     Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),
     Module("m12_sarima", "twair analyze m12", "the model the 2018 project called inconvenient"),
     Module("m6_spatial", "twair analyze m6", "what the 2018 zone stratification bought"),
+    Module(
+        "qc_outliers",
+        "twair qc outliers",
+        "isolated excursions against network episodes",
+        feeds_web=False,
+    ),
 )
 
 
@@ -146,7 +163,9 @@ class Status:
         return tuple(
             a
             for a in self.artefacts
-            if a.modified is not None and a.modified > self.export.generated_at
+            if a.module.feeds_web
+            and a.modified is not None
+            and a.modified > self.export.generated_at
         )
 
     def next_steps(self) -> list[str]:
