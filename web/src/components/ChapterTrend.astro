@@ -156,6 +156,28 @@ const airzoneSeries = (trendByAirzone.series as {
   .map((s, i) => ({ ...s, colour: `var(--k${i})` }));
 
 
+/*
+ * Taiwan's PM2.5 annual standard, as it actually was.
+ *
+ * This was drawn as a flat 15 across 1998–2025, and it is wrong at both ends.
+ * PM2.5 was not in 空氣品質標準 at all until it was added on 2012-05-14
+ * (民國101年5月14日) at 15 μg/m³ annual and 35 daily; and on 2024-09-30
+ * (民國113年9月30日) the annual value was tightened to 12 and the daily to 30.
+ * So the old line asserted a limit that did not exist for fourteen of the
+ * twenty-eight years it was drawn across, and the wrong limit for the last two.
+ *
+ * The rule here is "the standard in force at the END of each year", which is
+ * the only one that lands cleanly on a series of annual means: 2012 ends under
+ * 15, 2024 ends under 12 because the revision took effect that September.
+ * Before 2012 the value is null — and a null on this site is drawn as a gap,
+ * which is exactly right: there was no limit to draw.
+ */
+const TW_PM25_ADDED = 2012;
+const TW_PM25_TIGHTENED = 2024;
+const taiwanAnnual = trend.years.map((year) =>
+  year < TW_PM25_ADDED ? null : year < TW_PM25_TIGHTENED ? 15 : 12,
+);
+
 ---
 
 <section id="trend" class="page">
@@ -200,7 +222,7 @@ const airzoneSeries = (trendByAirzone.series as {
         },
       ]}
       guides={[
-        { value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" },
+        { values: taiwanAnnual, label: "台灣年均標準", colour: "var(--taiwan)" },
         { value: 5, label: "WHO 年均指引 5", colour: "var(--who)" },
       ]}
       unit="μg/m³"
@@ -251,7 +273,7 @@ const airzoneSeries = (trendByAirzone.series as {
           dash: "5 3",
         },
       ]}
-      guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
+      guides={[{ values: taiwanAnnual, label: "台灣年均標準", colour: "var(--taiwan)" }]}
       unit="μg/m³"
     />
     <figcaption>
@@ -330,7 +352,7 @@ const airzoneSeries = (trendByAirzone.series as {
     <TrendChart
       years={trend.years}
       series={airzoneSeries}
-      guides={[{ value: 15, label: "台灣年均標準 15", colour: "var(--taiwan)" }]}
+      guides={[{ values: taiwanAnnual, label: "台灣年均標準", colour: "var(--taiwan)" }]}
       unit="μg/m³"
       height={620}
       keys="named"

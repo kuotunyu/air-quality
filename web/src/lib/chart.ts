@@ -244,14 +244,54 @@ export function yGutter(labels: (string | number)[]): number {
  * other, so the collision is the normal case rather than an edge one.
  *
  * Takes and returns y positions in SVG user units, in the caller's series
- * order.
+ * order. `bounds` is the range the labels have to stay inside, in those same
+ * units; without it the stack can only grow downwards.
  */
-export function spreadLabels(values: number[], gap = 17): number[] {
+export function spreadLabels(values: number[], gap = 17, bounds?: [number, number]): number[] {
   const order = values.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
   for (let k = 1; k < order.length; k += 1) {
     const overlap = order[k - 1].y + gap - order[k].y;
     if (overlap > 0) order[k].y += overlap;
   }
+
+  /*
+   * The pass above only ever pushes DOWN, which is fine for two or three labels
+   * and wrong for eight.
+   *
+   * The zone chart's lines converge into the bottom of the plot, so the stack
+   * started near the floor and every push sent it further past it: measured,
+   * the last two labels sat below the plot area, level with the x-axis row. The
+   * labels were correct and the chart looked broken.
+   *
+   * So when the caller says how much room there is, the stack is pulled back
+   * inside and re-spread upwards from the bottom. If the labels genuinely
+   * cannot fit — more than `range / gap` of them — they end up evenly filling
+   * the range instead of overflowing it, which is the least-bad answer and
+   * still monotone, so the reading order never lies.
+   */
+  if (bounds) {
+    const [lo, hi] = bounds;
+    const last = order[order.length - 1];
+    if (last.y > hi) {
+      const shift = last.y - hi;
+      order.forEach((o) => (o.y -= shift));
+      for (let k = order.length - 2; k >= 0; k -= 1) {
+        const overlap = order[k].y + gap - order[k + 1].y;
+        if (overlap > 0) order[k].y -= overlap;
+      }
+    }
+    if (order[0].y < lo) {
+      const shift = lo - order[0].y;
+      order.forEach((o) => (o.y += shift));
+      // Squeeze from the top down; anything still past `hi` had no room to
+      // begin with, and an even fill beats a stack hanging off the plot.
+      for (let k = 1; k < order.length; k += 1) {
+        order[k].y = Math.min(order[k].y, hi - (order.length - 1 - k) * gap);
+        order[k].y = Math.max(order[k].y, order[k - 1].y);
+      }
+    }
+  }
+
   const out = new Array<number>(values.length);
   order.forEach(({ y, i }) => (out[i] = y));
   return out;

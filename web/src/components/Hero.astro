@@ -21,7 +21,14 @@ import { concentrationInk, n } from "../lib/chart";
 const latestYear = Math.max(...cards.map((c) => c.year));
 const latest = cards.filter((c) => c.year >= latestYear - 1);
 const overWho = latest.filter((c) => c.annual_mean > 5).length;
-const overTaiwan = latest.filter((c) => c.annual_mean > 15).length;
+/*
+ * 12, not 15. PM2.5 entered 空氣品質標準 on 2012-05-14 at an annual 15, and the
+ * annual value was tightened to 12 on 2024-09-30 (民國113年9月30日). This
+ * sentence is in the present tense, so it answers to the present standard —
+ * against 15 it was quietly reporting a limit that had been superseded.
+ */
+const TAIWAN_PM25_ANNUAL = 12;
+const overTaiwan = latest.filter((c) => c.annual_mean > TAIWAN_PM25_ANNUAL).length;
 
 const sorted = [...latest].sort((a, b) => b.annual_mean - a.annual_mean);
 const dirtiest = sorted[0];
@@ -67,7 +74,7 @@ const opening = [
     {" "}{n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。同一份資料也顯示，
     {latestYear} 年有可比較資料的 {latest.length} 個測站中，
     <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
-    {overTaiwan} 個超過台灣自身的標準（15 μg/m³）。
+    {overTaiwan} 個超過台灣自身的標準（{TAIWAN_PM25_ANNUAL} μg/m³）。
     趨勢與水準是兩個不同的量，這兩項結果並不衝突。
   </p>
 

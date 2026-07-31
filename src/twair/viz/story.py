@@ -38,9 +38,26 @@ __all__ = [
 ]
 
 # Thresholds, with their source, because "days over the limit" means nothing
-# without saying whose limit. WHO tightened its guideline in 2021; Taiwan's
-# standard has not moved since 2020, and the gap between the two is itself one
-# of the more useful things a reader can take away.
+# without saying whose limit. WHO tightened its guideline in 2021, and the gap
+# between the two is itself one of the more useful things a reader can take
+# away.
+#
+# This block used to say "Taiwan's standard has not moved since 2020" and cite
+# 「空氣品質標準（2020 年修正）」. Both were wrong, and a reader asked the
+# question that found it. PM2.5 was not in 空氣品質標準 at all until it was
+# added on 2012-05-14 (民國101年5月14日) at 15 annual / 35 daily, and on
+# 2024-09-30 (民國113年9月30日) those were tightened to 12 and 30.
+#
+# ⚠️ The exported layers in `data/` were generated against the OLD daily value,
+# so every `days_over_taiwan` the site currently shows counts days above 35, not
+# above 30. Changing the constant here does not change them — the pipeline has
+# to be re-run. Worse, a single threshold is itself a simplification over a
+# record that spans the change: "days over the standard" for 2012–2024 and for
+# 2025 are counted against different limits. Decide which before re-running.
+#
+# PM10 was tightened by the same 2024 revision. Its new values are published
+# only as an image on the ministry's page, so they are NOT updated below —
+# TODO: measure. The numbers there are the pre-2024 ones and are now wrong.
 # Annotated because the inner dict is genuinely heterogeneous — four float
 # limits beside a nested `source` mapping — and left to infer, mypy widens the
 # values to `object`, which then refuses to be compared against a Polars
@@ -49,11 +66,11 @@ GUIDELINES: dict[str, dict[str, Any]] = {
     "PM2.5": {
         "who_2021_annual": 5.0,
         "who_2021_daily": 15.0,
-        "taiwan_annual": 15.0,
-        "taiwan_daily": 35.0,
+        "taiwan_annual": 12.0,
+        "taiwan_daily": 30.0,
         "source": {
             "who": "WHO global air quality guidelines (2021)",
-            "taiwan": "空氣品質標準（2020 年修正）",
+            "taiwan": "空氣品質標準（民國113年9月30日修正；PM2.5 於民國101年5月14日納入）",
         },
     },
     "PM10": {

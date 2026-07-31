@@ -11,10 +11,19 @@ import {
   yGutter,
 } from "../lib/chart";
 
+type Guide = { value?: number; values?: (number | null)[]; label: string; colour: string };
+
 interface Props {
   years: number[];
   series: { key: string; label: string; values: (number | null)[]; colour: string; dash?: string }[];
-  guides?: { value: number; label: string; colour: string }[];
+  /*
+   * A reference line. `value` draws it flat; `values` draws it per year, for a
+   * limit that has a history — see the Taiwan PM2.5 standard in chapter 1,
+   * which did not exist before 2012 and changed in 2024. A null year is drawn
+   * as a gap, the same as any other null on this site: the limit did not exist,
+   * so no line is the honest mark.
+   */
+  guides?: Guide[];
   unit: string;
   height?: number;
   /*
@@ -55,7 +64,19 @@ const {
 // width until the browser lays it out, so a percentage is the only coordinate
 // that survives being fluid — and the labels, which are HTML, never inherit the
 // stretch that gets applied to the marks.
-const allValues = series.flatMap((s) => s.values).concat(guides.map((g) => g.value));
+const guideLevel = (g: Guide) => {
+  if (g.values) {
+    for (let i = g.values.length - 1; i >= 0; i -= 1) {
+      const v = g.values[i];
+      if (v != null) return v;
+    }
+    return null;
+  }
+  return g.value ?? null;
+};
+const allValues = series
+  .flatMap((s) => s.values)
+  .concat(guides.flatMap((g) => (g.values ? g.values : [g.value ?? null])));
 const [lo, hi] = padded(allValues, { zero: true });
 
 const x = (index: number) => (years.length < 2 ? 50 : (index / (years.length - 1)) * 100);
@@ -65,7 +86,10 @@ const yTicks = ticks(lo, hi, 5).filter((t) => t >= 0 && t >= lo && t <= hi);
 
 // Astro's parser reads a `<=` in a JSX expression as the start of a fragment,
 // so the comparison stays out here.
-const visibleGuides = guides.filter((guide) => guide.value >= lo && guide.value <= hi);
+const visibleGuides = guides.filter((guide) => {
+  const level = guideLevel(guide);
+  return level != null && level >= lo && level <= hi;
+});
 
 // Nine labels, evenly spaced, first and last included by construction rather
 // than by a special case. The old rule kept every nth year and then forced the
@@ -111,7 +135,36 @@ const keys = (keyStyle === "none" ? [] : series)
 const keyY = spreadLabels(
   keys.map((k) => y(k.value)),
   (26 / height) * 100,
+  // Percent of the plot box, with half a label's worth of margin at each end so
+  // the first and last still sit fully inside it.
+  [(13 / height) * 100, 100 - (13 / height) * 100],
 );
+/*
+ * A limit that changed on a date is a step, not a ramp. Drawn horizontal then
+ * vertical, so the year the standard moved shows as the standard moving rather
+ * than as twelve months of gradual tightening.
+ */
+function stepPath(values: (number | null)[]): string {
+  const parts: string[] = [];
+  let open = false;
+  values.forEach((v, i) => {
+    if (v == null || !Number.isFinite(v)) {
+      open = false;
+      return;
+    }
+    const px = n(x(i), 2);
+    const py = n(y(v), 2);
+    if (!open) {
+      parts.push(`M${px} ${py}`);
+    } else {
+      // Horizontal at the previous level to this year, then the step.
+      parts.push(`H${px}`, `V${py}`);
+    }
+    open = true;
+  });
+  return parts.join(" ");
+}
+
 const keyText = (k: { series: Props["series"][number]; value: number }) =>
   keyStyle === "named" ? `${k.series.label} ${n(k.value, 1)}` : n(k.value, 1);
 // +18 for the leader's landing strip, which `labelGutter` cannot know about.
@@ -148,11 +201,9 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
 
         {
           visibleGuides.map((guide) => (
-            <line
-              x1="0"
-              x2="100"
-              y1={n(y(guide.value), 3)}
-              y2={n(y(guide.value), 3)}
+            <path
+              d={guide.values ? stepPath(guide.values) : `M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
+              fill="none"
               stroke={guide.colour}
               stroke-width="1"
               stroke-dasharray="5 4"
@@ -199,7 +250,7 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
 
       {
         visibleGuides.map((guide) => (
-          <span class={`plot-note note-${notesAt}`} style={`top:${n(y(guide.value), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
+          <span class={`plot-note note-${notesAt}`} style={`top:${n(y(guideLevel(guide) as number), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
             {guide.label}
           </span>
         ))
@@ -265,8 +316,12 @@ const keyWidth = keys.length ? labelGutter(keys.map(keyText)) + 18 : 0;
         </span>
       ))
     }
+    {/* Only guides the plot could NOT label in place. A visible one already
+        carries its name on the line itself, and listing it again below was the
+        same sentence twice — 「台灣年均標準 15」 appeared both across the plot
+        and in the legend under it. */}
     {
-      guides.map((g) => (
+      guides.filter((g) => !visibleGuides.includes(g)).map((g) => (
         <span class="legend-item">
           <span class="swatch dashed" style={`border-color:${g.colour}`} />
           {g.label}
