@@ -81,11 +81,34 @@ What it may not conclude
   an origin needs the trajectory model this repository deliberately does not
   have (see `analysis/sources.py`), and the hypothesis in the conf/qc.yaml
   comment is a hypothesis in a config file, not a result.
-* Agreement with ``program_check_invalid`` (程式檢核) may be agreement between
+* Agreement with ``program_check_invalid`` (程式檢核) could be agreement between
   two automated threshold rules applied to the same numbers. The agency's check
-  procedure is not documented in this repository and cannot be assumed
-  independent of this one. The annual 品保查核報告, which is the only document
-  that could break the circularity, has not been obtained — see PROGRESS.md.
+  procedure is not documented in this repository, and the annual 品保查核報告 —
+  the document that would describe it — has not been obtained. But the readings
+  it rejected are in the store, and they carry its fingerprint;
+  ``scripts/check_agency_flags.py`` measures it over 1982-2017:
+
+  - It is **not** a range rule. The share of its rejections above this project's
+    configured upper bound is exactly 0.0 for CO, O3 and SO2, and reaches 2.3%
+    only for PM10.
+  - Its signature is 14.1% negative, 18.1% exactly zero, and **24.4% stuck** —
+    identical to each of the previous two hours. ``instrument_check_invalid`` is
+    the same shape and stronger: 34.5% / 23.2% / **42.4%**, and 76.7% stuck for
+    PM10 alone, against 1.9% of agency-valid readings.
+
+  Of those three signatures a robust z can see only negativity, as a low
+  excursion — which is exactly why ``instrument_check_invalid`` came out
+  enriched on the low tail. **A stuck reading sits at its own cell median, so
+  its z is approximately zero and this module is blind to it by construction.**
+  The two rules are therefore not reading the same feature, and the agreement is
+  not simple circularity. It is also substantially carried by negatives, which
+  the ``n_negative`` benchmark beside every lift already catches.
+* The agency's own ``valid`` population is not exhaustive of its own checks.
+  11,096 readings over these six measurands arrived flagged valid and outside
+  the physical domain — **98.2% of them negative**, 7,448 of them SO2 — and were
+  caught by ``qc/consistency.check_ranges``, which only ever reconsiders rows
+  already marked valid. Treating the agency's flags as ground truth means
+  treating a population that demonstrably lets some through.
 * A lift indistinguishable from 1 is evidence **against** the statistic tracking
   that category, and is reported as prominently as a large one.
 * An excursion occupying a large share of one calendar month at one clock hour
