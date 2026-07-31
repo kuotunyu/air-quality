@@ -53,5 +53,12 @@ jobs:
       - name: Every station lands in its own county
         run: uv run python scripts/validate_map_geometry.py
 
+      # The export writes a manifest of everything it produced; nothing checked
+      # that the manifest committed here covers the payloads committed here.
+      # Two story files shipped outside it for two days. `twair status` said
+      # STALE, which is advice, not a gate.
+      - name: The published data matches its own manifest
+        run: uv run python scripts/check_web_export.py
+
       - name: Test (Pytest)
         run: uv run pytest

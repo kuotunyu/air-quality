@@ -10,14 +10,26 @@ channel must not arrive at all.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import polars as pl
 import pytest
+from scripts import check_web_export
 
 from twair.viz import export
+
+
+def _run_check(root: Path) -> int:
+    """Run the shipped-export check over `root`, the way CI runs it."""
+    argv = sys.argv
+    sys.argv = ["check_web_export.py", str(root)]
+    try:
+        return check_web_export.main()
+    finally:
+        sys.argv = argv
 
 
 @pytest.fixture
@@ -258,6 +270,59 @@ class TestManifest:
         manifest = json.loads(export.write_manifest(tmp_path).read_text(encoding="utf-8"))
 
         assert [entry["file"] for entry in manifest["files"]] == ["a.json"]
+
+
+class TestShippedExportCheck:
+    """`scripts/check_web_export.py` — the manifest against the tree, not a tmp dir.
+
+    Both tests above pass a directory this function just populated, so they can
+    only ever confirm that `write_manifest` describes its own output. The defect
+    was in the gap between two runs: two story payloads were regenerated and
+    committed while the manifest still described the export before them.
+    """
+
+    def _tree(self, root: Path, *, files: dict[str, Any], measured: bool = True) -> None:
+        for name, payload in files.items():
+            export.write_json(root / name, payload)
+        export.write_json(
+            root / "meta.json", {"hourly_observations": 341_442_552 if measured else None}
+        )
+        export.write_manifest(root)
+
+    def test_a_complete_export_passes(self, tmp_path: Path) -> None:
+        self._tree(tmp_path, files={"story/a.json": {"x": 1}})
+
+        assert _run_check(tmp_path) == 0
+
+    def test_a_payload_written_after_the_manifest_fails(self, tmp_path: Path) -> None:
+        """This is exactly what shipped: the file is there, the checksum is not."""
+        self._tree(tmp_path, files={"story/a.json": {"x": 1}})
+        export.write_json(tmp_path / "story" / "late.json", {"y": 2})
+
+        assert _run_check(tmp_path) == 1
+
+    def test_a_payload_edited_after_export_fails(self, tmp_path: Path) -> None:
+        self._tree(tmp_path, files={"story/a.json": {"x": 1}})
+        export.write_json(tmp_path / "story" / "a.json", {"x": 2})
+
+        assert _run_check(tmp_path) == 1
+
+    def test_a_listed_file_absent_from_this_tree_is_not_a_failure(self, tmp_path: Path) -> None:
+        """Most of `l1/` is gitignored, so a clean checkout carries a subset.
+
+        Treating that as a failure would make the check unrunnable in CI, which
+        is the one place it has to run.
+        """
+        self._tree(tmp_path, files={"story/a.json": {"x": 1}, "l1/big.json": {"z": 3}})
+        (tmp_path / "l1" / "big.json").unlink()
+
+        assert _run_check(tmp_path) == 0
+
+    def test_a_meta_without_a_measured_row_count_fails(self, tmp_path: Path) -> None:
+        """The site falls back to a declared constant, so nothing else would notice."""
+        self._tree(tmp_path, files={"story/a.json": {"x": 1}}, measured=False)
+
+        assert _run_check(tmp_path) == 1
 
 
 class TestSlugs:
