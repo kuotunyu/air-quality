@@ -749,8 +749,15 @@ html {
  * un-nudged. There is no state of this animation in which text is invisible.
  *
  * `--enter` staggers members of the opening block; anything without it moves on
- * the first beat. The global `prefers-reduced-motion` block above already
- * collapses every duration to 0.01ms, so this needs no separate opt-out.
+ * the first beat.
+ *
+ * This said the global `prefers-reduced-motion` block needed no help here, and
+ * that was half right for long enough to matter — a wrong comment is worse than
+ * no comment, because it tells the next person not to look. The global block
+ * collapsed the DURATION and left the delay, and `backwards` below is an
+ * instruction to hold the `from` state until that delay expires, so the stagger
+ * survived reduced motion as a series of 7px drops. The delay is reset there
+ * now; see the note in that block for the measurement.
  */
 @keyframes enter {
   from {
@@ -772,6 +779,179 @@ html {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    /*
+     * The delay, and it is the half that was missing.
+     *
+     * Collapsing the duration stops the travel but not the WAIT before it, and
+     * `.enter` pairs its stagger with `animation-fill-mode: backwards` — which
+     * is an instruction to hold the `from` state until the delay expires. So
+     * the reader who asked for no motion got the whole opening block parked at
+     * `translateY(7px)` and then dropped into place, one element at a time.
+     *
+     * Measured under emulated `reduce` by sampling `DOMMatrix.m42` on every
+     * animation frame from the document's own start: computed duration was
+     * 1e-05s but the delay was still 0s / 0.07s / 0.14s.
+     *
+     * `scroll-behavior` above is the other half and stays. `.progress` keeps
+     * its `animation-timeline: scroll(root)` on purpose: a bar that tracks the
+     * scrollbar is not motion the reader did not ask for, it is the reader's
+     * own scrolling drawn back to them, and switching it off would remove
+     * information rather than movement.
+     */
+    animation-delay: 0s !important;
+  }
+
+  /*
+   * ...and the opening block gives up its animation entirely, which the two
+   * lines above cannot do for it.
+   *
+   * Resetting the delay removed the STAGGER — all four members began settling
+   * in the same frame instead of one after another — but frame-by-frame
+   * sampling showed them still held at `translateY(7px)` for three frames
+   * first. That residue is not the delay: `animation-fill-mode: backwards` is
+   * an instruction to hold the `from` state until the animation's first tick,
+   * and a 0.01ms duration does not stop it applying before then.
+   *
+   * Frames with any displacement, out of forty sampled from document start:
+   *
+   *     no preference          23 frames, last movement at t = 510ms
+   *     reduce, delay reset     3 frames, last movement at t = 236ms
+   *     reduce, animation none  0 frames
+   *
+   * The print sheet already does exactly this to the same selector, and for the
+   * same reason: there is no version of this animation that a reader who asked
+   * for stillness should see.
+   */
+  .enter > * {
+    animation: none !important;
+  }
+}
+
+/*
+ * Windows High Contrast, where every mark on this site was gone.
+ *
+ * `grep -rn "forced-colors" web/src` returned nothing, and forced colours
+ * replace `background-color` with `Canvas` — which is exactly how every data
+ * mark here is painted. Counted by emulating `forced-colors: active` and
+ * comparing each mark's resolved background against `Canvas`:
+ *
+ *     /detection   .plot-pt         145        /            .dot            73
+ *     /forecast    .plot-pt          84        /            .scale-bar span  7
+ *     /health      .plot-pt          20        /space       .corr-bar        8
+ *     /methods     .plot-pt          12        /space       .rules .rule    10
+ *                                              /space       .ctrl-ci         5
+ *                                              /space       .ctrl-dot        5
+ *
+ * 369 marks. Chapter 5's 145-point distribution — the evidence the whole
+ * chapter rests on — was a rug and two axes; chapter 3's two figures were empty
+ * white frames; the entry map's 73 stations became one undifferentiated colour,
+ * which does not read as broken, it reads as a DIFFERENT and false claim: a map
+ * of where the stations are rather than of what they measure.
+ *
+ * Two different repairs, and which one applies depends on whether hue is the
+ * datum. `forced-color-adjust: none` is an opt-out of a palette the reader
+ * chose, so it is used only where the colour IS the information and never as a
+ * shortcut for "put it back".
+ *
+ * ## Why the backgrounds below are `!important` and the two opt-outs are not
+ *
+ * The first version of this block used plain declarations and moved 80 of the
+ * 369 marks. The 289 that did not move failed for two unrelated reasons, both
+ * invisible until re-measured:
+ *
+ *   - Astro compiles a component's scoped `.corr-bar` to
+ *     `.corr-bar[data-astro-cid-gtnxy56x]`, which is (0,2,0) — and the
+ *     significant variants to (0,4,0). An unscoped `.corr-bar` here is (0,1,0)
+ *     and loses no matter where it sits in the file.
+ *   - `.plot-pt { background: currentColor }` lives in this same stylesheet, but
+ *     1,300 lines BELOW this block, so it won on source order at equal weight.
+ *
+ * `forced-color-adjust` needs no `!important` because nothing else in the
+ * codebase sets it, and neither do the outlines. Only the paint is contested.
+ * This file already uses `!important` for exactly this situation in the print
+ * sheet and the reduced-motion block: a reader preference is allowed to outrank
+ * the design.
+ */
+@media (forced-colors: active) {
+  /*
+   * Hue is not the datum here, so a system colour is the honest repair.
+   *
+   * `.plot-pt` paints with `background: currentColor`; forced colours resolve
+   * `color` to CanvasText and `background-color` to Canvas independently, so
+   * the point inherits the page instead of the ink. Naming CanvasText restores
+   * it. Nothing is lost: chapter 5 is a single series, and chapter 6's three
+   * series are told apart by SVG `stroke` and a dash pattern, neither of which
+   * forced colours touches.
+   */
+  .plot-pt {
+    background: CanvasText !important;
+  }
+
+  /*
+   * Chapter 3, same argument. The bar's length is the magnitude, the side of
+   * the 50% line is the sign, and significance is already carried in the value
+   * column as 「＊」 — so one visible colour loses nothing. Deliberately NOT
+   * unforced: `--sign-pos` / `--sign-neg` sit at OKLCH L 0.455–0.5, and most
+   * Windows high-contrast themes are dark, where that is ink on ink.
+   */
+  .corr-bar,
+  .ctrl-ci,
+  .ctrl-ci::before,
+  .ctrl-ci::after,
+  .ctrl-dot {
+    background: CanvasText !important;
+  }
+
+  /*
+   * The dot sits ON its own interval line and stays a dot by way of a ring in
+   * the surface colour. Forced colours do not paint `box-shadow` at all, so the
+   * ring vanishes and the estimate merges into its own confidence interval.
+   * An outline is painted, and `Canvas` is the same surface either polarity.
+   */
+  .ctrl-dot {
+    outline: 2px solid Canvas;
+  }
+
+  /* Gridlines stay recessive: GrayText is the system's own word for that. The
+     zero line is not a gridline — the argument of both figures is whether an
+     estimate crosses it — so it keeps full ink. */
+  .rules .rule,
+  .rules .rule.end {
+    background: GrayText !important;
+  }
+  .rules .rule.zero {
+    background: CanvasText !important;
+  }
+
+  /*
+   * ...and here hue IS the datum, so these opt out.
+   *
+   * The station dots encode μg/m³ by hue and the two legend strips are the key
+   * to that encoding — a seven-step ramp redrawn in one colour is not a dimmer
+   * legend, it is a legend that says something false. The dots are safe to
+   * unforce because their ground is the county `fill`, which is SVG paint and
+   * not forced either, so the ramp lands on the surface its contrast was solved
+   * against. The two strips get an outline instead, because they sit on a card
+   * that IS forced and a ramp needs an edge to be read as one object.
+   */
+  .dot,
+  .scale-bar span,
+  .ramp-bar span {
+    forced-color-adjust: none;
+  }
+  .scale-bar,
+  .ramp-bar {
+    outline: 1px solid CanvasText;
+  }
+
+  /*
+   * A caveat is a caveat because it is amber. Forced colours drop the tint and
+   * the border colour together, so all seventeen of them became ordinary notes
+   * — every computed property identical to `.note`. Weight on the leading edge
+   * is the one distinction that survives a palette the reader chose.
+   */
+  .note.caveat {
+    border-inline-start-width: 3px !important;
   }
 }
 
@@ -990,8 +1170,55 @@ main :is(p, .note, .aside, figcaption, dd, blockquote) {
  * and desktop justified. What is left above it is one to three paragraphs per
  * width rather than a third of the page, which is the ordinary loose line that
  * justified setting has always had.
+ *
+ * ## 26em, and this is the one container query on the site that is not px
+ *
+ * The threshold was 560px, and a px threshold asks about the column while the
+ * problem is about CHARACTERS PER LINE. A reader who turns their browser's font
+ * size up gets the same column with half the characters in it, and walked
+ * straight past this guard. Measured by re-reading each justified block
+ * left-aligned and comparing its shortest non-final line to the column — the
+ * same method as the table above — over six chapters at a 768px viewport:
+ *
+ *                    580    640    768   1000   1440
+ *     16px (default)   5      3      1      0      0     blocks stretched >30%
+ *     32px             41     33     25      7      0
+ *     worst, 32px    333%   151%    93%    52%      —
+ *
+ * Forty-one blocks against five, at the same width, for the reader who most
+ * needs the page to be quiet.
+ *
+ * `em` in a container query resolves against the QUERY CONTAINER's font size,
+ * so this threshold now grows with the reader's text and the guard fires at the
+ * width where the line actually gets short. PROGRESS.md records eleven
+ * container queries deliberately rewritten from rem to px, and this is not a
+ * relapse: those broke because `rem` follows the fluid ROOT, which climbs with
+ * the viewport, so the threshold ran away from the box it was asking about.
+ * Here the container's own font size is what the question is about.
+ *
+ * 26.2, and the last digit is the scrollbar.
+ *
+ * The band that reproduces today's behaviour is bounded by the two viewports
+ * either side of the switch — it must still apply at 560 and must not at 580 —
+ * and `main` measures differently there depending on whether the reader's
+ * scrollbar takes layout space:
+ *
+ *     classic scrollbar (Windows)   560 → main 545 (25.43em)   580 → 565 (26.27em)
+ *     overlay scrollbar (macOS)     560 → main 560 (26.13em)   580 → 580 (26.97em)
+ *
+ * So the classic case allows [25.44, 26.27) and the overlay case allows
+ * [26.13, 26.97), and only their intersection — [26.14, 26.27) — is unchanged
+ * for both readers. 26em was measured as identical, but only on a viewport that
+ * HAD a scrollbar; with overlay scrollbars it moves a 560px window from
+ * left-aligned to justified. 26.2em is inside both bands. When a threshold sits
+ * this close to an edge, the harness that measures it has to be pinned: this
+ * one was verified with scrollbars present AND hidden.
+ *
+ * At 32px type nothing is justified until 1440, where `main` reaches 983px of
+ * 46px type and the over-30% count is 0 — the guard now switches off exactly
+ * where the line is long enough to carry it.
  */
-@container (max-width: 560px) {
+@container (max-width: 26.2em) {
   main :is(p, .note, .aside, figcaption, dd, blockquote) {
     text-align: left;
   }
@@ -2743,10 +2970,43 @@ button:hover {
    * to the marks rather than set globally, because the one thing that SHOULD lose
    * its background on paper is the page itself.
    */
+  /*
+   * The list was written from the entry map and stopped there. Measured again
+   * under `media: print` by reading `print-color-adjust` off every mark on all
+   * eleven routes, forty-two more were still resolving to `economy`:
+   *
+   *     /space     .corr-bar 8, .rules .rule 10, .ctrl-ci 5, .ctrl-dot 5
+   *     /sources   .ramp-bar span 7
+   *     /          .scale-bar span 7
+   *
+   * Chapter 3 printed as two figures with labels, numbers and no bars, under a
+   * caption still saying 「上圖：±0.4 的距離分帶」. Chapter 4 was worse than a
+   * blank figure: its polar plot is SVG `fill`, so it prints in full colour
+   * while the legend directly beneath — the strip that says which colour is
+   * which probability — printed as six numbers on white paper. A legend that
+   * is not there misleads more than a chart with no colour.
+   *
+   * Confirmed on the artefact rather than on the computed style: each route
+   * printed to PDF twice with `printBackground: false`, once as shipped and
+   * once with these six selectors forced back to `economy`, then the content
+   * streams walked counting fill operations issued under a non-white colour.
+   *
+   *     /space     63 → 101      /sources   87 → 95      /   204 → 211
+   *
+   * 53 marks that now reach paper. The count is higher than the 42 elements
+   * because `.ctrl-ci` draws its end caps as `::before` / `::after`, so one
+   * interval is three fills.
+   */
   .plot-pt,
   .swatch,
   .dot,
   .plot-keys span,
+  .corr-bar,
+  .rules .rule,
+  .ctrl-ci,
+  .ctrl-dot,
+  .ramp-bar span,
+  .scale-bar span,
   tbody tr:nth-child(even),
   .note,
   .card,
