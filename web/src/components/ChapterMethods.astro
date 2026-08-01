@@ -614,7 +614,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <div class="note">
       <strong>先問「缺漏長什麼形狀」，因為它決定了一切。</strong>
       {imputationEvidence.stations_measured} 個測站、{imputationEvidence.period} 年：
-      單小時的缺口佔全部缺口的
+      單小時的缺口佔全部缺口的{" "}
       <strong>{n(gapDist["1h"].share_of_gaps * 100, 1)}%</strong>，
       但只佔缺失時數的 {n(gapDist["1h"].share_of_missing_hours * 100, 1)}%；
       超過 48 小時的缺口只有 {gapDist[">48h"].gaps} 次（佔

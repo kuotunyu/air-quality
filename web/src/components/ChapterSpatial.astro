@@ -162,7 +162,7 @@ const cellFor = (method: string, buffer: number) =>
   <p>
     量測對象是第八章那個復刻模型的<strong>殘差</strong>，不是 PM2.5 本身——
     濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
-    還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}
+    還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
     千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，
     {network.placed} 站有座標、{network.complete} 站每月都有值；
     {network.unplaced.length > 0 && (
@@ -332,7 +332,7 @@ const cellFor = (method: string, buffer: number) =>
 
   <p>
     結果兩面都有。時代的 {partition.groups} 組分區在「區內−區間相關差」上得
-    +{n(partition.separation_r, 2)}，落在地理 ensemble 的
+    +{n(partition.separation_r, 2)}，落在地理 ensemble 的{" "}
     <strong>{n(partition.pct_separation * 100, 1)} 百分位</strong>——分區確實載有
     超出地理的資訊，不是任意劃定的。但它的 silhouette 只有 +{n(partition.silhouette, 2)}，
     而資料自己偏好的分群數是 <strong>k = {partition.best_k}</strong>
