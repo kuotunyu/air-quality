@@ -200,6 +200,29 @@ class TestPrecision:
         assert export._precision({"unit": "ug/m3"}) == 2
         assert export._precision({"unit": "something-new"}) == export.DEFAULT_PRECISION
 
+    def test_every_unit_the_config_declares_has_a_precision(self) -> None:
+        """The fallback is silent, and for one unit it is wrong.
+
+        An unmapped unit publishes at `DEFAULT_PRECISION`, two places. That is
+        right for most of them and wrong for ppm, where CO spends its whole
+        range: 0.42 ppm instead of 0.418. Adding a pollutant, or respelling a
+        unit as `µg/m3`, would do that without any error anywhere — the number
+        would just quietly get coarser on the site.
+        """
+        units = {str(meta.get("unit", "")) for meta in export.documented_pollutants().values()}
+
+        unmapped = sorted(units - set(export.PRECISION_BY_UNIT))
+
+        assert not unmapped, f"declared in conf/pollutants.yaml, no precision: {unmapped}"
+
+    def test_the_precision_table_has_no_units_the_config_does_not_use(self) -> None:
+        """The other direction, which is how a respelling shows up as a pair."""
+        units = {str(meta.get("unit", "")) for meta in export.documented_pollutants().values()}
+
+        orphaned = sorted(set(export.PRECISION_BY_UNIT) - units)
+
+        assert not orphaned, f"a precision for a unit nothing declares: {orphaned}"
+
 
 class TestAllowList:
     def test_undocumented_channels_do_not_reach_the_site(
