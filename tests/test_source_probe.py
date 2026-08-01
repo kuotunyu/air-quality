@@ -302,6 +302,13 @@ def test_the_conf_keeps_every_resolved_file_id(
     assert ids == ["id-2024-離島", "id-2023-全部"]
     assert written["airtw"]["license"] == "政府資料開放授權條款第1版"
     assert set(written["credentialed"]) >= {"moenv_api", "cwa_opendata"}
+    # Whether *this* machine holds a key is not a property of the source, and
+    # this file is committed: it recorded one developer's key inventory and
+    # flipped three lines every time someone else re-probed.
+    assert all("credential_present" not in info for info in written["credentialed"].values()), (
+        "the probe published which credentials the operator happens to hold"
+    )
+    assert written["credentialed"]["moenv_api"]["register_at"].startswith("https://")
 
 
 # ── the entry point ──────────────────────────────────────────────────────────

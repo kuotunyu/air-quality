@@ -5,7 +5,7 @@
 # Google Drive file ids rotate whenever MOENV re-uploads an archive, so this
 # file is a cache of the last successful resolution, not a permanent contract.
 
-generated_at: '2026-07-27T10:23:37+00:00'
+generated_at: '2026-08-01T21:48:16+00:00'
 airtw:
   his_data_url: https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx
   access: ASP.NET WebForms postback on ctl00$CPH_Content$ddlQYear
@@ -699,18 +699,14 @@ airtw:
     note: ''
 credentialed:
   moenv_api:
-    credential_present: false
     register_at: https://data.moenv.gov.tw
     probed: false
   cwa_opendata:
-    credential_present: false
     register_at: https://opendata.cwa.gov.tw
     probed: false
   era5_cds:
-    credential_present: false
     register_at: https://cds.climate.copernicus.eu
     probed: false
   earthengine:
-    credential_present: false
     register_at: https://code.earthengine.google.com
     probed: false

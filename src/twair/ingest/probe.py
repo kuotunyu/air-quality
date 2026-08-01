@@ -174,7 +174,16 @@ def write_sources_conf(
             "summary": summary,
             "files": [f.to_dict() for f in catalog],
         },
-        "credentialed": credentials,
+        # Without `credential_present`, which is a fact about the machine that
+        # ran the probe and not about the source. conf/sources.yaml is
+        # committed, so writing it there published one developer's key
+        # inventory and flipped three lines back and forth depending on who ran
+        # it last. `run_probe` still reports what is missing, to the console,
+        # where a fact about this machine belongs.
+        "credentialed": {
+            name: {k: v for k, v in info.items() if k != "credential_present"}
+            for name, info in credentials.items()
+        },
     }
     write_conf("sources", payload, header=CONF_HEADER)
     console.print("  wrote [bold]conf/sources.yaml[/bold]")
