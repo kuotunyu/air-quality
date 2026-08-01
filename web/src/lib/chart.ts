@@ -19,6 +19,23 @@ export interface Scale {
   range: [number, number];
 }
 
+/**
+ * The shortest a plot box gets, in px.
+ *
+ * Must match `--plot-min` in `global.css`. It is duplicated here because
+ * `spreadLabels` works in percent of the plot and a plot no longer has one
+ * height — it derives one from its own width. A gap expressed as a percentage
+ * of some nominal height is only safe if that height is the SHORTEST the box
+ * can be: too small a gap and the labels collide, which is a hard failure,
+ * where too large a gap only separates labels that were already overlapping.
+ */
+export const PLOT_MIN_H = 244;
+
+/** A px gap converted to the percentage of the plot box that guarantees it. */
+export function gapPct(px: number): number {
+  return (px / PLOT_MIN_H) * 100;
+}
+
 export function linear(
   domain: [number, number],
   range: [number, number],
@@ -163,7 +180,18 @@ export function ticks(min: number, max: number, count = 5): number[] {
   return out;
 }
 
-/** Pad a domain so the extremes are not glued to the frame. */
+/**
+ * Pad a domain so the extremes are not glued to the frame.
+ *
+ * `zero` means "this scale starts at zero", and it now means it exactly. It used
+ * to pad *past* zero: with values from 5 to 52.2 the domain came out
+ * [-4.18, 56.38], so the bottom rule of the plot — the darker `.plot-axis`,
+ * drawn at the foot of the box — sat at −4.18 μg/m³. A concentration cannot be
+ * negative, the 0 gridline floated 21px above the line that looked like the
+ * axis, and the one mark a reader takes as the origin was at a value that does
+ * not exist. Padding the top is a courtesy to the topmost point; padding the
+ * bottom of a zero-based scale invents room below the floor.
+ */
 export function padded(
   values: (number | null | undefined)[],
   { zero = false, pad = 0.08 }: { zero?: boolean; pad?: number } = {},
@@ -177,9 +205,11 @@ export function padded(
   let max = Math.max(...finite);
   if (zero) min = Math.min(0, min);
   const span = max - min || Math.abs(max) || 1;
-  min -= span * pad;
   max += span * pad;
-  if (zero) min = Math.min(0, min);
+  // A domain that already reaches below zero is a signed scale (a residual, a
+  // skill score) and keeps its bottom padding; one that starts at zero does not.
+  if (zero && min >= 0) return [0, max];
+  min -= span * pad;
   return [min, max];
 }
 

@@ -153,12 +153,18 @@
     /*
      * Give the marks the room the dialog just bought.
      *
-     * `--plot-h` is the only fixed dimension a chart has; everything else is a
-     * percentage of the box, so a wider box already redraws at the new width and
-     * the x axis un-thins itself (see the container queries on `.plot-x`).
-     * Height has to be asked for. The factor is measured after the move, so it
-     * is the real ratio rather than a guess, and it never goes below 1 — the
-     * control says 放大.
+     * `--plot-h` overrides a chart's height; everything else is a percentage of
+     * the box, so a wider box already redraws at the new width and the x axis
+     * un-thins itself (see the container queries on `.plot-x`). Height has to be
+     * asked for. The factor is measured after the move, so it is the real ratio
+     * rather than a guess, and it never goes below 1 — the control says 放大.
+     *
+     * The height is read off `.plot-area` rather than out of `--plot-h`.
+     * `--plot-h` is now unset on every chart on the site — a plot derives its
+     * height from its own width — so `getPropertyValue` returned "" and the
+     * multiply produced NaN. Measuring the laid-out box works whichever way the
+     * height was arrived at, which is the property that stops this breaking the
+     * next time the sizing rule changes.
      */
     function grow(root: HTMLElement) {
       const plots = Array.from(root.querySelectorAll<HTMLElement>(".plot"));
@@ -176,10 +182,9 @@
       const room = stage.clientHeight - rest;
       const factor = Math.min(Math.max(room / marks, 1), 3);
       kept.forEach(({ el }) => {
-        const now = parseFloat(
-          getComputedStyle(el).getPropertyValue("--plot-h"),
-        );
-        if (Number.isFinite(now)) {
+        const area = el.querySelector<HTMLElement>(".plot-area");
+        const now = area?.getBoundingClientRect().height ?? 0;
+        if (now > 0) {
           el.style.setProperty("--plot-h", `${Math.round(now * factor)}px`);
         }
       });

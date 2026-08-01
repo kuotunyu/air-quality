@@ -249,7 +249,11 @@ const opening = [
   container-type: inline-size;
 }
 
-@container (min-width: 34rem) {
+/* px, not `34rem`: `rem` in a container query resolves against this site's fluid
+   root font size, so the threshold grew with the viewport — 785px at 1440 and
+   706px at 1000 for a rule written as 544px. The two-column hero therefore had
+   to wait for a much wider container than intended before it would form. */
+@container (min-width: 544px) {
   .hero-grid {
     /*
      * The map column is sized to the map, not to a share of the row. The map box

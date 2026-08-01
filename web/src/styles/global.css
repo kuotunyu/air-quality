@@ -293,6 +293,26 @@
   --k7: #c2417f;
 
   /*
+   * A third job for colour, and the reason it needs its own two tokens: SIGN.
+   *
+   * Chapter 3's correlogram encodes whether a Moran's I is positive or negative,
+   * which is neither a quantity on the concentration ramp nor a kind. It was
+   * borrowing `--c1` and `--c5` for it — two bins of the μg/m³ scale, spent on
+   * "+" and "−" on a page that contains no concentrations, which is exactly the
+   * failure principle 18 records for the health chapter one level up: a
+   * sequential ramp pressed into a job it was not built for.
+   *
+   * A diverging encoding wants two poles and a neutral middle. These are the
+   * ramp's own two ends — its cool anchor and its warm one — so the hue still
+   * belongs to this palette and reads as the same document, while the neutral
+   * middle is `--rule`, the zero line itself. They are held one step darker than
+   * `--c0` / `--c5` because they are thin marks on a light ground rather than
+   * area fills, and they clear 3:1 on all three surfaces at that lightness.
+   */
+  --sign-pos: oklch(0.500 0.108 252);
+  --sign-neg: oklch(0.455 0.115 22);
+
+  /*
    * Every link on the site, so it is prose and answers to prose thresholds.
    *
    * It was the last thing still too faint after the inks were re-solved, and the
@@ -568,6 +588,11 @@
     --k5: #b078e0;
     --k6: #a9c53a;
     --k7: #e07aa8;
+
+    /* Re-solved for the dark ground rather than inverted, the same rule the ramp
+       above follows: the light theme's values measure under 2:1 on near-black. */
+    --sign-pos: oklch(0.700 0.112 252);
+    --sign-neg: oklch(0.672 0.132 22);
     --accent: oklch(0.871 0.056 250);
 
     --ink-mix: oklch(0.99 0.004 250);
@@ -1080,10 +1105,19 @@ main {
   margin-inline: calc(-1 * var(--bleed));
 }
 
+/*
+ * The card the marks sit in.
+ *
+ * The inline padding is fluid because it was not: a flat `--space-4` on both
+ * sides is a fixed 68px whatever the card is, so the share of the card the plot
+ * actually got fell as the screen narrowed — measured, 84.5% of the card at
+ * 1440 and 62.6% at 390. On a phone that is more card than chart. `cqw` here is
+ * the reading column, which is what the card's own width follows.
+ */
 .chart {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) clamp(0.6rem, 3.2cqw, var(--space-4));
   background-color: var(--bg-sunken);
 }
 
@@ -1123,7 +1157,17 @@ main {
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: var(--plot-h, 320px) auto;
+  /*
+   * Row 1 takes its height from `.plot-area`, which derives it from the plot's
+   * own width. It used to be a fixed `--plot-h` while the width was fluid, and
+   * a figure with one axis pinned and the other free has no shape at all:
+   * measured on /trend, the same chart was 433x300 (1.44:1) at a 1000px
+   * viewport, 831x300 (2.77:1) at 1440 and 1211x300 (4.04:1) at 1920. The last
+   * of those is a letterbox, and a letterbox flattens every slope in it — which
+   * on a chapter about whether a decline is real is the one thing the figure
+   * must not do.
+   */
+  grid-template-rows: auto auto;
   column-gap: var(--space-2);
   row-gap: var(--space-1);
   /* Room for a marker sitting exactly on the first or last x. Without it the
@@ -1136,10 +1180,36 @@ main {
   container-type: inline-size;
 }
 
+/* A chart with no key column should not reserve one. The third track is `auto`
+   and collapses to 0, but the column gap beside it does not — measured, 14px of
+   permanently empty card on the right of every chart that labels its series with
+   an in-plot legend instead of end labels. */
+.plot:not(:has(.plot-keys)) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
 .plot-area {
   grid-area: 1 / 2;
   position: relative;
   min-width: 0;
+  /*
+   * The one place a chart's shape is decided.
+   *
+   * `1cqw` is one percent of `.plot`'s inline size — `.plot` is the inline-size
+   * container these queries already run against — so the height tracks the width
+   * without a breakpoint and without JavaScript, and the clamp stops it becoming
+   * either a strip or a wall. `--plot-ar` is that percentage: 42 puts a chart at
+   * roughly 2.2:1 across the desktop range.
+   *
+   * `--plot-h` still wins when it is set, because the zoom dialog sets it to
+   * spend the room it just bought. Nothing else should: a chart that wants a
+   * different shape wants a different `--plot-ar`, `--plot-min` or `--plot-max`,
+   * and those keep working at every width.
+   */
+  height: var(
+    --plot-h,
+    clamp(var(--plot-min, 244px), calc(var(--plot-ar, 42) * 1cqw), var(--plot-max, 430px))
+  );
 }
 
 .plot-area > svg {
@@ -1278,36 +1348,49 @@ main {
  * Another five-label axis at 503px lost `6時` and `18時`.
  *
  * `data-n` carries the label count from the build, and each tier is that count
- * times 3.4rem — roughly the widest label this site produces plus a gap. So a
- * five-label axis thins below 17rem and a nine-label one below 30.6rem, which is
- * what "would these overlap" actually means.
+ * times one label's worth of room.
+ *
+ * ⚠️ **The tiers are px, and that is the fix for the bug the paragraph above
+ * only half-solved.** They were `n × 3.4rem`, and `rem` inside a container query
+ * resolves against the ROOT font size — which on this site is
+ * `clamp(20.4px, 19.3px + 0.38vw, 23.5px)`, a fluid value. So every "is this plot
+ * too narrow" threshold GREW with the viewport, which is backwards: the wider the
+ * screen, the more eagerly the axis thinned. Measured, nine labels: the threshold
+ * was 707px at a 1000px viewport and 719px at 1920, against a widest possible
+ * `.plot-x` of 715px — so the nine-label tier was still unconditionally on
+ * everywhere except the very top of the range. Same unit, same bug, one tier
+ * deeper. A breakpoint must not be denominated in something that moves with the
+ * thing it is measuring.
+ *
+ * 72px is one label: the widest this site produces is a four-digit year, which
+ * at `--chart-tick` (24px) in the numeric face measures about 53px, plus a gap.
  */
-@container (max-width: 13.6rem) {
+@container (max-width: 288px) {
   .plot-x[data-n="4"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
-@container (max-width: 17rem) {
+@container (max-width: 360px) {
   .plot-x[data-n="5"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
-@container (max-width: 20.4rem) {
+@container (max-width: 432px) {
   .plot-x[data-n="6"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
-@container (max-width: 23.8rem) {
+@container (max-width: 504px) {
   .plot-x[data-n="7"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
-@container (max-width: 27.2rem) {
+@container (max-width: 576px) {
   .plot-x[data-n="8"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
-@container (max-width: 30.6rem) {
+@container (max-width: 648px) {
   .plot-x[data-n="9"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
-@container (max-width: 34rem) {
+@container (max-width: 720px) {
   .plot-x[data-n="10"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
   /* No `data-n` means a caller that has not been updated; keep the old
      behaviour rather than silently letting labels overlap. */
   .plot-x:not([data-n]):not(.keep) span:nth-child(even):not(:last-child) { display: none; }
 }
 
-@container (max-width: 16rem) {
+@container (max-width: 260px) {
   .plot-x:not(.keep) span:nth-child(4n + 3) {
     display: none;
   }
@@ -1322,7 +1405,10 @@ main {
  * the keys stop being a column and become a legend: same text, same colours,
  * in the flow rather than positioned, and the plot gets the width back.
  */
-@container (max-width: 26rem) {
+/* 420px, not `26rem`: see the ⚠️ note on the thinning tiers above. At a 1000px
+   viewport `26rem` resolved to 601px against a 508px plot, so this fallback —
+   written for a phone — was what a desktop reader actually got. */
+@container (max-width: 420px) {
   .plot {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -1333,11 +1419,24 @@ main {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-1) var(--space-3);
-    margin-top: var(--space-1);
+    margin-top: var(--space-2);
   }
   .plot-keys span {
     position: static;
     transform: none;
+    /* A key in the flow has nothing beside it saying which line it names, so it
+       carries the line itself. Beside the plot the label sits at its own series'
+       height and needs no swatch; down here it is just a word. */
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+  }
+  .plot-keys span::before {
+    content: "";
+    width: 1.15em;
+    height: 0;
+    border-top: 2.5px solid var(--mark, currentColor);
+    border-radius: 2px;
   }
 }
 

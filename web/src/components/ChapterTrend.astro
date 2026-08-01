@@ -365,7 +365,9 @@ const taiwanAnnualFor = (years: number[]) =>
       series={airzoneSeries}
       guides={[{ values: taiwanAnnualFor(trend.years), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" }]}
       unit="μg/m³"
-      height={620}
+      ar={58}
+      minH={340}
+      maxH={620}
       notesAt="left"
     />
     <figcaption>
