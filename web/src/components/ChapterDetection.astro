@@ -271,10 +271,37 @@ const shortName = (name: string) =>
       const s = strip(e);
       const zero = s.x(0);
       return (
+        <>
         <figure>
           <div class="chart">
+            {/*
+              Named, and deliberately NOT focusable.
+
+              These two were the only plots on the site the accessibility tree
+              had nothing to say about: measured across five chapters, ten of
+              the twelve `.plot` elements are `tabindex="0"`, `role="group"`,
+              with a label ending 「用左右方向鍵逐點讀值」 and a live region —
+              and these two were `tabIndex -1`, `role` null, `aria-label` null,
+              i.e. `role=generic name=""`. Their 145 marks carry their values in
+              `title`, which is a pointer-only channel.
+
+              `role="img"` rather than the `group` the others use, because the
+              others earned that role by being operable: they have arrow-key
+              traversal and this figure cannot. Its marks are stacked in ROWS by
+              bin, not laid along a single axis, so stepping through them would
+              need an ordering invented for the purpose — and stepping a screen
+              reader through 73 values one press at a time is a poor way to read
+              a distribution even where the ordering is obvious. A focus stop
+              that does nothing is the defect this project removed from the rail
+              checkbox; it does not get reintroduced here for symmetry.
+
+              What the reader needs instead is the numbers, and those are in the
+              table below the figure.
+            */}
             <div
               class="plot strip"
+              role="img"
+              aria-label={`${shortName(e.event)}：${e.n_stations} 個測站的估計值，落在 ${s.pool.length} 個安慰劑估計值構成的散布中。逐站數值列在圖下方的表格。`}
               style={`--plot-h:${Math.max(96, 46 + s.tallest * DOT)}px`}
             >
               <div class="plot-area">
@@ -366,6 +393,50 @@ const shortName = (name: string) =>
             單位 μg/m³，兩張圖共用刻度。
           </figcaption>
         </figure>
+
+        {/*
+          The 145 values, in a form that is not a hover.
+
+          Eight stations are named in the prose of this chapter and the other
+          137 existed only as `title` attributes on 7×7px marks. That is the
+          whole of the figure's data behind a pointer.
+
+          A `<details>`, because the figure is the argument — the estimates sit
+          inside the placebo cloud — and the per-station numbers are the
+          evidence behind it rather than the point of it. The chapter already
+          uses this form for its own detail, the print sheet opens every one,
+          and `TableTools` picks the table up by shape: the `<summary>` becomes
+          its accessible name and the box becomes keyboard-scrollable at the
+          widths where it overflows.
+
+          Sorted by effect, not by station name. The reader's question here is
+          which stations moved most, and a table sorted the way the strip is
+          drawn can be read against it.
+        */}
+        <details class="strip-values">
+          <summary>{shortName(e.event)}：{e.n_stations} 個測站的逐站估計值</summary>
+          <div class="table-wrap">
+            <table class="dense">
+              <thead>
+                <tr>
+                  <th scope="col">測站</th>
+                  <th scope="col">效應（μg/m³）</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...e.station_effects]
+                  .sort((a, b) => a.effect - b.effect)
+                  .map((st) => (
+                    <tr>
+                      <td>{st.station}</td>
+                      <td class="num">{st.effect.toFixed(2)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+        </>
       );
     })
   }
