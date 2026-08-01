@@ -258,9 +258,12 @@ const shortName = (name: string) =>
   <h2>估計值與其安慰劑分布的對照</h2>
 
   <p>
-    下面每一條帶狀圖是一個事件。<span class="k-pl">淡色的短線</span>是安慰劑——
+    下面每一條帶狀圖是一個<strong>日曆窗口</strong>事件，所以是兩張，不是三張：
+    空污法修正是制度轉變而不是有前後的視窗，它的檢定在本章最後一節，用的是分段迴歸。
+    <span class="k-pl">淡色的短線</span>是安慰劑——
     同一個方法在沒有事件的年份算出來的「效應」。
     <span class="k-real">亮色的點</span>是各測站的實際估計值。
+    兩張圖共用同一個刻度，零在正中間，所以雲的寬度可以直接比。
   </p>
 
   {
@@ -353,10 +356,14 @@ const shortName = (name: string) =>
               </div>
             </div>
           </div>
+          {/* `n_stations` and `station_effects.length` are the same number and
+              the caption printed both of them — 「73 站的估計值（73 個亮點）」.
+              One of them is the count and the other is how the count is drawn,
+              so the second says only what a reader can already see. */}
           <figcaption>
             <strong>{shortName(e.event)}</strong> —— {e.n_stations} 站的估計值
-            （{e.station_effects.length} 個亮點）落在 {s.pool.length} 個安慰劑估計值
-            （淡線）構成的散布之中。單位 μg/m³。
+            （亮點）落在 {s.pool.length} 個安慰劑估計值（淡線）構成的散布之中。
+            單位 μg/m³，兩張圖共用刻度。
           </figcaption>
         </figure>
       );

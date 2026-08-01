@@ -1263,9 +1263,21 @@ section > :last-child > :last-child:last-child {
   gap: var(--space-1);
 }
 
+/*
+ * A headline number, capped at the size of the page's own title.
+ *
+ * It was `clamp(1.8rem, 4.2vw, 2.5rem)`, which renders 58.8px at 1440 against an
+ * `h1` of 42.3px — so on chapter 4 the four numbers beside the compass were the
+ * largest type on the page, above the title of the chapter they belong to, and
+ * on chapter 2 the station card's 13.7 outranked 「測站個別統計」. A number can
+ * be the loudest thing in its own figure without outranking the document.
+ *
+ * 1.8rem is `h1`'s own size, so the ceiling is now「as large as the title, never
+ * larger」rather than a number nobody had written a reason for.
+ */
 .stat-value {
   font-family: var(--font-numeric);
-  font-size: clamp(1.8rem, 4.2vw, 2.5rem);
+  font-size: clamp(1.5rem, 4.2vw, 1.8rem);
   font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.02em;

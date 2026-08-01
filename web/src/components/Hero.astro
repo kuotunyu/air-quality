@@ -205,7 +205,23 @@ const opening = [
 
 .figures dt {
   font-family: var(--font-numeric);
-  font-size: clamp(2rem, 4.6vw, 2.7rem);
+  /*
+   * Capped at the title's own size, not above it.
+   *
+   * `clamp(2rem, 4.6vw, 2.7rem)` renders 63.5px at 1440 against a hero `h1` of
+   * 48.2px, so the three numbers under the map were the largest type on the
+   * entry page — larger than 「台灣空氣品質的長期重新分析」, which is the one
+   * thing on that page that has to be read first.
+   *
+   * This is `#hero h1`'s own `clamp(1.55rem, 3.4vw, 2.05rem)` scaled by 0.9,
+   * term for term, rather than a second expression that happens to agree at one
+   * width. Capping only the ceiling was not enough: the two clamps had different
+   * floors and different `vw` terms, so the numbers still came out larger than
+   * the title at 320 through 1000 — 46px against 35.8px at a 1000 viewport.
+   * Measured after: 28.7 / 30.4 / 32.3 / 43.5px against a title of 31.8 / 33.7 /
+   * 35.8 / 48.2 at 320 / 640 / 1000 / 1440.
+   */
+  font-size: clamp(1.4rem, 3.06vw, 1.85rem);
   font-weight: 650;
   line-height: 1;
   /* Floor is -0.04em; this is nowhere near it, and digits need less negative

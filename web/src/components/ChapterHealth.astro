@@ -422,10 +422,22 @@ const langOf = (s: string | null | undefined) =>
             ({n(f.rr_per_10_low, 2)}–{n(f.rr_per_10_high, 2)})
           </span>
         </dd>
+        {/*
+          The citation is text; the link is the DOI.
+          
+          The whole 253-character string used to be inside the anchor, including
+          its last sentence — 「This is the pooled estimate the WHO 2021 global
+          air quality guidelines cite…」 — which is this project's remark about
+          the paper and not part of the reference. Four underlined lines, and the
+          reader could not tell where the source stopped and the commentary
+          started. A citation's link is its identifier, so the identifier is what
+          carries it.
+        */}
         <dt class="erf-src">來源</dt>
         <dd class="erf-src small" lang={langOf(f.source)}>
-          <a href={f.source_url} target="_blank" rel="noopener">
-            {f.source}
+          {f.source}{" "}
+          <a class="url" href={f.source_url} target="_blank" rel="noopener">
+            {f.source_url.replace(/^https?:\/\//, "")}
           </a>
         </dd>
       </dl>
