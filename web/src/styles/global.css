@@ -385,16 +385,29 @@
    * shape that carries no information.
    */
   /*
-   * County borders on the station map.
+   * County borders on the station map, and the county under the pointer.
    *
    * Deliberately not `--line`. A gridline may whisper because the data beside
    * it carries the meaning, but a county border *is* the meaning — it is the
    * only thing saying where one county stops. Measured at --line it came out
    * 1.28:1 against the map fill in light and 1.74 in dark, which is a hairline
-   * a reader has to hunt for. WCAG puts meaningful non-text graphics at 3:1,
-   * and these are solved to exactly that.
+   * a reader has to hunt for. WCAG puts meaningful non-text graphics at 3:1.
+   *
+   * It used to be solved to exactly 3:1 and now it is solved to 3:1 against the
+   * HOVERED fill, which is the harder of the two: 3.79:1 on a resting county
+   * and 3.00 on a hovered one in light, 4.24 and 3.02 in dark. Exactly-3 left
+   * no headroom, and headroom is what a hover state needs — every county wears
+   * this border, including the one being pointed at.
+   *
+   * `--map-hover` is a fill and not a stroke on purpose. SVG paints in document
+   * order and neighbouring counties share a border, so a thicker or darker
+   * stroke on the hovered shape is drawn over by whichever neighbour comes
+   * later in the list; a fill has no such neighbour to lose to. It measures
+   * 1.26:1 against the resting fill in light and 1.41 in dark — small numbers,
+   * but this is a county-sized area and the alternative measured 1.01.
    */
-  --map-line: oklch(0.628 0.012 250);
+  --map-line: oklch(0.571 0.012 250);
+  --map-hover: oklch(0.868 0.016 250);
 
   /* The zebra stripe. A recess on light paper; see the rule that uses it. */
   --table-stripe: oklch(0.945 0.009 250);
@@ -435,12 +448,23 @@
    * a body of 1 — every step within 15% of its neighbour, which is why nothing
    * read as a level. `h3` at 1.15rem sat 1.4px above body text.
    */
-  /* The small end was both small and compressed. Measured at a 21px root:
-     `--text-xs` rendered 17.6px and `--text-sm` 19.5px, against a 21px body —
-     so the two "small" steps were 1.075x and 1.19x apart from body while the
-     steps above body are 1.2x and 1.44x. The scale had a flat bottom and a
-     committed top. Both smalls move up, and the gap between them widens. */
-  --text-xs: 0.9rem;
+  /*
+   * The small end. Two jobs, and they are not the same job, which is why they
+   * are two steps and not one.
+   *
+   * `--text-sm` sizes things a finger has to hit or a hand has to point at:
+   * the figure's two controls, the explorer's selects, the map's legend. It
+   * sits close under body deliberately — measured at 375 it renders 19.9px,
+   * and a control is the last place to save two pixels.
+   *
+   * `--text-xs` sizes apparatus: a caption, a tag, a badge. It was 0.9rem,
+   * which put the two smalls 1.067x apart — CLOSER together than the 0.84 and
+   * 0.93 they replaced (1.107x) — so the pass that widened the small end of
+   * the scale narrowed it, and the comment here claimed otherwise. At 0.84rem
+   * the gap is 1.143x and apparatus finally reads as apparatus: 19.7px against
+   * a 23.5px body at 1440, 17.2px against 20.5px at 320.
+   */
+  --text-xs: 0.84rem;
   --text-sm: 0.96rem;
   --text-base: 1rem;
   --text-lg: 1.2rem;
@@ -640,7 +664,8 @@
     --k6-ink: color-mix(in oklab, var(--k6) 66%, var(--ink-mix));
     --k7-ink: color-mix(in oklab, var(--k7) 44%, var(--ink-mix));
 
-    --map-line: oklch(0.536 0.012 250);
+    --map-line: oklch(0.565 0.012 250);
+    --map-hover: oklch(0.300 0.014 250);
 
     /* And a lift on dark paper — away from the page either way. */
     --table-stripe: oklch(0.262 0.009 250);
@@ -1087,12 +1112,27 @@ figure {
   margin: var(--space-4) 0;
 }
 
+/*
+ * A caption is apparatus, and it was set as prose.
+ *
+ * Measured at 1440 before this: 22.56px against a 23.5px body — a 4% step, in
+ * the same family, the same weight and the same justification, filling the same
+ * 983px the paragraphs fill. The only thing separating a caption from the text
+ * around it was `--text-muted`, and a reader coming off the bottom of a chart
+ * had no way to tell where the figure stopped explaining itself and the chapter
+ * started talking again.
+ *
+ * Three signals instead of one: a real step down the scale, its own narrower
+ * measure — 36 characters against the 42 prose gets — and the muted ink it
+ * already had. The measure is capped by `min()` rather than set, so on a phone
+ * the column still wins and the caption never sticks out of its own figure.
+ */
 figcaption {
-  font-size: var(--text-sm);
-  line-height: 1.6;
+  font-size: var(--text-xs);
+  line-height: 1.65;
   color: var(--text-muted);
   margin-top: var(--space-2);
-  max-width: var(--measure);
+  max-width: min(var(--measure), 36em);
 }
 
 /*
@@ -1648,23 +1688,43 @@ main {
   line-height: 1.5;
 }
 
+/*
+ * An item is one run of text with a mark set into it, not three boxes in a row.
+ *
+ * As a flex row the value was a SIBLING of the label, so a label that wrapped
+ * left its value behind on the first line. Measured on chapter 1 at 390, where
+ * the key row is 300px wide and 「固定樣本（68 站，2006–）」 needs two: the label
+ * ran to x 280 on its second line and its 13.3 sat at x 292 on the line above,
+ * 29px higher, beside the middle of a parenthetical it has nothing to do with.
+ * Baseline alignment is first-baseline alignment, and there is no value of it
+ * that puts a number after a phrase whose end has moved down a line. In normal
+ * flow the number follows the label's last character wherever that lands.
+ *
+ * The hanging indent is the other half. The swatch is 1.4em plus a 0.5em gap,
+ * so without it a wrapped line starts under the swatch and the item reads as
+ * two entries; with it the wrap starts under the label and it reads as one.
+ */
 .chart-key li {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.5em;
+  padding-left: 1.9em;
+  text-indent: -1.9em;
   font-size: var(--chart-label);
   color: var(--mark-ink, var(--text-muted));
 }
 
 .key-mark {
-  flex: none;
-  align-self: center;
+  display: inline-block;
+  /* Not `middle`: that centres on the x-height, and this line of text is mostly
+     CJK, whose glyph box sits higher. Measured against the label's own box, the
+     mark's centre was 2.52px low at `middle` and is 0.36px low here. */
+  vertical-align: 0.14em;
   width: 1.4em;
   height: 0.5em;
+  margin-right: 0.5em;
   overflow: visible;
 }
 
 .key-value {
+  margin-left: 0.5em;
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -1699,11 +1759,35 @@ details,
 .page > .table-wrap {
   --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
   --bleed: clamp(0px, calc(var(--room) - 1.5rem), 8rem);
-  width: calc(100% + 2 * var(--bleed));
+  max-width: calc(100% + 2 * var(--bleed));
   margin-inline: calc(-1 * var(--bleed));
 }
 
+/*
+ * The bleed is a ceiling, not a width — `max-width` above and `fit-content`
+ * here, so a table takes the room it needs and no more.
+ *
+ * Measured on chapter 5 at 1440: the three-column station table wants 339px and
+ * was drawn at 981. Its 「效應 μg/m³」 column was 460px wide to hold 「-1.96」,
+ * which is 2.9x the table's own content, and the reader's eye had to cross most
+ * of that to get from a station's name to its number. The wide table on the
+ * same page is unaffected: it wants 954 and still gets it.
+ *
+ * The negative margins stay, so the left edge does not move — a narrow table
+ * still starts exactly where the figures on the page start, and simply stops
+ * earlier. `min-width: 0` because a shrink-to-fit scroll container still has to
+ * be allowed to be narrower than the table inside it.
+ */
 .table-wrap {
+  width: fit-content;
+  /* Shrink-to-fit needs its own ceiling. Without this a wrap that is NOT a
+     direct child of `.page` — chapter 8 puts five of them inside `details` —
+     sized to its table and walked straight out of its parent: measured at 390,
+     five wraps between 475 and 647px wide inside a 327px column, clipped by an
+     ancestor rather than scrolling, which is the one failure mode a scroll
+     container exists to prevent. */
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);

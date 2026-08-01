@@ -447,8 +447,17 @@ const dots = main.map((s) => {
     stroke-linejoin: round;
     transition: fill 120ms cubic-bezier(0.22, 1, 0.36, 1);
   }
+  /*
+   * Each county carries a `<title>`, so pointing at one names it. The highlight
+   * is what says which shape is being named.
+   *
+   * It was `--tint-neutral`, which is the callout background — a token built to
+   * sit on `--bg`, used here on `--bg-sunken`. Measured against the fill it was
+   * actually painted over: 1.01:1 in light. The site was running a 120ms
+   * transition to a colour no reader could distinguish from the one it left.
+   */
   .county:hover {
-    fill: var(--tint-neutral);
+    fill: var(--map-hover);
   }
 
   .scale {
