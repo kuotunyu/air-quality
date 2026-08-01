@@ -73,6 +73,8 @@
       root: HTMLElement;
       slot: HTMLElement;
       plots: { el: HTMLElement; height: string }[];
+      /* Whoever opened it, so the keyboard has somewhere to come back to. */
+      opener: HTMLElement | null;
     } | null = null;
 
     function equip(root: HTMLElement, index: number) {
@@ -83,7 +85,7 @@
 
       const bigger = control("放大", name);
       bigger.dataset.figAct = "zoom";
-      bigger.addEventListener("click", () => open(root, name));
+      bigger.addEventListener("click", () => open(root, name, bigger));
 
       const png = control("下載 PNG", name);
       png.addEventListener("click", () => save(root, png, index));
@@ -138,7 +140,7 @@
      * Moving keeps every id unique and every listener attached, at the price of
      * a placeholder holding the gap in the page.
      */
-    function open(root: HTMLElement, name: string) {
+    function open(root: HTMLElement, name: string, opener: HTMLElement | null) {
       if (held) return;
       const slot = document.createElement("div");
       slot.className = "fig-parked";
@@ -147,7 +149,7 @@
       stage.replaceChildren(root);
       plate.textContent = name;
       dialog.showModal();
-      held = { root, slot, plots: grow(root) };
+      held = { root, slot, plots: grow(root), opener };
     }
 
     /*
@@ -206,13 +208,24 @@
      */
     function restore() {
       if (!held) return;
-      const { root, slot, plots } = held;
+      const { root, slot, plots, opener } = held;
       held = null;
       plots.forEach(({ el, height }) => {
         if (height) el.style.setProperty("--plot-h", height);
         else el.style.removeProperty("--plot-h");
       });
       slot.replaceWith(root);
+      /*
+       * Back to the button that opened it.
+       *
+       * A modal takes focus on `showModal`, and closing one hands it back only
+       * if something asks. Measured: after 放大 and then 關閉, `activeElement`
+       * was `<body>` — so a reader working by keyboard was returned to the top
+       * of the document, several chapters above the figure they had just been
+       * looking at. The button is inside `root`, which has only just been put
+       * back, so this has to happen after the `replaceWith` above.
+       */
+      opener?.focus();
     }
 
     shut.addEventListener("click", () => {
