@@ -13,7 +13,7 @@
  * the correlogram before any single number, the controls after both.
  */
 import spatial from "../../public/data/story/spatial-structure.json";
-import { n } from "../lib/chart";
+import { n, ticks } from "../lib/chart";
 
 const network = spatial.network as {
   stations: number;
@@ -89,14 +89,38 @@ const CONTROL_LABELS: Record<string, string> = {
 const pooled = controls.find((c) => c.control === "pooled");
 const literal = controls.find((c) => c.control === "within_zone_separate_fits");
 
-// The bar geometry: mean I spans a shared scale so the five controls are
-// comparable at a glance. Domain padded to the widest interval.
-const maxI = Math.max(...controls.map((c) => c.mean_i_hi)) * 1.12;
+/*
+ * Both figures are bar charts, so both need one scale and one zero.
+ *
+ * They had neither. `.corr-row` and `.ctrl-row` each declared their OWN
+ * `grid-template-columns: 7.5em minmax(0,1fr) auto`, and the third track is
+ * sized to that row's own value string — so the plot column was whatever width
+ * was left over after 「I = +0.348 ＊」 or 「0.157（55/96 月顯著）」. Measured at
+ * 1440: correlogram bands came out 657.2 / 657.2 / 686.2 / 657.2 / 692.0 /
+ * 679.8 / 663.6 / 663.6 px, with the zero midline landing at five different
+ * page positions. The rank inverted twice as a result — 20–30 km at |I| 0.206
+ * drew 176.5px while 30–50 km at |I| 0.2122 drew 174.2px, the larger magnitude
+ * shorter; and in the controls the 0.1403 estimate plotted 8.1px to the RIGHT
+ * of the 0.1405 one. The grid now lives on the figure and the rows are
+ * `display: contents`, so one set of tracks serves every row by construction.
+ *
+ * They also had no axis at all: a filled track with a dot on it and no tick
+ * anywhere, which is the shape of a progress bar, not of an estimate. Both now
+ * carry ticks and gridlines on their own scale.
+ */
+const CTRL_HEAD = 1.12;
+const maxI = Math.max(...controls.map((c) => c.mean_i_hi)) * CTRL_HEAD;
 const pct = (v: number) => (v / maxI) * 100;
+// Three intervals, not four: the plot column is the narrow one on this page and
+// four steps put 「0 0.05 0.1 0.15」 into a 120px band, where they touched.
+const ctrlTicks = ticks(0, maxI, 3).filter((t) => t >= 0 && t <= maxI);
 
-// Correlogram bars are signed; the axis midline splits the band.
+// Correlogram bars are signed, so its scale is symmetric about zero and the
+// midline of the shared band is that zero.
 const maxAbs = Math.max(...correlogram.map((b) => Math.abs(b.i))) * 1.15;
 const half = (v: number) => (Math.abs(v) / maxAbs) * 50;
+const corrTicks = ticks(-maxAbs, maxAbs, 4).filter((t) => t >= -maxAbs && t <= maxAbs);
+const corrX = (v: number) => ((v + maxAbs) / (2 * maxAbs)) * 100;
 
 const iidRow = inference.rows.find((r) => r.cov_type === "iid");
 const twoWayRow = inference.rows.find((r) => r.cov_type === "cluster_twoway");
@@ -149,20 +173,34 @@ const cellFor = (method: string, buffer: number) =>
 
   <figure>
     <div class="correlogram" role="img" aria-label="殘差 Moran's I 按站間距離分帶">
-      {correlogram.map((b) => (
+      {/* Rules and zero, once, spanning every row — so the reference a reader
+          measures against cannot be assembled out of eight separate pieces. */}
+      <span class="rules" aria-hidden="true" style={`grid-row:1/${correlogram.length + 1}`}>
+        {corrTicks.map((t) => (
+          <span class={t === 0 ? "rule zero" : "rule"} style={`left:${n(corrX(t), 3)}%`} />
+        ))}
+      </span>
+
+      {correlogram.map((b, i) => (
         <div class="corr-row">
-          <span class="corr-label">{n(b.lo_km, 0)}–{n(b.hi_km, 0)} km</span>
-          <span class="corr-band">
+          <span class="corr-label" style={`grid-row:${i + 1}`}>{n(b.lo_km, 0)}–{n(b.hi_km, 0)} km</span>
+          <span class="corr-band" style={`grid-row:${i + 1}`}>
             <span
               class={"corr-bar " + (b.i >= 0 ? "pos" : "neg") + (b.significant ? " sig" : "")}
               style={`--w:${n(half(b.i), 2)}%`}></span>
           </span>
-          <span class="corr-value">
+          <span class="corr-value" style={`grid-row:${i + 1}`}>
             I = {b.i >= 0 ? "+" : ""}{n(b.i, 3)}
             {b.significant && <strong>＊</strong>}
           </span>
         </div>
       ))}
+
+      <span class="axis" aria-hidden="true" style={`grid-row:${correlogram.length + 1}`}>
+        {corrTicks.map((t) => (
+          <span style={`left:${n(corrX(t), 3)}%`}>{t > 0 ? `+${n(t, 2)}` : n(t, 2)}</span>
+        ))}
+      </span>
     </div>
     <figcaption>
       站均殘差的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。10 公里內同號相聚
@@ -182,19 +220,33 @@ const cellFor = (method: string, buffer: number) =>
   </p>
 
   <figure>
-    <div class="controls-fig">
-      {controls.map((c) => (
+    <div class="controls-fig" role="img" aria-label="五種空間控制下的每月殘差 Moran's I 平均與 95% 區間">
+      <span class="rules" aria-hidden="true" style={`grid-row:1/${controls.length + 1}`}>
+        {ctrlTicks.map((t) => (
+          <span class={t === 0 ? "rule zero" : "rule"} style={`left:${n(pct(t), 3)}%`} />
+        ))}
+      </span>
+
+      {controls.map((c, i) => (
         <div class="ctrl-row">
-          <span class="ctrl-label">{CONTROL_LABELS[c.control] ?? c.control}</span>
-          <span class="ctrl-band">
+          <span class="ctrl-label" style={`grid-row:${i + 1}`}>{CONTROL_LABELS[c.control] ?? c.control}</span>
+          <span class="ctrl-band" style={`grid-row:${i + 1}`}>
             <span class="ctrl-ci" style={`--lo:${n(pct(c.mean_i_lo), 2)}%;--hi:${n(pct(c.mean_i_hi), 2)}%`}></span>
             <span class="ctrl-dot" style={`--at:${n(pct(c.mean_i), 2)}%`}></span>
           </span>
-          <span class="ctrl-value">
-            {n(c.mean_i, 3)}（{c.months_significant_bh}/{c.months_scored} 月顯著）
+          {/* The estimate on its own line and the month count under it. As one
+              string it made the value column 214px against a 172px plot — the
+              number describing the bar was wider than the bar. */}
+          <span class="ctrl-value" style={`grid-row:${i + 1}`}>
+            <b>{n(c.mean_i, 3)}</b>
+            <small>{c.months_significant_bh}/{c.months_scored} 月顯著</small>
           </span>
         </div>
       ))}
+
+      <span class="axis" aria-hidden="true" style={`grid-row:${controls.length + 1}`}>
+        {ctrlTicks.map((t) => <span style={`left:${n(pct(t), 3)}%`}>{n(t, 2)}</span>)}
+      </span>
     </div>
     <figcaption>
       每月殘差 Moran's I 的平均（點）與 95% 塊狀 bootstrap 區間（線）。
@@ -374,10 +426,28 @@ const cellFor = (method: string, buffer: number) =>
 </section>
 
 <style>
+  /*
+   * ONE grid for the whole figure, not one per row.
+   *
+   * The tracks used to be declared on `.corr-row` / `.ctrl-row`, so the `auto`
+   * value column was sized per row and the plot column was the leftovers — eight
+   * bars on eight different scales, above eight different zeros. See the note in
+   * the frontmatter for the measurements. Rows are `display: contents` so their
+   * three spans become items of this grid and share its tracks.
+   */
   .correlogram,
   .controls-fig {
+    position: relative;
     display: grid;
-    gap: 0.45rem;
+    /* The plot column carries a floor. Without one the two `content` columns
+       took what their longest string wanted and the drawing area was the
+       leftovers — measured, 172px of plot beside a 214px number. The floor is
+       small enough that a 390px screen can still honour it; a larger one turned
+       into horizontal overflow there rather than into a wider plot. */
+    grid-template-columns: 7.5em minmax(84px, 1fr) auto;
+    align-items: center;
+    column-gap: var(--space-2);
+    row-gap: 0.45rem;
     max-width: var(--measure);
     /* Centred like every other capped block, so these two figures sit under the
        prose they belong to rather than starting flush left of it. */
@@ -386,10 +456,75 @@ const cellFor = (method: string, buffer: number) =>
 
   .corr-row,
   .ctrl-row {
-    display: grid;
-    grid-template-columns: 7.5em minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2);
+    display: contents;
+  }
+
+  /*
+   * The scale, drawn once, behind every bar in the plot column — so the zero is
+   * a single unbroken line rather than eight fragments that only line up if
+   * every row happens to agree.
+   *
+   * `position: absolute` is load-bearing, not decoration. As an ordinary grid
+   * item spanning the plot column it OCCUPIED those cells, and auto-placement
+   * pushed every band one track to the right: the figure rendered as label, then
+   * the next row's value, then a label again. An absolutely positioned child of
+   * a grid container takes its grid area as its containing block and takes part
+   * in no placement at all, which is exactly the layer this needs to be.
+   * `bottom` clears the axis row underneath.
+   */
+  /*
+   * Placement is explicit on EVERY item in these two figures, and that is what
+   * lets this one exist.
+   *
+   * Auto-placed, a rules layer spanning the plot column occupies those cells and
+   * pushes each band one track right — the figure rendered as label, next row's
+   * value, label. Absolutely positioned, it escapes placement but also escapes
+   * track sizing: with `left`/`right` auto it shrink-to-fits to 0px, and pinning
+   * both edges resolved it to 397px against a 260px band. Explicitly placed
+   * items are ALLOWED to overlap, so every span now names its own row and this
+   * layer names all of them at once. It is first in the DOM, so the bars paint
+   * over it.
+   */
+  .rules {
+    grid-column: 2;
+    position: relative;
+    align-self: stretch;
+    pointer-events: none;
+  }
+  .rules .rule {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line-soft);
+  }
+  /* The one line that carries an argument: whether an estimate is on the other
+     side of it. `--rule` is the token solved for the 3:1 non-text threshold. */
+  .rules .rule.zero {
+    background: var(--rule);
+  }
+
+  .axis {
+    grid-column: 2;
+    position: relative;
+    height: 1.4em;
+    align-self: start;
+  }
+  .axis span {
+    position: absolute;
+    top: 0.1em;
+    transform: translateX(-50%);
+    font-size: var(--chart-micro);
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+  .axis span:first-child {
+    transform: none;
+  }
+  .axis span:last-child {
+    transform: translateX(-100%);
   }
 
   .corr-label,
@@ -404,29 +539,24 @@ const cellFor = (method: string, buffer: number) =>
     font-variant-numeric: normal;
   }
 
-  /* A signed band: the midline is zero, positive grows right, negative left.
-     Widths arrive as a custom property so the markup stays data-only. */
+  /*
+   * A signed band: the midline is zero, positive grows right, negative left.
+   * Widths arrive as a custom property so the markup stays data-only.
+   *
+   * No filled track. A full-width grey rectangle with a mark inside it is the
+   * shape of a progress bar, and both figures were read as UI controls rather
+   * than as estimates. The scale is carried by `.rules` behind the bars now,
+   * which is what a gridline is for.
+   */
   .corr-band {
     position: relative;
-    height: 14px;
-    background: var(--bg-sunken);
-    border-radius: 2px;
-  }
-
-  .corr-band::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: -2px;
-    bottom: -2px;
-    width: 1px;
-    background: var(--rule);
+    height: 15px;
   }
 
   .corr-bar {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
+    top: 1px;
+    bottom: 1px;
     width: var(--w);
     background: var(--line);
     border-radius: 1px;
@@ -440,12 +570,21 @@ const cellFor = (method: string, buffer: number) =>
     right: 50%;
   }
 
+  /*
+   * Sign is a diverging encoding, so it gets a diverging pair — not two members
+   * of the concentration ramp. `--c1` and `--c5` were doing this job, on a page
+   * that contains no concentrations at all: the site teaches in chapter 1 that
+   * hue is a μg/m³ bin, and then spent two of those bins on "positive" and
+   * "negative". `--sign-pos` / `--sign-neg` are the ramp's own two poles
+   * promoted to their own tokens, so the hue still belongs to this palette
+   * while naming something the ramp never claimed.
+   */
   .corr-bar.sig.pos {
-    background: var(--c1);
+    background: var(--sign-pos);
   }
 
   .corr-bar.sig.neg {
-    background: var(--c5);
+    background: var(--sign-neg);
   }
 
   .corr-value,
@@ -457,47 +596,89 @@ const cellFor = (method: string, buffer: number) =>
     white-space: nowrap;
   }
 
-  .ctrl-band {
-    position: relative;
-    height: 14px;
-    background: var(--bg-sunken);
-    border-radius: 2px;
+  .ctrl-value {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  .ctrl-value b {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .ctrl-value small {
+    font-size: var(--chart-micro);
+    color: var(--text-faint);
   }
 
+  .ctrl-band {
+    position: relative;
+    height: 16px;
+  }
+
+  /* The interval is the mark that carries the uncertainty, so it is drawn as a
+     rule with end caps rather than as a fill inside a track. */
   .ctrl-ci {
     position: absolute;
-    top: 6px;
-    bottom: 6px;
+    top: 7px;
+    height: 2px;
     left: var(--lo);
     width: calc(var(--hi) - var(--lo));
-    background: var(--line);
-    border-radius: 1px;
+    background: var(--text-faint);
+  }
+  .ctrl-ci::before,
+  .ctrl-ci::after {
+    content: "";
+    position: absolute;
+    top: -4px;
+    width: 1.5px;
+    height: 10px;
+    background: var(--text-faint);
+  }
+  .ctrl-ci::before {
+    left: 0;
+  }
+  .ctrl-ci::after {
+    right: 0;
   }
 
   .ctrl-dot {
     position: absolute;
     top: 3px;
-    width: 8px;
-    height: 8px;
-    left: calc(var(--at) - 4px);
+    width: 10px;
+    height: 10px;
+    left: calc(var(--at) - 5px);
     border-radius: 50%;
-    background: var(--c0);
+    background: var(--sign-pos);
+    /* A ring in the surface colour so the dot stays a dot where it sits on its
+       own interval line. */
+    box-shadow: 0 0 0 2px var(--bg);
   }
 
+  /*
+   * Narrow: the same three columns, smaller.
+   *
+   * The value used to drop onto its own row below the bar. That cannot work now
+   * that every span names its own `grid-row` — the value would either sit on top
+   * of its own bar or spill into an implicit fourth column, which is what it did:
+   * measured at 390px, 「I = +0.348 ＊」 rendered off the right edge of the
+   * document. Three narrow columns fit; a reflow does not.
+   */
   @media (max-width: 560px) {
-    .corr-row,
-    .ctrl-row {
-      grid-template-columns: 5.6em minmax(0, 1fr);
+    .correlogram,
+    .controls-fig {
+      grid-template-columns: 4.4em minmax(64px, 1fr) auto;
+      column-gap: var(--space-1);
     }
 
+    .corr-label,
+    .ctrl-label,
     .corr-value,
     .ctrl-value {
-      grid-column: 2;
-      justify-self: end;
+      font-size: var(--chart-micro, 16px);
     }
 
-    .ctrl-label {
-      font-size: var(--chart-micro, 16px);
+    .ctrl-value small {
+      font-size: 0.85em;
     }
   }
 </style>
