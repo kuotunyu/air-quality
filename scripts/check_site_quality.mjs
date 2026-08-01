@@ -201,17 +201,59 @@ const PROBE = `(() => {
   };
 
   const out = { nodes: 0, lowContrast: [], smallestFont: Infinity, smallestAnnotation: Infinity,
-    smallTargets: [] };
+    smallTargets: [], collisions: [] };
+
+  const MARKS = ".plot-x span, .plot-y span, .plot-keys span, .axis span";
 
   // The marks a reader has to read INSIDE a figure, as opposed to the caption
   // underneath it. This is the set the "not the smallest type" rule is about.
-  for (const el of document.querySelectorAll(".plot-x span, .plot-y span, .plot-keys span, .axis span")) {
+  for (const el of document.querySelectorAll(MARKS)) {
     const cs = getComputedStyle(el);
     if (cs.display === "none" || cs.visibility === "hidden") continue;
     const size = parseFloat(cs.fontSize);
     if (size < out.smallestAnnotation) out.smallestAnnotation = size;
   }
   if (out.smallestAnnotation === Infinity) out.smallestAnnotation = 0;
+
+  // Do two labels on the same axis strip land on top of each other?
+  //
+  // Everything else here is measured per node — a size, a contrast, a target.
+  // This is the one chart defect that only exists BETWEEN nodes, and it is the
+  // one that appears at some widths and not others: the marks are positioned in
+  // percentages and the figure is fluid, so a tick strip that reads cleanly at
+  // 1440 can pile up at 375 without any single number changing.
+  //
+  // Compared only within one strip. An x label and a y label sharing a pixel is
+  // the plot's bottom-left corner, which is where they are supposed to be.
+  for (const strip of document.querySelectorAll(".plot-x, .plot-y, .plot-keys, .axis")) {
+    const marks = [];
+    for (const el of strip.querySelectorAll("span")) {
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") continue;
+      const text = el.textContent.trim();
+      if (!text) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      marks.push({ text, r });
+    }
+    for (let i = 0; i < marks.length; i += 1) {
+      for (let j = i + 1; j < marks.length; j += 1) {
+        const a = marks[i].r;
+        const b = marks[j].r;
+        const dx = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const dy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        // A pixel of touching is kerning and antialiasing, not a collision.
+        if (dx > 1 && dy > 1) {
+          out.collisions.push({
+            strip: String(strip.className || "").slice(0, 20),
+            a: marks[i].text.slice(0, 14),
+            b: marks[j].text.slice(0, 14),
+            px: +Math.min(dx, dy).toFixed(1),
+          });
+        }
+      }
+    }
+  }
 
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let n;
@@ -311,10 +353,17 @@ async function main() {
     smallestAt375: Infinity,
     smallestAt1440: Infinity,
     annotationAt375: Infinity,
+    collisions: 0,
   };
 
+  // 768 is here for one defect only: two axis labels landing on each other.
+  // The marks are positioned in percentages inside a fluid figure, so a strip
+  // that reads cleanly at both ends can pile up in the middle — and the two
+  // endpoints are exactly where a check written from screenshots would look.
+  // It costs about fifteen seconds and covers the width nothing else does.
   for (const [width, height] of [
     [375, 800],
+    [768, 1024],
     [1440, 900],
   ]) {
     await send("Emulation.setDeviceMetricsOverride", {
@@ -337,8 +386,12 @@ async function main() {
           continue;
         }
         totals.nodes += r.nodes;
-        const key = width === 375 ? "smallestAt375" : "smallestAt1440";
-        totals[key] = Math.min(totals[key], r.smallestFont);
+        // Only the two endpoint widths feed the reported extremes; 768 would
+        // otherwise be folded into a figure labelled 1440.
+        if (width === 375 || width === 1440) {
+          const key = width === 375 ? "smallestAt375" : "smallestAt1440";
+          totals[key] = Math.min(totals[key], r.smallestFont);
+        }
         if (r.smallestAnnotation > 0) {
           if (width === 375) {
             totals.annotationAt375 = Math.min(totals.annotationAt375, r.smallestAnnotation);
@@ -374,6 +427,13 @@ async function main() {
               `(floor ${MIN_TARGET_PX})`,
           );
         }
+        for (const bad of r.collisions) {
+          totals.collisions += 1;
+          failures.push(
+            `${route} @${width} ${theme}: ${JSON.stringify(bad.a)} and ` +
+              `${JSON.stringify(bad.b)} overlap by ${bad.px}px in .${bad.strip}`,
+          );
+        }
       }
     }
   }
@@ -382,10 +442,11 @@ async function main() {
     failures.push(`smallest type at 375px is ${totals.smallestAt375}px (floor ${MIN_FONT_PX})`);
   }
 
-  console.log(`routes checked   : ${ROUTES.length} x 2 widths x 2 themes`);
+  console.log(`routes checked   : ${ROUTES.length} x 3 widths x 2 themes`);
   console.log(`text nodes       : ${totals.nodes.toLocaleString("en-US")}`);
   console.log(`smallest type    : ${totals.smallestAt375}px @375, ${totals.smallestAt1440}px @1440`);
   console.log(`smallest in-figure annotation @375 : ${totals.annotationAt375}px`);
+  console.log(`overlapping axis labels : ${totals.collisions}`);
   console.log(`APCA floor       : Lc ${MIN_LC}`);
   console.log(`problems         : ${failures.length}`);
   for (const line of failures.slice(0, 40)) console.log(`  FAIL: ${line}`);
