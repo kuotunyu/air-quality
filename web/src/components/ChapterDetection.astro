@@ -12,7 +12,7 @@
  * of its own placebos. Without that cloud, -0.96 µg/m³ looks like a finding.
  */
 import detection from "../../public/data/story/detection-limit.json";
-import { linear, n } from "../lib/chart";
+import { linear, n, ticks } from "../lib/chart";
 import { href } from "../lib/chapters";
 
 const events = detection.events as {
@@ -102,8 +102,32 @@ function strip(e: (typeof events)[number]) {
   );
   const tallest = Math.max(1, ...[...bins.values()].map((m) => m.length));
 
+  /*
+   * Round tick values across the frame.
+   *
+   * The axis printed three numbers — the two data extremes and 0 — with no tick
+   * marks and no round values between them. Measured at 1440 that is -11.4 at
+   * x = 471.6, 0 at 957 and 8.0 ending at 1295: nothing lets a reader locate the
+   * −0.96 the prose quotes, or see where the 2.5–3.5 μg/m³ noise floor it names
+   * actually falls. The domains are NOT touched — the two events genuinely have
+   * different ranges and forcing a shared frame would compress one of them —
+   * but each now carries a scale a reader can measure against.
+   */
   return {
     x,
+    marks: ticks(frameLo, frameHi, 4)
+      .filter((t) => t >= frameLo && t <= frameHi)
+      // A round tick that lands next to an extreme is printed twice over: the
+      // extreme is a measurement and the tick is scaffolding, so the tick goes.
+      // 14 points of the frame, because the last label is pulled fully inside
+      // the box and so reaches further left than its own position suggests.
+      .filter((t) => {
+        const at = ((t - frameLo) / (frameHi - frameLo)) * 100;
+        const ends = [Math.min(...values), Math.max(...values)].map(
+          (v) => ((v - frameLo) / (frameHi - frameLo)) * 100,
+        );
+        return ends.every((e) => Math.abs(at - e) > 14);
+      }),
     lo: frameLo,
     hi: frameHi,
     dataLo: Math.min(...values),
@@ -223,6 +247,14 @@ const shortName = (name: string) =>
                     coordinate is rounded to the last digit that can change a
                     pixel. 150 characters becomes 29.
                   */}
+                  {/* Gridlines first, so every mark on the strip sits on top of
+                      the scale rather than under it. */}
+                  <g class="strip-grid">
+                    {s.marks.map((t) => (
+                      <path d={`M${n(s.x(t), 2)} 0V100`} vector-effect="non-scaling-stroke" />
+                    ))}
+                  </g>
+
                   <g class="placebo-pool">
                     {s.pool.map((v) => <path d={`M${n(s.x(v), 2)} 2V30`} />)}
                   </g>
@@ -257,6 +289,14 @@ const shortName = (name: string) =>
                     on the left and none on the right, on a pair a reader
                     compares. Both ends say the same precision. */}
                 <span style={`left:${n(s.x(s.dataLo), 3)}%`}>{s.dataLo.toFixed(1)}</span>
+                {/* The round values between the ends, so a reader can place a
+                    number rather than only the extremes. Zero keeps its own
+                    span below — it is the reference, not a tick. */}
+                {s.marks
+                  .filter((t) => t !== 0)
+                  .map((t) => (
+                    <span class="strip-tick" style={`left:${n(s.x(t), 3)}%`}>{t}</span>
+                  ))}
                 <span style={`left:${n(zero, 3)}%`}>0</span>
                 <span style={`left:${n(s.x(s.dataHi), 3)}%`}>{s.dataHi.toFixed(1)}</span>
               </div>
@@ -402,6 +442,31 @@ const shortName = (name: string) =>
   .strip .plot-x {
     grid-area: 2 / 1;
   }
+  /* The scale, behind everything. `--line` and not `--line-soft`: these strips
+     have a card behind them, and the note on `.plot-grid` in global.css records
+     what 1.09:1 buys. */
+  .strip-grid path {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1;
+  }
+  /* An intermediate tick is scaffolding; the two ends and zero are the numbers
+     the caption quotes, so they keep the axis's own ink. */
+  .strip-tick {
+    color: var(--text-faint);
+    opacity: 0.75;
+  }
+
+  /* Below this the intermediate NUMBERS stop fitting — measured at a 320px
+     viewport, 「5」 and 「13.0」 touch on the second strip — but their gridlines
+     still stand, so the scale survives without the labels. The axis carries
+     `.keep`, so the shared thinning tiers do not reach it and it says so here. */
+  @container (max-width: 340px) {
+    .strip-tick {
+      display: none;
+    }
+  }
+
   .k-pl {
     color: var(--text-faint);
     font-weight: 600;

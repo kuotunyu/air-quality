@@ -195,7 +195,10 @@ const cellFor = (method: string, buffer: number) =>
       「0–10 km, I = +0.348 ＊」, which is the row. The `figcaption` names the
       figure, which is the job `aria-label` was doing badly.
     */}
-    <div class="correlogram">
+    <div
+      class="correlogram"
+      style={`grid-template-rows: repeat(${correlogram.length}, var(--row-h)) auto`}
+    >
       {/* Rules and zero, once, spanning every row — so the reference a reader
           measures against cannot be assembled out of eight separate pieces. */}
       <span class="rules" aria-hidden="true" style={`grid-row:1/${correlogram.length + 1}`}>
@@ -251,7 +254,10 @@ const cellFor = (method: string, buffer: number) =>
   </p>
 
   <figure>
-    <div class="controls-fig">
+    <div
+      class="controls-fig"
+      style={`grid-template-rows: repeat(${controls.length}, var(--row-h)) auto`}
+    >
       <span class="rules" aria-hidden="true" style={`grid-row:1/${controls.length + 1}`}>
         {ctrlTicks.map((t) => (
           <span class={t === 0 ? "rule zero" : "rule"} style={`left:${n(pct(t), 3)}%`} />
@@ -473,6 +479,31 @@ const cellFor = (method: string, buffer: number) =>
   .controls-fig {
     position: relative;
     display: grid;
+    /*
+     * One row height for every row, so the categorical axis has a rhythm.
+     *
+     * The rows were `auto`, so each one was as tall as whatever its label
+     * wrapped to. Measured on the forest plot at 1440, the five dot centres sat
+     * at y 1699 / 1775 / 1869 / 1976 / 2063 — gaps of 76, 94, 107 and 87px, a
+     * 41% spread, because row 2's label is one line and row 3's is three. A
+     * categorical axis whose spacing varies is telling the eye about the labels
+     * and not about the data, and the column of bold values beside it marches
+     * down at four different pitches.
+     *
+     * The axis row underneath stays `auto`: it is 32.9px at 1440 and 29.1px at
+     * 390, and a uniform track would stretch it to a data row's height for no
+     * reason. `grid-auto-rows` would have done exactly that, which is why the
+     * track list is explicit and sized from the row count.
+     *
+     * The floor is two lines of label plus its own leading. One line would leave
+     * the controls figure uneven — measured, its longest label
+     * 「今日分區截距（時代錯置對照）」 wraps to two in a 7.5em column while
+     * 「七區截距」 does not, and `auto` then let those rows grow past the others.
+     * Two lines is what this figure's labels actually need; a third only appears
+     * on a phone, where the rows are already reflowing.
+     */
+    --row-h: minmax(4.7rem, auto);
+
     /* The plot column carries a floor. Without one the two `content` columns
        took what their longest string wanted and the drawing area was the
        leftovers — measured, 172px of plot beside a 214px number. The floor is
