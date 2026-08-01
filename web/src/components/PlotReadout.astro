@@ -184,9 +184,11 @@
        * over the y-axis labels, which is where it was measured sitting.
        *
        * So the offset is computed: prefer the right of the crosshair, fall back
-       * to its left, and clamp inside the plot either way. A panel wider than
-       * its own plot ends up flush left, which is the least-bad answer and is
-       * still inside the figure.
+       * to its left, and clamp inside the plot either way. The clamp can be
+       * trusted now because the panel is capped at the plot's width in CSS; it
+       * used to say a too-wide panel "ends up flush left, which is still inside
+       * the figure", and measured at 320 that panel was 449px in a 231px plot
+       * and put 237px of horizontal scroll on the document.
        */
       const room = area.getBoundingClientRect().width;
       const wide = panel.getBoundingClientRect().width;
@@ -362,7 +364,18 @@
   .readout-panel {
     top: 0;
     z-index: 2;
-    min-width: max-content;
+    /*
+     * As wide as it needs and never wider than the plot.
+     *
+     * It was `min-width: max-content`, which is a floor with no ceiling, so on a
+     * phone the panel was bigger than the figure it belongs to and took the page
+     * with it: measured at a 320 viewport, a 449px panel inside a 231px plot,
+     * 273px past the plot's right edge, and 237px of horizontal scroll added to
+     * the whole document the moment a finger touched a chart. Three of the three
+     * chapter-1 figures did it, at every width up to 640.
+     */
+    width: max-content;
+    max-width: 100%;
     padding: 0.35rem 0.6rem;
     border: 1px solid var(--line);
     border-radius: calc(var(--radius) - 4px);
@@ -382,13 +395,20 @@
 
   .readout-row {
     display: grid;
-    grid-template-columns: 1.35em auto auto;
+    /* `1fr` and not `auto` on the name. The ceiling above is only a ceiling if
+       something inside is willing to give, and the name is the only thing that
+       can — but `minmax(0, auto)` lets it give EVERYTHING: measured at 320, it
+       collapsed toward its min-content and set 「固定樣本（68 站，2006–）」 over
+       eleven lines in a panel 534px tall inside a 326px plot. `1fr` hands the
+       name whatever is left after the swatch and the number instead. The value
+       keeps `nowrap` of its own — a number split across two lines is a
+       different number. */
+    grid-template-columns: 1.35em minmax(0, 1fr) auto;
     align-items: baseline;
     gap: 0 0.5em;
     margin: 0;
     font-size: var(--chart-label);
     color: var(--mark-ink);
-    white-space: nowrap;
     text-align: start;
   }
 
@@ -399,8 +419,32 @@
     overflow: visible;
   }
 
+  /*
+   * On a narrow plot the panel drops the series names and keeps the marks.
+   *
+   * The panel's containing block is `.plot-area`, which is the drawing box
+   * WITHOUT the y-axis gutter: 172px at a 320 viewport. Take the swatch, two
+   * gaps, the number and the panel's own padding out of that and the name is
+   * left with 43px — two characters — so 「固定樣本（68 站，2006–）」 set over
+   * eleven lines and the panel stood 534px tall inside a 326px plot.
+   *
+   * The names are already on the page, in the key row directly above the plot,
+   * in the same order and with the same marks; the panel's rows are built from
+   * the same array. So the swatch is not a hint here, it is an index. The live
+   * region a screen reader hears is untouched and still names every series.
+   */
+  @container (max-width: 420px) {
+    .readout-row {
+      grid-template-columns: 1.35em auto;
+    }
+    .readout-name {
+      display: none;
+    }
+  }
+
   .readout-value {
     justify-self: end;
+    white-space: nowrap;
     font-family: var(--font-numeric);
     font-variant-numeric: tabular-nums;
     font-weight: 600;
