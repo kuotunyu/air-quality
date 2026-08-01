@@ -228,7 +228,7 @@ const keyed = series.map((s) => {
 });
 ---
 
-<div class="chart">
+<div class:list={["chart", { crowded: series.length > 2 }]}>
   {/*
     The key row is a sibling of `.plot`, so it cannot read `.plot`'s container
     query — and it has to swap at the same width the pills do. `.chart` is the
@@ -505,13 +505,43 @@ const keyed = series.map((s) => {
     display: none;
   }
 
-  @container (max-width: 420px) {
+  /*
+   * 480 rather than 420, because the pill is a fixed 260px and the question is
+   * what fraction of the plot it covers. Measured by walking each series at 200
+   * points and testing them against the pill's box: at a 476px chart — a 540
+   * viewport, the first width the old threshold let pills through — 11 and 17
+   * points of a line were behind the label. At 535 and every width above it,
+   * zero. The threshold now sits between those two.
+   */
+  @container (max-width: 480px) {
     .plot-note {
       display: none;
     }
     .chart-key .key-guide {
       display: list-item;
     }
+  }
+
+  /*
+   * A plot with more than two lines has no empty band to put a label in, at any
+   * width, so it swaps whatever the container query says.
+   *
+   * Measured on chapter 1's eight-region figure by walking each series path at
+   * 200 points and testing them against the pill's box: 86 of 200 points of one
+   * line fell INSIDE 「台灣年均標準 15 → 12」 at 640, 82 at 1000 and 15 at 1440.
+   * The pill is opaque, so that is not an overlap — it is the pill drawn on top
+   * of half a series. The two single-line figures on the same page collide with
+   * nothing at any width and keep their pills.
+   *
+   * Two, not one, because the standard sits at 15 and one line can be read
+   * around; eight lines converging into the 8–17 band it names cannot.
+   */
+  .crowded .plot-note {
+    display: none;
+  }
+
+  .crowded .chart-key .key-guide {
+    display: list-item;
   }
 
   .swatch.dashed {

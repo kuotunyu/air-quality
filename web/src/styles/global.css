@@ -871,8 +871,52 @@ p,
 figcaption,
 dd,
 blockquote {
-  text-align: justify;
   line-break: strict;
+}
+
+/*
+ * Justified inside the reading column and nowhere else.
+ *
+ * It used to be unscoped, which put it on the footer's two `.mono` lines and on
+ * the rail's own label — text that is set by its layout rather than read in
+ * lines, and that no container query can reach because nothing outside `main`
+ * establishes one. Measured at 320: five blocks per page stayed justified after
+ * the floor below was added, and every one of them was outside `main`.
+ */
+main :is(p, .note, .aside, figcaption, dd, blockquote) {
+  text-align: justify;
+}
+
+/*
+ * ...but only while the column is wide enough for the argument above to hold.
+ *
+ * That argument is about CJK, and it is only true of a line that is ALL CJK.
+ * This site's prose is not: 「persistence」, 「LightGBM」, 「all-cause mortality」
+ * and 「repo」 are single unbreakable runs 5 to 12 characters wide, and when one
+ * of them will not fit, the line ends early and justification opens every gap on
+ * it to make up the difference.
+ *
+ * Measured across nine chapters, taking each justified block, re-reading its
+ * line boxes left-aligned, and comparing the shortest non-final line to the
+ * column — blocks stretched by more than 30%, out of about 150 per width:
+ *
+ *     320   49 blocks, worst 152%      768    1 block,  worst 36%
+ *     360   48 blocks, worst  93%      900    1 block,  worst 40%
+ *     390   27 blocks, worst  97%     1000    3 blocks, worst 49%
+ *     430   17 blocks, worst  65%     1200    0 blocks, worst 17%
+ *     540    5 blocks, worst 110%     1440    0 blocks, worst 16%
+ *     640    1 block,  worst  42%     1920    0 blocks, worst 18%
+ *
+ * The cliff is between 540 and 640. `main` measures 525 at a 540 viewport and
+ * 625 at 640, so the threshold is 560 — every phone left-aligned, every tablet
+ * and desktop justified. What is left above it is one to three paragraphs per
+ * width rather than a third of the page, which is the ordinary loose line that
+ * justified setting has always had.
+ */
+@container (max-width: 560px) {
+  main :is(p, .note, .aside, figcaption, dd, blockquote) {
+    text-align: left;
+  }
 }
 
 /*
