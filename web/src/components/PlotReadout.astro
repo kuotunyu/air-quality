@@ -52,6 +52,28 @@
     series: Series[];
   }
 
+  /*
+   * Every live readout, and one listener to put them away.
+   *
+   * A pointer that leaves fires `pointerleave`; a FINGER does not. Measured at
+   * 390px: tapping a chart opened the readout, lifting left it open, and tapping
+   * anywhere else on the page left it open too — so on a phone the first chart
+   * you touched kept a panel over it for the rest of the visit. One document
+   * listener closes any readout whose plot the new press is not inside. It is
+   * registered once rather than per chart, so ten plots cost one listener.
+   */
+  const openReadouts = new Map<HTMLElement, () => void>();
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      const target = event.target as Node | null;
+      for (const [plot, close] of openReadouts) {
+        if (!target || !plot.contains(target)) close();
+      }
+    },
+    { capture: true },
+  );
+
   const plots = Array.from(
     document.querySelectorAll<HTMLElement>(".plot[data-readout]"),
   );
@@ -260,12 +282,20 @@
       at = null;
       plot.dataset.reading = "false";
       say.textContent = "";
+      openReadouts.delete(plot);
     }
 
-    plot.addEventListener("pointermove", (event) => show(indexAt(event.clientX)));
+    plot.addEventListener("pointermove", (event) => {
+      show(indexAt(event.clientX));
+      openReadouts.set(plot, clear);
+    });
     plot.addEventListener("pointerleave", clear);
+    plot.addEventListener("pointercancel", clear);
     plot.addEventListener("blur", clear);
-    plot.addEventListener("focus", () => show(at ?? last));
+    plot.addEventListener("focus", () => {
+      show(at ?? last);
+      openReadouts.set(plot, clear);
+    });
 
     plot.addEventListener("keydown", (event) => {
       const step =
