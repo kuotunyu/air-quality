@@ -307,6 +307,8 @@ const cellFor = (method: string, buffer: number) =>
     </div>
     <figcaption>
       每月殘差 Moran's I 的平均（點）與 95% 塊狀 bootstrap 區間（線）。
+      <strong>刻度與上圖不同</strong>：上圖是 ±0.4 的距離分帶，這裡是 0 到 0.18
+      的五種控制，同一個統計量、兩張圖、兩個尺度，長度不能跨圖比。
       「顯著月數」為 BH 校正後計數。
     </figcaption>
   </figure>
@@ -680,11 +682,23 @@ const cellFor = (method: string, buffer: number) =>
     color: var(--text-faint);
     white-space: nowrap;
   }
-  .axis span:first-child {
-    transform: none;
-  }
-  .axis span:last-child {
-    transform: translateX(-100%);
+  /*
+   * The end labels stay centred on their own gridlines.
+   *
+   * They used to be pulled fully inside the band — `transform: none` on the
+   * first and `-100%` on the last — which is right for `.plot-x`, where a
+   * centred end label hangs off the figure. It is wrong here, because this
+   * figure has a value column to the right and a label column to the left, so
+   * an end label has somewhere to go. Measured at 1440: 「−0.4」 sat 20px right
+   * of the rule it names and 「+0.4」 20px left of its own, on a chart where
+   * horizontal position IS the value, while every interior label was exact.
+   *
+   * `overflow: visible` on the band is what lets the two ends reach out; there
+   * is a `column-gap` either side of them and nothing to collide with — checked
+   * against the value column at every width from 320 up.
+   */
+  .axis {
+    overflow: visible;
   }
 
   .corr-label,

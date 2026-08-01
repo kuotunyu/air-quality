@@ -872,6 +872,23 @@ h2 + h3 {
   margin-top: var(--space-3);
 }
 
+/*
+ * A heading belongs to the figure it names, not to the block above it.
+ *
+ * `figure` carries `margin-block: var(--space-4)`, which collapses with the
+ * heading's tighter `var(--space-3)` bottom margin and wins. Measured on
+ * chapter 7 at 1440: 「h2 → figure」 38px and 「p → h2」 38px, so a figure heading
+ * sat exactly halfway between the paragraph it follows and the figure it
+ * introduces, with nothing to say which one it belonged to. 「h2 → p」 is 24px,
+ * and a figure is no less the heading's own than a paragraph is.
+ */
+h2 + figure,
+h3 + figure,
+h2 + .table-wrap,
+h3 + .table-wrap {
+  margin-top: var(--space-3);
+}
+
 /* No chapter emits an `h4` any more — they all moved up a level. Kept for any
    markup that still reaches for one. */
 h4 {
