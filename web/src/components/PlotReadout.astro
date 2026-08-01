@@ -141,7 +141,7 @@
     plot.setAttribute("role", "group");
     plot.setAttribute(
       "aria-label",
-      `${data.series.map((s) => s.label).join("、")}。用左右方向鍵逐點讀值。`,
+      `${data.series.map((s) => s.label).join("、")}。用左右方向鍵逐點讀值，Home 與 End 跳到兩端。`,
     );
 
     let at: number | null = null;
@@ -300,6 +300,17 @@
     });
 
     plot.addEventListener("keydown", (event) => {
+      /*
+       * Home and End, because a series has ends and 28 presses is not a way to
+       * reach one. They are what every other list on a keyboard answers to, and
+       * this plot is a list: `show()` already clamps, so they are the same call
+       * with the two extremes.
+       */
+      if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        show(event.key === "Home" ? 0 : last);
+        return;
+      }
       const step =
         event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
       if (step === 0) {
