@@ -102,7 +102,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
         <div class="row">
           <p class="line">
             <span class="num big">{card.cigarettes_per_day}</span> 支菸／天
-            <span class="dim">—— 粗略等效換算</span>
+            <span class="dim">——粗略等效換算</span>
           </p>
           {
             card.rank != null && card.stations_ranked != null && (
@@ -113,7 +113,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
             )
           }
           <p class="line">
-            當年日均最高的一天 <span class="num big">{n(card.worst_day)}</span>
+            當年日均最高的一天 <span class="num big">{n(card.worst_day)}</span>{" "}
             <span class="dim">μg/m³</span>
           </p>
         </div>

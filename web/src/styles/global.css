@@ -1152,12 +1152,42 @@ section > :last-child > :last-child:last-child {
   }
 }
 
-@media (min-width: 40rem) {
-  .grid-3 {
-    grid-template-columns: repeat(3, 1fr);
-  }
+/*
+ * The same question for three and four up, and the same answer.
+ *
+ * These were `@media (min-width: 40rem)`, so both went to full width at a 640
+ * VIEWPORT — which is not the box they are in. Dividing each label's measured
+ * width by its font size, in CJK characters a line:
+ *
+ *                640    768    900   1000   1200   1440
+ *     grid-3      5.0    6.7    8.3    4.6    7.1   10.4
+ *     grid-4      5.3     —      —     5.0     —     9.3
+ *
+ * Five characters is not a column. And the columns are WORSE at 1000 than at
+ * 900 and worse at 1200 than at 900, because the rail turns on in between and
+ * takes its share — which is exactly why the threshold has to be asked of the
+ * room the cards have rather than of the window. `main` is already an
+ * inline-size container.
+ *
+ * Chapter 2's card goes to two before it goes to four, because four one-line
+ * stats stacked vertically on a phone is a long scroll for four numbers, and
+ * two up survives down to a 476px column at 226px each.
+ */
+@container (min-width: 500px) {
   .grid-4 {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 880px) {
+  .grid-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1050px) {
+  .grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -1186,6 +1216,18 @@ section > :last-child > :last-child:last-child {
   line-height: 1.05;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * `balance`, because these are short labels in narrow columns and the default
+ * greedy break strands single characters. Measured on chapter 2's station card
+ * at 1440, where each of the four columns is 145px: 「WHO 年均指引的倍數」 broke
+ * after 「倍」 and left 「數」 alone on the second line, and 「15 μg/m³ · 共 361
+ * 天有資料」 left 「資料」. Four stats, three orphans, one row.
+ */
+.stat-label,
+.stat-note {
+  text-wrap: balance;
 }
 
 .stat-label {
