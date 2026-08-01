@@ -421,6 +421,24 @@
   --map-line: oklch(0.571 0.012 250);
   --map-hover: oklch(0.868 0.016 250);
 
+  /*
+   * A gridline, and it is its own token because `--line` cannot serve both
+   * themes here.
+   *
+   * `--line` is a border colour, solved against the page. On a chart card it
+   * measured 1.31:1 in light and 1.78 in dark — the same declaration, a 36%
+   * difference in how traceable the grid is, and the light one is the default.
+   * A gridline exists so a reader can carry a value across to the axis, and at
+   * 1.31 that is a line you have to look for.
+   *
+   * Solved to sit between `--line` and the weakest thing it must not compete
+   * with. On a chart card: 1.76:1 in light and 1.78 in dark, against an axis at
+   * 3.00 and 3.73 and chapter 1's faintest series — the orange one — at 2.64 and
+   * 7.66. On the page, where chapter 3 draws with no card behind it: 1.90 and
+   * 1.66, against a rule at 3.25 and 3.46.
+   */
+  --plot-grid: oklch(0.770 0.010 250);
+
   /* The zebra stripe. A recess on light paper; see the rule that uses it. */
   --table-stripe: oklch(0.945 0.009 250);
 
@@ -678,6 +696,10 @@
 
     --map-line: oklch(0.565 0.012 250);
     --map-hover: oklch(0.300 0.014 250);
+
+    /* Dark was already where light needed to get to, so this is `--line`'s own
+       value written down where it can stop tracking a border colour. */
+    --plot-grid: oklch(0.362 0.010 250);
 
     /* And a lift on dark paper — away from the page either way. */
     --table-stripe: oklch(0.262 0.009 250);
@@ -1910,14 +1932,14 @@ main {
  * not content — but a reader converting a curve into a value is reading the
  * scaffolding, and at 1.09 it is not there to read.
  *
- * One step each, and the origin gets its own weight. `--line` measures 1.31 for
- * the grid; `--rule` is the token this site already solved to the 3:1 non-text
- * threshold, and the origin is the one line on a chart that carries an argument
- * — whether a series is above it or below it — so it gets that one and half a
- * pixel more.
+ * One step each, and the origin gets its own weight. `--plot-grid` is solved for
+ * the grid and measures 1.76:1 in light and 1.78 in dark; `--rule` is the token
+ * this site already solved to the 3:1 non-text threshold, and the origin is the
+ * one line on a chart that carries an argument — whether a series is above it or
+ * below it — so it gets that one and half a pixel more.
  */
 .plot-grid {
-  stroke: var(--line);
+  stroke: var(--plot-grid);
   stroke-width: 1;
 }
 
