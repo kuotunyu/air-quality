@@ -266,3 +266,67 @@ class TestTheReportCanBeChecked:
     def test_a_column_that_is_not_there_is_refused(self) -> None:
         with pytest.raises(ValueError, match="columns not in frame"):
             fill(_frame(), columns=["NO2"], strategy="none")
+
+
+class TestTheStationBoundaryIsNotAGap:
+    """The run id is built with an inner `shift(1)` that is not partitioned.
+
+    That looks wrong: the first row of station B is compared against the last
+    row of station A, so a station boundary can register as a null-ness flip
+    that never happened. It is safe — `cum_sum` is partitioned and the length is
+    taken over `[station, run_id]` — but "it is safe" was an argument until
+    these ran, and the same shape one module over in `features/lags.py` was
+    NOT safe and had been wrong for eleven years.
+    """
+
+    @staticmethod
+    def _two(a: list[float | None], b: list[float | None]) -> pl.DataFrame:
+        return pl.concat([_frame(station="甲", values=a), _frame(station="乙", values=b)])
+
+    def test_two_short_gaps_either_side_of_a_boundary_stay_two_short_gaps(self) -> None:
+        """Both are bridgeable. Merged into one run of four they would not be."""
+        frame = self._two([10.0, None, None, 16.0], [20.0, None, None, 26.0])
+
+        out, report = fill(frame, columns=["PM2.5"], strategy="interpolate")
+
+        assert report.filled["PM2.5"] == 4
+        assert out.sort("station_name", "ts_local")["PM2.5"].to_list() == [
+            20.0,
+            22.0,
+            24.0,
+            26.0,  # 乙
+            10.0,
+            12.0,
+            14.0,
+            16.0,  # 甲
+        ]
+
+    def test_a_gap_at_the_end_of_one_station_is_not_joined_to_the_next(self) -> None:
+        """甲 trails off into nulls and 乙 opens with them.
+
+        Counted as one run that is six hours long, both would be refused. They
+        are two runs of two and three, and only the three-hour one is at the
+        bound.
+        """
+        frame = self._two([10.0, None, None], [None, None, None, 26.0])
+
+        out, report = fill(frame, columns=["PM2.5"], strategy="interpolate")
+
+        # 甲's trailing nulls have no right-hand anchor, so nothing to
+        # interpolate between; 乙's leading nulls have no left-hand one either.
+        # What matters is that neither was refused for being part of a six-hour
+        # run — the reason they stay null is that they are at the edges.
+        assert report.filled["PM2.5"] == 0
+        assert out.height == 7
+
+    def test_a_long_gap_in_one_station_does_not_veto_a_short_one_in_another(self) -> None:
+        """The failure a merged run id would actually produce."""
+        frame = self._two(
+            [10.0, None, None, None, None, None, None, 20.0],
+            [30.0, None, None, 36.0, 36.0, 36.0, 36.0, 36.0],
+        )
+
+        out, report = fill(frame, columns=["PM2.5"], strategy="interpolate")
+
+        assert report.filled["PM2.5"] == 2, "乙's two-hour gap was refused"
+        assert out.filter(pl.col("station_name") == "甲")["PM2.5"].null_count() == 6

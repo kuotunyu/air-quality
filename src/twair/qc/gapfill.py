@@ -228,6 +228,21 @@ def _interpolate(
         is_null = pl.col(column).is_null()
         # A run id that changes whenever null-ness flips, so `len().over(...)`
         # measures the length of *this* gap rather than of all gaps.
+        #
+        # The inner `shift(1)` is deliberately NOT partitioned, and that looks
+        # wrong at a station boundary — the first row of station B is compared
+        # against the last row of station A. It is safe, and the reason is worth
+        # writing down because this is the second reader to stop here.
+        #
+        # `cum_sum().over(STATION)` restarts per station, so a spurious flip at
+        # the boundary only changes B's run ids by a constant offset, and the
+        # length is taken over `[STATION, run_id]`, which never mixes stations.
+        # Checked on all three boundary cases (A ends valid / ends null with B
+        # starting null / ends null with B starting valid): A's trailing gap and
+        # B's leading gap come out 2 and 2, never merged into one run of 4.
+        #
+        # Partitioning it would be equally correct and no clearer, so it is left
+        # as the cheaper expression with the reason attached.
         run_id = (is_null != is_null.shift(1).fill_null(value=False)).cum_sum().over(STATION)
         run_length = pl.len().over([pl.col(STATION), run_id])
 

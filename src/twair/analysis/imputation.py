@@ -146,6 +146,11 @@ def gap_runs(frame: pl.DataFrame, column: str = TARGET) -> pl.DataFrame:
     cells are 40% of many one-hour gaps or the first hours of a few outages.
     """
     is_null = pl.col(column).is_null()
+    # The inner `shift(1)` is not partitioned; see the note on the same
+    # expression in `twair.qc.gapfill`. It is safe because `cum_sum` is
+    # partitioned and the group-by below keys on `STATION` as well as the run
+    # id, so a boundary flip shifts B's ids by a constant and never merges A's
+    # trailing gap with B's leading one.
     run_id = (is_null != is_null.shift(1).fill_null(value=False)).cum_sum().over(STATION)
 
     return (
