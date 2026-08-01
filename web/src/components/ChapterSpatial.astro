@@ -665,15 +665,21 @@ const cellFor = (method: string, buffer: number) =>
   }
 
   .corr-label,
+  /*
+   * One rule, not two. This was written twice in a row, the first asking for
+   * `tabular-nums` and the second immediately setting it back to `normal`, so
+   * the first declaration never did anything. These labels are prose — 「合併式
+   * （原文推論所依據）」 — and have no figures to line up.
+   *
+   * `balance`, because the column is 176px at 1440 and every one of these names
+   * carries a parenthetical. Greedy breaking put 「論所依據）」 on the second line
+   * of one and 「照）」 alone on the third line of another.
+   */
   .ctrl-label {
     font-size: var(--text-sm);
     color: var(--text-muted);
     font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .ctrl-label {
-    font-variant-numeric: normal;
+    text-wrap: balance;
   }
 
   /*
