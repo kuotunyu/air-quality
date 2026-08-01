@@ -226,6 +226,29 @@ const opening = [
 }
 
 /*
+ * Reading order when the row stacks: map, then the three figures, then the
+ * boundary licence.
+ *
+ * DOM order is map-wrap, map-notes, hero-stats, because the map and its own
+ * source note come out of one component. Two columns place all three
+ * explicitly, so that order never shows — but in every stacked state it did,
+ * and the three headline numbers of the entry page landed underneath two
+ * paragraphs of 1:5000-scale licence text. The provenance note is the kind of
+ * thing a reader goes looking for; the figures are the kind of thing the page
+ * is for. `order` is ignored by the explicitly placed two-column state, so this
+ * only ever applies where it is needed.
+ */
+.hero-grid > :global(.map-wrap) {
+  order: 1;
+}
+.hero-grid > .hero-stats {
+  order: 2;
+}
+.hero-grid > :global(.map-notes) {
+  order: 3;
+}
+
+/*
  * The query container, and the only reason this element exists.
  *
  * `container-type` used to sit on `.hero-grid` itself while the `@container`

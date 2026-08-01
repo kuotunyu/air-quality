@@ -14,7 +14,7 @@
  * "Rarely windy from there" must not look like "clean when windy from there".
  */
 import sourcesData from "../../public/data/story/sources.json";
-import { compass, SIGNATURE } from "../lib/labels";
+import { bearingName, compass, SIGNATURE } from "../lib/labels";
 import { n } from "../lib/chart";
 import { groupByCountyNorthToSouth } from "../lib/data";
 
@@ -57,10 +57,19 @@ const SIZE = 420;
 const CX = SIZE / 2;
 const CY = SIZE / 2;
 const R_INNER = 34;
-const R_OUTER = 186;
+/*
+ * The disc gives up a little radius so its bearings have somewhere to stand.
+ *
+ * `R_OUTER` was 186 of a 420 box — 0.443 of the half-width — against labels
+ * centred at 0.455, so the ring's outer edge and the label's centre were 5px
+ * apart and half of every bearing was printed ON the outermost data ring. A
+ * compass rose needs a clear annulus; at 176 and 0.478 there is one, measured
+ * at about 15px of clearance at the largest size the disc is drawn.
+ */
+const R_OUTER = 176;
 // Where the compass labels sit, as a fraction of the box. They are HTML now,
 // positioned over the square rather than drawn inside it.
-const LABEL_R = 0.455;
+const LABEL_R = 0.478;
 
 const nSectors = data.sectors.length;
 const nRings = data.speed_bins.length;
@@ -191,7 +200,7 @@ const legend = BREAKS.map((b, i) => ({
                 class="bearing"
                 style={`left:${(50 + LABEL_R * 100 * Math.cos(a)).toFixed(2)}%;top:${(50 + LABEL_R * 100 * Math.sin(a)).toFixed(2)}%`}
               >
-                {s === 0 ? "北" : s === 90 ? "東" : s === 180 ? "南" : s === 270 ? "西" : s}
+                {bearingName(s)}
               </span>
             );
           })

@@ -209,7 +209,10 @@ const keyed = series.map((s) => {
       <ul class="chart-key">
         {keyed.map((s) => (
           <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
-            <span class={`key-mark${s.dash ? " dashed" : ""}`} />
+            <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour} stroke-width="2.5"
+                stroke-linecap="round" stroke-dasharray={s.dash} />
+            </svg>
             <span class="key-name">{s.label}</span>
             <span class="key-value">{s.last == null ? "—" : n(s.last, 1)}</span>
           </li>
@@ -379,63 +382,6 @@ const keyed = series.map((s) => {
     font-size: var(--chart-tick);
     color: var(--text-faint);
     white-space: nowrap;
-  }
-
-  /*
-   * The key row, above the plot.
-   *
-   * It is a row and not a block on purpose: a block has to be placed somewhere,
-   * and every place inside a plot is somewhere the data might be. A row has one
-   * degree of freedom and spends it on wrapping, which costs height the figure
-   * has and never costs the figure any drawing area. See the note in the
-   * frontmatter for the three positions this replaces.
-   */
-  .chart-key {
-    list-style: none;
-    margin: 0 0 var(--space-2);
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.15rem var(--space-3);
-    line-height: 1.5;
-  }
-
-  .chart-key li {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.5em;
-    font-size: var(--chart-label);
-    color: var(--mark-ink);
-  }
-
-  /*
-   * A line, not a square.
-   *
-   * Every series in this chart is drawn as a stroke, and some of those strokes
-   * are dashed — so a solid square cannot say which series it stands for. It
-   * failed exactly that way on the meteorological-normalisation figure, where
-   * the normalised series is dashed on the plot and had a solid block in the key
-   * beside it: the one distinction the key existed to make was the one thing it
-   * could not show. The mark is now the same mark as the line, at the same
-   * weight, with the same dash.
-   */
-  .key-mark {
-    flex: none;
-    align-self: center;
-    width: 1.35em;
-    height: 0;
-    border-top: 2.5px solid var(--mark);
-    border-radius: 2px;
-  }
-
-  .key-mark.dashed {
-    border-top-style: dashed;
-  }
-
-  .key-value {
-    font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
   }
 
   /*

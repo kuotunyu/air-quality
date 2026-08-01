@@ -146,9 +146,20 @@ const candidates = pollutantIndex.map((p) => ({
     <textarea id="sql" spellcheck="false" aria-label="SQL 查詢" rows="10">{EXAMPLES[0].sql}</textarea>
   </details>
 
-  <div id="result" class="result"></div>
+  {/*
+    The schema, above the answer and above the query box.
 
-  <p id="tables" class="small dim">按下執行之後，這裡會列出實際可以查的表。</p>
+    It was one justified run-on sentence in the faintest ink on the page, placed
+    UNDER the result — so the one reference a reader needs in order to write a
+    query was set as an afterthought to the query's output. A reader writing SQL
+    needs the table names before they write, not after they have already run
+    something; and a list of identifiers is a list, not a paragraph.
+  */}
+  <div id="tables" class="tables">
+    <p class="tables-hint">按下執行之後，這裡會列出實際可以查的表。</p>
+  </div>
+
+  <div id="result" class="result"></div>
 
   <div class="note caveat">
     <strong>查得到哪些測項，取決於這個站台放了哪些檔案。</strong>
@@ -249,14 +260,34 @@ const candidates = pollutantIndex.map((p) => ({
   }
 
   function showTables(available: Candidate[]) {
+    tablesEl.replaceChildren();
     if (available.length === 0) {
-      tablesEl.textContent = "沒有找到任何可查詢的資料檔。";
+      const none = document.createElement("p");
+      none.className = "tables-hint";
+      none.textContent = "沒有找到任何可查詢的資料檔。";
+      tablesEl.append(none);
       return;
     }
-    tablesEl.textContent =
-      `可以查的表（${available.length}）：` +
-      available.map((t) => `"${t.code}"（${t.name}）`).join("、") +
-      "，以及 daily。";
+
+    const head = document.createElement("p");
+    head.className = "tables-head";
+    head.textContent = `可以查的表（${available.length + 1}）`;
+
+    const list = document.createElement("ul");
+    list.className = "tables-list";
+    // `daily` is not a measurement file, it is the stacked view of all of them,
+    // so it is named last and named as itself rather than folded into the
+    // sentence the way it used to be.
+    for (const t of available.concat([{ code: "daily", name: "全部測項疊成長表" } as Candidate])) {
+      const item = document.createElement("li");
+      const code = document.createElement("code");
+      code.textContent = t.code;
+      const name = document.createElement("span");
+      name.textContent = t.name;
+      item.append(code, name);
+      list.append(item);
+    }
+    tablesEl.append(head, list);
   }
 
   runButton.addEventListener("click", async () => {
@@ -724,6 +755,37 @@ const candidates = pollutantIndex.map((p) => ({
   }
   .result {
     margin-top: 1.2rem;
+  }
+
+  .tables {
+    margin-top: 1.2rem;
+  }
+  .tables-hint,
+  .tables-head {
+    margin: 0 0 0.4rem;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    /* A schema is a list of names. Justifying it stretches the gaps between
+       identifiers, which is the one thing a reader is scanning by. */
+    text-align: start;
+  }
+  .tables-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+  }
+  .tables-list li {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4em;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .tables-list code {
+    font-size: 0.95em;
   }
 
   /*

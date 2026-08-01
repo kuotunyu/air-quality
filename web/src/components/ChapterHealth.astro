@@ -18,7 +18,7 @@
  * and that term would dominate the error while reading as the solid part.
  */
 import health from "../../public/data/story/health.json";
-import { labelGutter, linear, markInk, n, spreadLabels, ticks, yGutter } from "../lib/chart";
+import { linear, markInk, n, ticks, yGutter } from "../lib/chart";
 
 const series = health.series as {
   name: string;
@@ -67,10 +67,6 @@ const notReported = health.not_reported as { deaths: string; exposure: string };
 const years = health.years as number[];
 const spreadShare = health.spread_share as number[];
 
-// Percent of the plot box; the marks stretch with it, the HTML labels do not.
-const PLOT_H = 310;
-const PLOT_H2 = 200;
-
 const allPaf = series.flatMap((s) => s.paf);
 const yPaf = linear([0, Math.max(...allPaf) * 1.1], [100, 0]);
 const xYear = linear([Math.min(...years), Math.max(...years)], [0, 100]);
@@ -109,11 +105,6 @@ const COLOURS = ["var(--c6)", "var(--c4)", "var(--c2)", "var(--c0)"];
 // diverge. So the distinction is carried a second time, in a channel that
 // survives losing hue entirely — including in greyscale and in print.
 const DASHES = [undefined, "7 4", "2 3", "10 3 2 3"];
-
-const labelY = spreadLabels(
-  series.map((s) => yPaf(s.paf[s.paf.length - 1])),
-  (26 / PLOT_H) * 100,
-);
 
 const path = (values: number[], xs: number[]) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(xYear(xs[i]), 2)} ${n(yPaf(v), 2)}`).join(" ");
@@ -154,9 +145,31 @@ const fn = functions[0];
 
   <figure>
     <div class="chart">
+      {/*
+        The four counterfactuals, named above the plot rather than at the ends
+        of their own lines.
+
+        The end labels were a right-hand gutter sized by `labelGutter` to the
+        longest of them, 「5 μg/m³（WHO 2021）」 — measured, `--key-w` resolved to
+        266px, so on a 1000px viewport the names of the four lines took more
+        width than the four lines did. Above the plot the same four names cost
+        one wrapped row and no drawing area, and the dash each one is drawn with
+        travels with it.
+      */}
+      <ul class="chart-key">
+        {series.map((s, i) => (
+          <li style={`--mark:${COLOURS[i % COLOURS.length]};--mark-ink:${markInk(COLOURS[i % COLOURS.length])}`}>
+            <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+              <line x1="1" y1="4" x2="21" y2="4" stroke={COLOURS[i % COLOURS.length]}
+                stroke-width="2.5" stroke-linecap="round" stroke-dasharray={DASHES[i % DASHES.length]} />
+            </svg>
+            <span>{s.label}</span>
+          </li>
+        ))}
+      </ul>
       <div
         class="plot"
-        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(series.map((s) => s.label))}px;--y-w:${yGutter(pafTicks.map((t) => `${n(t * 100, 0)}%`))}px`}
+        style={`--plot-ar:44;--plot-min:250px;--plot-max:420px;--y-w:${yGutter(pafTicks.map((t) => `${n(t * 100, 0)}%`))}px`}
       >
         <div class="plot-y">
           {pafTicks.map((t) => <span style={`top:${n(yPaf(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
@@ -189,16 +202,6 @@ const fn = functions[0];
               ))
             }
           </svg>
-        </div>
-
-        <div class="plot-keys">
-          {
-            series.map((s, i) => (
-              <span style={`top:${n(labelY[i], 3)}%;--mark:${COLOURS[i % COLOURS.length]};--mark-ink:${markInk(COLOURS[i % COLOURS.length])}`}>
-                {s.label}
-              </span>
-            ))
-          }
         </div>
 
         <div class="plot-x" data-n={yearTicks.length}>
@@ -246,7 +249,7 @@ const fn = functions[0];
 
   <figure>
     <div class="chart">
-      <div class="plot" style={`--plot-h:${PLOT_H2}px;--y-w:${yGutter(shareTicks.map((t) => `${n(t * 100, 0)}%`))}px`}>
+      <div class="plot" style={`--plot-ar:38;--plot-min:230px;--plot-max:360px;--y-w:${yGutter(shareTicks.map((t) => `${n(t * 100, 0)}%`))}px`}>
         <div class="plot-y">
           {shareTicks.map((t) => <span style={`top:${n(yShare(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
         </div>

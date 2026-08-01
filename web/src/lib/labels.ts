@@ -49,6 +49,19 @@ export function compass(degrees: number): string {
   return label ? `${degrees}° ${label}` : `${degrees}°`;
 }
 
+/**
+ * Just the name, for a compass rose that has no room for the degrees too.
+ *
+ * Chapter 4's disc spelled its bearings three ways at once: a name for the four
+ * cardinals, a bare number for the other eight, and 「330° 北北西」 in the
+ * tooltip and the readout beside it. The prose argues in names — 「最高的 330°
+ * 北北西」, 「最低的在南方」 — so the disc says names and everything that has
+ * room for both still says both.
+ */
+export function bearingName(degrees: number): string {
+  return COMPASS[degrees] ?? `${degrees}°`;
+}
+
 /** Whether a synthetic normality sample was drawn from a normal distribution. */
 export const SYNTHETIC_DATA: Record<string, string> = {
   truly_normal: "真的是常態",

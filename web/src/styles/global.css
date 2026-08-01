@@ -1515,6 +1515,53 @@ main {
   stroke-linecap: round;
 }
 
+/*
+ * ---------- the key row ----------
+ *
+ * Above the plot, in one line, wrapping. It is a row and not a block because a
+ * block has to be placed somewhere and every place inside a plot is somewhere
+ * the data might be; a row has one degree of freedom and spends it on wrapping,
+ * which costs height the figure has and never costs the figure drawing area.
+ *
+ * The mark is a real `<svg>` line carrying the series' own `stroke-dasharray`,
+ * not a CSS border. `border-top-style: dashed` has two settings and this site
+ * ships four dash patterns — chapter 7 tells four counterfactuals apart by dash
+ * precisely so the distinction survives losing hue, and a key that cannot draw
+ * the dash cannot carry that. An SVG line takes the same attribute the path
+ * takes, so the swatch and the line cannot disagree.
+ */
+.chart-key {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem var(--space-3);
+  line-height: 1.5;
+}
+
+.chart-key li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font-size: var(--chart-label);
+  color: var(--mark-ink, var(--text-muted));
+}
+
+.key-mark {
+  flex: none;
+  align-self: center;
+  width: 1.4em;
+  height: 0.5em;
+  overflow: visible;
+}
+
+.key-value {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* ---------- tables ---------- */
 
 .table-wrap {

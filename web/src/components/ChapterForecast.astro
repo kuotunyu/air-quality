@@ -14,7 +14,7 @@
  */
 import forecast from "../../public/data/story/forecast.json";
 import { sarimaEvidence } from "../lib/data";
-import { labelGutter, linear, markInk, n, spreadLabels, ticks, yGutter } from "../lib/chart";
+import { linear, markInk, n, ticks, yGutter } from "../lib/chart";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -51,9 +51,18 @@ const baselines = forecast.baselines as {
 // Percent of the plot box, not pixels: the box has no width until the browser
 // lays it out. Labels are HTML over the same box, so they never inherit the
 // stretch that the marks do.
-const PLOT_H = 300;
 const xAt = (index: number) =>
   horizons.length === 1 ? 50 : (index / (horizons.length - 1)) * 100;
+
+/*
+ * Where one split sits inside its horizon's cloud, in percent of plot width.
+ *
+ * Half the band each side of the tick, so the cloud stays centred on the
+ * horizon it belongs to and never reads as a different x.
+ */
+const FOLD_BAND = 3.2;
+const spreadAt = (k: number, count: number) =>
+  count > 1 ? (k / (count - 1) - 0.5) * FOLD_BAND : 0;
 
 const path = (values: number[], y: (v: number) => number) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(xAt(i), 2)} ${n(y(v), 2)}`).join(" ");
@@ -137,22 +146,11 @@ const DASH: Record<string, string | undefined> = {
   sc: "2 3",
 };
 
-const KEY_GAP = (26 / PLOT_H) * 100;
-const rmseLabelY = spreadLabels(
-  rmseSeries.map((s) => yRmse(s.values[s.values.length - 1])),
-  KEY_GAP,
-);
-const metricLabelY = spreadLabels(
-  metricSeries.map((s) => yMetric(s.values[s.values.length - 1])),
-  KEY_GAP,
-);
-
 // --- D10: the model the 2018 project set aside ---------------------------
 // Its own panel, its own scale, and deliberately not sharing an axis with the
 // two above: these are six stations at 72-hour origins, not the 74-station rows
 // the model figures come from. See `sarimaEvidence.not_comparable`.
 const sar = sarimaEvidence;
-const SAR_H = 300;
 const sarX = (index: number) =>
   sar.horizons.length === 1 ? 50 : (index / (sar.horizons.length - 1)) * 100;
 
@@ -182,11 +180,6 @@ const ySar = linear([0, Math.max(...sarAll) * 1.12], [100, 0]);
 const sarTicks = ticks(0, Math.max(...sarAll) * 1.12, 4);
 const sarPath = (values: number[]) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(sarX(i), 2)} ${n(ySar(v), 2)}`).join(" ");
-const sarLabelY = spreadLabels(
-  sarSeries.map((s) => ySar(s.values[s.values.length - 1])),
-  (26 / SAR_H) * 100,
-);
-
 // The one-hour row is the finding, so it is named rather than left to the eye.
 const sarOneHour = sar.horizons.find((h) => h.horizon === 1);
 const sarWins = sar.horizons.filter((h) => h.margin > 0);
@@ -219,9 +212,27 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
   <figure>
     <div class="chart">
+      {/*
+        Named above the plot rather than at the ends of the lines. The gutter was
+        sized by `labelGutter` to 「vs climatology」 and took up to 23% of the
+        plot while standing about 85% empty — and the plot it took the width
+        from is a four-category axis, so the x labels thinned to 「1h」 and
+        「48h」 and the two horizons in between went unnamed.
+      */}
+      <ul class="chart-key">
+        {rmseSeries.map((s) => (
+          <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
+            <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour} stroke-width="2.5"
+                stroke-linecap="round" stroke-dasharray={DASH[s.key]} />
+            </svg>
+            <span>{s.label}</span>
+          </li>
+        ))}
+      </ul>
       <div
         class="plot"
-        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(rmseSeries.map((s) => s.label))}px;--y-w:${yGutter(rmseTicks.map((t) => n(t, 0)))}px`}
+        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(rmseTicks.map((t) => n(t, 0)))}px`}
       >
         <div class="plot-y">
           {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{n(t, 0)}</span>)}
@@ -268,14 +279,6 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-keys">
-          {
-            rmseSeries.map((s, si) => (
-              <span style={`top:${n(rmseLabelY[si], 3)}%;--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>{s.label}</span>
-            ))
-          }
-        </div>
-
         <div class="plot-x" data-n={horizons.length}>
           {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
@@ -306,9 +309,27 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
   <figure>
     <div class="chart">
+      {/*
+        Named above the plot rather than at the ends of the lines. The gutter was
+        sized by `labelGutter` to 「vs climatology」 and took up to 23% of the
+        plot while standing about 85% empty — and the plot it took the width
+        from is a four-category axis, so the x labels thinned to 「1h」 and
+        「48h」 and the two horizons in between went unnamed.
+      */}
+      <ul class="chart-key">
+        {metricSeries.map((s) => (
+          <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
+            <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour} stroke-width="2.5"
+                stroke-linecap="round" stroke-dasharray={DASH[s.key]} />
+            </svg>
+            <span>{s.label}</span>
+          </li>
+        ))}
+      </ul>
       <div
         class="plot"
-        style={`--plot-h:${PLOT_H}px;--key-w:${labelGutter(metricSeries.map((s) => s.label))}px;--y-w:${yGutter(metricTicks.map((t) => n(t, 1)))}px`}
+        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(metricTicks.map((t) => n(t, 1)))}px`}
       >
         <div class="plot-y">
           {metricTicks.map((t) => <span style={`top:${n(yMetric(t), 3)}%`}>{n(t, 1)}</span>)}
@@ -342,12 +363,25 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           </svg>
 
           {
+            /*
+             * The per-split values, spread instead of stacked.
+             *
+             * Every split was drawn at exactly its horizon's x, so four marks
+             * 5px across sat on one point and composited into a single blob —
+             * and this cloud is the chapter's headline caveat, the thing that
+             * says the four folds do not agree. Spreading them across a band
+             * narrower than the gap between horizons keeps x meaning the
+             * horizon while letting four marks be four marks. The order is the
+             * split's own, so the same fold lands in the same place in every
+             * series and the build is deterministic.
+             */
             metricSeries.map((s) =>
               s.splits.map((values, i) =>
-                values.map((v) => (
+                values.map((v, k) => (
                   <span
-                    class="plot-pt faint"
-                    style={`left:${n(xAt(i), 3)}%;top:${n(yMetric(v), 3)}%;color:${s.colour}`}
+                    class="plot-pt fold"
+                    style={`left:${n(xAt(i) + spreadAt(k, values.length), 3)}%;top:${n(yMetric(v), 3)}%;color:${s.colour}`}
+                    title={`${s.label} @ ${horizons[i].horizon}h・分割 ${k + 1}：${n(v, 3)}`}
                   />
                 )),
               ),
@@ -363,14 +397,6 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
                 />
               )),
             )
-          }
-        </div>
-
-        <div class="plot-keys">
-          {
-            metricSeries.map((s, si) => (
-              <span style={`top:${n(metricLabelY[si], 3)}%;--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>{s.label}</span>
-            ))
           }
         </div>
 
@@ -530,9 +556,27 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 
   <figure>
     <div class="chart">
+      {/*
+        Named above the plot rather than at the ends of the lines. The gutter was
+        sized by `labelGutter` to 「vs climatology」 and took up to 23% of the
+        plot while standing about 85% empty — and the plot it took the width
+        from is a four-category axis, so the x labels thinned to 「1h」 and
+        「48h」 and the two horizons in between went unnamed.
+      */}
+      <ul class="chart-key">
+        {sarSeries.map((s) => (
+          <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
+            <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour} stroke-width="2.5"
+                stroke-linecap="round" stroke-dasharray={DASH[s.key]} />
+            </svg>
+            <span>{s.label}</span>
+          </li>
+        ))}
+      </ul>
       <div
         class="plot"
-        style={`--plot-h:${SAR_H}px;--key-w:${labelGutter(sarSeries.map((s) => s.label))}px;--y-w:${yGutter(sarTicks.map((t) => n(t, 0)))}px`}
+        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(sarTicks.map((t) => n(t, 0)))}px`}
       >
         <div class="plot-y">
           {sarTicks.map((t) => <span style={`top:${n(ySar(t), 3)}%`}>{n(t, 0)}</span>)}
@@ -576,14 +620,6 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
                 />
               )),
             )
-          }
-        </div>
-
-        <div class="plot-keys">
-          {
-            sarSeries.map((s, si) => (
-              <span style={`top:${n(sarLabelY[si], 3)}%;--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>{s.label}</span>
-            ))
           }
         </div>
 
@@ -646,6 +682,20 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
 </section>
 
 <style>
+  /*
+   * A split's own value. It was `.plot-pt.faint` — 5px at 50% opacity, the
+   * faintest ink in a figure whose caveat it carries. Now it is the series'
+   * own colour at a weight that reads as secondary rather than as absent, with
+   * a ring of the card so overlapping folds still count as two.
+   */
+  .plot-pt.fold {
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    opacity: 0.72;
+    box-shadow: 0 0 0 1.25px var(--bg-sunken);
+  }
+
   .dim {
     color: var(--text-faint);
     font-weight: 400;
