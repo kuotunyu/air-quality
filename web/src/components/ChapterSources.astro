@@ -202,6 +202,23 @@ const legend = BREAKS.map((b, i) => ({
           <span class="hub-value" id="cbpf-calm">{(start.calm_fraction * 100).toFixed(1)}%</span>
         </span>
         </div>
+
+        {/*
+          The radial axis, which the figure did not have.
+
+          Twelve bearing labels ringed the disc and NOTHING said what the six
+          rings were, so half the encoding — the half the surrounding prose
+          argues from, since 「近處的污染源只有在風弱時才顯現」 is a statement
+          about radius — was unreadable. Ring boundaries are 25px apart at the
+          largest this disc gets, which is narrower than the type, so the scale
+          is laid out straight instead of curved: same six steps, same order,
+          centre on the left.
+        */}
+        <ol class="radial-scale" aria-label="半徑：風速 m/s">
+          <li class="radial-hub">圓心</li>
+          {data.speed_bins.map((b) => <li>{b.replace("-", "–")}</li>)}
+        </ol>
+        <p class="radial-unit">半徑＝風速（m/s）</p>
       </div>
 
       <div class="readout">
@@ -399,9 +416,32 @@ const legend = BREAKS.map((b, i) => ({
     gap: 1.5rem;
     align-items: center;
   }
-  @media (min-width: 52rem) {
+  /*
+   * Two columns only when there is genuinely room for two.
+   *
+   * The breakpoint and the track were denominated in different units and neither
+   * of them meant what it said. `@media (min-width: 52rem)` resolves against the
+   * initial 16px, so it fired at a 832px VIEWPORT — but the reading column is
+   * much narrower than the viewport (the chapter rail takes a fixed share), and
+   * `minmax(260px, 26rem)` is a plain length, so its `26rem` resolved against
+   * this site's fluid root font size and came out 601px, not the 416px it was
+   * written as. The disc therefore claimed up to 601px of a column that did not
+   * have it, `1fr` collapsed, and `min-width: 0` let the readout column's own
+   * contents hang outside the document: measured at a 1000px viewport,
+   * scrollWidth 1044 against clientWidth 985, with the CBPF legend cut off.
+   *
+   * Both are px now, and the query is on the container rather than the viewport,
+   * because the container is the thing that has to hold two columns.
+   */
+  /* The query subject is the figure, not `.plot-row`: an element cannot answer
+     its own container query. Astro scopes this, so no other figure is a
+     container because of it. */
+  figure {
+    container-type: inline-size;
+  }
+  @container (min-width: 660px) {
     .plot-row {
-      grid-template-columns: minmax(260px, 26rem) 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
     }
   }
   .plot-row > * {
@@ -417,17 +457,52 @@ const legend = BREAKS.map((b, i) => ({
    * square, which is what keeps them at 15px whether the box is 260px or 480px
    * across. Nothing here scrolls at any width.
    */
+  /* 440px, not `26rem`: a plain length resolves `rem` against this site's fluid
+     root, so the cap was 601px on a desktop — a disc bigger than the column it
+     was given, which is half of why the readout beside it had nowhere to go. */
   .polar-box {
     position: relative;
     aspect-ratio: 1;
     width: 100%;
-    max-width: 26rem;
+    max-width: 440px;
     margin-inline: auto;
   }
   .polar-box > svg {
     display: block;
     width: 100%;
     height: 100%;
+  }
+
+  /* The rings, unrolled. Ticks between the steps rather than boxes around them,
+     so it reads as one axis and not as six chips. */
+  .radial-scale {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.15rem 0;
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    font-size: var(--chart-micro);
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+  }
+  .radial-scale li + li::before {
+    content: "›";
+    margin: 0 0.4em;
+    color: var(--text-faint);
+  }
+  .radial-hub {
+    color: var(--text-faint);
+    font-family: var(--font-sans);
+  }
+  .radial-unit {
+    margin: 0.25rem 0 0;
+    text-align: center;
+    font-size: var(--chart-micro);
+    color: var(--text-faint);
   }
   .bearing,
   .hub-text {

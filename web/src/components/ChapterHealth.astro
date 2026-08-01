@@ -305,18 +305,27 @@ const fn = functions[0];
 
   <h2>採用的暴露反應函數</h2>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>結果變數</th>
-          <th class="num">每 10 μg/m³ 的相對風險</th>
-          <th class="wrap">來源</th>
-        </tr>
-      </thead>
-      <tbody>
-        {
-          functions.map((f) => (
+  {/*
+    A table when there is something to compare, a definition block when there is
+    not. This ships ONE function, and as a table that single row measured
+    826 x 735px inside a 584px column: two cells holding 27 and 16 characters set
+    `nowrap`, beside a 253-character citation folded into a 238px column 669px
+    tall — and the whole thing scrolling sideways because the two short columns
+    would not yield. A row of one is a definition, and a definition can use the
+    full measure for its longest part instead of a third of it.
+  */}
+  {functions.length > 1 ? (
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>結果變數</th>
+            <th class="num">每 10 μg/m³ 的相對風險</th>
+            <th class="wrap">來源</th>
+          </tr>
+        </thead>
+        <tbody>
+          {functions.map((f) => (
             <tr>
               <td>{f.outcome}</td>
               <td class="num">
@@ -332,11 +341,32 @@ const fn = functions[0];
                 </a>
               </td>
             </tr>
-          ))
-        }
-      </tbody>
-    </table>
-  </div>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    functions.map((f) => (
+      <dl class="erf">
+        <dt>結果變數</dt>
+        <dd>{f.outcome}</dd>
+        <dt>每 10 μg/m³ 的相對風險</dt>
+        <dd class="erf-rr">
+          {n(f.rr_per_10, 3)}
+          <span class="dim">
+            {" "}
+            ({n(f.rr_per_10_low, 2)}–{n(f.rr_per_10_high, 2)})
+          </span>
+        </dd>
+        <dt>來源</dt>
+        <dd class="small">
+          <a href={f.source_url} target="_blank" rel="noopener">
+            {f.source}
+          </a>
+        </dd>
+      </dl>
+    ))
+  )}
 
   <p class="small">{fn.caveat}</p>
 
@@ -364,6 +394,43 @@ const fn = functions[0];
 </section>
 
 <style>
+  /* The exposure–response function, set as the definition it is. Two columns
+     while the label fits beside its value; one below that, where a 12-character
+     Chinese label and a citation cannot share a line. */
+  .erf {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 0.35rem var(--space-3);
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-sunken);
+    max-width: var(--measure);
+  }
+  .erf dt {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .erf dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .erf-rr {
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  @media (max-width: 30rem) {
+    .erf {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.1rem;
+    }
+    .erf dd + dt {
+      margin-top: var(--space-2);
+    }
+  }
+
   .dim {
     color: var(--text-faint);
     font-weight: 400;

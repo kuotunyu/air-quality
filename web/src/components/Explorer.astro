@@ -750,10 +750,16 @@ const candidates = pollutantIndex.map((p) => ({
      * Generous, because the box was doing the opposite of using the space: a
      * 29-row result showed 10 rows in a 546px window and hid 19 behind a
      * scrollbar, on a page that scrolls perfectly well by itself. The cap exists
-     * only so a 500-row answer cannot bury the notes underneath it, and at
-     * 85vh that is the only case it still catches.
+     * only so a 500-row answer cannot bury the notes underneath it.
+     *
+     * 85vh was still not generous enough — it is a fraction of the WINDOW, and
+     * the window is the one measurement that has nothing to do with how many
+     * rows were asked for. At 1000x1100 it clipped at 935px, which is about 23
+     * rows, so every one of the shipped example queries that returns more than
+     * that opened inside a scroller on a page that scrolls. The cap is now an
+     * absolute height that only a runaway answer can reach.
      */
-    max-height: min(85vh, 64rem);
+    max-height: min(220vh, 2200px);
     overflow: auto;
   }
 
@@ -774,7 +780,8 @@ const candidates = pollutantIndex.map((p) => ({
     align-items: start;
     width: fit-content;
     max-width: 100%;
-    max-height: min(85vh, 64rem);
+    /* Same cap and same reason as `.table-wrap` above. */
+    max-height: min(220vh, 2200px);
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: var(--radius);

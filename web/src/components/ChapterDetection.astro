@@ -38,10 +38,24 @@ const spatial = detection.spatial_check as {
 const windowed = events.filter((e) => e.kind === "window");
 const breaks = events.filter((e) => e.kind === "trend_break");
 
-// One strip per event: placebos as faint marks, the real estimates on top.
-// A strip, in percent of its own box. Short enough that the y axis is a set of
-// fixed lanes rather than a scale.
-const STRIP_H = 74;
+/*
+ * One strip per event: placebos as a faint rug, the real estimates stacked
+ * under it.
+ *
+ * The real estimates used to be 73 dots on ONE line at `top: 70%`. 73 marks 7px
+ * across need 511px of axis and the strip is nowhere near that wide, so they
+ * overlapped into a single unbroken bar — the caption said 「73 個亮點」 and the
+ * figure showed one. A row of coincident dots cannot show a distribution, which
+ * is the only thing this figure is for.
+ *
+ * So they are binned and stacked: a Wilkinson dot plot. Each column is one bin,
+ * each dot in it one station, and the height of the column IS the count. The
+ * placebo cloud keeps its own encoding — overlapping hairlines at low alpha,
+ * where the compositing is the density — because it has 1,295 members and
+ * stacking those would be a histogram of a different figure.
+ */
+const DOT = 7;
+const BINS = 56;
 
 function strip(e: (typeof events)[number]) {
   const pool = e.placebo_effects.length ? e.placebo_effects : [];
@@ -60,7 +74,44 @@ function strip(e: (typeof events)[number]) {
    * number on this site is a measurement; a frame edge is not one, and it does
    * not get to be printed as though it were.
    */
-  return { x, lo: lo - pad, hi: hi + pad, dataLo: Math.min(...values), dataHi: Math.max(...values), pool };
+  /*
+   * Bin the real estimates so coincident stations stack instead of overlapping.
+   * The bin is a fixed slice of the FRAME, so a dot's column position is still
+   * its value and two stations in the same column are within one bin of each
+   * other. Sorted inside the bin so the stack is deterministic between builds.
+   */
+  const frameLo = lo - pad;
+  const frameHi = hi + pad;
+  const width = (frameHi - frameLo) / BINS;
+  const bins = new Map<number, { station: string; effect: number }[]>();
+  for (const st of [...e.station_effects].sort((a, b) => a.effect - b.effect)) {
+    const k = Math.min(BINS - 1, Math.floor((st.effect - frameLo) / width));
+    const got = bins.get(k);
+    if (got) got.push(st);
+    else bins.set(k, [st]);
+  }
+  const stacked = [...bins.entries()].flatMap(([k, members]) =>
+    members.map((st, row) => ({
+      ...st,
+      // The bin's centre, not the station's own value: a stacked dot plot says
+      // "this many are about here", and letting each dot keep its exact x would
+      // make a column that leans.
+      at: x(frameLo + (k + 0.5) * width),
+      row,
+    })),
+  );
+  const tallest = Math.max(1, ...[...bins.values()].map((m) => m.length));
+
+  return {
+    x,
+    lo: frameLo,
+    hi: frameHi,
+    dataLo: Math.min(...values),
+    dataHi: Math.max(...values),
+    pool,
+    stacked,
+    tallest,
+  };
 }
 
 const shortName = (name: string) =>
@@ -144,10 +195,13 @@ const shortName = (name: string) =>
       return (
         <figure>
           <div class="chart">
-            <div class="plot strip" style={`--plot-h:${STRIP_H}px`}>
+            <div
+              class="plot strip"
+              style={`--plot-h:${Math.max(96, 46 + s.tallest * DOT)}px`}
+            >
               <div class="plot-area">
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <line x1={zero} x2={zero} y1="0" y2="88" class="zero" vector-effect="non-scaling-stroke" />
+                  <line x1={zero} x2={zero} y1="0" y2="100" class="zero" vector-effect="non-scaling-stroke" />
                   {/*
                     One `<path>` per placebo estimate, and the reason it is not
                     ONE path for all of them is the encoding.
@@ -171,13 +225,13 @@ const shortName = (name: string) =>
                     pixel. 150 characters becomes 29.
                   */}
                   <g class="placebo-pool">
-                    {s.pool.map((v) => <path d={`M${n(s.x(v), 2)} 8V52`} />)}
+                    {s.pool.map((v) => <path d={`M${n(s.x(v), 2)} 2V30`} />)}
                   </g>
                 </svg>
-                {e.station_effects.map((st) => (
+                {s.stacked.map((st) => (
                   <span
                     class="plot-pt real"
-                    style={`left:${n(s.x(st.effect), 3)}%;top:70%`}
+                    style={`left:${n(st.at, 3)}%;top:calc(100% - ${st.row * DOT + 5}px)`}
                     title={`${st.station}: ${n(st.effect, 2)} μg/m³`}
                   />
                 ))}
@@ -315,10 +369,12 @@ const shortName = (name: string) =>
     opacity: 0.28;
     vector-effect: non-scaling-stroke;
   }
-  /* The real estimates are HTML dots now, so this is a colour, not a fill. */
+  /* The real estimates are HTML dots now, so this is a colour, not a fill.
+     Full opacity and a surface ring, because they are stacked: a translucent
+     dot on top of another one reads as a third value. */
   .plot-pt.real {
     color: var(--c3-ink);
-    opacity: 0.8;
+    box-shadow: 0 0 0 1.5px var(--bg-sunken);
   }
   /* A strip has no y scale, so it has no y gutter and no key column. */
   .strip {
