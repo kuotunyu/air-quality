@@ -18,6 +18,12 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          # Full history, because `check_web_export.py` verifies that the sha
+          # the data export stamped is a commit this repository actually has.
+          # The default depth-1 clone holds only the tip, so an export stamped
+          # one commit earlier — which is every export — reads as missing.
+          fetch-depth: 0
 
       - name: Install Astral uv
         uses: astral-sh/setup-uv@v5

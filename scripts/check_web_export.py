@@ -107,6 +107,15 @@ def main() -> int:
     # and every consumer — the site's footer link, `twair status` — points at
     # nothing.
     #
+    # ...but only where "here" contains the history to answer with. The first
+    # version of this check failed CI within minutes of landing, and it was
+    # right to: `actions/checkout@v4` clones at depth 1, so the only commit that
+    # exists in that tree is the tip, and an export stamped one commit earlier
+    # is reported missing. `fetch-depth: 0` is set in the workflow so the check
+    # can actually run there — and the shallow case is still handled, because a
+    # fork, a `--depth` clone or a worktree should get "cannot tell" rather than
+    # a false accusation. A check that cries wolf on a clone type gets muted.
+    #
     # Second, that `git_dirty` is present and reported out loud. It is NOT a
     # failure: the export necessarily runs before the commit that contains its
     # own output, so an honest export is dirty almost every time. What was
@@ -115,8 +124,17 @@ def main() -> int:
     # footer and `twair status` presented that as provenance.
     sha = manifest.get("git_sha")
     dirty = manifest.get("git_dirty")
+    shallow = (
+        subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        == "true"
+    )
     sha_unknown = False
-    if isinstance(sha, str) and sha:
+    if isinstance(sha, str) and sha and not shallow:
         sha_unknown = (
             subprocess.run(
                 ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
@@ -135,6 +153,8 @@ def main() -> int:
         + (
             f"{sha}  FAIL: no such commit in this repository"
             if sha_unknown
+            else f"{sha}  (shallow clone; cannot check it resolves)"
+            if sha and shallow
             else f"{sha}  resolves"
             if sha
             else "missing  FAIL: the export recorded no commit"
