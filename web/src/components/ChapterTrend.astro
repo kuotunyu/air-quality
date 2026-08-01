@@ -79,8 +79,16 @@ const dwCrossing = dw.series.find((row, i) => i > 0 && row.observed < row.normal
  *      fixed the identification and broke everything else: the same area cut
  *      into eight, every plot 82px tall, and the colours no better than they
  *      had been. Cutting up a chart that is too small does not make it bigger.
- *   6. One chart again, and each LINE carries its own name and value at its own
- *      end. See the note on `airzoneSeries` below.
+ *   6. One chart again, and each LINE carrying its own name and value at its own
+ *      end. Right about the chart and wrong about the place: these eight lines
+ *      CONVERGE, so the end is where they are least separated, and the names
+ *      arrived there as a stack.
+ *   7. The names in one row ABOVE the plot, in the zones' own order at the last
+ *      year, and the chart itself taller. See the note on `airzoneSeries` below.
+ *      A row above cannot cover data at any width, which is the property every
+ *      one of 1–6 lacked; and since 2026-08-01 the chart can also be asked, by
+ *      pointer or keyboard, for all eight values at any year at once, which is
+ *      the thing none of the six attempts could do at all.
  */
 /*
  * What the zones actually did, for the sentence that describes them.
