@@ -10,7 +10,7 @@
 
 把氣象條件正規化之後量出來的——61 個測站、同一批資料、兩條線。
 用另一種完全不同的聚合方式（逐站斜率比值的中位數）再問一次，答案是 42.2%。
-[看那張圖 →](https://kuotunyu.github.io/air-quality/#trend)
+[看那張圖 →](https://kuotunyu.github.io/air-quality/trend/)
 
 [English](README.en.md) ·
 [互動網站](https://kuotunyu.github.io/air-quality/) ·
@@ -55,11 +55,11 @@
 另外有**兩項我原先列為缺陷、卻被全量資料否證**的說法，一樣照實記錄——見
 [PROGRESS.md](PROGRESS.md)。
 
-## 四項產出
+## 五項產出
 
 | | 內容 |
 |---|---|
-| 📦 **開源資料集** | 1982–今 全測站逐時空品觀測 + 氣象，含原始品質旗標，發布於 HuggingFace |
+| 📦 **開源資料集** | 1982–今 全測站逐時空品觀測 + 氣象，含原始品質旗標。**尚未上架**——L0／L1 兩層可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載 |
 | 📊 **可重現研究** | 從復刻 2018 年結果開始，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、污染來源方位、事件偵測極限、方法學對照 |
 | 🔮 **預測 demo** | [HuggingFace Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
@@ -146,7 +146,8 @@ CI 沒有那 3.40 億列資料庫的複本，所以**更新網站的資料是本
 ## 授權
 
 - 程式碼：[MIT](LICENSE)
-- 資料衍生物：[CC BY 4.0](LICENSE-DATA)，原始資料出處為中華民國環境部與交通部中央氣象署
+- 資料衍生物：[CC BY 4.0](LICENSE-DATA)，原始資料出處為中華民國環境部
+  （地圖的縣市界線來自內政部國土測繪中心，依政府資料開放授權條款第 1 版）
 
 ## 引用
 

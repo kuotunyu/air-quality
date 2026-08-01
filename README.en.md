@@ -3,7 +3,7 @@
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
 
 > Every hourly observation, at every station, from 1982 to the present:
-> 341 million measurements, quality-flagged rather than quietly repaired,
+> 340 million measurements, quality-flagged rather than quietly repaired,
 > with an open pipeline and an interactive site on top.
 
 ### Taiwan's PM2.5 fell 60% between 2008 and 2025. About 43% of that was the weather, not emissions.
@@ -114,13 +114,14 @@ flowchart TD
 
 ---
 
-## Four Main Deliverables
+## Five Main Deliverables
 
 | | Description |
 |---|---|
-| 📦 **Open-Source Dataset** | 1982–Present hourly air quality observations + meteorology across Taiwan, packaged with original flags and hosted on HuggingFace. |
+| 📦 **Open-Source Dataset** | 1982–Present hourly air quality observations + meteorology across Taiwan, packaged with original flags. **Not yet uploaded** — the L0 and L1 layers download directly from [chapter 10](https://kuotunyu.github.io/air-quality/data/). |
 | 📊 **Reproducible Science** | Step-by-step replication of the 2018 method, followed by rigorous corrections and quantitative comparisons. |
 | 🌐 **Interactive Dashboard** | Scroll-driven charts showing trends, individualized exposure reports, wind-vector fingerprinting, policy effects, and methodology comparisons. |
+| 🔮 **Forecast Demo** | [HuggingFace Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
 | 🔧 **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
 ---
@@ -213,7 +214,7 @@ npm run dev    # Dashboard launches on http://localhost:4321
 ## Licensing
 
 - **Software Source Code**: [MIT License](LICENSE)
-- **Data Derivatives**: [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE-DATA). Source attribution belongs to the Ministry of Environment (Taiwan) and the Central Weather Administration (CWA).
+- **Data Derivatives**: [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE-DATA). Source attribution belongs to the Ministry of Environment (Taiwan). County boundaries come from the National Land Surveying and Mapping Center under the Open Government Data License v1.0.
 
 ---
 

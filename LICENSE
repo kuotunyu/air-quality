@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-THIRD-PARTY DATA VENDORED IN THIS REPOSITORY
---------------------------------------------
-
-The MIT grant above covers this project's own source code. It does not and
-cannot cover third-party data committed alongside it:
-
-  * web/src/lib/taiwan.ts — county boundary coordinates derived from 內政部
-    國土測繪中心 open data, used under the Open Government Data License,
-    Taiwan, version 1.0. See LICENSE-DATA.

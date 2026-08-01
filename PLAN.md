@@ -104,7 +104,7 @@ taiwan-air-quality/
 ├─ PLAN.md                      # 本計畫（Phase 0 從此檔複製進來）
 ├─ LICENSE (MIT) / LICENSE-DATA (CC BY 4.0)
 ├─ pyproject.toml / uv.lock
-├─ justfile                     # just ingest / just qc / just analyze / just web
+├─ (justfile — 計畫過，沒有做；`twair` CLI 取代了它，見下方 quick start)
 ├─ conf/
 │  ├─ sources.yaml              # 所有資料源的 URL、dataset id、參數
 │  ├─ stations.yaml             # 測站白名單、別名對照（改名/搬遷歷史）
@@ -219,7 +219,7 @@ taiwan-air-quality/
 6. `docs/legal.md`：記錄每個來源的授權條款、robots.txt 檢查結果、rate limit 策略
 
 **驗收**
-- [ ] `just setup` 一鍵可跑
+- [x] ~~`just setup` 一鍵可跑~~ → `uv sync --all-extras --group dev`（沒有 justfile）
 - [ ] `data/raw/_samples/` 下每個資料源都有真實樣本檔
 - [ ] `docs/data-sources.md` 記錄了**實際觀察到**的欄位而非文件宣稱的
 - [ ] `conf/sources.yaml` 的每個 id / URL 都經過驗證
@@ -303,7 +303,7 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 - 打 tag `v1.0.0`，Dataset Card 標註對應的 repo commit
 
 **驗收**
-- [ ] `just ingest && just qc` 端到端可跑完，產出 Parquet
+- [x] ~~`just ingest && just qc` 端到端可跑完，產出 Parquet~~ → `uv run twair ingest airtw` + `uv run twair build`
 - [ ] 逐時筆數與環境部官方公告的測站數 × 時數大致相符（誤差 <1%，差異須有解釋）
 - [ ] `docs/data-quality.md` 完整
 - [ ] HF dataset 頁面可用 `datasets.load_dataset()` 載入
@@ -593,25 +593,31 @@ Gradio 介面：選測站 → 顯示最近觀測 + 未來 72h 預測（含預測
 
 ## 驗證方式（端到端）
 
+這一段原本寫成 `just …`。**沒有 justfile**——它在計畫裡，實作時由 `twair` CLI
+取代了，所以下面是真的可以貼進終端機的版本。
+
 ```bash
 # 環境
-just setup && just test && just lint
+uv sync --all-extras --group dev
+uv run pytest && uv run ruff check .
 
 # 資料管線（首次會跑很久，用 --years 2024:2025 先試小範圍）
-just ingest && just qc && just build-tables
+uv run twair ingest airtw && uv run twair build && uv run twair aggregate
 duckdb -c "SELECT count(*) FROM 'data/processed/observations/**/*.parquet'"
 
 # 分析
-just analyze M1   # 復刻，比對 reports/_expected/replication_2018.csv
-just analyze M2   # 逐時重做
-just analyze all
+uv run twair analyze m1   # 復刻，比對 reports/_expected/replication_2018.yaml
+python scripts/run_m2.py  # 逐時重做（M2 沒有 CLI 子指令，見 status.py 的說明）
+uv run twair analyze all
 
 # 網站
-just export-web && just web        # http://localhost:4321
-just build-web                     # 產出 docs/
+uv run twair export web            # 產出 web/public/data/
+npm --prefix web run dev           # http://localhost:4321
+npm --prefix web run build         # 產出 web/dist/，由 .github/workflows/pages.yml 部署
 
-# 發布（需 token）
-just publish-hf && just publish-space
+# 發布
+# 沒有指令。Space 由 spaces/forecast/ 手動推到 HuggingFace，dataset 尚未上架。
+# 見 docs/legal.md。
 ```
 
 **關鍵驗收檢查點**
