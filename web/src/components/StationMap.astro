@@ -154,6 +154,24 @@ const DOT_PX = 9;
 const dotRadius = ((DOT_PX / 2) + 1.5) * unitsPerPx;
 const stationPoints = main.map((st) => project(st.lon as number, st.lat as number));
 
+/*
+ * Which year the dots are.
+ *
+ * The map had no caption and never said. Every dot is that station's most
+ * recent year complete enough to compare, which is 2025 for most of them and
+ * earlier for a station that stopped reporting — so the honest label is the
+ * range, not a single year, and it is derived rather than written down.
+ */
+const shownYearValues = [...new Set(
+  cards.map((c) => c.year).filter((y): y is number => y != null),
+)].sort((a, b) => a - b);
+const shownYears =
+  shownYearValues.length === 0
+    ? null
+    : shownYearValues.length === 1
+      ? `${shownYearValues[0]} 年`
+      : `${shownYearValues[0]}–${shownYearValues[shownYearValues.length - 1]} 年，各站最近一個完整年`;
+
 const labelled: { name: string; x: number; y: number }[] = [];
 const boxes: [number, number, number, number][] = [];
 const order = [...counties].sort((a, b) => b.area - a.area);
@@ -281,7 +299,10 @@ const dots = main.map((s) => {
     goes beside the scale it belongs to instead of pretending to be a bin.
   */}
   <div class="scale">
-    <p class="scale-title">PM2.5 年均 μg/m³</p>
+    <p class="scale-title">
+      PM2.5 年均 μg/m³
+      {shownYears && <span class="scale-when">・{shownYears}</span>}
+    </p>
     <div class="scale-bar" role="img" aria-label={`濃度色階，分界 ${PM25_LEGEND_BREAKS.join("、")}`}>
       {concentrationLegend.map((entry) => <span style={`background:${entry.colour}`} />)}
     </div>
@@ -422,6 +443,9 @@ const dots = main.map((s) => {
   .scale-title {
     margin: 0 0 0.3rem;
     font-size: var(--chart-micro);
+    color: var(--text-faint);
+  }
+  .scale-when {
     color: var(--text-faint);
   }
   .scale-bar {

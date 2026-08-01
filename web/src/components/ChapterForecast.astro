@@ -107,8 +107,18 @@ const metricTicks = ticks(Math.min(-0.2, Math.min(...metricAll) - 0.05), 1, 5);
 const metricSeries = [
   {
     key: "r2",
+    /*
+     * `--k0`, not `--text-faint`. R² is one of the three protagonists of this
+     * figure — the chapter's finding is that it falls fourfold while skill
+     * rises — and it was wearing the token the axis labels and the page's
+     * disabled text wear. Design principle 1 is that the only thing on the page
+     * carrying chroma is the DATA; a series painted in the interface's own grey
+     * inverts it, and reads as chrome that wandered into the plot. It takes the
+     * same `--k0` that names the model on the other two figures of this chapter,
+     * which is also what that series is.
+     */
     label: "R²",
-    colour: "var(--text-faint)",
+    colour: "var(--k0)",
     values: horizons.map((h) => h.model_r2),
     splits: horizons.map((h) => h.per_split.map((s) => s.model_r2)),
   },

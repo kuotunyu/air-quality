@@ -121,6 +121,7 @@ const maxAbs = Math.max(...correlogram.map((b) => Math.abs(b.i))) * 1.15;
 const half = (v: number) => (Math.abs(v) / maxAbs) * 50;
 const corrTicks = ticks(-maxAbs, maxAbs, 4).filter((t) => t >= -maxAbs && t <= maxAbs);
 const corrX = (v: number) => ((v + maxAbs) / (2 * maxAbs)) * 100;
+const far = correlogram.find((b) => b.lo_km === 100);
 
 const iidRow = inference.rows.find((r) => r.cov_type === "iid");
 const twoWayRow = inference.rows.find((r) => r.cov_type === "cluster_twoway");
@@ -183,15 +184,20 @@ const cellFor = (method: string, buffer: number) =>
 
       {correlogram.map((b, i) => (
         <div class="corr-row">
-          <span class="corr-label" style={`grid-row:${i + 1}`}>{n(b.lo_km, 0)}–{n(b.hi_km, 0)} km</span>
-          <span class="corr-band" style={`grid-row:${i + 1}`}>
+          <span class="corr-label" style={`grid-row:${i + 1};grid-column:1`}>{n(b.lo_km, 0)}–{n(b.hi_km, 0)} km</span>
+          <span class="corr-band" style={`grid-row:${i + 1};grid-column:2`}>
             <span
               class={"corr-bar " + (b.i >= 0 ? "pos" : "neg") + (b.significant ? " sig" : "")}
               style={`--w:${n(half(b.i), 2)}%`}></span>
           </span>
-          <span class="corr-value" style={`grid-row:${i + 1}`}>
-            I = {b.i >= 0 ? "+" : ""}{n(b.i, 3)}
-            {b.significant && <strong>＊</strong>}
+          {/* Fixed to three decimals so the column of numbers is a column.
+              `n()` drops trailing zeroes, so 「+0.06」 and 「+0.348」 set to
+              different widths and the tabular figures they were set in had
+              nothing to align — a value column that is ragged on both edges is
+              the one thing tabular numerals exist to prevent. */}
+          <span class="corr-value" style={`grid-row:${i + 1};grid-column:3`}>
+            I = {b.i >= 0 ? "+" : "−"}{Math.abs(b.i).toFixed(3)}
+            <i class="mark">{b.significant ? "＊" : ""}</i>
           </span>
         </div>
       ))}
@@ -203,10 +209,13 @@ const cellFor = (method: string, buffer: number) =>
       </span>
     </div>
     <figcaption>
+      {/* Three decimals, matching the figure. The caption rounded to two while
+          the column beside it printed three, so the same quantity appeared twice
+          on one screen at two precisions. And `I =` followed by a newline
+          collapsed against a negative value: the caption read 「I =-0.241」. */}
       站均殘差的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。10 公里內同號相聚
-      （I = +{n(correlogram[0].i, 2)}），100 公里外反號（I =
-      {n(correlogram.find((b) => b.lo_km === 100)?.i ?? 0, 2)}，z =
-      {n(correlogram.find((b) => b.lo_km === 100)?.z ?? 0, 1)}）——
+      （I = +{correlogram[0].i.toFixed(3)}），100 公里外反號
+      （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）——
       北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
     </figcaption>
   </figure>
@@ -229,15 +238,15 @@ const cellFor = (method: string, buffer: number) =>
 
       {controls.map((c, i) => (
         <div class="ctrl-row">
-          <span class="ctrl-label" style={`grid-row:${i + 1}`}>{CONTROL_LABELS[c.control] ?? c.control}</span>
-          <span class="ctrl-band" style={`grid-row:${i + 1}`}>
+          <span class="ctrl-label" style={`grid-row:${i + 1};grid-column:1`}>{CONTROL_LABELS[c.control] ?? c.control}</span>
+          <span class="ctrl-band" style={`grid-row:${i + 1};grid-column:2`}>
             <span class="ctrl-ci" style={`--lo:${n(pct(c.mean_i_lo), 2)}%;--hi:${n(pct(c.mean_i_hi), 2)}%`}></span>
             <span class="ctrl-dot" style={`--at:${n(pct(c.mean_i), 2)}%`}></span>
           </span>
           {/* The estimate on its own line and the month count under it. As one
               string it made the value column 214px against a 172px plot — the
               number describing the bar was wider than the bar. */}
-          <span class="ctrl-value" style={`grid-row:${i + 1}`}>
+          <span class="ctrl-value" style={`grid-row:${i + 1};grid-column:3`}>
             <b>{n(c.mean_i, 3)}</b>
             <small>{c.months_significant_bh}/{c.months_scored} 月顯著</small>
           </span>
@@ -491,6 +500,19 @@ const cellFor = (method: string, buffer: number) =>
     align-self: stretch;
     pointer-events: none;
   }
+
+  /*
+   * EVERY span names its own row AND its own column, and the second half is
+   * what makes the first half safe.
+   *
+   * With only the row named, the column was still auto-placed — and this layer
+   * occupies column 2 in every row, so auto-placement skipped past it and put
+   * each band in column 3 and each value in an implicit column 4. Measured: the
+   * grid resolved to `176.25px 648.234px 0px 116.406px`, the bands came out 0px
+   * wide, and the estimates rendered on top of their own labels. Explicitly
+   * placed items are allowed to overlap; auto-placed ones are not allowed to
+   * overlap, which is exactly why they moved.
+   */
   .rules .rule {
     position: absolute;
     top: 0;
@@ -596,6 +618,15 @@ const cellFor = (method: string, buffer: number) =>
     white-space: nowrap;
   }
 
+  /* The significance mark takes the same room whether it is there or not, so
+     the numbers above and below it stay in one column. */
+  .corr-value .mark {
+    display: inline-block;
+    width: 1em;
+    font-style: normal;
+    font-weight: 700;
+  }
+
   .ctrl-value {
     display: flex;
     flex-direction: column;
@@ -666,6 +697,8 @@ const cellFor = (method: string, buffer: number) =>
   @media (max-width: 560px) {
     .correlogram,
     .controls-fig {
+      /* Still three tracks: the spans name their columns, so dropping to two
+         here would put the value in an implicit third one anyway. */
       grid-template-columns: 4.4em minmax(64px, 1fr) auto;
       column-gap: var(--space-1);
     }
