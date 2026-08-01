@@ -105,11 +105,13 @@ const BINS = Math.max(8, Math.round((FRAME.hi - FRAME.lo) / BIN));
  * before trusting the positions. A tick is dropped only when it would crowd an
  * extreme label in EITHER strip, so the two axes always carry the same set.
  *
- * 8% of the frame, not the 14% the per-event version used: that number was
- * calibrated against frames a third narrower, and at this width it was throwing
- * away a tick 29px clear of its neighbour.
+ * 12% of the frame, and the two values it was not are worth recording. The last
+ * label is pulled fully inside the box, so it reaches further left than its own
+ * position says: at 8% 「5」 and 「8.0」 came out 0.7px apart at a 480 viewport and
+ * 1.2px OVERLAPPING at 460, which reads as one number. The gap that matters is
+ * 10.05% of the frame, so 10% missed it by five hundredths of a point. 12%.
  */
-const MARK_CLEARANCE = 0.08;
+const MARK_CLEARANCE = 0.12;
 const MARKS = ticks(FRAME.lo, FRAME.hi, 4)
   .filter((t) => t >= FRAME.lo && t <= FRAME.hi)
   .filter((t) => {

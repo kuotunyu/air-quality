@@ -1668,7 +1668,13 @@ main {
 @container (max-width: 288px) {
   .plot-x[data-n="4"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 360px) {
+/* 376 and not 5 × 72 = 360. The ladder's per-label budget assumes the ticks are
+   evenly spaced, and chapter 7's are not: its series starts in 2006, so the
+   first interval is four years against five for the rest and 「2006」 and
+   「2010」 sit closer than any other pair. Measured at a 540 viewport, a 367px
+   axis printed them 0.5px APART — overlapping — while every other gap on the
+   same axis was 19 to 45px. */
+@container (max-width: 376px) {
   .plot-x[data-n="5"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 432px) {
@@ -1743,14 +1749,44 @@ main {
  * inset to its own value. A fourth-from-the-end rule would have left a single
  * label; the ends are what an axis cannot do without.
  */
-@container (max-width: 240px) {
-  .plot-x:not([data-tw="s"]):not(.keep) span:not(:first-child):not(:last-child) {
+/*
+ * State the survivors, do not subtract from them.
+ *
+ * Both of these used to be written as「hide everything except…」and that only
+ * works if the tier above has not already hidden one of the exceptions. It had.
+ * The halving keeps the last label and every second one BACK from it, which for
+ * an EVEN count drops the first: six year labels halve to 2 / 4 / 6, and then a
+ * rule that keeps `:first-child` and `:last-child` finds the first already gone
+ * and keeps only the last. Measured on all three of chapter 1's figures at 320,
+ * 340 and 360: **one label on the axis, 「2025」**, with nothing to measure it
+ * against. Nine axes across three widths, and the sweep never caught it because
+ * it was looking for an axis with no labels at all.
+ *
+ * Hiding every span and then naming the two that stay cannot interact with
+ * anything above it. `block` and not `revert`, because these spans are
+ * absolutely positioned and `block` is what `display` already computes to.
+ *
+ * The `[data-n]` is there to be counted, not to select: the halving rules carry
+ * `[data-n="6"]` and so weigh (0,5,1), and the first attempt at this fix weighed
+ * (0,4,1) and lost — the axis still printed one label. Matching their weight and
+ * sitting below them in the file is what lets a later rule win.
+ */
+@container (max-width: 216px) {
+  .plot-x[data-n]:not([data-tw="s"]):not(.keep) span {
     display: none;
+  }
+  .plot-x[data-n]:not([data-tw="s"]):not(.keep) span:first-child,
+  .plot-x[data-n]:not([data-tw="s"]):not(.keep) span:last-child {
+    display: block;
   }
 }
 @container (max-width: 120px) {
-  .plot-x[data-tw="s"]:not(.keep) span:not(:nth-last-child(4n + 1)) {
+  .plot-x[data-n][data-tw="s"]:not(.keep) span {
     display: none;
+  }
+  .plot-x[data-n][data-tw="s"]:not(.keep) span:first-child,
+  .plot-x[data-n][data-tw="s"]:not(.keep) span:last-child {
+    display: block;
   }
 }
 
