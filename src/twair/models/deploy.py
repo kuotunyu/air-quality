@@ -195,8 +195,18 @@ def build_space_bundle(
 
         # The observed value h hours later, so the app can show what actually
         # happened next to what each method said would happen.
-        truth = add_target(demo, column=TARGET, horizon=horizon, name=f"truth_h{horizon}")
-        demo_columns = demo_columns.with_columns(truth[f"truth_h{horizon}"])
+        #
+        # Threaded through `demo_columns` rather than computed from `demo` and
+        # attached as a Series. `add_target` sorts by (station, ts) before it
+        # shifts, and a Series attached with `with_columns` lands by position —
+        # so the old form paired each row with another row's future the moment
+        # its input was not already in that order. It always was, because
+        # `build_feature_frame` happens to end with the same sort, three modules
+        # away and invisible from here. This form has no positional coupling to
+        # be right or wrong about.
+        demo_columns = add_target(
+            demo_columns, column=TARGET, horizon=horizon, name=f"truth_h{horizon}"
+        )
 
     complete = demo_columns.drop_nulls(features).sort("station_name", "ts_local")
 

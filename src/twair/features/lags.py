@@ -103,16 +103,37 @@ def add_lag_features(
     if column not in frame.columns:
         raise KeyError(f"{column!r} is not in the frame")
 
-    over = pl.col(column).over(station)
+    # `.over(station)` goes AFTER the shift and the rolling window, not before.
+    #
+    # This read `over = pl.col(column).over(station)` and then `over.shift(...)`,
+    # which does not partition the shift — it takes the column, groups it back
+    # to row order (an identity for a bare column), and then shifts the whole
+    # thing globally. Measured on two stations of four hours each: the first row
+    # of station B came out with `lag2` = station A's last reading and `mean2` =
+    # the average of A's last hour and B's first.
+    #
+    # So the module whose docstring warns that 「a lag will silently step over a
+    # gap」 stepped over the largest gap there is, the boundary between two
+    # stations hundreds of kilometres apart. And it did not merely corrupt those
+    # rows: it *filled* them, so `drop_nulls` kept them. Done correctly they are
+    # incomplete and get dropped, which is what the first 167 rows of a station
+    # are — `DEFAULT_LAGS` reaches back a week.
+    value = pl.col(column)
     exprs: list[pl.Expr] = []
 
     for k in lags:
         # shift(k - 1): lag_1 is the current row, lag_2 the one before it.
-        exprs.append(over.shift(k - 1).alias(f"{column}_lag{k}"))
+        exprs.append(value.shift(k - 1).over(station).alias(f"{column}_lag{k}"))
 
     for w in windows:
-        exprs.append(over.rolling_mean(window_size=w, min_samples=w).alias(f"{column}_mean{w}"))
-        exprs.append(over.rolling_max(window_size=w, min_samples=w).alias(f"{column}_max{w}"))
+        exprs.append(
+            value.rolling_mean(window_size=w, min_samples=w)
+            .over(station)
+            .alias(f"{column}_mean{w}")
+        )
+        exprs.append(
+            value.rolling_max(window_size=w, min_samples=w).over(station).alias(f"{column}_max{w}")
+        )
 
     out = frame.sort(station, timestamp).with_columns(exprs)
 
@@ -143,8 +164,14 @@ def add_target(
     if horizon < 1:
         raise ValueError(f"horizon must be at least 1 hour, got {horizon}")
 
+    # `.over(station)` after the shift — see the note in `add_lag_features`.
+    # Before, the last `horizon` rows of every station but the last in the sort
+    # took their 「future」 from the first rows of the next station. Measured on
+    # two four-hour stations: A's last hour was given B's first reading as the
+    # thing it was supposed to have predicted, and the row survived `drop_nulls`
+    # into training because it was not null — it was wrong.
     return frame.sort(station, timestamp).with_columns(
-        pl.col(column).over(station).shift(-horizon).alias(name)
+        pl.col(column).shift(-horizon).over(station).alias(name)
     )
 
 
