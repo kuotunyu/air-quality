@@ -68,7 +68,17 @@ export const CHAPTERS: readonly Chapter[] = [
     n: 5,
     slug: "detection",
     nav: "偵測極限",
-    title: "政策效應的偵測極限",
+    /*
+     * 事件效應, matching the h1 — not 政策效應.
+     *
+     * The rail printed 政策效應的偵測極限 while the h1 sixty pixels to its right
+     * read 事件效應的偵測極限, so two names for the chapter were visible at once.
+     * The h1's is the one to keep: the drafting note at the top of the component
+     * records that the subject is the METHOD and not the government, and 事件 is
+     * what the chapter actually tests — a law amendment, a permit dispute and a
+     * lockdown.
+     */
+    title: "事件效應的偵測極限",
     claim: "一個方法能看見多小的效應，是可以先量出來的——量測之後才能分辨哪些「沒有顯著」其實是偵測不到。",
   },
   {

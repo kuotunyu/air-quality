@@ -151,6 +151,32 @@ function stepPath(values: (number | null)[]): string {
 }
 
 /*
+ * The vertical connectors of a stepped guide, drawn solid and separately.
+ *
+ * A dash pattern applied to the whole step makes the drop at 2024 a THIRD dashed
+ * mark rather than a transition between two dashed levels — and the run after it
+ * is one interval of 27 on an 852.7px plot, about 31.6px, or three and a half
+ * dashes sitting under the point where both series terminate. Zoomed in it reads
+ * as a small detached box beside the line ends. A solid riser says "the limit
+ * moved here"; the levels either side stay dashed because they are still guides.
+ */
+function stepRisers(values: (number | null)[]): string {
+  const parts: string[] = [];
+  let prev: { i: number; v: number } | null = null;
+  values.forEach((v, i) => {
+    if (v == null || !Number.isFinite(v)) {
+      prev = null;
+      return;
+    }
+    if (prev && prev.v !== v) {
+      parts.push(`M${n(x(i), 2)} ${n(y(prev.v), 2)} V${n(y(v), 2)}`);
+    }
+    prev = { i, v };
+  });
+  return parts.join(" ");
+}
+
+/*
  * Reference-line labels get the same de-overlap the series labels used to.
  *
  * Two limits ten units apart on a 300px plot put two 36px pills 35px apart —
@@ -298,14 +324,25 @@ const keyed = series.map((s) => {
             solved once and are still right. */}
         {
           visibleGuides.map((guide) => (
-            <path
-              d={guide.values ? stepPath(guide.values) : `M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
-              fill="none"
-              stroke={guide.colour}
-              stroke-width="1.5"
-              stroke-dasharray="5 4"
-              vector-effect="non-scaling-stroke"
-            />
+            <>
+              <path
+                d={guide.values ? stepPath(guide.values) : `M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
+                fill="none"
+                stroke={guide.colour}
+                stroke-width="1.5"
+                stroke-dasharray="5 4"
+                vector-effect="non-scaling-stroke"
+              />
+              {guide.values && (
+                <path
+                  d={stepRisers(guide.values)}
+                  fill="none"
+                  stroke={guide.colour}
+                  stroke-width="1.5"
+                  vector-effect="non-scaling-stroke"
+                />
+              )}
+            </>
           ))
         }
 

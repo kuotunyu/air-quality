@@ -185,7 +185,28 @@ const legend = BREAKS.map((b, i) => ({
                 data-key={c.key}
                 fill={fillFor(start.probability[data.sectors.indexOf(c.sector)][data.speed_bins.indexOf(c.speed)])}
               >
-                <title>{compass(c.sector)} · {c.speed} m/s</title>
+                {/*
+                  The same sentence the change handler writes, built here too.
+                  
+                  The server-rendered title said only 「0° 北 · 0.5-1.5 m/s」 —
+                  bearing and speed, no probability and no hour count — because
+                  the probability was written in by the select's change handler.
+                  So the DEFAULT station, the one every reader sees first, was
+                  the one station whose cells could not be interrogated, and a
+                  suppressed cell could not say how few hours were behind it.
+                */}
+                <title>
+                  {compass(c.sector)} · {c.speed.replace("-", "–")} m/s —{" "}
+                  {(() => {
+                    const si = data.sectors.indexOf(c.sector);
+                    const ri = data.speed_bins.indexOf(c.speed);
+                    const p = start.probability[si][ri];
+                    const hours = start.n[si][ri];
+                    return p == null
+                      ? `時數不足（${hours} 小時）`
+                      : `機率 ${p}（${hours} 小時）`;
+                  })()}
+                </title>
               </path>
             ))
           }
@@ -234,7 +255,16 @@ const legend = BREAKS.map((b, i) => ({
           <li class="radial-hub">圓心</li>
           {data.speed_bins.map((b) => <li>{b.replace("-", "–")}</li>)}
         </ol>
-        <p class="radial-unit">半徑＝風速（m/s）</p>
+        {/*
+          「風速分組」, not 「風速」.
+          
+          Measured along a ray at 1440, the ring boundaries sit at r = 36, 61, 86,
+          111, 136, 161 and 185 — six bands of 25px each — while the speeds they
+          carry span 1, 1, 1.5, 2, 2 m/s and then an unbounded 8+. Equal widths
+          for unequal ranges is a category axis, not a proportional one, and
+          saying 「半徑＝風速」 invited the reader to read distance as speed.
+        */}
+        <p class="radial-unit">半徑＝風速分組（各環等寬，區間不等）</p>
 
         {/*
           A sequential scale, drawn as one.

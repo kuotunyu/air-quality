@@ -167,23 +167,38 @@ const opening = [
  * A figure and what it is. The number carries the weight; the hairline carries
  * the separation that three borders used to.
  */
+/*
+ * One grid for the list, not one per row.
+ *
+ * `.figure` was its own grid with an `auto` first track, so each row sized that
+ * track to its OWN number: scanning ink on the 1440 render, the descriptions
+ * started at x = 920, 885 and 930 — three left edges on three lines that are
+ * meant to read as one list. `display: contents` hands the rows' cells to this
+ * grid, so one `auto` track serves all three and the numbers set it together.
+ */
 .figures {
   margin: 0;
-  display: grid;
-}
-
-.figure {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--space-3);
-  /* Three of these, so the padding is paid six times: 21px each side came to
-     126px of the list height. The hairline is what separates them. */
+}
+
+.figure {
+  display: contents;
+}
+
+/* The rule and the padding move onto the cells, because the row itself is no
+   longer a box that can carry them. Three of these, so the padding is paid six
+   times: 21px each side came to 126px of the list height. */
+.figures dt,
+.figures dd {
   padding: var(--space-2) 0;
   border-top: 1px solid var(--line-soft);
 }
 
-.figure:first-child {
+.figure:first-child dt,
+.figure:first-child dd {
   border-top: 0;
   padding-top: 0;
 }
