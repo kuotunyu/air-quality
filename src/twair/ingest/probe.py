@@ -20,6 +20,7 @@ from rich.table import Table
 
 from twair.config import get_settings, write_conf
 from twair.ingest.airtw import AirtwFile, fetch_catalog, hourly_archives
+from twair.ingest.download import is_supported_archive
 from twair.net import PoliteClient
 from twair.paths import DOCS_DIR, samples_dir
 
@@ -101,22 +102,44 @@ def download_sample(catalog: list[AirtwFile]) -> Path | None:
 
     target = candidates[0]
     dest = samples_dir() / f"airtw_{target.year}_{target.station_group}.zip"
-    if dest.exists() and dest.stat().st_size > 0:
+    # `st_size > 0` was the whole cache check, and an interrupted download leaves
+    # a file that passes it. Then the sample is poisoned permanently: the probe
+    # reports its byte count in the published doc and never fetches it again.
+    if dest.exists() and is_supported_archive(dest, target.data_type):
         console.print(f"  sample already present: {dest.name} ({dest.stat().st_size:,} bytes)")
         return dest
 
-    import gdown.download as gdown
+    # The same spelling `download_one` uses, and for the same reason. This read
+    # `import gdown.download as gdown`: gdown ships a submodule `gdown/download.py`
+    # and re-exports the function as `gdown.download`, and the package attribute
+    # wins — so the name was bound to the FUNCTION and the call below raised
+    # 「'function' object has no attribute 'download'」. Every time, caught by the
+    # except clause, printed as a download failure.
+    #
+    # Which is why `docs/data-sources.md` publishes 「_not captured_」 under
+    # 「### 樣本」 while data/raw/_samples/ holds the 592 KB 離島 2024 archive it
+    # says was not captured. The bug was found and fixed in download.py and
+    # missed here — the argument for the project having one spelling of it.
+    from gdown.download import download as gdown_download
 
     console.print(f"  downloading sample: {target.year} {target.station_group} …")
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         # `fuzzy` is only meaningful alongside `url`; passing an explicit `id`
         # already bypasses link parsing.
-        gdown.download(id=target.drive_file_id, output=str(dest), quiet=False)
+        gdown_download(id=target.drive_file_id, output=str(dest), quiet=False)
     except Exception as exc:
         console.print(f"[yellow]  sample download failed: {exc}[/yellow]")
         return None
-    return dest if dest.exists() else None
+
+    # Google Drive answers an unavailable file with an HTML interstitial and a
+    # 200, so a file that exists is not yet a file that arrived.
+    if not dest.exists() or not is_supported_archive(dest, target.data_type):
+        head = dest.read_bytes()[:32] if dest.exists() else b""
+        dest.unlink(missing_ok=True)
+        console.print(f"[yellow]  sample is not an archive (got {head!r})[/yellow]")
+        return None
+    return dest
 
 
 def probe_credentialed_sources() -> dict[str, Any]:

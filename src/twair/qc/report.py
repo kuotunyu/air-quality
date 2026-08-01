@@ -182,6 +182,9 @@ def wind_direction_totals(root: Path | None = None) -> pl.DataFrame:
     )
 
 
+_NO_PAIRS = pl.DataFrame(schema={"obs_year": pl.Int16, "paired_hours": pl.UInt32})
+
+
 def pm_pair_diagnostics(root: Path | None = None) -> pl.DataFrame:
     """PM2.5 vs PM10 per year: correlation, ratio, and impossible pairs.
 
@@ -203,29 +206,45 @@ def pm_pair_diagnostics(root: Path | None = None) -> pl.DataFrame:
         .collect()
     )
     if paired.is_empty():
-        return pl.DataFrame(schema={"obs_year": pl.Int16, "paired_hours": pl.UInt32})
+        return _NO_PAIRS.clone()
 
-    wide = (
-        paired.pivot(
-            on="pollutant",
-            index=["obs_year", "station_name", "ts_local"],
-            values="value",
-            aggregate_function="first",
-        )
-        .drop_nulls(["PM2.5", "PM10"])
-        .filter(pl.col("PM10") > 0)
+    wide = paired.pivot(
+        on="pollutant",
+        index=["obs_year", "station_name", "ts_local"],
+        values="value",
+        aggregate_function="first",
     )
-    if wide.is_empty():
-        return pl.DataFrame(schema={"obs_year": pl.Int16, "paired_hours": pl.UInt32})
+    # A pivot only produces columns for the values it saw. A store holding PM10
+    # and no PM2.5 is an ordinary state — PM2.5 monitoring started years later,
+    # and any partial or single-pollutant store is in it — but it used to reach
+    # ``drop_nulls`` and raise ColumnNotFoundError, which took down every other
+    # report in the run with it, because ``build_reports`` computes them in one
+    # loop. Nothing to pair is an answer, not a crash.
+    if not {"PM2.5", "PM10"} <= set(wide.columns):
+        return _NO_PAIRS.clone()
 
+    wide = wide.drop_nulls(["PM2.5", "PM10"])
+    if wide.is_empty():
+        return _NO_PAIRS.clone()
+
+    # ``PM2.5 / PM10`` is undefined when PM10 reads zero, so the ratio quantiles
+    # are computed over the non-zero subset. The *counts* are not, and that used
+    # to be the same filter: dropping those rows before counting removed 12,209
+    # of the store's 355,209 impossible pairs — 3.4%, and precisely the extreme
+    # end, rows reading PM10 = 0 beside PM2.5 = 37. Excluding the worst evidence
+    # for a claim in order to state the claim is the failure this whole report
+    # exists to avoid, so the exclusion is now counted in ``zero_pm10`` instead.
     return (
-        wide.with_columns((pl.col("PM2.5") / pl.col("PM10")).alias("ratio"))
+        wide.with_columns(
+            pl.when(pl.col("PM10") > 0).then(pl.col("PM2.5") / pl.col("PM10")).alias("ratio")
+        )
         .group_by("obs_year")
         .agg(
             pl.len().alias("paired_hours"),
             pl.corr("PM2.5", "PM10").alias("hourly_corr"),
             (pl.col("PM2.5") > pl.col("PM10")).sum().alias("impossible"),
             (pl.col("PM2.5") == pl.col("PM10")).sum().alias("identical"),
+            (pl.col("PM10") <= 0).sum().alias("zero_pm10"),
             pl.col("ratio").median().alias("ratio_median"),
             pl.col("ratio").quantile(0.05).alias("ratio_p05"),
             pl.col("ratio").quantile(0.95).alias("ratio_p95"),
@@ -315,6 +334,7 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
                 "hourly_corr",
                 "impossible_rate",
                 "identical_rate",
+                "zero_pm10",
                 "ratio_median",
             ],
         )
@@ -377,6 +397,14 @@ PM2.5 在定義上是 PM10 的子集，因此 `PM2.5 > PM10` **物理上不可�
 這件事之所以重要：2018 年原始畢業專題把 **PM10 當作 PM2.5 的解釋變數**，
 並在月平均資料上得到 r = 0.887。同樣的相關係數改用逐時資料計算會低得多——
 差額來自月平均把獨立的儀器雜訊平均掉了，而不是來自任何真實關係。
+
+`zero_pm10` 欄是 PM10 讀數為 0 的配對數。比值在這些配對上沒有定義，
+所以它們不計入 `ratio_median`，但**仍計入 `impossible`**——
+PM10 讀 0、PM2.5 讀 37 是檔案裡最不可能的一組配對，
+先把它排除掉再宣稱不可能率，等於丟掉自己最強的證據。
+
+這一欄本身也是個發現：2017 年以前每年只有個位到數十筆，
+2018 年起每年逾千筆，與新格式改以旗標整格取代測值的時點一致。
 
 {pm_section}
 

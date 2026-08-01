@@ -126,7 +126,7 @@ def _looks_like_quota(message: str) -> bool:
     return any(marker.lower() in message.lower() for marker in _QUOTA_MARKERS)
 
 
-def _is_supported_archive(path: Path, data_type: str = HOURLY_DATA_TYPE) -> bool:
+def is_supported_archive(path: Path, data_type: str = HOURLY_DATA_TYPE) -> bool:
     """Does the downloaded file look like the thing it claims to be?
 
     The guard exists because Google Drive answers an unavailable file with an
@@ -210,7 +210,7 @@ def download_one(item: AirtwFile, *, force: bool = False, patient: bool = False)
         # when a file is unavailable, so an empty result is a real failure mode.
         return DownloadResult(item, None, cached=False, error="empty or missing after download")
 
-    if not _is_supported_archive(dest, item.data_type):
+    if not is_supported_archive(dest, item.data_type):
         head = dest.read_bytes()[:64]
         dest.unlink(missing_ok=True)
         return DownloadResult(item, None, cached=False, error=f"not an archive (got {head[:32]!r})")

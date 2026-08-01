@@ -298,12 +298,12 @@ def test_a_report_is_a_pdf_and_is_not_thrown_away(tmp_path: pathlib.Path) -> Non
     measured on the real 2018 report, the download succeeded and was then
     deleted with 「not an archive (got b'%PDF-1.4…')」.
     """
-    from twair.ingest.download import _is_supported_archive
+    from twair.ingest.download import is_supported_archive
 
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"%PDF-1.4\n%\xc7\xec\x8f\xa2\n")
 
-    assert _is_supported_archive(pdf, "品保查核報告")
+    assert is_supported_archive(pdf, "品保查核報告")
     # ...and an hourly archive is still required to be an archive, because for
     # that type a PDF means the interstitial.
-    assert not _is_supported_archive(pdf, "全年逐時資料")
+    assert not is_supported_archive(pdf, "全年逐時資料")
