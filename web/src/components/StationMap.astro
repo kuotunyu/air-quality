@@ -28,7 +28,7 @@
  * of being dropped. They have decades of measurements; what is missing is a
  * coordinate, and hiding them would misrepresent the record.
  */
-import { concentrationColour, concentrationLegend } from "../lib/chart";
+import { concentrationColour, concentrationLegend, PM25_LEGEND_BREAKS } from "../lib/chart";
 import { COUNTIES, TAIWAN_BOUNDS } from "../lib/taiwan";
 import type { Station, StationCard } from "../lib/data";
 
@@ -137,25 +137,71 @@ const LABEL_PX = 18;
 const charWidth = LABEL_PX * unitsPerPx;
 const labelHeight = LABEL_PX * 1.15 * unitsPerPx + 4 * unitsPerPx;
 
+/*
+ * Where the stations are, in map units — needed BEFORE the labels are placed.
+ *
+ * The collision test used to consider labels against other labels and nothing
+ * else, so a name could be declared clear while sitting directly on top of the
+ * readings. Measured: 33 of the 73 dots were drawn over a county name, and 13
+ * of the 15 printed names had a dot punched through them. A county name is
+ * context and a reading is the measurement — the measurement paints on top, so
+ * the name is the thing that has to move.
+ *
+ * Half the dot's own size plus its ring, converted from px the same way the
+ * label box is, so this stays right at the smallest size the map is drawn at.
+ */
+const DOT_PX = 9;
+const dotRadius = ((DOT_PX / 2) + 1.5) * unitsPerPx;
+const stationPoints = main.map((st) => project(st.lon as number, st.lat as number));
+
 const labelled: { name: string; x: number; y: number }[] = [];
 const boxes: [number, number, number, number][] = [];
-for (const county of [...counties].sort((a, b) => b.area - a.area)) {
+const order = [...counties].sort((a, b) => b.area - a.area);
+
+const boxAt = (county: (typeof order)[number], anchor: { x: number; y: number }) => {
   const half = (county.name.length * charWidth) / 2;
-  for (const anchor of county.anchors) {
-    const box: [number, number, number, number] = [
-      anchor.x - half,
-      anchor.y - labelHeight / 2,
-      anchor.x + half,
-      anchor.y + labelHeight / 2,
-    ];
-    const clashes = boxes.some(
-      (b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1],
-    );
-    const inFrame = box[0] > 0 && box[2] < width && box[1] > 0 && box[3] < height;
-    if (clashes || !inFrame) continue;
-    boxes.push(box);
-    labelled.push({ name: county.name, x: anchor.x, y: anchor.y });
-    break;
+  return [
+    anchor.x - half,
+    anchor.y - labelHeight / 2,
+    anchor.x + half,
+    anchor.y + labelHeight / 2,
+  ] as [number, number, number, number];
+};
+const overlapsLabel = (box: [number, number, number, number]) =>
+  boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
+const overlapsData = (box: [number, number, number, number]) =>
+  stationPoints.some(
+    (pt) =>
+      pt.x + dotRadius > box[0] &&
+      pt.x - dotRadius < box[2] &&
+      pt.y + dotRadius > box[1] &&
+      pt.y - dotRadius < box[3],
+  );
+const inFrame = (box: [number, number, number, number]) =>
+  box[0] > 0 && box[2] < width && box[1] > 0 && box[3] < height;
+
+/*
+ * Two passes, and the second one is what keeps this from costing names.
+ *
+ * Avoiding the dots outright dropped the count from 15 counties to 9 —
+ * 彰化, 雲林, 嘉義, 高雄 and their neighbours are exactly where the stations
+ * cluster, so "no anchor clear of data" and "no name at all" became the same
+ * answer for the west coast, which is the half of the island the page is about.
+ * So the first pass takes only anchors clear of every reading, and the second
+ * lets whatever is still unnamed fall back to the old rule. The result is at
+ * least as many names as before, as many of them as possible off the data.
+ */
+for (const pass of [0, 1]) {
+  for (const county of order) {
+    if (labelled.some((l) => l.name === county.name)) continue;
+    for (const anchor of county.anchors) {
+      const box = boxAt(county, anchor);
+      if (!inFrame(box) || overlapsLabel(box)) continue;
+      if (pass === 0 && overlapsData(box)) continue;
+      boxes.push(box);
+      labelled.push({ name: county.name, x: anchor.x, y: anchor.y });
+      break;
+    }
   }
 }
 
@@ -224,16 +270,26 @@ const dots = main.map((s) => {
     }
   </div>
 
-  <div class="legend">
-    {
-      concentrationLegend.map((entry) => (
-        <span class="legend-item">
-          <span class="swatch" style={`background:${entry.colour}`} />
-          {entry.label}
-        </span>
-      ))
-    }
-    <span class="legend-item unit">μg/m³ 年均</span>
+  {/*
+    The concentration scale, drawn as a scale.
+
+    Seven detached chips plus an eighth that was the unit wearing a missing
+    swatch. The chips wrapped to three rows under the map, and they said "seven
+    kinds" about the one encoding on this site that is explicitly ordered — the
+    ramp's whole argument is that lightness runs monotonically from low to high.
+    A bar with its breaks under it says that; a row of tiles does not. The unit
+    goes beside the scale it belongs to instead of pretending to be a bin.
+  */}
+  <div class="scale">
+    <p class="scale-title">PM2.5 年均 μg/m³</p>
+    <div class="scale-bar" role="img" aria-label={`濃度色階，分界 ${PM25_LEGEND_BREAKS.join("、")}`}>
+      {concentrationLegend.map((entry) => <span style={`background:${entry.colour}`} />)}
+    </div>
+    <div class="scale-ticks" aria-hidden="true">
+      {PM25_LEGEND_BREAKS.map((b, i) => (
+        <span style={`left:${(((i + 1) / concentrationLegend.length) * 100).toFixed(3)}%`}>{b}</span>
+      ))}
+    </div>
   </div>
 </div>
 
@@ -358,6 +414,41 @@ const dots = main.map((s) => {
   }
   .county:hover {
     fill: var(--tint-neutral);
+  }
+
+  .scale {
+    margin-top: var(--space-3);
+  }
+  .scale-title {
+    margin: 0 0 0.3rem;
+    font-size: var(--chart-micro);
+    color: var(--text-faint);
+  }
+  .scale-bar {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    height: 10px;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  /* A hairline of the page between steps: this scale is binned, and a reader
+     matching a dot to a bin needs to see where one bin ends. */
+  .scale-bar span + span {
+    box-shadow: -1px 0 0 var(--bg);
+  }
+  .scale-ticks {
+    position: relative;
+    height: 1.35em;
+    font-size: var(--chart-micro);
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+  }
+  .scale-ticks span {
+    position: absolute;
+    top: 0.15em;
+    transform: translateX(-50%);
   }
 
   .county-label {

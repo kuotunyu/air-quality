@@ -221,6 +221,9 @@ export function padded(
  * Taiwan's 24-hour standard, then two levels above that.
  */
 const PM25_BREAKS = [5, 10, 15, 25, 35, 55];
+
+/** The same breaks, for a legend that draws the scale rather than listing it. */
+export const PM25_LEGEND_BREAKS = PM25_BREAKS;
 const RAMP = ["--c0", "--c1", "--c2", "--c3", "--c4", "--c5", "--c6"];
 
 /**

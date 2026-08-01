@@ -219,6 +219,31 @@ const legend = BREAKS.map((b, i) => ({
           {data.speed_bins.map((b) => <li>{b.replace("-", "–")}</li>)}
         </ol>
         <p class="radial-unit">半徑＝風速（m/s）</p>
+
+        {/*
+          A sequential scale, drawn as one.
+
+          It was seven detached chips plus a hatch chip in a 190px column, so it
+          wrapped to eight rows and stood 509px tall — taller than the disc it
+          explained, and shaped like eight categories when the thing it encodes
+          is one ordered quantity. A ramp is a bar with its breaks under it, and
+          it belongs beside the disc rather than in the readout column, because
+          the readout column is 190px and the disc is 440.
+        */}
+        <div class="ramp">
+          <p class="ramp-title">顏色＝高值機率</p>
+          <div class="ramp-bar" role="img" aria-label={`機率色階，分界 ${BREAKS.join("、")}`}>
+            {legend.map((l) => <span style={`background:${l.colour}`} />)}
+          </div>
+          <div class="ramp-ticks" aria-hidden="true">
+            {BREAKS.map((b, i) => (
+              <span style={`left:${(((i + 1) / legend.length) * 100).toFixed(3)}%`}>{b}</span>
+            ))}
+          </div>
+          <p class="ramp-foot">
+            <span class="swatch hatched" />時數不足（&lt; {data.min_bin_count} 小時）：不予報告
+          </p>
+        </div>
       </div>
 
       <div class="readout">
@@ -238,21 +263,6 @@ const legend = BREAKS.map((b, i) => ({
           <span class="stat-value" id="cbpf-resultant">{start.resultant.toFixed(3)}</span>
           <span class="stat-label">方向集中度</span>
           <span class="stat-note">0 = 四面八方；1 = 只有一個方位</span>
-        </div>
-
-        <div class="legend">
-          {
-            legend.map((l) => (
-              <span class="legend-item">
-                <span class="swatch" style={`background:${l.colour}`} />
-                {l.label}
-              </span>
-            ))
-          }
-          <span class="legend-item">
-            <span class="swatch hatched" />
-            時數不足
-          </span>
         </div>
       </div>
     </div>
@@ -555,6 +565,50 @@ const legend = BREAKS.map((b, i) => ({
   .readout {
     display: grid;
     gap: 1rem;
+    align-content: start;
+  }
+
+  .ramp {
+    margin-top: var(--space-3);
+  }
+  .ramp-title {
+    margin: 0 0 0.3rem;
+    font-size: var(--chart-micro);
+    color: var(--text-faint);
+  }
+  .ramp-bar {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    height: 10px;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  /* One hairline of the card between steps, so seven steps read as seven and
+     not as a gradient — this scale is binned, and the bins are the finding. */
+  .ramp-bar span + span {
+    box-shadow: -1px 0 0 var(--bg-sunken);
+  }
+  .ramp-ticks {
+    position: relative;
+    height: 1.35em;
+    font-size: var(--chart-micro);
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+  }
+  .ramp-ticks span {
+    position: absolute;
+    top: 0.15em;
+    transform: translateX(-50%);
+  }
+  .ramp-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0.2rem 0 0;
+    font-size: var(--chart-micro);
+    color: var(--text-faint);
   }
   .swatch.hatched {
     background: repeating-linear-gradient(

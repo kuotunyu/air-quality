@@ -1010,6 +1010,27 @@ section > :last-child > :last-child:last-child {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
+  container-type: inline-size;
+}
+
+/*
+ * Justification needs a line long enough to distribute.
+ *
+ * Principle 15 sets Chinese prose justified, and the structural argument for it
+ * is sound: every glyph is one em, so the breaks land on exact multiples of the
+ * character box and nothing has to stretch. That holds at the measure. It stops
+ * holding in a card: measured on chapter 7's two-up, the lines run about nine
+ * CJK characters, and at nine characters one unbreakable Latin run
+ * (「published TMREL」) leaves gaps the eye joins up the block into rivers.
+ * Below a line long enough to absorb one, the same rule that makes the measure
+ * tidy makes a card ragged, so the card sets its prose flush left instead.
+ */
+@container (max-width: 21em) {
+  .card p,
+  .card .note,
+  .card .aside {
+    text-align: start;
+  }
 }
 
 .stat {
