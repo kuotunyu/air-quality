@@ -307,7 +307,14 @@
    * belongs to this palette and reads as the same document, while the neutral
    * middle is `--rule`, the zero line itself. They are held one step darker than
    * `--c0` / `--c5` because they are thin marks on a light ground rather than
-   * area fills, and they clear 3:1 on all three surfaces at that lightness.
+   * area fills.
+   *
+   * Measured, WCAG against `--bg` / `--bg-raised` / `--bg-sunken`, worst of the
+   * three: 5.11 for `--sign-pos` and 6.58 for `--sign-neg` here; 5.80 and 4.89
+   * in dark. The floor is the 3:1 non-text threshold, so both are comfortable —
+   * which is what a mark carrying its figure's argument should be, and is
+   * written down because the first version of this comment asserted the pass
+   * without measuring it.
    */
   --sign-pos: oklch(0.500 0.108 252);
   --sign-neg: oklch(0.455 0.115 22);
@@ -590,7 +597,10 @@
     --k7: #e07aa8;
 
     /* Re-solved for the dark ground rather than inverted, the same rule the ramp
-       above follows: the light theme's values measure under 2:1 on near-black. */
+       above follows. Measured, the light theme's two on the dark surfaces:
+       `--sign-pos` 2.99 / 2.57 / 3.20 and `--sign-neg` 2.32 / 2.00 / 2.48
+       against bg / raised / sunken — four of those six are under the 3:1 floor,
+       and the worst is the one a reader meets inside a `.card`. */
     --sign-pos: oklch(0.700 0.112 252);
     --sign-neg: oklch(0.672 0.132 22);
     --accent: oklch(0.871 0.056 250);

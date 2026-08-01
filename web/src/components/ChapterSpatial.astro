@@ -513,12 +513,19 @@ const cellFor = (method: string, buffer: number) =>
    * placed items are allowed to overlap; auto-placed ones are not allowed to
    * overlap, which is exactly why they moved.
    */
+  /*
+   * `--line`, not `--line-soft`. Measured against these figures' own ground:
+   * `--line-soft` is 1.17:1 on `--bg` in the light theme and 1.25:1 in dark,
+   * which is a gridline a reader has to take on faith — and unlike the cartesian
+   * charts, these two have no card behind them to lift it off. `--line` measures
+   * 1.41 and 1.66. A gridline should be recessive, not absent.
+   */
   .rules .rule {
     position: absolute;
     top: 0;
     bottom: 0;
     width: 1px;
-    background: var(--line-soft);
+    background: var(--line);
   }
   /* The one line that carries an argument: whether an estimate is on the other
      side of it. `--rule` is the token solved for the 3:1 non-text threshold. */
