@@ -51,10 +51,11 @@ interface Props {
    * Which side of the plot the reference-line labels sit on.
    *
    * They default right, which is where they have always been — and on a chart
-   * whose lines END at the right, that is on top of the end labels. Measured on
-   * the zone figure: 「台灣年均標準 15」 landed directly across 「高屏 16.7」 and
-   * 「雲嘉南 15.7」. The caller knows which half of its own plot is empty; this
-   * component cannot.
+   * whose lines END at the right, that is on top of the lines' own last points.
+   * Measured on the zone figure when the names were still out there:
+   * 「台灣年均標準 15」 landed directly across 「高屏 16.7」 and 「雲嘉南 15.7」.
+   * The caller knows which half of its own plot is empty; this component
+   * cannot.
    */
   notesAt?: "left" | "right";
 }
@@ -121,10 +122,10 @@ const xTicks = Array.from({ length: labelCount }, (_, k) => {
  *
  * They were the value at the end of each line, then the value plus the name,
  * and the owner is right that at the right-hand edge they were never anything
- * but a stack. With the legend now inside the plot carrying both the name AND
- * the latest value, the gutter was printing the same numbers a second time in
- * the worst available position. The whole mechanism — gutter, spread, leaders
- * — is gone, and the plot gets the width back.
+ * but a stack. The key above the plot carries both the name AND the latest
+ * value, so the gutter was printing the same numbers a second time in the worst
+ * available position. The whole mechanism — gutter, spread, leaders — is gone,
+ * and the plot gets the width back.
  */
 /*
  * A limit that changed on a date is a step, not a ramp. Drawn horizontal then
@@ -229,8 +230,8 @@ const keyed = series.map((s) => {
       {/* On the axis it measures — always. It used to be the last entry of the
           legend, which put the units in a row of series names at the bottom of
           the figure, a long way from the numbers they belong to; then it moved
-          into the in-plot legend, which on a wide chart put it 830px from its
-          own axis. The unit belongs to the scale. */}
+          into a legend floated inside the plot, which on a wide chart put it
+          830px from its own axis. The unit belongs to the scale. */}
       <span class="y-unit">{unit}</span>
       {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
     </div>

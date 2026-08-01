@@ -645,7 +645,13 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               }
             </svg>
 
-            <span class="plot-note limit" style={`left:${n(gx(1.5), 3)}%`}>內插的上限：3 小時</span>
+            {/* Two lines by construction rather than by accident. Left to wrap
+                inside `max-width: 8em`, the break landed inside the value and
+                the label read 「內插的上限：3 小」/「時」 — a measurement split
+                across a line ending. The wrap point is now the colon. */}
+            <span class="plot-note limit" style={`left:${n(gx(1.5), 3)}%`}>
+              內插的上限<br />3 小時
+            </span>
 
             {
               GAP_SERIES.map((series) =>
@@ -931,7 +937,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     text-align: left;
     /* Anchored to a column rather than to the plot's right edge, so unlike the
        other notes it has nothing bounding it — and at 265px it ran 139px past
-       the figure. It wraps instead. */
+       the figure. It breaks where the markup says instead. */
     max-width: 8em;
+    white-space: nowrap;
   }
 </style>

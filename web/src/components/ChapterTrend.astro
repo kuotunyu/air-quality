@@ -127,16 +127,19 @@ const azLeastRank = azStats.filter((z) => z.last > azLeast.last).length + 1;
  * colours no better than before. Slicing a chart that is too small does not
  * make it bigger.
  *
- * What was missing both times is that a line can carry its own name. With the
- * name and the value sitting at the end of each line, nothing on this chart has
- * to be matched to anything beside it — so the legend goes, and colour stops
- * being the identifier it was never able to be at eight.
+ * What was missing both times is WHERE the names go, not whether there are any.
+ * They now sit in one row above the plot, in the zones' own order at the last
+ * year — so the key is read top to bottom in the same order the lines finish,
+ * and matching a name to a line is following a rank rather than hunting a hue.
+ * A row above the plot also cannot cover data, which every in-plot position can
+ * and the corner version measurably did.
  *
- * Colour is `concentrationColour` of the zone's own latest value, which puts it
- * in the same three bands the entry map uses. That is deliberately NOT the
- * identifier: the y position already says the level and the label already says
- * the name, so hue is here to group, not to name. Eight distinguishable hues do
- * not exist in this palette and asking for them was the original mistake.
+ * Colour is the categorical set in that same rank order, `--k0` for the highest
+ * zone down to `--k7` for the lowest. It is deliberately NOT the identifier:
+ * eight distinguishable hues do not exist in this palette — the measured cost is
+ * written down above `--k0` in global.css — and asking for them was the original
+ * mistake. The y position says the level, the key says the name, and hue is here
+ * to group.
  */
 const airzoneSeries = (trendByAirzone.series as {
   name: string;
@@ -371,8 +374,8 @@ const taiwanAnnualFor = (years: number[]) =>
       notesAt="left"
     />
     <figcaption>
-      各空品區 PM2.5 年均值。八條線的名字與 2025 年的值列在圖內的圖例裡，
-      圖例放在資料最少的那一角。線經過平滑（僅平滑線條，每個量到的點仍在線上），
+      各空品區 PM2.5 年均值。八條線的名字與 2025 年的值列在圖上方的一列裡。
+      線經過平滑（僅平滑線條，每個量到的點仍在線上），
       不畫資料點。同樣只採計年覆蓋率 ≥ 75% 的測站年。
     </figcaption>
   </figure>
