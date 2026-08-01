@@ -128,6 +128,15 @@ class ForecastScore:
     horizon: int
     split: str
     n: int
+    stations: int
+    """How many stations the test set covers.
+
+    Carried rather than left to whoever reads the number later: chapter 8's
+    prose said 「74 站」 as a literal, and the count moves whenever the feature
+    frame does — most recently when the station-boundary leak in
+    `features/lags.py` was fixed and a station's first 167 hours stopped being
+    filled with the previous station's week.
+    """
     model_rmse: float
     persistence_rmse: float
     climatology_rmse: float
@@ -145,6 +154,7 @@ class ForecastScore:
             "horizon": self.horizon,
             "split": self.split,
             "n": self.n,
+            "stations": self.stations,
             "model_rmse": self.model_rmse,
             "persistence_rmse": self.persistence_rmse,
             "climatology_rmse": self.climatology_rmse,
@@ -322,6 +332,7 @@ def run_forecast(
                     horizon=horizon,
                     split=split.name,
                     n=int(truth.size),
+                    stations=int(split.test["station_name"].n_unique()),
                     model_rmse=float(np.sqrt(np.mean(e_model**2))),
                     persistence_rmse=float(np.sqrt(np.mean(e_pers**2))),
                     climatology_rmse=float(np.sqrt(np.mean(e_clim**2))),
@@ -357,6 +368,9 @@ def summarise_scores(scores: pl.DataFrame) -> pl.DataFrame:
         .agg(
             pl.len().alias("splits"),
             pl.col("n").sum(),
+            # Max, not sum: the same stations recur across splits. The widest
+            # split is the honest answer to 「how many stations is this about」.
+            pl.col("stations").max(),
             pl.col("model_rmse").mean(),
             pl.col("persistence_rmse").mean(),
             pl.col("climatology_rmse").mean(),

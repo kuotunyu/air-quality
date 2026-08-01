@@ -7,6 +7,7 @@ workflows are thin wrappers around these commands.
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import replace
 
 import polars as pl
@@ -18,6 +19,22 @@ from twair import __version__
 from twair.config import get_settings
 from twair.paths import ensure_dirs
 from twair.scalars import as_float, as_int
+
+# Rich draws its tables with box-drawing characters, and a redirected stdout on
+# Windows in this locale is cp950, which has no code point for ┆. So
+# `twair analyze m9 > run.log` died with
+# 「UnicodeEncodeError: 'cp950' codec can't encode character '┆'」 — after
+# every model was fitted and before anything was written to disk. Seven minutes
+# of computation discarded because the summary could not be printed.
+#
+# `errors="replace"` as well as the encoding, because the point is that no
+# character a console cannot render may ever cost a result.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure") and (getattr(_stream, "encoding", "") or "").lower() not in {
+        "utf-8",
+        "utf8",
+    }:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 console = Console()
 
@@ -455,6 +472,13 @@ def analyze_m9(
     hours = tuple(int(h) for h in horizons.split(",") if h.strip())
 
     tables = run_forecast(period=period, stations=subset, horizons=hours, n_splits=splits)
+
+    # Persisted before it is displayed, and the order is the point. This ran the
+    # other way round and a console encoding error in the summary threw away
+    # every fit behind it. The paths are still reported last, where a reader
+    # expects them; only the writing moved.
+    written = write_forecast_report(tables)
+
     by_horizon = tables["by_horizon"]
 
     console.print(
@@ -483,7 +507,7 @@ def analyze_m9(
             f"vs climatology {row['skill_vs_climatology']:+.3f}"
         )
 
-    for name, path in write_forecast_report(tables).items():
+    for name, path in written.items():
         console.print(f"wrote {name}: {path}")
 
 

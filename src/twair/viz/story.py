@@ -984,6 +984,7 @@ def _export_forecast(root: Path) -> list[Path]:
             {
                 "horizon": horizon,
                 "n": int(row["n"]),
+                "stations": int(row["stations"]),
                 "splits": int(row["splits"]),
                 "model_r2": _round(row["model_r2"], 3),
                 "skill_persistence": _round(row["skill_vs_persistence"], 3),

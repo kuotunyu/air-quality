@@ -97,6 +97,15 @@ jobs:
       - name: The social card still describes the published data
         run: uv run python scripts/make_social_card.py --check
 
+      # The M9 backtest table is retyped in four places for readers who are not
+      # looking at the chart — the module docstring, methodology.md, and both
+      # halves of the HuggingFace Space. Nothing connected them to the payload
+      # the chart is drawn from, so a re-run updated the chart and left the four
+      # copies saying whatever they said before. Which is exactly how the
+      # three-item sentinel list ended up wrong in two of its three copies.
+      - name: The forecast numbers in prose match the ones on the chart
+        run: uv run python scripts/check_published_forecast.py
+
       - name: Test (Pytest)
         run: uv run pytest
 

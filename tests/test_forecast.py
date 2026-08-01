@@ -19,6 +19,7 @@ def _score(**overrides: object) -> ForecastScore:
         "horizon": 24,
         "split": "rolling_1",
         "n": 1000,
+        "stations": 74,
         "model_rmse": 8.0,
         "persistence_rmse": 9.0,
         "climatology_rmse": 12.0,
@@ -144,3 +145,41 @@ class TestTheMeanDoesNotHideALosingSplit:
         summary = summarise_scores(both)
 
         assert summary["horizon"].to_list() == [1, 48]
+
+
+class TestTheStationCountTravels:
+    """Chapter 8 said 「74 站」 as a literal, and nothing regenerated it.
+
+    The count moves whenever the feature frame does — it moved when the
+    station-boundary leak in `features/lags.py` was fixed and a station's first
+    167 hours stopped being filled with the previous station's week. A number
+    written into prose beside numbers that are all derived is the one that goes
+    quietly wrong.
+    """
+
+    def test_the_summary_carries_the_widest_split_not_the_sum(self) -> None:
+        """The same stations recur across splits; summing them counts 74 four times."""
+        scores = pl.DataFrame(
+            [
+                _score(split="rolling_1", stations=70).as_dict(),
+                _score(split="rolling_2", stations=74).as_dict(),
+                _score(split="rolling_3", stations=73).as_dict(),
+            ]
+        )
+
+        summary = summarise_scores(scores)
+
+        assert summary["stations"].to_list() == [74]
+
+    def test_each_horizon_reports_its_own_count(self) -> None:
+        """A longer horizon drops more rows and can drop a whole station with them."""
+        scores = pl.DataFrame(
+            [
+                _score(horizon=1, stations=74).as_dict(),
+                _score(horizon=48, stations=71).as_dict(),
+            ]
+        )
+
+        summary = summarise_scores(scores).sort("horizon")
+
+        assert summary["stations"].to_list() == [74, 71]

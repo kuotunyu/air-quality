@@ -19,6 +19,7 @@ import { linear, markInk, n, ticks, xLabelBucket, yGutter } from "../lib/chart";
 const horizons = forecast.horizons as {
   horizon: number;
   n: number;
+  stations: number;
   splits: number;
   model_r2: number;
   skill_persistence: number;
@@ -216,6 +217,11 @@ const worst = horizons.find((h) => h.splits_not_beating_persistence > 0);
 const last = horizons[horizons.length - 1];
 const first = horizons[0];
 const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
+/* Read, not written. This sentence said 「74 站」 as a literal while every other
+   number around it came from the payload — and the count moved when the
+   station-boundary leak in features/lags.py was fixed, because a station's
+   first 167 hours stopped being filled with the previous station's week. */
+const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0);
 ---
 
 <section id="forecast" class="page">
@@ -233,7 +239,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
     滾動平均與最大值，還有變化率——然後問它 h 小時之後會是多少。
     驗證用 rolling-origin：<strong>過去訓練、未來測試，切點往前走</strong>。
     隨機切分會讓模型用星期二預測星期一，那是沒有預報員做得到的事。
-    {n(totalRows / 1e6, 2)} 百萬列測試資料，74 站，2015–2025。
+    {n(totalRows / 1e6, 2)} 百萬列測試資料，{totalStations} 站，2015–2025。
   </p>
 
   <h2>均方根誤差（μg/m³）</h2>
