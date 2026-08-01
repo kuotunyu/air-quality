@@ -291,13 +291,18 @@ const keyed = series.map((s) => {
           ))
         }
 
+        {/* Guides at 1.5, not 1. `--who` and `--taiwan` both clear 3:1 against
+            the card as tokens — measured 3.00 and 6.90 in light, 3.73 and 8.94
+            in dark — but a 1px dash antialiases into the ground and the RENDERED
+            line does not. The fix is the weight, not the colour: the tokens were
+            solved once and are still right. */}
         {
           visibleGuides.map((guide) => (
             <path
               d={guide.values ? stepPath(guide.values) : `M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
               fill="none"
               stroke={guide.colour}
-              stroke-width="1"
+              stroke-width="1.5"
               stroke-dasharray="5 4"
               vector-effect="non-scaling-stroke"
             />

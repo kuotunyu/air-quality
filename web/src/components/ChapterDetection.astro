@@ -418,11 +418,24 @@ const shortName = (name: string) =>
      (The remaining ~60KB on this page is Astro's own `data-astro-cid`
      attribute on each mark. It is stamped per component, not per selector, so
      `:global` does not remove it — measured, not assumed.) */
+  /*
+   * 0.4, not 0.28.
+   *
+   * The compositing IS the encoding — where placebo estimates coincide the marks
+   * darken, and that accumulation is the distribution's shape. But a lone mark in
+   * the TAILS is one hairline at one alpha, and at 0.28 that composites to 1.46:1
+   * in light and 1.92 in dark. The tails are where this figure's argument lives:
+   * the question is whether the real estimates sit further out than the placebos
+   * do, and the outermost placebos were the part a reader could not see. At 0.4
+   * a single mark measures 1.75 and 2.72. The core saturates a little sooner —
+   * the densest bucket already composited to an effective 0.999 at 0.28, so it
+   * was saturated either way.
+   */
   .placebo-pool path {
     fill: none;
     stroke: var(--text-faint);
     stroke-width: 1;
-    opacity: 0.28;
+    opacity: 0.4;
     vector-effect: non-scaling-stroke;
   }
   /* The real estimates are HTML dots now, so this is a colour, not a fill.

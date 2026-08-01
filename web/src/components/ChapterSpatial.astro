@@ -13,7 +13,7 @@
  * the correlogram before any single number, the controls after both.
  */
 import spatial from "../../public/data/story/spatial-structure.json";
-import { n, ticks } from "../lib/chart";
+import { n, nFixed, ticks } from "../lib/chart";
 
 const network = spatial.network as {
   stations: number;
@@ -220,8 +220,12 @@ const cellFor = (method: string, buffer: number) =>
               different widths and the tabular figures they were set in had
               nothing to align — a value column that is ragged on both edges is
               the one thing tabular numerals exist to prevent. */}
+          {/* The number alone. 「I = 」 was printed on all eight rows of one
+              column, and the caption directly under the figure already opens
+              「站均殘差的 Moran's I 按距離分帶」 — a column does not need to name
+              its own quantity once per row. */}
           <span class="corr-value" style={`grid-row:${i + 1};grid-column:3`}>
-            I = {b.i >= 0 ? "+" : "−"}{Math.abs(b.i).toFixed(3)}
+            {b.i >= 0 ? "+" : "−"}{Math.abs(b.i).toFixed(3)}
             <i class="mark">{b.significant ? "＊" : ""}</i>
           </span>
         </div>
@@ -276,7 +280,10 @@ const cellFor = (method: string, buffer: number) =>
               string it made the value column 214px against a 172px plot — the
               number describing the bar was wider than the bar. */}
           <span class="ctrl-value" style={`grid-row:${i + 1};grid-column:3`}>
-            <b>{n(c.mean_i, 3)}</b>
+            {/* `nFixed`, so the column is a column: `n()` drops a trailing zero
+                and 「今日分區截距」 printed 0.14 between neighbours printing 0.157
+                and 0.063, under right-aligned tabular figures. */}
+            <b>{nFixed(c.mean_i, 3)}</b>
             <small>{c.months_significant_bh}/{c.months_scored} 月顯著</small>
           </span>
         </div>
