@@ -89,6 +89,24 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     依縣市由北到南排序。
   </p>
 
+  {/*
+    Its own live region, not FigureTools' `.fig-say`.
+
+    Changing station replaces the whole of this chapter — the h2, the four
+    figures, the ranking, the caveat — and the only live region on the page was
+    `.fig-say`, which stayed `""` before and after. Measured on both /stations
+    and /sources: a screen reader heard the option's own name and then silence,
+    and had to walk back down the card to find out what it now said. Once per
+    station tried.
+
+    A dedicated node rather than borrowing `.fig-say` for two reasons: that one
+    is injected by FigureTools, so this chapter would start depending on another
+    component's script having run first; and PNG-export messages would share a
+    polite queue with station changes, which is two unrelated things taking
+    turns to interrupt each other.
+  */}
+  <p id="station-say" class="visually-hidden" role="status" aria-live="polite"></p>
+
   <div class="controls">
     <label>
       測站
@@ -227,10 +245,43 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   const select = document.getElementById("station-select") as HTMLSelectElement | null;
   const reports = Array.from(document.querySelectorAll<HTMLElement>(".report[data-station]"));
 
+  const say = document.getElementById("station-say");
+
   select?.addEventListener("change", () => {
     for (const report of reports) {
       report.hidden = report.dataset.station !== select.value;
     }
+
+    /*
+     * Read off the card that is now on screen, rather than from a second copy
+     * of the data. Two things follow from that: the announcement cannot drift
+     * from what is displayed, and it stays correct if the card's contents ever
+     * change.
+     *
+     * It deliberately does NOT repeat the h2. A reader who hears 「基隆」 and
+     * then arrows down into the card would otherwise be told the station's name
+     * twice in a row; what they need is the headline the card leads with, which
+     * the h2 does not carry. So: the name once, then the year and the two
+     * figures a reader would ask for first.
+     */
+    const shown = reports.find((r) => !r.hidden);
+    if (!say || !shown) return;
+    const text = (sel: string) => shown.querySelector(sel)?.textContent?.trim() ?? "";
+    const stats = Array.from(shown.querySelectorAll<HTMLElement>(".stat"));
+    const figure = (i: number) => {
+      const s = stats[i];
+      if (!s) return "";
+      const value = s.querySelector(".stat-value")?.textContent?.trim() ?? "";
+      const label = s.querySelector(".stat-label")?.textContent?.trim() ?? "";
+      return value && label ? `${label} ${value}` : "";
+    };
+    say.textContent = [
+      `${shown.dataset.station}，${text(".year")}`,
+      figure(0),
+      figure(2),
+    ]
+      .filter(Boolean)
+      .join("；");
   });
 </script>
 

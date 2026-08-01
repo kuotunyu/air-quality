@@ -185,6 +185,11 @@ const legend = BREAKS.map((b, i) => ({
     <code>twair analyze m7</code> 重算。
   </p>
 
+  {/* Chapter 4's own, for the reasons written above chapter 2's. The grid
+      redraw is silent — 96 cells change fill and a screen reader is told
+      nothing — so this is the only signal that the figure moved. */}
+  <p id="cbpf-say" class="visually-hidden" role="status" aria-live="polite"></p>
+
   <div class="picker-row">
     <label>
       測站
@@ -535,6 +540,27 @@ const legend = BREAKS.map((b, i) => ({
       if (badge) {
         badge.textContent = SIGNATURE[s.signature] ?? s.signature;
         badge.dataset.signature = s.signature;
+      }
+
+      /*
+       * Composed from the nodes just written above, not from `s` again, so the
+       * announcement cannot say something the page does not.
+       *
+       * Not the caption's own wording either: a reader who hears this and then
+       * arrows to the figure would get 「基隆的 CBPF 極座標圖」 straight
+       * afterwards, since that caption is the figure's accessible name.
+       */
+      const say = document.getElementById("cbpf-say");
+      if (say) {
+        const read = (id: string) => document.getElementById(id)?.textContent?.trim() ?? "";
+        say.textContent = [
+          select.value,
+          badge ? `訊號 ${badge.textContent?.trim()}` : "",
+          `高值門檻 ${read("cbpf-threshold")} μg/m³`,
+          `機率最高的方位 ${read("cbpf-peak")}`,
+        ]
+          .filter(Boolean)
+          .join("；");
       }
     });
   }
