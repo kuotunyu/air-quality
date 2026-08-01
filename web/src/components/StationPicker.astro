@@ -37,7 +37,58 @@ const OPENS_ON = "西屯";
 const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 ---
 
+{/*
+  With no script, the control is taken away and all 79 cards are given instead.
+
+  What shipped was worse than a dead control: the `<select>` is server-rendered
+  with 79 options and the 78 non-default cards carry `hidden`, so a reader
+  without JavaScript picked 彰化, the control CONFIRMED the choice, and the card
+  underneath still said 西屯 — 13.7 μg/m³, 139 days, rank 43. A control that
+  does nothing is a nuisance; a control that agrees with you and then shows you
+  another station's numbers is a lie, and this chapter is nothing but that card.
+
+  `<noscript>` carrying a `<style>` rather than a script rendering the select.
+  It costs no layout shift, because the rule is in the parser's hands before
+  first paint rather than applied after hydration; it needs no second copy of
+  the station list in JavaScript; and it leaves the reader MORE than the
+  scripted page has, not less — all 79 stations, in county order, which is the
+  only way to reach the other 78 without a script. Same shape as the chapter
+  rail, which is a checkbox for the same reason.
+*/}
+{/*
+  Anchored on `#stations`, which is specificity arithmetic and not decoration.
+
+  A `<style>` inside `<noscript>` is raw HTML and Astro does not scope it, while
+  this component's own `.controls` compiles to `.controls[data-astro-cid-…]`.
+  `.picker .controls` ties that at (0,2,0) and wins only because a body rule
+  comes after a hoisted head rule — true today, and not a thing to build two
+  chapters on. Chapter 4's equivalent lost the same comparison outright and
+  silently did nothing. The chapter's `id` is guaranteed by `chapters.ts`, being
+  the anchor other chapters link to, so (1,2,0) settles it.
+*/}
+<noscript>
+  <style>
+    /* The control cannot act, so it is not offered. */
+    #stations .picker .controls {
+      display: none;
+    }
+    /* `hidden` is what the script toggles; overriding its presentation is what
+       turns one card into the whole register. */
+    #stations .picker .report[hidden] {
+      display: block;
+    }
+    #stations .picker .nojs {
+      display: block;
+    }
+  </style>
+</noscript>
+
 <div class="picker">
+  <p class="note nojs">
+    這一章的測站選單需要 JavaScript。下面直接列出全部 {cards.length} 個測站，
+    依縣市由北到南排序。
+  </p>
+
   <div class="controls">
     <label>
       測站
@@ -57,8 +108,18 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     </label>
   </div>
 
+  {/*
+    Emitted in the SELECT's order, not the export's.
+
+    With a script this is invisible — one card is shown and the rest are
+    `hidden`, so their order never surfaces. Without one, all 79 are the page,
+    and the export's order is whatever the pipeline sorted by. Reusing
+    `counties` makes the document read the way the control reads: 基隆 at the
+    top, 恆春 at the bottom, and the two can no more disagree about order than
+    they can about which stations exist.
+  */}
   {
-    cards.map((card) => (
+    counties.flatMap((group) => group.items).map((card) => (
       <article
         class="report"
         data-station={card.station_name}
@@ -176,6 +237,19 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 <style>
   .picker {
     margin-top: 1.5rem;
+  }
+
+  /*
+   * Hidden here, shown by the `<noscript>` above.
+   *
+   * The other direction — render it and hide it with script — would flash a
+   * message about JavaScript at every reader who has JavaScript, for however
+   * long the parser takes to reach the script tag. `<noscript>` is evaluated by
+   * the parser, so the scripted reader never sees this at all and the
+   * unscripted one never sees it appear.
+   */
+  .nojs {
+    display: none;
   }
   /* This caveat ends the chapter, and Astro's own <script> is the section's real
      last child — so the global rule that clears trailing margins lands on a

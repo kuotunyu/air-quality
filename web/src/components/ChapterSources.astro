@@ -135,6 +135,56 @@ const legend = BREAKS.map((b, i) => ({
     該小時的 PM2.5 落在最高四分之一的機率。
   </p>
 
+  {/*
+    Without a script this figure is one station, so the menu is withdrawn and
+    the station is named instead.
+
+    What shipped was a `<select>` of 74 options, server-rendered and inert: a
+    reader without JavaScript arrowed to 永和, the control agreed, and all six
+    readouts — threshold 16.0, peak 0° 北, resultant 0.228, calm 3.0%, and the
+    signature badge 21px to the right of the menu — went on describing 富貴角.
+    That is the worst case for this chapter in particular: 富貴角 is a northern
+    cape, transport-dominated, about as unlike an inland basin station as the
+    register gets, and the chapter's whole claim is that these signatures differ
+    by station.
+
+    `<noscript>` with a `<style>`, the same shape as chapter 2's, for the same
+    reasons: no layout shift, no second copy of the station list, and the
+    parser rather than a hydration step decides. What it cannot do is show all
+    74 the way chapter 2 shows all 79 — there is one grid here, not 74 cards —
+    so the honest substitute is to say which one it is.
+  */}
+  {/*
+    Selectors are anchored on `#sources`, and that is specificity arithmetic
+    rather than decoration.
+
+    A `<style>` inside `<noscript>` is raw HTML and is NOT scoped by Astro,
+    while the component's own `.picker-row` is compiled to
+    `.picker-row[data-astro-cid-kgeyh5bl]` — (0,2,0) against (0,1,0). The first
+    version of this block lost that comparison and changed nothing at all;
+    measured with scripts disabled, `.picker-row` was still `flex`. Chapter 2's
+    equivalent happened to win only because `.picker .controls` ties on weight
+    and a body rule beats a hoisted head rule on order, which is not a thing to
+    rely on twice. The chapter's own `id` is guaranteed by `chapters.ts` — it is
+    the anchor other chapters link to — so (1,1,0) is both stable and cheap.
+  */}
+  <noscript>
+    <style>
+      #sources .picker-row {
+        display: none;
+      }
+      #sources .cbpf-nojs {
+        display: block;
+      }
+    </style>
+  </noscript>
+
+  <p class="note cbpf-nojs">
+    這張圖的測站選單需要 JavaScript。目前顯示的是<strong>{initial}</strong>（{SIGNATURE[start.signature] ?? start.signature}）。
+    每個測站的 CBPF 與下方所有數字都可以從
+    <code>twair analyze m7</code> 重算。
+  </p>
+
   <div class="picker-row">
     <label>
       測站
@@ -337,9 +387,24 @@ const legend = BREAKS.map((b, i) => ({
       </div>
     </div>
 
+    {/*
+      The caption names the station, and it is the only place that can.
+
+      Three readers were getting an unnamed figure. The `<svg role="img">` above
+      is `aria-labelledby="cbpf-caption"`, so a screen reader hears this text as
+      the image's name — and it did not say which station. FigureTools exports
+      the whole figure INCLUDING this caption as a PNG, so every image taken off
+      this page was a polar plot of nobody. And the drafting note above says the
+      picker deliberately sits outside the figure, which is right, but it left
+      nothing inside naming the subject.
+
+      `#cbpf-where` is updated by the same handler that redraws the grid, so the
+      three cannot drift.
+    */}
     <figcaption id="cbpf-caption">
-      CBPF 極座標圖。<strong>沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，
-      機率不予報告</strong>——那是「不知道」，不是「乾淨」。
+      <strong id="cbpf-where">{initial}</strong>的 CBPF 極座標圖。<strong
+        >沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，機率不予報告</strong
+      >——那是「不知道」，不是「乾淨」。
       全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
     </figcaption>
   </figure>
@@ -457,6 +522,9 @@ const legend = BREAKS.map((b, i) => ({
         }),
       );
 
+      // The caption is the figure's accessible name and travels into the PNG
+      // export, so it moves with the grid or it is worse than no name at all.
+      set("cbpf-where", select.value);
       set("cbpf-threshold", s.threshold.toFixed(1));
       set("cbpf-peak", s.peak_sector == null ? "—" : bearing(s.peak_sector));
       set("cbpf-peak-speed", `風速 ${s.peak_speed} m/s`);
@@ -473,6 +541,12 @@ const legend = BREAKS.map((b, i) => ({
 </script>
 
 <style>
+  /* Hidden here, revealed by the `<noscript>` above — never rendered and then
+     removed, so a reader with JavaScript never sees a flash of it. */
+  .cbpf-nojs {
+    display: none;
+  }
+
   .picker-row {
     display: flex;
     align-items: center;
