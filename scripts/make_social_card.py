@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DATA = ROOT / "web" / "public" / "data"
@@ -68,7 +69,17 @@ def facts() -> dict[str, object]:
     start = years.index(since)
     first, last = series[start], series[-1]
 
+    # The RECORD span — every measurand, from the station register — which is a
+    # different quantity from `years[0]`. The trend series begins in 1998
+    # because that is when PM2.5 does; the archive begins in 1982. The card
+    # wants the archive, and reaching for `years[0]` to remove a hardcoded
+    # string would have replaced a right number with a wrong one.
+    first_years = [s["first_year"] for s in meta["stations"] if s.get("first_year")]
+    last_years = [s["last_year"] for s in meta["stations"] if s.get("last_year")]
+
     return {
+        "record_first": min(first_years),
+        "record_last": max(last_years),
         "first_year": years[0],
         "last_year": years[-1],
         "stations": len(meta["stations"]),
@@ -100,7 +111,11 @@ def draw() -> None:
     x = pad + band_w + 46
     y = pad - 6
 
-    d.text((x, y), "1982 – 2025", font=font(LATIN, 30), fill=FAINT)
+    # Not a literal. This file's docstring promises that every number on the
+    # card is read from the data, and this line was the exception — 「1982 – 2025」
+    # typed in, on the one surface nobody re-checks after a pipeline run. It
+    # happened to be right, which is the only reason it survived.
+    d.text((x, y), f"{f['record_first']} – {f['record_last']}", font=font(LATIN, 30), fill=FAINT)
     y += 54
 
     title = font(CJK_BOLD, 76)
@@ -136,7 +151,13 @@ def draw() -> None:
     )
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    img.save(OUT, "PNG", optimize=True)
+    # The facts travel inside the PNG, so `--check` can ask whether the card
+    # still describes the data the site ships without re-rendering it. og.png is
+    # committed, and it was the only committed artefact with nothing watching
+    # whether it had gone stale.
+    info = PngImagePlugin.PngInfo()
+    info.add_text("twair-facts", json.dumps(f, ensure_ascii=False, sort_keys=True))
+    img.save(OUT, "PNG", optimize=True, pnginfo=info)
     size_kb = OUT.stat().st_size / 1024
     print(f"wrote {OUT.relative_to(ROOT)}  {WIDTH}x{HEIGHT}  {size_kb:.0f} KB")
     print(
@@ -146,8 +167,39 @@ def draw() -> None:
     )
 
 
+def check() -> int:
+    """Is the committed card still describing the data the site ships?
+
+    Compares the facts embedded when it was drawn against the facts recomputed
+    from `web/public/data` now. Re-rendering and comparing bytes would not work:
+    PNG output is not reproducible across Pillow versions or font builds, and a
+    check that fails for that reason is a check that gets deleted.
+    """
+    if not OUT.exists():
+        print(f"{OUT.relative_to(ROOT)} missing — run this script without --check")
+        return 1
+    with Image.open(OUT) as img:
+        recorded = img.text.get("twair-facts")
+    if not recorded:
+        print(f"{OUT.relative_to(ROOT)} carries no facts — redraw it")
+        return 1
+    was = json.loads(recorded)
+    now = facts()
+    drifted = {k: (was.get(k), now[k]) for k in now if was.get(k) != now[k]}
+    if drifted:
+        print(f"{OUT.relative_to(ROOT)} describes an older export:")
+        for k, (a, b) in drifted.items():
+            print(f"  {k}: card says {a!r}, data says {b!r}")
+        print("re-run `uv run python scripts/make_social_card.py`")
+        return 1
+    print(f"{OUT.relative_to(ROOT)} matches the published data ({len(now)} facts)")
+    return 0
+
+
 if __name__ == "__main__":
     # `sys.exit(draw())` read as "exit with draw's status", and `draw()` returns
     # None — so the exit code was 0 whatever happened inside. It always was 0;
     # what was wrong was the sentence, not the behaviour.
+    if "--check" in sys.argv:
+        raise SystemExit(check())
     draw()

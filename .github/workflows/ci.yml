@@ -87,6 +87,16 @@ jobs:
       - name: The published data matches its own manifest
         run: uv run python scripts/check_web_export.py
 
+      # `og.png` is committed and is the most-seen, least-checked surface the
+      # project has — it is what people look at when deciding whether to open
+      # the thing, and the last place anyone re-checks after a data refresh. It
+      # now carries the facts it was drawn from inside the PNG, so this asks
+      # whether it still describes the data that ships, without re-rendering
+      # (PNG output is not reproducible across Pillow versions, and a check
+      # that fails for that reason is a check that gets deleted).
+      - name: The social card still describes the published data
+        run: uv run python scripts/make_social_card.py --check
+
       - name: Test (Pytest)
         run: uv run pytest
 
