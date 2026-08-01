@@ -319,7 +319,7 @@ class TestLeakagePrice:
 
         from twair.analysis.pitfalls import pm10_leakage_price
 
-        with pytest.raises(FileNotFoundError, match="run_m2"):
+        with pytest.raises(FileNotFoundError, match="analyze m2"):
             pm10_leakage_price()
 
 

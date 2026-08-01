@@ -448,7 +448,7 @@ def pm10_leakage_price(root: Path | None = None) -> pl.DataFrame:
 
     path = outputs_dir("m2_drivers") / "scores.parquet"
     if not path.exists():
-        raise FileNotFoundError(f"{path} — run scripts/run_m2.py first")
+        raise FileNotFoundError(f"{path} — run `twair analyze m2` first")
 
     rolling = (
         pl.read_parquet(path)

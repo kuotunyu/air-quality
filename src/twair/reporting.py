@@ -95,7 +95,7 @@ def _m1_section() -> str:
 def _m2_section() -> str:
     scores = _load("m2_drivers", "scores")
     if scores is None:
-        return "_M2 尚未執行。跑 `uv run python scripts/run_m2.py`。_\n"
+        return "_M2 尚未執行。跑 `uv run twair analyze m2`。_\n"
 
     summary = (
         scores.group_by("model", "feature_set", "split_kind")

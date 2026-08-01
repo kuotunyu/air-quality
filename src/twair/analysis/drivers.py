@@ -42,6 +42,7 @@ from twair.models.evaluate import (
     persistence_baseline,
     rolling_origin,
 )
+from twair.paths import outputs_dir
 from twair.qc.rainfall import usable
 from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
@@ -52,7 +53,9 @@ __all__ = [
     "FEATURE_SETS",
     "DriverResult",
     "build_modelling_frame",
+    "run_all_drivers",
     "run_drivers",
+    "write_driver_report",
 ]
 
 TARGET = "PM2.5"
@@ -324,3 +327,95 @@ def baseline_scores(frame: pl.DataFrame, *, n_splits: int = 4) -> pl.DataFrame:
                 }
             )
     return pl.DataFrame(rows)
+
+
+# The 2018 project's own window, so M1 and M2 are compared on the same years
+# rather than on different subsets of the record.
+DEFAULT_PERIOD = (2010, 2017)
+
+REPORTED_FEATURE_SETS = (
+    "full",
+    "full_with_pm10",
+    "chemistry_only",
+    "weather_only",
+    "full_raw_wind",
+)
+
+# Leave-one-station-out over all 77 stations would be 77 fits. A sample spread
+# across station types and regions answers the same question at a fraction of
+# the cost.
+LOSO_SAMPLE = 8
+
+
+def run_all_drivers(
+    *,
+    period: tuple[int, int] = DEFAULT_PERIOD,
+    n_splits: int = 3,
+    loso_sample: int = LOSO_SAMPLE,
+    feature_sets: tuple[str, ...] = REPORTED_FEATURE_SETS,
+) -> dict[str, pl.DataFrame]:
+    """Every fit the M2 report is built from, in one pass over one frame.
+
+    Lived in ``scripts/run_m2.py`` until it was the only one of the eleven
+    analysis modules without a CLI subcommand — a gap `status.py` had to carry
+    as a special case and `reporting.py` had to explain in prose. The body is
+    unchanged; it moved so that `twair analyze m2` can reach it.
+    """
+    frame = build_modelling_frame(period=period)
+    log.info("frame: %s rows, %s stations", f"{frame.height:,}", frame["station_name"].n_unique())
+
+    tables: dict[str, pl.DataFrame] = {}
+    scores = [baseline_scores(frame, n_splits=n_splits)]
+
+    for name in feature_sets:
+        result = run_drivers(frame, feature_set=name, split_kind="rolling", n_splits=n_splits)
+        scores.append(result.summary())
+        if result.importance is not None:
+            tables[f"importance_{name}"] = result.importance
+        log.info("rolling/%s done", name)
+
+    # Spatial and temporal generalisation, for the honest specification only.
+    all_stations = sorted(frame["station_name"].unique().to_list())
+    step = max(len(all_stations) // loso_sample, 1)
+    sampled = all_stations[::step][:loso_sample]
+    log.info("leave-one-station-out over %s: %s", len(sampled), sampled)
+
+    scores.append(
+        run_drivers(frame, feature_set="full", split_kind="station", stations=sampled).summary()
+    )
+    scores.append(run_drivers(frame, feature_set="full", split_kind="year").summary())
+
+    tables["scores"] = pl.concat(scores, how="vertical_relaxed")
+    tables["summary"] = (
+        tables["scores"]
+        .group_by("model", "feature_set", "split_kind")
+        .agg(
+            pl.col("rmse").mean().alias("rmse"),
+            pl.col("mae").mean().alias("mae"),
+            pl.col("r2").mean().alias("r2"),
+            pl.col("exceedance_f1").mean().alias("f1"),
+            pl.len().alias("splits"),
+        )
+        .sort("split_kind", "rmse")
+    )
+    return tables
+
+
+def write_driver_report(tables: dict[str, pl.DataFrame]) -> dict[str, Path]:
+    """Persist to ``data/outputs/m2_drivers/``.
+
+    ``summary`` stays a CSV, because it is the one table here a person reads
+    directly and every other consumer goes through ``scores.parquet``.
+    """
+    out = outputs_dir("m2_drivers")
+    out.mkdir(parents=True, exist_ok=True)
+
+    written: dict[str, Path] = {}
+    for name, frame in tables.items():
+        path = out / (f"{name}.csv" if name == "summary" else f"{name}.parquet")
+        if path.suffix == ".csv":
+            frame.write_csv(path)
+        else:
+            frame.write_parquet(path)
+        written[name] = path
+    return written

@@ -607,7 +607,7 @@ duckdb -c "SELECT count(*) FROM 'data/processed/observations/**/*.parquet'"
 
 # 分析
 uv run twair analyze m1   # 復刻，比對 reports/_expected/replication_2018.yaml
-python scripts/run_m2.py  # 逐時重做（M2 沒有 CLI 子指令，見 status.py 的說明）
+uv run twair analyze m2  # 逐時重做，5.13M 列
 uv run twair analyze all
 
 # 網站

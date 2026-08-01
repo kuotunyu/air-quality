@@ -208,3 +208,81 @@ class TestSplitDispatch:
         from twair.analysis.drivers import _get_splits
 
         assert sum(1 for _ in _get_splits(self._frame(), kind, 3, None)) > 0
+
+
+class TestTheReportedRun:
+    """The orchestration that used to be `scripts/run_m2.py`.
+
+    It became `twair analyze m2` because M2 was the one analysis module of
+    eleven without a subcommand — a gap `status.py` carried as a special case
+    (`Module(... "python scripts/run_m2.py" ...)`) and `reporting.py` had to
+    explain in prose to anyone whose report came out empty.
+    """
+
+    def test_every_reported_feature_set_is_a_real_one(self) -> None:
+        """Two lists that have to stay one list.
+
+        `run_all_drivers` names the sets it fits; `FEATURE_SETS` defines them.
+        A typo in the first raises KeyError only once the frame is built, which
+        is after the expensive part.
+        """
+        from twair.analysis.drivers import REPORTED_FEATURE_SETS
+
+        unknown = [name for name in REPORTED_FEATURE_SETS if name not in FEATURE_SETS]
+
+        assert not unknown, f"named for the report but never defined: {unknown}"
+
+    def test_the_two_leakage_specifications_are_both_reported(self) -> None:
+        """The headline number is the difference between them."""
+        from twair.analysis.drivers import REPORTED_FEATURE_SETS
+
+        assert {"full", "full_with_pm10"} <= set(REPORTED_FEATURE_SETS)
+
+    def test_the_default_window_is_the_one_the_2018_project_used(self) -> None:
+        """M1 and M2 are only comparable on the same years."""
+        from twair.analysis.drivers import DEFAULT_PERIOD
+
+        assert DEFAULT_PERIOD == (2010, 2017)
+
+    def test_the_report_writes_the_summary_as_csv_and_the_rest_as_parquet(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`summary.csv` is the only table here a person opens directly."""
+        from twair.analysis.drivers import write_driver_report
+
+        monkeypatch.setattr("twair.analysis.drivers.outputs_dir", lambda *_: tmp_path / "m2")
+        tables = {
+            "scores": pl.DataFrame({"rmse": [1.0]}),
+            "importance_full": pl.DataFrame({"feature": ["O3"], "mean_abs_shap": [0.5]}),
+            "summary": pl.DataFrame({"model": ["lightgbm"], "rmse": [1.0]}),
+        }
+
+        written = write_driver_report(tables)
+
+        assert written["summary"].suffix == ".csv"
+        assert written["scores"].suffix == ".parquet"
+        assert {p.name for p in (tmp_path / "m2").iterdir()} == {
+            "scores.parquet",
+            "importance_full.parquet",
+            "summary.csv",
+        }
+
+    def test_the_written_names_match_what_the_report_reads_back(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`reporting.py` loads `scores` and `importance_full` by those names.
+
+        A rename on either side leaves the M2 section of `reports/01-core.md`
+        silently reading 「_M2 尚未執行。_」 over a directory full of results.
+        """
+        from twair.analysis.drivers import write_driver_report
+
+        monkeypatch.setattr("twair.analysis.drivers.outputs_dir", lambda *_: tmp_path / "m2")
+        written = write_driver_report(
+            {
+                "scores": pl.DataFrame({"rmse": [1.0]}),
+                "importance_full": pl.DataFrame({"feature": ["O3"]}),
+            }
+        )
+
+        assert {"scores", "importance_full"} <= set(written)

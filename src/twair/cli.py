@@ -369,6 +369,32 @@ def analyze_m1(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m2")
+def analyze_m2(
+    years: str = typer.Option("2010:2017", "--years", "-y", help="Period to analyse."),
+    splits: int = typer.Option(3, "--splits", help="Rolling-origin splits per feature set."),
+    stations: int = typer.Option(
+        8, "--loso", help="How many stations to hold out one at a time. All 77 is 77 fits."
+    ),
+) -> None:
+    """M2 — what actually drives hourly PM2.5, once PM10 may not predict its own subset."""
+    from twair.analysis.drivers import run_all_drivers, write_driver_report
+
+    span = _parse_year_range(years)
+    period = (span.start, span.stop - 1) if span else (2010, 2017)
+
+    tables = run_all_drivers(period=period, n_splits=splits, loso_sample=stations)
+
+    # The baselines first and in the same table, because a model score without
+    # persistence beside it is not a result — which is the entire complaint
+    # this module makes about the 2018 project.
+    with pl.Config(tbl_rows=40, tbl_width_chars=120, float_precision=4):
+        console.print(tables["summary"])
+
+    for name, path in write_driver_report(tables).items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m4")
 def analyze_m4(
     years: str = typer.Option("2006:2025", "--years", "-y", help="Period to analyse."),

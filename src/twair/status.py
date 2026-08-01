@@ -78,7 +78,7 @@ class Module:
 MODULES: tuple[Module, ...] = (
     Module("qc", "twair qc report", "data-quality measurement over all 44 years", feeds_web=False),
     Module("m1_replication", "twair analyze m1", "replication of the 2018 method"),
-    Module("m2_drivers", "python scripts/run_m2.py", "hourly redo, 5.13M rows"),
+    Module("m2_drivers", "twair analyze m2", "hourly redo, 5.13M rows"),
     Module("m3_pitfalls", "twair analyze m3", "six paired method comparisons"),
     Module("m4_deweather", "twair analyze m4", "meteorological normalisation"),
     Module("m5_causal", "twair analyze m5", "event studies with placebo controls"),

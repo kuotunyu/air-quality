@@ -51,9 +51,11 @@ class TestTheReproduceTableCannotRot:
     def test_every_module_names_something_that_exists(self) -> None:
         """A renamed CLI command must break a test, not mislead a reader.
 
-        `m2_drivers` is the one that makes this worth checking: it is produced
-        by a loose script rather than a subcommand, which is invisible from the
-        output directory and impossible to guess two weeks later.
+        `m2_drivers` is why this was written: it used to be produced by a loose
+        script rather than a subcommand, which is invisible from the output
+        directory and impossible to guess two weeks later. It is
+        `twair analyze m2` now, and this check is what makes that survive the
+        next rename.
         """
         missing = [target for target, found in declared_reproduce_targets().items() if not found]
 

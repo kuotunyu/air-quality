@@ -361,7 +361,7 @@ def _errors(scored: pl.DataFrame, column: str) -> dict[str, float | None]:
 def spread_sample(stations: list[str], n: int) -> list[str]:
     """An evenly spaced slice of the sorted station list.
 
-    The same device `scripts/run_m2.py` uses for leave-one-station-out: the
+    The same device M2 uses for leave-one-station-out (`run_all_drivers`): the
     expensive comparisons do not need all 78 stations to answer the question,
     and a spread beats the first N, which would be alphabetical and therefore
     regional.
