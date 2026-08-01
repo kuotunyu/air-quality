@@ -15,6 +15,15 @@
  * over `coi`: the threaded build needs cross-origin isolation headers, and
  * GitHub Pages cannot set headers. A site that only works behind a custom
  * server would defeat the point of publishing it.
+ *
+ * The version in package.json is pinned exactly, without a caret, and the
+ * reason is upstream's dist-tags: `latest` is `1.33.1-dev57.0` and `next` is
+ * `1.33.1-dev64.0`. duckdb-wasm has published no stable release above 1.32.0,
+ * so `npm i` gives you a prerelease whether or not you asked for one — and
+ * `^1.33.1-dev57.0` matches every later dev build of 1.x, of which four
+ * already exist. package-lock.json holds the deployed build steady, but any
+ * `npm install` would have moved these four imports, and they are the bytes
+ * the reader downloads.
  */
 
 import type * as DuckDB from "@duckdb/duckdb-wasm";
