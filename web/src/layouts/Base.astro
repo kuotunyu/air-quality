@@ -166,7 +166,31 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       <header class="rail">
         <div class="rail-top">
           <a class="brand" href={href()}>air-<span>quality</span></a>
-          <label class="rail-shut" for="rail" aria-label="收起章節">
+          {/*
+            `tabindex` because a label is not focusable by default, and this is
+            the drawer's only visible way out.
+
+            Walked with real Tab presses at 1024 with the drawer open: stops 1
+            to 13 are the skip link, the checkbox, the brand and the ten chapter
+            links, and stop 14 lands on a `.plot` inside `<main>` — behind a
+            42%-black veil, on a control that is dead to the mouse user beside
+            them. An exit did exist (Shift+Tab from the first drawer stop
+            returns to the checkbox, where Space closes it) but nothing on
+            screen says so, because the focus ring is under the drawer.
+
+            One attribute, no script: the ✕ is already rendered, already
+            positioned, and already carries its own `aria-label`. It becomes
+            the first thing a forward walk reaches inside the open drawer.
+
+            Adding a stop is safe in both directions: `.rail-shut` is
+            `display: none` above 80rem and `visibility: hidden` with the closed
+            drawer, so this cannot become the dead stop the rule above just
+            removed. Escape still does nothing, and that is recorded as accepted
+            — this mechanism is deliberately script-free, and a document-level
+            key listener would overturn that for a case where an exit already
+            exists.
+          */}
+          <label class="rail-shut" for="rail" aria-label="收起章節" tabindex="0">
             <span aria-hidden="true">✕</span>
           </label>
         </div>
@@ -651,6 +675,30 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
          only job is to reveal it has nothing left to do. */
       @media (min-width: 80rem) {
         .handle {
+          display: none;
+        }
+
+        /*
+         * ...including the checkbox itself, which was still a tab stop.
+         *
+         * Hiding `.handle` took away the only label that renders at this width
+         * — `.rail-shut` and `.rail-veil` are `display: none` here too — but
+         * left the input. Walked with real Tab key events at 1280 and 1440, it
+         * is stop number 2 on all eleven routes: `role=checkbox`, accessible
+         * name `""`, a 1x1 box at the origin, no focus ring anywhere on screen,
+         * and Space does nothing. A screen reader announces an unnamed checkbox
+         * immediately after 「跳到主要內容」; everyone else loses the focus ring
+         * for one press. It is the same defect PRODUCT.md #42 fixed for the
+         * skip link, one stop further along.
+         *
+         * Safe because every rule that reads `:checked` — the drawer transform
+         * and the veil — lives inside `@media (max-width: 79.999rem)`, so none
+         * of them can apply at this width whatever the checkbox's state is.
+         * Checked by listing them: lines 609 and 635, both inside the 584
+         * block. A window resized while the drawer was open therefore cannot
+         * strand it.
+         */
+        .rail-switch {
           display: none;
         }
       }
