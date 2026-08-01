@@ -37,8 +37,29 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
+      # `scripts/` was outside the gate and had drifted: 5 errors in 3 files,
+      # in a directory holding 2,892 lines including three of the checks this
+      # workflow runs and the only reproduction path for M2.
+      #
+      # Two invocations, not `mypy src tests scripts`. `scripts/` is a folder of
+      # standalone programs with no `__init__.py`, so passing it alongside the
+      # package makes mypy resolve `check_web_export.py` both as a top-level
+      # module and as `scripts.check_web_export`, and it refuses:
+      # "Source file found twice under different module names". Splitting the
+      # run is the honest fix — they are two different things being checked —
+      # and it also reports which half is broken.
       - name: Type Check (MyPy)
-        run: uv run mypy src tests
+        run: |
+          uv run mypy src tests
+          uv run mypy scripts
+
+      # The palette's published numbers are solved by this file, and nothing
+      # ran it — so PRODUCT.md quoted two dark-theme figures it does not
+      # produce. It also used to exit 0 whatever it found; it now fails when a
+      # SHIPPED palette fails, and still prints the rejected candidates, which
+      # are supposed to fail and are the argument for what shipped.
+      - name: The shipped palettes still clear their own gates
+        run: uv run python scripts/check_palette.py
 
       # AGENTS.md and .github/copilot-instructions.md are the same rules read by
       # different agents. Nothing enforced that until the copy was found to be

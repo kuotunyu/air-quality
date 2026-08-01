@@ -88,7 +88,9 @@ def oklch_to_linear(lightness: float, chroma: float, hue_deg: float) -> np.ndarr
     hue = np.radians(hue_deg)
     oklab = np.array([lightness, chroma * np.cos(hue), chroma * np.sin(hue)])
     lms = _LMS_FROM_OKLAB @ oklab
-    return _RGB_FROM_LMS @ (lms**3)
+    # `np.asarray` because `@` is typed as returning Any: without it this
+    # function's declared return type is a promise mypy cannot see kept.
+    return np.asarray(_RGB_FROM_LMS @ (lms**3))
 
 
 def in_gamut(linear: np.ndarray, tolerance: float = 1e-4) -> bool:
@@ -98,7 +100,7 @@ def in_gamut(linear: np.ndarray, tolerance: float = 1e-4) -> bool:
 def encode(linear: np.ndarray) -> np.ndarray:
     """Linear sRGB to display sRGB, 0–1, clipped."""
     c = np.clip(linear, 0.0, 1.0)
-    return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)
+    return np.asarray(np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055))
 
 
 def hexed(linear: np.ndarray) -> str:
@@ -203,7 +205,7 @@ def ciede2000(lab1: np.ndarray, lab2: np.ndarray) -> float:
 
 
 def simulate(linear: np.ndarray, kind: str) -> np.ndarray:
-    return _CVD[kind] @ np.clip(linear, 0.0, 1.0)
+    return np.asarray(_CVD[kind] @ np.clip(linear, 0.0, 1.0))
 
 
 # ── the palettes ─────────────────────────────────────────────────────────────
@@ -463,12 +465,37 @@ def headroom(base: Palette) -> Palette:
     )
 
 
-def main() -> None:
+def main() -> int:
+    """Report every candidate; fail only if a SHIPPED palette does.
+
+    This returned None, so the exit code was 0 whatever it found — including a
+    shipped palette failing a gate. That made it a report rather than a check,
+    and nothing ran it: the numbers in PRODUCT.md's palette section had drifted
+    from what this file computes and no one had noticed, because noticing
+    required someone to run it and read the output by eye.
+
+    The other three palettes are SUPPOSED to fail. `MACARON_LIGHT`,
+    `MACARON_PUSHED` and `headroom(SHIPPED_LIGHT)` are rejected alternatives
+    kept for comparison — the last one exists precisely to show what pushing
+    chroma to the sRGB ceiling costs, and it costs separation. Their verdicts
+    are the argument for the shipped palette, so they are printed and not
+    counted.
+    """
     print(__doc__.split("\n\n")[0])
-    for palette in (SHIPPED_LIGHT, SHIPPED_DARK, MACARON_LIGHT, MACARON_PUSHED):
+    shipped_ok = True
+    for palette in (SHIPPED_LIGHT, SHIPPED_DARK):
+        shipped_ok = all(report(palette).values()) and shipped_ok
+    for palette in (MACARON_LIGHT, MACARON_PUSHED):
         report(palette)
     report(headroom(SHIPPED_LIGHT))
 
+    print()
+    print("=" * 78)
+    print(f"shipped palettes: {'PASS' if shipped_ok else 'FAIL'}")
+    print("  (the macaron candidates and the chroma-ceiling variant are expected")
+    print("   to fail; they are printed as the argument for what shipped)")
+    return 0 if shipped_ok else 1
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

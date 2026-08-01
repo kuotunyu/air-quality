@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -148,4 +147,7 @@ def draw() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(draw())
+    # `sys.exit(draw())` read as "exit with draw's status", and `draw()` returns
+    # None — so the exit code was 0 whatever happened inside. It always was 0;
+    # what was wrong was the sentence, not the behaviour.
+    draw()

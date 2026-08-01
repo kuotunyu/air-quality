@@ -115,7 +115,7 @@ def legal(
     return turns([s[0] for s in specs]) >= MIN_LIGHTNESS_ZIGZAG
 
 
-def min_pairwise(specs: list[tuple[float, float, float]], kinds=SCORED) -> float:
+def min_pairwise(specs: list[tuple[float, float, float]], kinds: tuple[str, ...] = SCORED) -> float:
     """The smallest distance between ANY two members, over every vision scored.
 
     Adjacent-only is the right measure for a ramp, where a reader compares a
