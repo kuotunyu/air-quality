@@ -28,36 +28,44 @@ rows per horizon:
   h      R²    skill vs      skill vs      worst split vs
                 persistence   climatology   persistence
 ===== ======= ============= ============= =================
-   1    0.859       +0.175        +0.839          +0.131
-   6    0.550       +0.190        +0.480          **-0.111**
-  24    0.351       +0.238        +0.249          +0.189
-  48    0.217       +0.243        +0.088          +0.055
+   1    0.859       +0.172        +0.837          +0.127
+   6    0.576       +0.237        +0.508          +0.080
+  24    0.317       +0.196        +0.207          +0.147
+  48    0.289       +0.315        +0.174          +0.290
 ===== ======= ============= ============= =================
 
 Three things to read off that, in descending order of how easy they are to get
 wrong:
 
-**R² and skill move in opposite directions.** R² falls by a factor of four
-across the horizons while skill *rises*. R² is dominated by how predictable the
-target happens to be, and PM2.5 an hour out is very predictable by anyone —
-including a one-line rule. Skill asks the different question of whether the
-model added anything, and the answer improves with distance because persistence
-degrades faster than the model does. So horizon is never averaged over.
+**R² and skill move in opposite directions.** R² falls threefold across the
+horizons, 0.859 to 0.289, while skill does not fall at all — it ends higher
+than it starts. R² is dominated by how predictable the target happens to be,
+and PM2.5 an hour out is very predictable by anyone, including a one-line rule.
+Skill asks the different question of whether the model added anything. So
+horizon is never averaged over.
 
 **The useful range ends around 24 hours, and only the climatology column says
-so.** Skill against persistence keeps climbing to 48h, which on its own reads
-as "better the further out you go". Skill against climatology collapses over
-the same span, +0.839 to +0.088: by two days the model has nearly decayed to
+so.** Skill against persistence is highest at 48h, which on its own reads as
+"better the further out you go". Skill against climatology collapses over the
+same span, +0.837 to +0.174: by two days the model has largely decayed to
 "the average for this station, this month, this hour". Beating persistence at
 48h is not an achievement when persistence is beaten by the long-run mean.
 **Two baselines are needed because either one alone flatters the model.**
 
-**The mean over splits hid a losing split.** At six hours `rolling_1` scores
--0.111 — the one trained on the least data, since rolling-origin gives split 1
-the shortest history. The first summary line printed here said "4/4 horizons
-beat persistence", which was true of the means and false of 1 of the 16
-horizon-split cells. `summarise_scores` now carries `skill_worst_split`
-alongside every mean for that reason.
+**The mean over splits can hide a losing split, and once did.** The first
+backtest scored `rolling_1` at six hours at **-0.111** — the split trained on
+the least data, since rolling-origin gives split 1 the shortest history — while
+the summary line read "4/4 horizons beat persistence", true of the four means
+and false of 1 of the 16 horizon-split cells.
+
+The table above has no losing cell; the worst is +0.080, in the same place.
+That is not a reason to stop reporting the worst split. Nothing announced the
+losing cell the first time either, and what removed it was fixing an unrelated
+bug in `features/lags.py` — every station's first 167 hours had been carrying
+the previous station's history, and dropping those rows moved six-hour skill
+from +0.190 to +0.237. `summarise_scores` carries `skill_worst_split` and
+`splits_not_beating_persistence` beside every mean because a mean cannot tell
+you when it has started hiding something.
 
 Validation is rolling-origin: train on everything before a cut, test on what
 follows, walk the cut forward. Random splits would let the model train on

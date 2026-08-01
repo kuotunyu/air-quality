@@ -49,10 +49,10 @@ STATIONS = sorted(DEMO["station_name"].unique().to_list())
 
 # The full backtest: 74 stations, 2015-2025, four rolling-origin splits.
 SKILL = {
-    1: {"r2": 0.859, "persistence": 0.175, "climatology": 0.839, "rmse": 4.03},
-    6: {"r2": 0.550, "persistence": 0.190, "climatology": 0.480, "rmse": 7.26},
-    24: {"r2": 0.351, "persistence": 0.238, "climatology": 0.249, "rmse": 8.68},
-    48: {"r2": 0.217, "persistence": 0.243, "climatology": 0.088, "rmse": 9.66},
+    1: {"r2": 0.859, "persistence": 0.172, "climatology": 0.837, "rmse": 4.04},
+    6: {"r2": 0.576, "persistence": 0.237, "climatology": 0.508, "rmse": 7.05},
+    24: {"r2": 0.317, "persistence": 0.196, "climatology": 0.207, "rmse": 8.90},
+    48: {"r2": 0.289, "persistence": 0.315, "climatology": 0.174, "rmse": 9.15},
 }
 
 # And the same measurement on the six stations and one year bundled here, which

@@ -167,8 +167,13 @@ def check_stations(expected: dict[int, dict[str, Any]]) -> list[str]:
     if actual == 0:
         return ["the payload carries no station count — re-export after `twair analyze m9`"]
 
+    # Only the files that are *entirely* about M9. `docs/methodology.md` covers
+    # eleven modules and says 「6 個測站 × 3 個 rolling-origin 分割、2015–2025」
+    # about M12's SARIMA experiment on the same period — a different population,
+    # correctly stated. A regex cannot tell which module a line belongs to, and a
+    # gate that cries wolf on a true sentence gets switched off.
     problems: list[str] = []
-    for path in (FORECAST_PY, SPACE_README, SPACE_APP, REPO_ROOT / "docs" / "methodology.md"):
+    for path in (FORECAST_PY, SPACE_README, SPACE_APP):
         if not path.exists():
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
