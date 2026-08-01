@@ -52,13 +52,25 @@ import polars as pl
 from twair.config import load_conf
 from twair.qc.flags import Flag
 
-__all__ = ["apply_sentinels", "sentinel_columns", "sentinel_report"]
+__all__ = ["SENTINEL_FLAGS", "apply_sentinels", "sentinel_columns", "sentinel_report"]
 
 _FLAG_BY_NAME = {
     "calm": Flag.CALM,
     "variable_direction": Flag.VARIABLE_DIRECTION,
     "instrument_fault": Flag.INSTRUMENT_FAULT,
 }
+
+# Every flag this pass can emit, derived from the table above rather than
+# retyped, because retyping it has now gone wrong twice.
+#
+# `qc/report.py` carried its own copy and its comment records the first time:
+# 「the hand-written list here silently undercounted by 75% until it was noticed
+# in the regenerated report」. `build.py` carried a third copy listing CALM and
+# INSTRUMENT_FAULT and not VARIABLE_DIRECTION — which is the *largest* of the
+# three, 231,963 rows against 78,190 — so `data/outputs/build/year_summary.csv`
+# reported 10,896 wind sentinels for 1999 where the store holds 33,169. Same
+# 75%, same cause, in the file nobody regenerates.
+SENTINEL_FLAGS: tuple[str, ...] = tuple(sorted(flag.value for flag in _FLAG_BY_NAME.values()))
 
 
 def sentinel_columns(config: dict[str, Any] | None = None) -> dict[str, dict[float, Flag]]:
@@ -120,11 +132,7 @@ def sentinel_report(frame: pl.DataFrame) -> pl.DataFrame:
     Answers the question the 2018 project could not: how often were 888/999
     actually present in the years it analysed?
     """
-    wind = frame.filter(
-        pl.col("flag").is_in(
-            [Flag.CALM.value, Flag.VARIABLE_DIRECTION.value, Flag.INSTRUMENT_FAULT.value]
-        )
-    )
+    wind = frame.filter(pl.col("flag").is_in(list(SENTINEL_FLAGS)))
     if wind.is_empty():
         return pl.DataFrame(
             schema={"year": pl.Int32, "pollutant": pl.Utf8, "flag": pl.Utf8, "n": pl.UInt32}

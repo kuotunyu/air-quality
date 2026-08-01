@@ -45,7 +45,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import subprocess
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -57,6 +56,7 @@ import polars as pl
 from twair import __version__
 from twair.config import load_conf
 from twair.paths import WEB_DIR, outputs_dir, processed_dir
+from twair.provenance import git_state
 
 log = logging.getLogger(__name__)
 
@@ -119,53 +119,6 @@ def documented_pollutants(config: dict[str, Any] | None = None) -> dict[str, dic
 
 def _precision(meta: dict[str, Any]) -> int:
     return PRECISION_BY_UNIT.get(str(meta.get("unit", "")), DEFAULT_PRECISION)
-
-
-def _git(*args: str) -> str | None:
-    """Run a git command, or return None if git is not there to answer."""
-    try:
-        out = subprocess.run(
-            ["git", *args],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if out.returncode != 0:
-        return None
-    return out.stdout.strip()
-
-
-def _git_state() -> tuple[str | None, bool]:
-    """The commit this export was made at, and whether that is the whole story.
-
-    This used to be `_git_sha()` alone, documented as "the commit that produced
-    this export" — a sentence that is false every time the export is run over
-    uncommitted work, which is most times. `rev-parse HEAD` names the last
-    commit, not the tree; a payload built from a modified working directory is
-    stamped with the commit BEFORE the change that produced it, and every
-    consumer of that field then points at code which cannot have made it.
-
-    That is not hypothetical here. The site's footer prints this sha and now
-    links it, `status.py` reports 「generated … from <sha>」, and
-    `scripts/check_web_export.py` — whose whole reason for existing is that a
-    payload and its manifest drifted apart for two days — printed the field and
-    never checked it.
-
-    So the dirty flag travels with the sha. A reader is told 「這份資料匯出時工作
-    區還有未提交的變更」 instead of being given a commit link that lies, and the
-    gate can say so out loud rather than implying a provenance nobody verified.
-    """
-    sha = _git("rev-parse", "--short", "HEAD") or None
-    if sha is None:
-        return None, False
-    # `--porcelain` is empty exactly when the tree matches HEAD. Untracked files
-    # are excluded: a scratch file beside the repo does not change what the code
-    # did, and counting it would mark almost every honest export dirty.
-    status = _git("status", "--porcelain", "--untracked-files=no")
-    return sha, bool(status)
 
 
 def _json_default(value: Any) -> Any:
@@ -367,7 +320,7 @@ def export_meta(destination: Path | None = None) -> Path:
 
     unplaced = [r["station_name"] for r in station_records if r.get("lat") is None]
 
-    _sha, _dirty = _git_state()
+    _sha, _dirty = git_state()
     payload = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "twair_version": __version__,
@@ -468,7 +421,7 @@ def write_manifest(destination: Path | None = None) -> Path:
             }
         )
 
-    _sha, _dirty = _git_state()
+    _sha, _dirty = git_state()
     return write_json(
         root / "manifest.json",
         {

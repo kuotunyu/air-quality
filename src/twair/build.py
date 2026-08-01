@@ -19,10 +19,11 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, T
 
 from twair.ingest.archive import ArchiveFormatError, read_archive
 from twair.paths import outputs_dir, raw_dir
+from twair.provenance import git_state
 from twair.qc.consistency import check_consistency, check_ranges
 from twair.qc.flags import Flag
 from twair.qc.rainfall import apply_no_rain_zero
-from twair.qc.sentinels import apply_sentinels
+from twair.qc.sentinels import SENTINEL_FLAGS, apply_sentinels
 from twair.store.schema import KEY_COLUMNS
 from twair.store.writer import write_observations
 
@@ -187,9 +188,7 @@ def _build_year(result: YearResult, archive: Path, *, root: Path | None) -> Year
     result.pollutants = parsed["pollutant"].n_unique()
     generations = parsed["generation"].unique().to_list()
     result.generation = ",".join(sorted(generations))
-    result.sentinels = parsed.filter(
-        pl.col("flag").is_in([Flag.CALM.value, Flag.INSTRUMENT_FAULT.value])
-    ).height
+    result.sentinels = parsed.filter(pl.col("flag").is_in(list(SENTINEL_FLAGS))).height
     result.out_of_range = parsed.filter(pl.col("flag") == Flag.OUT_OF_RANGE.value).height
     result.valid = parsed.filter(pl.col("flag") == Flag.VALID.value).height
     result.retained_invalid = parsed.filter(pl.col("value_retained")).height
@@ -276,10 +275,20 @@ def _report(results: list[YearResult]) -> None:
     if odd:
         console.print(f"  [yellow]unparseable tokens:[/yellow] {odd}")
 
+    # Which code wrote each row, because this file is merged across runs and a
+    # column's *meaning* can change between them without the column changing.
+    # It did: `sentinels` counted two of the three wind flags until it was
+    # fixed, so the 1999 row here read 10,896 against the store's 33,169 while
+    # every other year's figure came from an even older definition. Added
+    # columns are visible as nulls after the diagonal merge; a redefined one was
+    # not visible at all.
+    sha, dirty = git_state()
+
     summary = pl.DataFrame(
         [
             {
                 "year": r.year,
+                "built_by": f"{sha}+dirty" if dirty else (sha or "unknown"),
                 "rows": r.rows,
                 "stations": r.stations,
                 "pollutants": r.pollutants,

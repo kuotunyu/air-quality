@@ -8,6 +8,7 @@ import polars as pl
 
 from twair.qc.flags import Flag
 from twair.qc.sentinels import (
+    SENTINEL_FLAGS,
     apply_sentinels,
     sentinel_columns,
     sentinel_report,
@@ -128,3 +129,55 @@ def test_report_is_empty_when_no_sentinels_present() -> None:
     report = sentinel_report(apply_sentinels(frame, config=CONFIG))
 
     assert report.is_empty()
+
+
+class TestTheListIsWrittenOnce:
+    """Three copies of the same three-item list, and two of them were wrong.
+
+    `qc/report.py` had its own and its comment records catching it once:
+    「the hand-written list here silently undercounted by 75%」. `build.py` had a
+    third, listing CALM and INSTRUMENT_FAULT and omitting VARIABLE_DIRECTION —
+    which is the largest of the three in the real store, 231,963 rows against
+    78,190. So `year_summary.csv` recorded 10,896 wind sentinels for 1999 where
+    the store holds 33,169: calm 10,896 plus variable_direction 22,273.
+
+    It is derived from `_FLAG_BY_NAME` now, and both consumers import it.
+    """
+
+    def test_every_flag_the_pass_can_emit_is_in_the_list(self) -> None:
+        from twair.qc.sentinels import _FLAG_BY_NAME
+
+        assert set(SENTINEL_FLAGS) == {flag.value for flag in _FLAG_BY_NAME.values()}
+
+    def test_the_wind_direction_flag_is_in_it(self) -> None:
+        """Named on its own because it is the one that went missing."""
+        assert Flag.VARIABLE_DIRECTION.value in SENTINEL_FLAGS
+
+    def test_the_build_summary_and_the_quality_report_count_the_same_flags(self) -> None:
+        """The two consumers, reading the same tuple object.
+
+        Through `vars()` because mypy runs with implicit re-export off, and an
+        imported-but-not-re-exported name is exactly what these two are.
+        """
+        import twair.build
+        import twair.qc.report
+
+        assert vars(twair.build)["SENTINEL_FLAGS"] is SENTINEL_FLAGS
+        assert vars(twair.qc.report)["SENTINEL_FLAGS"] is SENTINEL_FLAGS
+
+    def test_a_variable_direction_hour_is_counted_by_the_build_summary(self) -> None:
+        """The end-to-end shape of the bug: 888 read, flagged, and not counted."""
+        frame = apply_sentinels(
+            _frame(
+                [
+                    ("WD_HR", 888.0, Flag.VALID.value),
+                    ("WD_HR", 999.0, Flag.VALID.value),
+                    ("WD_HR", 45.0, Flag.VALID.value),
+                ]
+            ),
+            config=CONFIG,
+        )
+
+        counted = frame.filter(pl.col("flag").is_in(list(SENTINEL_FLAGS))).height
+
+        assert counted == 2, "one of the two sentinel hours was not counted"

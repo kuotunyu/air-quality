@@ -19,6 +19,7 @@ from rich.console import Console
 
 from twair.paths import DOCS_DIR, outputs_dir
 from twair.qc.flags import Flag
+from twair.qc.sentinels import SENTINEL_FLAGS
 from twair.scalars import as_float, as_int
 from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
@@ -141,17 +142,6 @@ def retention_asymmetry(root: Path | None = None) -> pl.DataFrame:
         .sort("obs_year")
         .collect()
     )
-
-
-# Every flag the sentinel pass can emit. Derived from the enum rather than
-# listed by hand: the set changed once already, when 888/999 were relabelled,
-# and the hand-written list here silently undercounted by 75% until it was
-# noticed in the regenerated report.
-SENTINEL_FLAGS = (
-    Flag.CALM.value,
-    Flag.VARIABLE_DIRECTION.value,
-    Flag.INSTRUMENT_FAULT.value,
-)
 
 
 def sentinel_rates(root: Path | None = None) -> pl.DataFrame:

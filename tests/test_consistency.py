@@ -187,3 +187,45 @@ class TestBuildSummaryMerge:
         assert summary["year"].to_list() == [2010, 2011]
         assert summary.filter(pl.col("year") == 2011)["rows"].item() == 999
         assert summary.filter(pl.col("year") == 2010)["rows"].item() == 100
+
+    def test_each_row_records_which_code_wrote_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The merge blends runs, and a column's meaning can change between them.
+
+        It did. `sentinels` counted two of the three wind-direction flags until
+        it was fixed, so the file held 1999 at 10,896 against the store's
+        33,169 while the other years carried an older definition again. A new
+        column shows up as nulls after the diagonal merge; a redefined one is
+        invisible. The sha is what makes it visible.
+        """
+        import polars as pl
+
+        from twair import build as build_module
+
+        monkeypatch.setattr(build_module, "outputs_dir", lambda name=None: tmp_path / name)
+        monkeypatch.setattr(build_module, "git_state", lambda: ("abc1234", False))
+        build_module._report([build_module.YearResult(year=2010, rows=100, stations=1)])
+
+        monkeypatch.setattr(build_module, "git_state", lambda: ("def5678", True))
+        build_module._report([build_module.YearResult(year=2011, rows=100, stations=1)])
+
+        summary = pl.read_csv(tmp_path / "build" / "year_summary.csv").sort("year")
+
+        assert summary["built_by"].to_list() == ["abc1234", "def5678+dirty"]
+
+    def test_a_checkout_without_git_still_writes_a_summary(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A tarball download has no .git, and the build must not stop for that."""
+        import polars as pl
+
+        from twair import build as build_module
+
+        monkeypatch.setattr(build_module, "outputs_dir", lambda name=None: tmp_path / name)
+        monkeypatch.setattr(build_module, "git_state", lambda: (None, False))
+        build_module._report([build_module.YearResult(year=2010, rows=100, stations=1)])
+
+        summary = pl.read_csv(tmp_path / "build" / "year_summary.csv")
+
+        assert summary["built_by"].to_list() == ["unknown"]
