@@ -2032,6 +2032,20 @@ details,
  * be allowed to be narrower than the table inside it.
  */
 .table-wrap {
+  /*
+   * A scrollbar that is always there, because on some platforms it is not.
+   *
+   * Ten of these scroll at 390 with 26–50% of the table off-screen, and five at
+   * 1000 with 7–19% off. On Windows the classic scrollbar shows and says so —
+   * measured, 15px of it. On macOS and iOS the scrollbar is an overlay that
+   * appears only while a finger or a wheel is already moving, so a reader who
+   * never tries has no way to learn that 「機率預期」 exists at all.
+   *
+   * `scrollbar-color` is what forces a non-overlay bar; `thin` keeps it from
+   * costing the 15px the classic one does.
+   */
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
   width: fit-content;
   /* Shrink-to-fit needs its own ceiling. Without this a wrap that is NOT a
      direct child of `.page` — chapter 8 puts five of them inside `details` —
