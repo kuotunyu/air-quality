@@ -240,9 +240,13 @@ const shortName = (name: string) =>
               {/* Each label sits at the position of the value it names, which
                   is why they are no longer pinned to 0% and 100%. */}
               <div class="plot-x keep">
-                <span style={`left:${n(s.x(s.dataLo), 3)}%`}>{n(s.dataLo, 1)}</span>
+                {/* `toFixed`, not `n()`: `n()` drops a trailing zero, so the two
+                    ends of the same axis printed 「-11.4」 and 「8」 — one decimal
+                    on the left and none on the right, on a pair a reader
+                    compares. Both ends say the same precision. */}
+                <span style={`left:${n(s.x(s.dataLo), 3)}%`}>{s.dataLo.toFixed(1)}</span>
                 <span style={`left:${n(zero, 3)}%`}>0</span>
-                <span style={`left:${n(s.x(s.dataHi), 3)}%`}>{n(s.dataHi, 1)}</span>
+                <span style={`left:${n(s.x(s.dataHi), 3)}%`}>{s.dataHi.toFixed(1)}</span>
               </div>
             </div>
           </div>

@@ -18,7 +18,7 @@
  * and that term would dominate the error while reading as the solid part.
  */
 import health from "../../public/data/story/health.json";
-import { linear, markInk, n, ticks, yGutter } from "../lib/chart";
+import { linear, markInk, n, ticks, yearTicks, yGutter } from "../lib/chart";
 
 const series = health.series as {
   name: string;
@@ -71,11 +71,9 @@ const allPaf = series.flatMap((s) => s.paf);
 const yPaf = linear([0, Math.max(...allPaf) * 1.1], [100, 0]);
 const xYear = linear([Math.min(...years), Math.max(...years)], [0, 100]);
 const pafTicks = ticks(0, Math.max(...allPaf) * 1.1, 5);
-const yearLabels = Math.min(9, years.length);
-const yearTicks = Array.from(
-  { length: yearLabels },
-  (_, k) => years[Math.round((k * (years.length - 1)) / Math.max(yearLabels - 1, 1))],
-);
+// Round intervals rather than sampled indices — see `yearTicks`. This axis read
+// 2006, 2008, 2011, 2013, 2016, 2018, 2020, 2023, 2025 before.
+const xTickYears = yearTicks(years);
 
 // Darkest for the strictest counterfactual (0), lightest for the most lenient
 // (5.9). The ordering is the point: a reader should see that "how much is
@@ -225,8 +223,8 @@ const fn = functions[0];
           </svg>
         </div>
 
-        <div class="plot-x" data-n={yearTicks.length}>
-          {yearTicks.map((y) => <span style={`left:${n(xYear(y), 3)}%`}>{y}</span>)}
+        <div class="plot-x" data-n={xTickYears.length}>
+          {xTickYears.map((y) => <span style={`left:${n(xYear(y), 3)}%`}>{y}</span>)}
         </div>
       </div>
     </div>
@@ -329,8 +327,8 @@ const fn = functions[0];
           }
         </div>
 
-        <div class="plot-x" data-n={yearTicks.length}>
-          {yearTicks.map((y) => <span style={`left:${n(xYear(y), 3)}%`}>{y}</span>)}
+        <div class="plot-x" data-n={xTickYears.length}>
+          {xTickYears.map((y) => <span style={`left:${n(xYear(y), 3)}%`}>{y}</span>)}
         </div>
       </div>
     </div>

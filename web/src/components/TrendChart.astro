@@ -7,6 +7,7 @@ import {
   padded,
   spreadLabels,
   ticks,
+  yearTicks,
   yGutter,
 } from "../lib/chart";
 
@@ -106,16 +107,12 @@ const visibleGuides = guides.filter((guide) => {
   return level != null && level >= lo && level <= hi;
 });
 
-// Nine labels, evenly spaced, first and last included by construction rather
-// than by a special case. The old rule kept every nth year and then forced the
-// last one on the end, which put two labels a couple of pixels apart whenever
-// the record length was not a multiple of the step. Odd counts also let the
-// container query halve them without losing the ends — see `.plot-x`.
-const labelCount = Math.min(9, years.length);
-const xTicks = Array.from({ length: labelCount }, (_, k) => {
-  const index = Math.round((k * (years.length - 1)) / Math.max(labelCount - 1, 1));
-  return { year: years[index], index };
-});
+/*
+ * Years at a round interval — see `yearTicks`. Evenly spaced BY VALUE, which on
+ * a consecutive run of years is also evenly spaced by index, so the container
+ * query that halves the labels still leaves an even grid behind.
+ */
+const xTicks = yearTicks(years).map((year) => ({ year, index: years.indexOf(year) }));
 
 /*
  * No end labels.

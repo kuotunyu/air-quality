@@ -181,6 +181,40 @@ export function ticks(min: number, max: number, count = 5): number[] {
 }
 
 /**
+ * Tick years at a round interval, not at every nth index.
+ *
+ * Both time axes on this site sampled the index —
+ * `years[round(k * (n - 1) / (m - 1))]` — which lands wherever the arithmetic
+ * falls: chapter 1 printed 1998, 2001, 2005, 2008, 2012, 2015, 2018, 2022,
+ * 2025, so the gaps ran 3, 4, 3, 4, 3, 3, 4, 3 and no two steps in a row were
+ * the same. A linear axis whose labels are unevenly spaced tells the eye the
+ * scale is uneven, which is the one thing an axis exists not to do.
+ *
+ * The grid is anchored to the LAST year rather than the first. On a record that
+ * ends now, the latest year is the one a reader looks for, so anchoring there
+ * guarantees it is labelled. The first year joins only when it is at least half
+ * a step from the tick after it — otherwise it sits a few pixels from its
+ * neighbour, which is the collision this is meant to remove, and the line
+ * visibly starting to the left of the first tick already says the record begins
+ * before it.
+ */
+export function yearTicks(years: number[], most = 9): number[] {
+  if (years.length <= 2) return [...years];
+  const first = years[0];
+  const last = years[years.length - 1];
+  const span = last - first;
+
+  // The smallest round step that keeps the count inside the budget.
+  const step = [1, 2, 5, 10, 20, 25, 50].find((s) => span / s + 1 <= most) ?? 100;
+
+  const out: number[] = [];
+  for (let y = last; y >= first; y -= step) out.push(y);
+  out.reverse();
+  if (out[0] - first >= step / 2) out.unshift(first);
+  return out;
+}
+
+/**
  * Pad a domain so the extremes are not glued to the frame.
  *
  * `zero` means "this scale starts at zero", and it now means it exactly. It used
