@@ -85,6 +85,23 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         decided its reading situation is. This said `dark light` — a leftover from
         when dark was the default, and it disagreed with the stylesheet. */}
     <meta name="color-scheme" content="light dark" />
+
+    {/*
+      The colour a phone paints its own chrome with, one per theme.
+      
+      Without it the browser picks white on Android and the address bar sits a
+      shade off the page in light and glaringly off it in dark. These are the
+      composited values of `--bg` in each theme, written as hex because a
+      `theme-color` is parsed
+      by the browser's UI rather than by its CSS engine, and not every one of
+      those understands oklch yet. The hex values are what the page actually
+      composites to, read back from `getComputedStyle` rather than converted by
+      hand — the first attempt converted the wrong lightness and came out
+      #f3f6fa against the page's real #f1f6fb.
+    */}
+    <meta name="theme-color" content="#f1f6fb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14181b" media="(prefers-color-scheme: dark)" />
+
     <link rel="canonical" href={canonical} />
 
     <meta property="og:type" content="article" />
