@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import {
   generatedAt,
+  gitDirty,
   gitSha,
   hourlyObservationsFull,
   hourlyObservationsShort,
@@ -273,9 +274,35 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
               page around it. Unqualified, it reads as the build's provenance and
               quietly overstates what is being traced.
             */}
+            {/*
+              The sha is a link only when it is the whole story.
+
+              The export stamps `rev-parse HEAD` — the last COMMIT, not the
+              tree — and it necessarily runs before the commit that carries its
+              own output, so the sha names the code as it stood BEFORE the
+              change that produced this data. Linking that unconditionally
+              hands the reader a commit which cannot have made what they are
+              looking at, and an audit found exactly that: the payload recorded
+              a0d4260 for content that only exists from 309f74a onward.
+
+              So a clean export gets the link, and a dirty one gets the sha
+              plainly with a word saying what it is. `check_web_export.py`
+              reports the same flag, and does not fail on it — the dirty case is
+              normal, the silence was the defect.
+            */}
             <p class="mono dim">
               資料匯出於 {generatedAt.slice(0, 10)}
-              {gitSha ? <>{" · "}<a href={repoCommit(gitSha)}>{gitSha}</a></> : ""}
+              {
+                gitSha ? (
+                  gitDirty ? (
+                    <>{" · "}{gitSha}{" 之後（匯出時尚有未提交的變更）"}</>
+                  ) : (
+                    <>{" · "}<a href={repoCommit(gitSha)}>{gitSha}</a></>
+                  )
+                ) : (
+                  ""
+                )
+              }
             </p>
           </div>
         </footer>
