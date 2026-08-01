@@ -1184,7 +1184,9 @@ main {
  * uses the full column instead of 77% of it.
  */
 .plot {
-  /* The in-plot legend is positioned against this box; see TrendChart. */
+  /* The readout's crosshair, dots and value panel are positioned against this
+     box; see PlotReadout. (It used to say "the in-plot legend", which floated
+     here until it was measured covering 46% of the drawing area.) */
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1213,8 +1215,8 @@ main {
 
 /* A chart with no key column should not reserve one. The third track is `auto`
    and collapses to 0, but the column gap beside it does not — measured, 14px of
-   permanently empty card on the right of every chart that labels its series with
-   an in-plot legend instead of end labels. */
+   permanently empty card on the right of every chart that names its series in the
+   key row above the plot rather than in a gutter beside it. */
 .plot:not(:has(.plot-keys)) {
   grid-template-columns: auto minmax(0, 1fr);
 }
