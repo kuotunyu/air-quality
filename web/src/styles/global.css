@@ -527,7 +527,34 @@
      which is the right direction for a document whose subject is figures. */
   --chart-tick: 24px;
   --chart-label: 24px;
-  --chart-micro: 20px;
+  /*
+   * ...and `--chart-micro` did not come with them, which meant chapter 3's axis
+   * never got the increase that was asked for three times.
+   *
+   * It is an axis. `.axis span` in ChapterSpatial labels the correlogram's
+   * distance bands and the control figure's Moran's I, which is the same kind
+   * of mark as a `.plot-x` tick — the token names differ because the two
+   * figures were built at different times, not because the marks do different
+   * jobs. At 20px against a 23.5px body at 1440, it was also the only in-figure
+   * annotation on the site smaller than the prose around it, which is the one
+   * thing the paragraph above says a figure's annotation must not be.
+   *
+   * The cost is measured rather than assumed, because these labels are placed
+   * by value with no collision handling beyond the thinning tiers, and those
+   * tiers were solved at 20px. Across 21 widths from 320 to 2560 and eight
+   * routes — 294 axes, every label box compared with its neighbour:
+   *
+   *     20px   1,177 labels   tightest gap 2.48px   0 collisions
+   *     24px   1,171 labels   tightest gap 2.48px   0 collisions
+   *
+   * Six labels out of 1,177 are thinned away, and the tightest pair on the site
+   * does not move — it is on a `.plot-x` axis, which was already 24px.
+   *
+   * All three tokens now hold 24px. They stay three tokens because they name
+   * three roles, and a later change that separates them again should not have
+   * to reintroduce the distinction.
+   */
+  --chart-micro: 24px;
 
   /* Spacing rhythm. Related things sit one step apart, unrelated things three;
      using the same gap everywhere is what makes a page read as undifferentiated. */

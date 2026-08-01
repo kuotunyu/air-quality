@@ -141,3 +141,14 @@ jobs:
       # ten chapters; two were still shipping when this gate was written.
       - name: Every chapter's <h1> matches the name the navigation uses
         run: python3 scripts/check_chapter_titles.py
+
+      # PRODUCT.md's accessibility section states four measured properties, and
+      # the nineteen throwaway browser scripts that produced them were deleted
+      # on purpose — .gitignore says so in prose. So the one regression that
+      # section documents, 26 dark-mode nodes under APCA Lc 60, was a class of
+      # defect the repository could no longer detect. On its first run this
+      # found two: the smallest-type figure could not be reproduced, and
+      # chapter 3's axis had missed a type-size increase and sat below the prose
+      # around it. Chrome is preinstalled on ubuntu-latest.
+      - name: The site still holds the design numbers PRODUCT.md publishes
+        run: node scripts/check_site_quality.mjs
