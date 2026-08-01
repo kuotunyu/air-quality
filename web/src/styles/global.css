@@ -1144,6 +1144,9 @@ main {
   border-radius: var(--radius);
   padding: var(--space-3) clamp(0.6rem, 3.2cqw, var(--space-4));
   background-color: var(--bg-sunken);
+  /* Queried by the key row, which is a sibling of `.plot` and so cannot read
+     `.plot`'s own container — see the note in TrendChart. */
+  container-type: inline-size;
 }
 
 /*
