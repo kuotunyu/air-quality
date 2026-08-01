@@ -70,3 +70,12 @@ logs/
 # GML that scripts/build_taiwan_geo.py reads. The simplified output is
 # committed; its source is re-downloadable and does not belong in history.
 .cache/
+
+# Scratch tooling under web/. Screenshot slicers, pixel-measuring scripts and
+# similar one-off helpers get written next to `web/node_modules` because that is
+# where `sharp` is installed, and they accumulate: nineteen of them existed at
+# once during the 2026-08-01 design round. They are throwaway by construction, so
+# an underscore prefix marks them and this keeps them out of history and out of
+# `astro check`, which was counting them as source files (57 rather than 46).
+web/_*.mjs
+web/_*.js
