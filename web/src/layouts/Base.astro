@@ -9,6 +9,7 @@ import {
   stations,
 } from "../lib/data";
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
+import { repoCommit, repoUrl } from "../lib/repo";
 import FigureTools from "../components/FigureTools.astro";
 import PlotReadout from "../components/PlotReadout.astro";
 
@@ -225,9 +226,20 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
         <footer>
           <div class="page">
+            {/*
+              The claim carries the link, and the sha carries its own.
+
+              This paragraph asserted 「管線與分析全部開源」 and printed a commit
+              hash, and no page on the site linked to the repository — a reader
+              was shown a sha and told the work was open with no way to reach
+              either. The two links go to different places on purpose: the claim
+              goes to the source, the sha goes to the commit the DATA was
+              exported at, which is usually older than the code rendering the
+              page around it.
+            */}
             <p class="mono">
               資料：環境部空氣品質監測網 {recordSpan.first}–{recordSpan.last} 逐時觀測，{hourlyObservationsFull} 筆。
-              管線與分析全部開源。
+              管線與分析<a href={repoUrl}>全部開源</a>。
             </p>
             {/*
               "資料匯出於", not "匯出於". The commit is the one the *data layers*
@@ -238,7 +250,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
             */}
             <p class="mono dim">
               資料匯出於 {generatedAt.slice(0, 10)}
-              {gitSha ? ` · ${gitSha}` : ""}
+              {gitSha ? <>{" · "}<a href={repoCommit(gitSha)}>{gitSha}</a></> : ""}
             </p>
           </div>
         </footer>

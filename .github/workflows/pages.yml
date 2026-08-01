@@ -54,6 +54,10 @@ jobs:
           # https://<owner>.github.io/<name>/, so both halves are needed.
           PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io
           PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/
+          # The footer claims the work is open and prints the sha it was
+          # exported at; both are links now, and a fork's build should point at
+          # the fork rather than at this repository.
+          PUBLIC_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: npm run build
 
       - name: Verify the data layer made it into the build

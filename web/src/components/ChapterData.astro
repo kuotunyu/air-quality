@@ -4,8 +4,23 @@
  *
  * Lifted out of `pages/index.astro` unchanged when the document became ten
  * routes.
+ *
+ * It made three promises and kept two. This docstring said 「under what
+ * licence」 and the entry page's index says 「三層資料的內容、授權，以及這個專案
+ * 為什麼不補值」 — and the rendered section was 610 characters containing the
+ * word 授權 exactly zero times, along with no CC BY, no MIT, and no link to the
+ * repository. Two headings now, because a chapter that answers three questions
+ * should show three answers, and the licence is one of them.
+ *
+ * The rights below are transcribed from LICENSE, LICENSE-DATA and
+ * docs/legal.md, not restated from memory. One thing is deliberately NOT copied
+ * from README.md: it credits 「環境部與交通部中央氣象署」, but README.md's own
+ * source table marks the CWA feed ⬜ 尚未取得 — every meteorological variable
+ * used here comes from the air-quality stations' own instruments. Crediting a
+ * source the work never used is worse than crediting none.
  */
 import { hourlyObservationsShort } from "../lib/data";
+import { repoFile } from "../lib/repo";
 ---
 
 <section id="data" class="page">
@@ -16,6 +31,8 @@ import { hourlyObservationsShort } from "../lib/data";
     所有數字都可以獨立重算。原始資料來自環境部空氣品質監測網公開的年度逐時檔，
     管線、品管規則、分析程式全部開源。
   </p>
+
+  <h2>三層資料</h2>
 
   {/*
     A list, not three cards.
@@ -41,6 +58,41 @@ import { hourlyObservationsShort } from "../lib/data";
       <code>twair build</code> 即可獨立重建。
     </dd>
   </dl>
+
+  <h2>授權與再散布</h2>
+
+  {/*
+    Same `.layers` list, because these are the same kind of statement: a short
+    term and a description that has to be readable. Reusing it also keeps the
+    two halves of the chapter visually parallel — what you get, then what you
+    may do with it.
+  */}
+  <dl class="layers">
+    <dt>程式碼</dt>
+    <dd>
+      <a href={repoFile("LICENSE")}>MIT</a>——管線、品管規則、分析與這個網站本身。
+    </dd>
+
+    <dt>資料衍生物</dt>
+    <dd>
+      <a href={repoFile("LICENSE-DATA")}>CC BY 4.0</a>——上面的 L0 與 L1、
+      本站所有圖表與報告。使用時請一併註明「中華民國環境部」。
+    </dd>
+
+    <dt>原始觀測</dt>
+    <dd>
+      權利仍屬<strong>中華民國環境部</strong>，本專案不主張任何權利。
+      地圖的縣市界線來自內政部國土測繪中心，依政府資料開放授權條款第 1 版。
+    </dd>
+  </dl>
+
+  <div class="note">
+    <strong>L2 不發布，理由不是檔案太大。</strong>
+    環境部有兩份授權敘述，對「逐時原始值的完整複本可否轉散布」互相矛盾。
+    這個專案<strong>繞過這個矛盾而不是解決它</strong>：只發衍生統計產物與完整管線——
+    任一種讀法都不算轉載，而管線公開就代表資料實質上仍然可得。
+    查證過程與兩份敘述的原文留在 <a href={repoFile("docs/legal.md")}>docs/legal.md</a>。
+  </div>
 
   <div class="note caveat">
     <strong>關於缺值。</strong>
