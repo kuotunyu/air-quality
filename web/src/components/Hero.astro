@@ -205,6 +205,10 @@ const opening = [
   margin: 0;
   color: var(--text-muted);
   text-wrap: pretty;
+  /* Never justified. These are two- and three-phrase labels in a column narrower
+     than any prose on the site, and justification at that width spaces single
+     characters apart rather than closing a line up. */
+  text-align: start;
 }
 
 .figure-note {
@@ -272,11 +276,20 @@ const opening = [
   container-type: inline-size;
 }
 
-/* px, not `34rem`: `rem` in a container query resolves against this site's fluid
-   root font size, so the threshold grew with the viewport — 785px at 1440 and
-   706px at 1000 for a rule written as 544px. The two-column hero therefore had
-   to wait for a much wider container than intended before it would form. */
-@container (min-width: 544px) {
+/*
+ * px, not `34rem`: `rem` in a container query resolves against this site's fluid
+ * root font size, so the threshold grew with the viewport — 785px at 1440 and
+ * 706px at 1000 for a rule written as 544px.
+ *
+ * 640 and not 544, and that number is the sum of what the row actually needs:
+ * the map may not go below 260px (below that the county-label collision test
+ * loses its guarantee) and the figures need about 340 before their descriptions
+ * start breaking mid-phrase. At 544 the row formed at a 1000px viewport with a
+ * 664px container, the map took its full 370px, and 「鳳山（高雄市）年均最高」 set
+ * one character to a line down a 250px column. A two-column layout that has to
+ * squeeze one of its columns is worse than the stack it replaced.
+ */
+@container (min-width: 640px) {
   .hero-grid {
     /*
      * The map column is sized to the map, not to a share of the row. The map box
@@ -284,7 +297,10 @@ const opening = [
      * county-label collision test loses its guarantee — so it takes what it needs
      * and the figures take the rest, which is the opposite of the old split.
      */
-    grid-template-columns: clamp(16rem, 34%, 20rem) minmax(0, 1fr);
+    /* px for the same reason the query above is: `16rem` resolves to 370px on
+       this site, so the map claimed 110px more than the 260px it needs and took
+       them from the column beside it. */
+    grid-template-columns: clamp(260px, 34%, 330px) minmax(0, 1fr);
     gap: var(--space-5);
   }
 
