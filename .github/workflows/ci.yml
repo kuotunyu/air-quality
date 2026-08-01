@@ -62,3 +62,55 @@ jobs:
 
       - name: Test (Pytest)
         run: uv run pytest
+
+  # The site had no gate that ran before a merge.
+  #
+  # `pages.yml` builds the site, but only `on: push` — so a pull request that
+  # broke the Astro build, or reintroduced the mid-sentence spaces in Chinese
+  # that check_cjk_spacing.py exists to catch, was green until it had already
+  # landed. And `astro check` ran in no workflow at all, although AGENTS.md
+  # requires it to print 0 errors: `astro build` does not type-check, so
+  # web/src — 40 files — had no automated verification of any kind.
+  #
+  # Split from the Python job rather than bolted onto it so the two report
+  # separately: a red mark should say which half of the project is broken.
+  web:
+    name: Web Build & Content Gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      # Before the build, because a type error is cheaper to read than a broken
+      # page, and because this is the check AGENTS.md names by number.
+      - name: Type Check (astro check)
+        working-directory: web
+        run: npx astro check
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+      # A source newline is whitespace in HTML, and Chinese has no inter-word
+      # spaces, so a wrapped source line becomes a visible gap mid-sentence.
+      # Checked on the built output because the middleware that closes them only
+      # runs at render time.
+      - name: No invented spaces inside Chinese sentences
+        run: python3 scripts/check_cjk_spacing.py
+
+      # A chapter is named in five places and only one of them is the page's own
+      # <h1>, so the <h1> is the one that drifts. It had drifted on three of the
+      # ten chapters; two were still shipping when this gate was written.
+      - name: Every chapter's <h1> matches the name the navigation uses
+        run: python3 scripts/check_chapter_titles.py

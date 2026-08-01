@@ -61,7 +61,19 @@ export const CHAPTERS: readonly Chapter[] = [
     n: 4,
     slug: "sources",
     nav: "污染來向",
-    title: "污染物的來向",
+    /*
+     * 污染來向與風速條件, matching the h1 — and this entry was the stale one.
+     *
+     * The rename 「壞空氣是從哪個方向來的」 → 「污染來向與風速條件」 is recorded in
+     * `.claude/skills/twair/SKILL.md`; the component took it and this file did
+     * not, so the registry sat on a THIRD name that was neither. It named half
+     * the method: the chart is a CBPF, conditioned on wind speed as well as
+     * direction, and 風速條件 is the half that makes the finding a finding.
+     *
+     * Nine characters, which is exactly what the 206px rail label holds on one
+     * line — see the note on the mismatch gate in `chapterTitleMismatches`.
+     */
+    title: "污染來向與風速條件",
     claim: "把濃度按風速與風向拆開，即可看出高濃度集中在哪幾個方位。",
   },
   {

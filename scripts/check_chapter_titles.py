@@ -1,0 +1,158 @@
+"""Fail if a chapter calls itself something the navigation does not call it.
+
+A reader meets a chapter's name FOUR times before they ever see the page: in the
+rail, in the entry page's index, in the browser tab, and in the previous/next
+step at the foot of the neighbouring chapter. All four read `title` from
+`web/src/lib/chapters.ts`. The fifth is the `<h1>`, and that one is typed into
+the chapter's own component — so it is the one that drifts.
+
+This gate exists because the drift has already happened three times:
+
+  ch.5  rail 政策效應的偵測極限 / h1 事件效應的偵測極限 — found by eye, fixed by
+        hand, and the reason is still in the comment on that entry. 事件 was the
+        correct one: the chapter tests a law amendment, a permit dispute and a
+        lockdown, not a government.
+  ch.4  registry 污染物的來向 / h1 污染來向與風速條件 — and the registry was
+        holding a THIRD name. The rename to 污染來向與風速條件 is recorded in
+        `.claude/skills/twair/SKILL.md`; the component took it, this file did not.
+  ch.7  registry 健康負擔與它的假設 / h1 健康負擔估計的假設敏感度.
+
+Nothing was watching, so a fix by hand on one chapter said nothing about the
+other nine. Every other gate is blind to this: the markup is valid, the types
+check, the tests pass, the spacing check passes, and both names are correct
+Chinese — they are just not the same name.
+
+It also holds the rail's one-line rhythm. The rail label box measures 206px and
+the type in it is ~22.9px per Han character, so nine characters is exactly one
+line and a tenth wraps. Ten entries that are each one line read as a list; one
+two-line entry among them reads as an error. A title that no longer fits should
+be a deliberate decision about the rail, not a surprise on the next build.
+
+    python scripts/check_chapter_titles.py [web/dist]
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DEFAULT = ROOT / "web" / "dist"
+REGISTRY = ROOT / "web" / "src" / "lib" / "chapters.ts"
+
+# Nine, and it is measured rather than divided.
+#
+# The first version of this line computed `206 // 22.9 = 8` from an eyeballed
+# advance and reported seven of the ten chapters as overflowing while every one
+# of them renders on a single line. So the number now comes from growing the
+# real `.rail-t` label one character at a time until it takes a second line:
+# 6,7,8,9 → one line, 10 → two. The label box is 205.9px and one Han character
+# advances 22.56px, which is exactly the label's font-size, as it should be.
+#
+# Measured at 1280 / 1366 / 1440 / 1920. The box does not change across them —
+# the rail width is a clamp that has already resolved by the 80rem breakpoint.
+RAIL_LABEL_PX = 205.9
+HAN_ADVANCE_PX = 22.56
+RAIL_ONE_LINE = 9
+
+# One object per chapter in the `CHAPTERS` array. Parsed rather than imported
+# because this runs under Python and the registry is TypeScript; the array is a
+# plain literal and has to stay one, which is itself worth pinning.
+ENTRY = re.compile(
+    r"\{\s*n:\s*(?P<n>\d+),.*?slug:\s*\"(?P<slug>[^\"]+)\".*?title:\s*\"(?P<title>[^\"]+)\"",
+    re.S,
+)
+H1 = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
+TAG = re.compile(r"<[^>]+>")
+HAN = re.compile(r"[⺀-⿕一-鿿]")
+
+
+def chapters() -> list[tuple[int, str, str]]:
+    """(n, slug, title) for every chapter, in document order."""
+    src = REGISTRY.read_text(encoding="utf-8")
+    body = src[src.index("export const CHAPTERS") :]
+    found = [(int(m["n"]), m["slug"], m["title"]) for m in ENTRY.finditer(body)]
+    if not found:
+        raise SystemExit(f"{REGISTRY} — could not parse any chapter out of CHAPTERS")
+    return found
+
+
+def h1_of(page: pathlib.Path) -> str | None:
+    """The page's own heading, with markup and comments stripped.
+
+    A heading is allowed to carry markup — this compares the text a reader sees,
+    not the source.
+    """
+    found = H1.search(page.read_text(encoding="utf-8"))
+    if not found:
+        return None
+    return " ".join(TAG.sub("", found.group(1)).split())
+
+
+def main(argv: list[str]) -> int:
+    # Every line this prints is Chinese, and the repo is developed on Windows,
+    # where the console defaults to cp950 and turns the whole report into
+    # mojibake — including the two names the reader is being asked to compare.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
+    dist = pathlib.Path(argv[1]) if len(argv) > 1 else DEFAULT
+    if not dist.exists():
+        print(f"{dist} not found — run `npm run build` in web/ first", file=sys.stderr)
+        return 1
+
+    mismatched: list[str] = []
+    missing: list[str] = []
+    wrapped: list[str] = []
+
+    for n, slug, title in chapters():
+        page = dist / slug / "index.html"
+        if not page.exists():
+            missing.append(f"  ch.{n} {slug} — no {page.relative_to(ROOT).as_posix()}")
+            continue
+
+        heading = h1_of(page)
+        if heading is None:
+            missing.append(f"  ch.{n} {slug} — page has no <h1>")
+            continue
+
+        mark = "ok"
+        if heading != title:
+            mark = "MISMATCH"
+            mismatched.append(
+                f"  ch.{n} {slug}\n"
+                f"      registry title : {title}\n"
+                f"      rendered <h1>  : {heading}\n"
+                f"      A reader meets the registry name in the rail, the index, the\n"
+                f"      browser tab and both footer steps, then arrives at the other one."
+            )
+
+        han = len(HAN.findall(title))
+        if han > RAIL_ONE_LINE:
+            mark = "WRAPS" if mark == "ok" else mark
+            wrapped.append(
+                f"  ch.{n} {slug} — title is {han} Han characters; the {RAIL_LABEL_PX}px "
+                f"rail label holds {RAIL_ONE_LINE} on one line"
+            )
+
+        print(f"  ch.{n:>2} {slug:<10} {han:>2} 字  {mark:<8} {title}")
+
+    print(f"\nchapters checked : {len(chapters())}")
+    print(f"title mismatches : {len(mismatched)}")
+    print(f"rail overflows   : {len(wrapped)}")
+    print(f"pages missing    : {len(missing)}")
+
+    for block in mismatched:
+        print(f"\n{block}")
+    for line in wrapped:
+        print(f"\n{line}")
+    for line in missing:
+        print(f"\n{line}")
+
+    return 1 if (mismatched or wrapped or missing) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
