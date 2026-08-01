@@ -141,7 +141,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       The checkbox is the whole mobile mechanism, and it is deliberate: no
       script, so the rail works when JavaScript does not, which PRODUCT.md
-      requires. Below 62rem it is a drawer with a labelled button; above, the
+      requires. Below 80rem it is a drawer with a labelled button; above, the
       button is gone and the list is just there.
     */}
     <input id="rail" type="checkbox" class="rail-switch" />
@@ -245,12 +245,48 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       }
 
       /*
-       * The rail width is the one number that decides how the page reads, so it
-       * is a clamp rather than a guess: never so narrow that a chapter title
-       * wraps to three lines, never so wide that it competes with the column it
-       * serves.
+       * 80rem, and the number is the whole decision.
+       *
+       * The rail is a fixed 321–327px taken out of the same row as the reading
+       * column, so switching it on makes the column NARROWER. At 62rem it did
+       * that at the worst possible place: measured on `/trend`, a window going
+       * from 990 to 992 took the column from 896px to 577 — two pixels wider,
+       * 319px of reading width gone, a 36% drop — and it did not climb back to
+       * 896 until about 1355.
+       *
+       * The obvious fix is to wait until the rail is free, and it is the wrong
+       * one. Measured by rendering each width twice, once with the rail and once
+       * with it forced off: the two columns agree only at **1460px**, because
+       * the column is space-limited until it reaches its 42-character measure.
+       * At 1440 the rail costs 3.8px. Moving the breakpoint to 1460 would take
+       * the table of contents away from every 1440 screen to buy four pixels.
+       *
+       * So the question is not when the rail is free, it is how much column the
+       * rail is worth. Measured cost, and what the column is left with:
+       *
+       *     1024   987 → 605   −38%   26 CJK characters
+       *     1152   987 → 718   −27%   31
+       *     1280   987 → 836   −15%   36
+       *     1366   987 → 911    −8%   39
+       *     1440   987 → 983    −0.4% 42
+       *
+       * A table of contents is worth three characters. It is not worth sixteen.
+       * 80rem is where the column keeps 36 — inside the 30–45 band this site
+       * sets prose in — and it is a round number in the same unit the other
+       * breakpoints use. Below it every reader gets the full measure and the
+       * sticky chapter bar, which reaches any chapter in one tap and names the
+       * current one; above it they get the list standing open. The worst
+       * discontinuity anywhere on the curve is now 151px instead of 319.
+       *
+       * `rem` in a media query is always 16px, so this is 1280 and does not move
+       * with the fluid root — see the note on the axis thinning tiers in
+       * global.css for the bug that rule prevents.
+       *
+       * The rail width itself is a clamp rather than a guess: never so narrow
+       * that a chapter title wraps to three lines, never so wide that it
+       * competes with the column it serves.
        */
-      @media (min-width: 62rem) {
+      @media (min-width: 80rem) {
         .shell {
           /*
            * The floor is what decides whether a chapter title wraps, and a
@@ -280,7 +316,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         border-right: 1px solid var(--line-soft);
       }
 
-      @media (min-width: 62rem) {
+      @media (min-width: 80rem) {
         .rail {
           /* Sticky, and its own scroller: ten chapters fit, but an eleventh
              should scroll the rail rather than the page. */
@@ -399,7 +435,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       /* Below the rail breakpoint the rail is a drawer, so a bar down its edge
          would be reporting progress on something that is not on screen. */
-      @media (max-width: 61.999rem) {
+      @media (max-width: 79.999rem) {
         .progress {
           display: none;
         }
@@ -518,7 +554,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         display: none;
       }
 
-      @media (max-width: 61.999rem) {
+      @media (max-width: 79.999rem) {
         /*
          * Off-canvas AND out of the tab order while it is closed.
          *
@@ -586,7 +622,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       /* Above the breakpoint the rail is simply present, so every control whose
          only job is to reveal it has nothing left to do. */
-      @media (min-width: 62rem) {
+      @media (min-width: 80rem) {
         .handle {
           display: none;
         }
