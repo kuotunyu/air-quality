@@ -446,8 +446,12 @@ const legend = BREAKS.map((b, i) => ({
             // The count travels with the probability: a bin with no fill and
             // 3 hours behind it is unknown, not clean.
             const hours = s.n[si][ri];
+            /* Same en dash the server render and the radial scale use. The
+               data ships 「0.5-1.5」 with a hyphen, so a station picked from the
+               menu was writing a range with a different dash from the one the
+               first station arrived with. */
             title.textContent =
-              `${bearing(d.sectors[si])} · ${d.speed_bins[ri]} m/s — ` +
+              `${bearing(d.sectors[si])} · ${d.speed_bins[ri].replace("-", "–")} m/s — ` +
               (p == null ? `時數不足（${hours} 小時）` : `機率 ${p}（${hours} 小時）`);
           }
         }),
