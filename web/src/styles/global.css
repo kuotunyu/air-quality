@@ -1013,10 +1013,24 @@ section > :last-child > :last-child:last-child {
   min-width: 0;
 }
 
-@media (min-width: 40rem) {
+/*
+ * Two-up only when two columns are still readable.
+ *
+ * `.grid-2` split at a 640px VIEWPORT, which is not the box the cards are in:
+ * the rail takes a fixed share, so measured text width divided by font size came
+ * to 8.9 CJK characters a line at a 1000px viewport, 11.8 at 768 and 17.1 at
+ * 1440. Nine characters is not a column, it is a stack of fragments — and the
+ * cards were WORSE at 1000 than at 768 because the rail turns on in between.
+ * `main` is already an inline-size container, so the query can ask about the
+ * room the cards actually have.
+ */
+@container (min-width: 900px) {
   .grid-2 {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (min-width: 40rem) {
   .grid-3 {
     grid-template-columns: repeat(3, 1fr);
   }

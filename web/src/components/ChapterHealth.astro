@@ -405,8 +405,8 @@ const fn = functions[0];
             ({n(f.rr_per_10_low, 2)}–{n(f.rr_per_10_high, 2)})
           </span>
         </dd>
-        <dt>來源</dt>
-        <dd class="small">
+        <dt class="erf-src">來源</dt>
+        <dd class="erf-src small">
           <a href={f.source_url} target="_blank" rel="noopener">
             {f.source}
           </a>
@@ -463,6 +463,26 @@ const fn = functions[0];
     margin: 0;
     overflow-wrap: anywhere;
   }
+  /*
+   * The citation gets the whole width, on its own line.
+   *
+   * `.erf` is a two-column definition list, and the label column is sized to the
+   * longest LABEL — measured at a 1000px viewport it takes 241.6px, 47% of the
+   * block, for at most twelve characters, while a 253-character citation folds
+   * into the 271px left over. The first two rows are a term and a number and
+   * belong side by side; the third is a paragraph and does not.
+   *
+   * No breakpoint: a citation is long at every width, so this needs no threshold
+   * and no number that has to be re-measured when the type changes.
+   */
+  .erf dt.erf-src {
+    grid-column: 1 / -1;
+    margin-top: var(--space-2);
+  }
+  .erf dd.erf-src {
+    grid-column: 1 / -1;
+  }
+
   .erf-rr {
     font-family: var(--font-numeric);
     font-variant-numeric: tabular-nums;

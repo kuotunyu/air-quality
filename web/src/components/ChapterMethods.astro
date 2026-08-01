@@ -103,6 +103,18 @@ const keyCoefficients = replicationRows.filter(
   (r) => r.kind === "correlation" && r.published_2018 != null,
 );
 
+/*
+ * 1 is Monday.
+ *
+ * The column printed the bare integers 1–7, and nothing on the page said which
+ * end was which — on a table whose claim is that the weekday effect is small,
+ * "small compared to what" needs the reader to know whether 6 and 7 are the
+ * weekend. `pitfalls.py` groups by Polars' `dt.weekday()`, which is ISO;
+ * confirmed against a known Monday rather than taken from the docs:
+ * 2026-08-03 is a Monday and returns 1, 2026-08-09 is a Sunday and returns 7.
+ */
+const WEEKDAY_NAMES = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
+
 // --- small inline chart for the diurnal cycle -------------------------------
 const dDomain = padded(diurnalValues, { zero: false });
 const dx = linear([0, 23], [0, 100]);
@@ -275,7 +287,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               <tbody>
                 {weekly.map((row) => (
                   <tr>
-                    <td>{row.weekday}</td>
+                    <td>{WEEKDAY_NAMES[(row.weekday as number) - 1] ?? row.weekday}</td>
                     <td class="num">{n(row.mean)}</td>
                     <td class="num">{(row.n as number).toLocaleString()}</td>
                   </tr>
@@ -906,10 +918,29 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   .verdict .stat {
     margin-bottom: 1rem;
   }
+  /*
+   * The two cards line up because the number is anchored to the bottom of an
+   * equal-height card, not because their tags wrapped the same way.
+   *
+   * They were flex items on `align-items: center`, and 「含 PM10（當年的做法）」
+   * wraps while 「不含 PM10」 does not — so measured at 1000 the cards were 256px
+   * and 220px tall with tops 18px apart, and 0.772 and 0.524, the two numbers a
+   * reader is asked to compare, sat on different lines.
+   *
+   * `subgrid` is the right tool for this in principle and was tried twice. It
+   * does not take here — measured, the card's rows still resolved to four fixed
+   * sizes and the values stayed 25 to 49px apart at 500, 640, 768 and 1000,
+   * every width where the two tags wrap to different line counts. A rule that
+   * looks correct and does nothing is worse than a cruder one that is checkable.
+   *
+   * `align-items: stretch` makes the cards the same height; `margin-top: auto`
+   * on the value pushes it, the label and the note — three single lines in both
+   * cards — to a shared bottom, whatever the tag above them did.
+   */
   .compare {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: stretch;
     gap: 1rem;
     margin: 1.6rem 0;
   }
@@ -919,10 +950,37 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     flex-direction: column;
     gap: 0.2rem;
   }
+  /*
+   * Two rows vary independently, so both are pinned.
+   *
+   * Measured, the two cards differ in two places and not the same one each time:
+   * in block 02 the TAG wraps (「含 PM10（當年的做法）」 two lines against 「不含
+   * PM10」 one), and in block 07 the NOTE does (「只答 61%，其餘拒答」 65px against
+   * 「答了 70%」 32px). Bottom-anchoring alone fixed the first and broke on the
+   * second; a fixed tag alone would do the reverse.
+   *
+   * So the tag always occupies two lines — `lh` is exactly one line box, so this
+   * needs no guess about the type size — and the note is pushed to the bottom of
+   * an equal-height card. What is left between them is the value and its label,
+   * one line each, starting at the same offset in both cards.
+   */
+  .compare .tag {
+    min-height: 2lh;
+  }
+  .compare .stat-note {
+    margin-top: auto;
+  }
+
+  .arrow {
+      display: none;
+    }
+  }
+
   .arrow {
     color: var(--text-faint);
     font-size: var(--text-2xl);
     flex: none;
+    align-self: center;
   }
   .tag {
     font-size: var(--text-xs);
