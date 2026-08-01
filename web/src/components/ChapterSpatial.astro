@@ -173,7 +173,20 @@ const cellFor = (method: string, buffer: number) =>
   </p>
 
   <figure>
-    <div class="correlogram" role="img" aria-label="殘差 Moran's I 按站間距離分帶">
+    {/*
+      No `role="img"`.
+
+      It was on this figure and I put it on the one below, and it is the wrong
+      role for both: `img` collapses a subtree to its label, so a screen reader
+      got 「殘差 Moran's I 按站間距離分帶」 and nothing else. Measured, that hid 146
+      characters here and 128 below — every distance band with its own I, every
+      control with its estimate and its month count. The numbers are already in
+      the DOM as text and they are the figure's content; only the bars are
+      decoration, and the bars are empty elements. Read as text, a row says
+      「0–10 km, I = +0.348 ＊」, which is the row. The `figcaption` names the
+      figure, which is the job `aria-label` was doing badly.
+    */}
+    <div class="correlogram">
       {/* Rules and zero, once, spanning every row — so the reference a reader
           measures against cannot be assembled out of eight separate pieces. */}
       <span class="rules" aria-hidden="true" style={`grid-row:1/${correlogram.length + 1}`}>
@@ -229,7 +242,7 @@ const cellFor = (method: string, buffer: number) =>
   </p>
 
   <figure>
-    <div class="controls-fig" role="img" aria-label="五種空間控制下的每月殘差 Moran's I 平均與 95% 區間">
+    <div class="controls-fig">
       <span class="rules" aria-hidden="true" style={`grid-row:1/${controls.length + 1}`}>
         {ctrlTicks.map((t) => (
           <span class={t === 0 ? "rule zero" : "rule"} style={`left:${n(pct(t), 3)}%`} />
