@@ -8,6 +8,7 @@
  */
 
 import meta from "../../public/data/meta.json";
+import manifest from "../../public/data/manifest.json";
 import l0Index from "../../public/data/l0/index.json";
 import trendNational from "../../public/data/story/trend-national.json";
 import trendAirzone from "../../public/data/story/trend-airzone.json";
@@ -413,4 +414,88 @@ export function mappableStations(): Station[] {
 export function asset(path: string): string {
   const base = import.meta.env.BASE_URL ?? "/";
   return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+}
+
+/**
+ * The published data layers, as things a reader can actually download.
+ *
+ * The site shipped 60 MB of data and linked to none of it. Counted across all
+ * eleven routes: zero `a[download]`, zero hrefs ending in `.json` or `.parquet`,
+ * zero containing `/l0/` or `/l1/`. Chapter 10 said the L1 layer was 「共 54.6
+ * MB。供 DuckDB-WASM 或桌面工具使用」 and then offered nothing to click, so a
+ * reader who had accepted the site's central claim — that every number can be
+ * recomputed — reached the last chapter and had to guess a URL or leave.
+ *
+ * Built from `manifest.json` rather than from a list typed here, for the reason
+ * this file exists at all: the manifest is what `twair export web` wrote and
+ * what `scripts/check_web_export.py` checks in CI, so a file that moves or
+ * changes size cannot leave a stale number on the page. The Chinese names come
+ * from the L0 index, which is the same export's own register of measurands.
+ *
+ * The two layers are matched on the filename stem and the pairing is asserted,
+ * because a half-listed measurand would be worse than an unlisted one: it would
+ * look like the Parquet did not exist.
+ */
+export interface DataFile {
+  /**
+   * Site-relative, ready for `asset()`.
+   *
+   * NOT the manifest's own spelling. `manifest.json` records
+   * `l0/amb_temp.json`, relative to `public/data/`, because that is where the
+   * exporter wrote it — but the file is SERVED at `data/l0/amb_temp.json`.
+   * Passing the manifest path straight to `asset()` produced 42 links to
+   * `/l0/…` that all 404, and every one of them looked right in the markup.
+   * The prefix is added once, here, where the difference between "where the
+   * exporter put it" and "where a reader fetches it" is the whole subject.
+   */
+  path: string;
+  /** The manifest's own key, kept so a lookup can be checked against it. */
+  file: string;
+  bytes: number;
+}
+
+export interface MeasurandFiles {
+  pollutant: string;
+  name_zh: string;
+  unit: string;
+  months: [string, string];
+  l0: DataFile;
+  l1: DataFile;
+}
+
+const manifestBytes = new Map(
+  (manifest.files as { file: string; bytes: number }[]).map(
+    (f) => [f.file, f.bytes] as const,
+  ),
+);
+
+export const dataFiles: MeasurandFiles[] = pollutantIndex.map((p) => {
+  const stem = p.file.replace(/^l0\//, "").replace(/\.json$/, "");
+  const l1File = `l1/${stem}.parquet`;
+  const l1Bytes = manifestBytes.get(l1File);
+  if (l1Bytes === undefined) {
+    throw new Error(`${p.pollutant}: ${l1File} is not in manifest.json`);
+  }
+  return {
+    pollutant: p.pollutant,
+    name_zh: p.name_zh,
+    unit: p.unit,
+    months: p.months,
+    l0: { path: `data/${p.file}`, file: p.file, bytes: p.bytes },
+    l1: { path: `data/${l1File}`, file: l1File, bytes: l1Bytes },
+  };
+});
+
+/** Layer totals, summed from the same manifest the page links to. */
+export const layerBytes = {
+  l0: dataFiles.reduce((a, f) => a + f.l0.bytes, 0),
+  l1: dataFiles.reduce((a, f) => a + f.l1.bytes, 0),
+};
+
+/**
+ * Decimal MB, because that is what a browser's download panel shows and the
+ * reader is about to compare the two numbers.
+ */
+export function mb(bytes: number): string {
+  return `${(bytes / 1e6).toFixed(bytes >= 1e7 ? 1 : 2)} MB`;
 }

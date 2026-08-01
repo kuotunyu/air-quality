@@ -19,7 +19,7 @@
  * used here comes from the air-quality stations' own instruments. Crediting a
  * source the work never used is worse than crediting none.
  */
-import { hourlyObservationsShort } from "../lib/data";
+import { asset, dataFiles, hourlyObservationsShort, layerBytes, mb } from "../lib/data";
 import { repoFile } from "../lib/repo";
 ---
 
@@ -49,7 +49,7 @@ import { repoFile } from "../lib/repo";
     <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
 
     <dt>L1 站-日</dt>
-    <dd>每個測項一個 Parquet，共 54.6 MB。供 DuckDB-WASM 或桌面工具使用。</dd>
+    <dd>每個測項一個 Parquet，共 {mb(layerBytes.l1)}。供 DuckDB-WASM 或桌面工具使用。</dd>
 
     <dt>L2 站-時</dt>
     <dd>
@@ -58,6 +58,66 @@ import { repoFile } from "../lib/repo";
       <code>twair build</code> 即可獨立重建。
     </dd>
   </dl>
+
+  <h2>下載</h2>
+
+  <p>
+    二十一個測項，每個測項兩層。全部 {mb(layerBytes.l0 + layerBytes.l1)}，
+    直接從這個網站取得，不需要註冊也不經過任何伺服器端處理。
+  </p>
+
+  {/*
+    A table, because there are three things to compare per row and 21 rows of
+    them: a reader looking for one measurand scans the first column, and a
+    reader sizing up the download scans the last two. The file sizes come from
+    `manifest.json` — the same file CI checks — so a number here cannot drift
+    from the bytes actually served.
+
+    `download` on the anchors, so a Parquet does not open as a wall of mojibake
+    in a tab, and a JSON does not either. The href goes through `asset()`,
+    which was the only base-path helper in the codebase and until now had no
+    callers while six other files inlined their own copy of the same rule.
+  */}
+  <div class="table-wrap">
+    <table class="dense">
+      <caption>三層資料的 L0 與 L1，逐測項。檔案大小取自匯出時寫下的 manifest。</caption>
+      <thead>
+        <tr>
+          <th scope="col">測項</th>
+          <th scope="col">涵蓋期間</th>
+          <th scope="col">L0 站-月</th>
+          <th scope="col">L1 站-日</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          dataFiles.map((f) => (
+            <tr>
+              <td>
+                {f.name_zh}
+                <span class="code">{f.pollutant}</span>
+              </td>
+              <td class="span">
+                {f.months[0]}–{f.months[1]}
+              </td>
+              <td>
+                <a href={asset(f.l0.path)} download>
+                  JSON
+                </a>
+                <span class="size">{mb(f.l0.bytes)}</span>
+              </td>
+              <td>
+                <a href={asset(f.l1.path)} download>
+                  Parquet
+                </a>
+                <span class="size">{mb(f.l1.bytes)}</span>
+              </td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
 
   <h2>授權與再散布</h2>
 
@@ -147,5 +207,29 @@ import { repoFile } from "../lib/repo";
     border-top: 0;
     padding-top: 0;
   }
+}
+
+/*
+ * The measurand's symbol and the file's size are both metadata about the thing
+ * beside them, so both are set the way this site sets metadata everywhere else:
+ * one step down, muted, and — for the sizes — in the numeric face so 5.83 and
+ * 52.08 line up down the column. They sit on their own line rather than beside
+ * their label, because at 390px a 「二氧化硫 SO2」 cell that wraps mid-phrase is
+ * harder to scan than two short lines.
+ */
+.code,
+.size,
+.span {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The download links are the point of the table, so they carry the weight the
+   rest of the cells give up. */
+.table-wrap a[download] {
+  font-weight: 650;
 }
 </style>
