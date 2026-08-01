@@ -353,7 +353,7 @@ anchor that scrolls nowhere — worth checking in the browser after a reorder.
 
 ### Inline series labels collide exactly where the finding is
 
-Chapter 5's whole point is that R² and skill converge at 48h, which put two
+Chapter 6's whole point is that R² and skill converge at 48h, which put two
 end-of-line labels 5px apart at an 11.5px font. Convergence is what these
 charts are *for*, so the collision is not an edge case. `spreadLabels` pushes
 them to a 13px minimum; any new multi-series chart with inline labels needs it.
@@ -435,7 +435,7 @@ follow:
 
 **A heading names the quantity under analysis, not a conclusion with a twist.**
 「這二十年到底變好了嗎」 became 「長期趨勢與氣象校正」; 「壞空氣是從哪個方向來的」
-became 「污染來向與風速條件」; 「自己查」 became 「資料查詢」. Chapter 4's title was
+became 「污染來向與風速條件」; 「自己查」 became 「資料查詢」. Chapter 5's title was
 already right — 「事件效應的偵測極限」 names what is measured.
 
 Avoid in display copy: 到底 / 其實 / 故事 / 值得說 / 戲劇性, rhetorical questions,
@@ -455,7 +455,7 @@ exported payload rather than naming the three that were wrong.
 
 `deweather.json` was exported on every run from Phase 4 onward and read by no
 component, while its docstring said "Chapter 1's second line" from the first
-commit. Chapter 4 meanwhile pointed readers at "第一章那條氣象正規化後的月序列"
+commit. Chapter 5 meanwhile pointed readers at "第一章那條氣象正規化後的月序列"
 — a chart that did not exist. Neither `astro check` nor any test catches that:
 an unused export is valid, and a cross-reference in prose is just prose.
 
@@ -483,7 +483,7 @@ The result is worth knowing: observed falls 20.36 ug/m3 against the normalised
 slope ratios says 42.2%. Two unrelated aggregations of the same fits landing
 1.2 points apart is worth more than either number alone, so both ship.
 
-### Chapter 7 has seven pitfalls, and the seventh comes from a different module
+### Chapter 8 has seven pitfalls, and the seventh comes from a different module
 
 Pitfalls 01-06 read `story/pitfalls.json` (M3); 07 reads `story/imputation.json`
 (M11). Adding one meant a second payload rather than extending the first,
