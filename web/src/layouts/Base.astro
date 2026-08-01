@@ -15,9 +15,18 @@ import PlotReadout from "../components/PlotReadout.astro";
 interface Props {
   title: string;
   description: string;
+  /**
+   * Set on a page that is served at addresses other than its own.
+   *
+   * Only the 404 page sets it. That file answers every unmatched path under the
+   * site, so a canonical link on it would name one URL — `/404/` — that nothing
+   * is ever served at, and an `og:url` that unfurls to a page the reader did not
+   * ask for. A page that cannot state its own address should not state one.
+   */
+  unaddressed?: boolean;
 }
 
-const { title, description } = Astro.props;
+const { title, description, unaddressed = false } = Astro.props;
 
 /*
  * Which chapter is open, so the nav can say so.
@@ -102,12 +111,18 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
     <meta name="theme-color" content="#f1f6fb" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#14181b" media="(prefers-color-scheme: dark)" />
 
-    <link rel="canonical" href={canonical} />
+    {
+      unaddressed ? (
+        <meta name="robots" content="noindex, follow" />
+      ) : (
+        <link rel="canonical" href={canonical} />
+      )
+    }
 
     <meta property="og:type" content="article" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonical} />
+    {!unaddressed && <meta property="og:url" content={canonical} />}
     <meta property="og:site_name" content="台灣空氣品質的長期重新分析" />
     <meta property="og:locale" content="zh_TW" />
     {/* A link to this document in a chat app used to unfurl as a bare line of

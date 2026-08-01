@@ -16,7 +16,8 @@
  */
 import Base from "../layouts/Base.astro";
 import Hero from "../components/Hero.astro";
-import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
+import ChapterIndex from "../components/ChapterIndex.astro";
+import { href } from "../lib/chapters";
 import { cards, hourlyObservationsShort, trend } from "../lib/data";
 import { n } from "../lib/chart";
 
@@ -44,21 +45,7 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
       寫的是那一章<strong>解決掉什麼</strong>——不是它的標題，是它的結論。
     </p>
 
-    <ol class="toc">
-      {
-        CHAPTERS.map((c) => (
-          <li>
-            <a href={href(c.slug)}>
-              <span class="toc-n">{chapterLabel(c.n)}</span>
-              <span class="toc-body">
-                <span class="toc-title">{c.title}</span>
-                <span class="toc-claim">{c.claim}</span>
-              </span>
-            </a>
-          </li>
-        ))
-      }
-    </ol>
+    <ChapterIndex />
 
     <div class="note">
       <p>
@@ -77,84 +64,3 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
   </section>
 </Base>
 
-<style>
-  /*
-   * The index is a numbered list because the document is a sequence — the
-   * numbers carry the reading order, which is information the reader needs.
-   * (Numbered markers as decoration on unordered sections would be scaffolding;
-   * these are an actual ordinal.)
-   *
-   * Rows rather than cards. Ten cards in a grid would give every chapter the
-   * same weight and the same shape, and would put each claim in a column about
-   * fourteen Chinese characters wide. A row lets the claim have the page's own
-   * measure, which is the width it was written for.
-   */
-  .toc {
-    list-style: none;
-    margin: var(--space-5) 0 var(--space-4);
-    padding: 0;
-    counter-reset: none;
-  }
-
-  .toc li {
-    border-top: 1px solid var(--line-soft);
-  }
-
-  .toc li:last-child {
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  .toc a {
-    display: grid;
-    gap: 0.1rem var(--space-4);
-    padding: var(--space-3) 0;
-    text-decoration: none;
-    color: var(--text);
-  }
-
-  /* The chapter number sizes to its own content and the title column takes the
-     rest, so every title starts on one vertical line down the list. */
-  @media (min-width: 34rem) {
-    .toc a {
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: baseline;
-    }
-  }
-
-  .toc-n {
-    font-size: var(--text-sm);
-    font-weight: 650;
-    color: var(--text-faint);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .toc-body {
-    display: grid;
-    gap: 0.2rem;
-    max-width: var(--measure);
-  }
-
-  .toc-title {
-    font-size: var(--text-lg);
-    font-weight: 650;
-    letter-spacing: -0.01em;
-  }
-
-  .toc-claim {
-    color: var(--text-muted);
-    text-align: justify;
-    line-break: strict;
-  }
-
-  /* The whole row is the target, so the hover has to be on the row: an underline
-     under the title alone would suggest only the title is clickable. */
-  .toc a:hover .toc-title,
-  .toc a:focus-visible .toc-title {
-    color: var(--accent);
-  }
-
-  .toc a:hover .toc-n {
-    color: var(--accent);
-  }
-</style>

@@ -1,0 +1,56 @@
+---
+/**
+ * The page for an address that has none.
+ *
+ * Without this file a reader who mistypes a URL, or follows an old link, gets
+ * GitHub's own 「Page not found · GitHub Pages」 — an English error page with
+ * GitHub's branding, no indication of which site they were trying to reach, and
+ * no link back into the document. On this site they fall out of a
+ * Chinese-language reanalysis and land on someone else's black-and-white
+ * apology.
+ *
+ * It matters more here than on most sites because the addresses have already
+ * moved. The document used to be a single page of ten chapters — 38,291px of it
+ * — and every chapter was an in-page anchor; then it became ten routes, and the
+ * numbering was renumbered once by hand across eight files when a chapter was
+ * inserted in the middle. Both of those turned live links into dead ones, and
+ * the project's own README still carries an anchor from before the split.
+ *
+ * So this page does one job: put the reader back into the table of contents. It
+ * is the ten-chapter index, the same component the entry page uses, above the
+ * one sentence that says what happened. Every link goes through `href()`, which
+ * is root-absolute, because a 404 is served AT the address that failed and a
+ * relative link from an unknown depth would fail with it.
+ *
+ * GitHub Pages serves `/404.html` for any unmatched path under the project
+ * site, which is what Astro builds this into. Astro's dev server does the same
+ * for an unknown route, so the page can be checked locally.
+ */
+import Base from "../layouts/Base.astro";
+import ChapterIndex from "../components/ChapterIndex.astro";
+import { href } from "../lib/chapters";
+---
+
+<Base
+  title="找不到這個頁面 — air-quality"
+  description="這個位址在本站沒有對應的頁面。全部十章的目錄在這裡。"
+  unaddressed
+>
+  <section id="notfound" class="page">
+    <p class="eyebrow">404</p>
+    <h1>這個位址沒有頁面</h1>
+
+    <p class="lede">
+      可能是網址打錯了，也可能是舊連結——這份文件曾經是<strong
+        >單一頁面的十個章節</strong
+      >，後來每一章各自成頁，章節編號也重新編過一次。當時的頁內錨點現在都指不到東西。
+    </p>
+
+    <p>
+      下面是全部十章。從<a href={href()}>首頁</a>開始也可以，
+      那裡有這份重新分析的結論與監測網的全貌。
+    </p>
+
+    <ChapterIndex />
+  </section>
+</Base>
