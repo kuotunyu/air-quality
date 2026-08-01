@@ -1564,6 +1564,28 @@ main {
 
 /* ---------- tables ---------- */
 
+/*
+ * A table leaves the measure, exactly as a figure does.
+ *
+ * `--measure` is a constraint on TEXT: the eye has to find the start of the
+ * next line, and principle 10 records the three attempts it took to get that
+ * right. A table has no lines to return to — it is read by scanning a column —
+ * and holding it to the reading width bought nothing and cost the thing tables
+ * are for. Measured at 1440: chapter 5's seven-column results table needed more
+ * width than the reading column had, so 「機率預期」 — the column the paragraph
+ * underneath argues from — was behind a horizontal scrollbar on a display with
+ * 300px of unused margin either side of it.
+ *
+ * Same arithmetic as `.page > figure`, so the two kinds of data block share one
+ * left edge and one width, and the margin still lands outside the column.
+ */
+.page > .table-wrap {
+  --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
+  --bleed: clamp(0px, calc(var(--room) - 1.5rem), 8rem);
+  width: calc(100% + 2 * var(--bleed));
+  margin-inline: calc(-1 * var(--bleed));
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -1590,7 +1612,13 @@ table {
 
 th,
 td {
-  padding: 0.6rem 0.9rem;
+  /* The inline padding follows the number of columns, not a constant. A
+     seven-column table pays it seven times: at a flat 0.9rem, chapter 5's
+     results table spent 294px — a fifth of its own width — on gaps, and needed
+     1,053px inside the 983px its column could give, so 「機率預期」 sat behind a
+     horizontal scrollbar on a 1440 display. `--cell-pad` lets a wide table say
+     so; everything else keeps the roomier default. */
+  padding: 0.6rem var(--cell-pad, 0.9rem);
   text-align: left;
   border-bottom: 1px solid var(--line-soft);
   /* Columns of numbers are only scannable if a row is one line, so this is the
@@ -1598,6 +1626,24 @@ td {
      a single line made a three-column table 2,741px wide inside a 1,139px
      figure. The one cell that needs to wrap now says so. */
   white-space: nowrap;
+}
+
+/*
+ * A header is a name, and a name may take two lines.
+ *
+ * The body cells are single numbers and stay `nowrap`, so the column is only as
+ * wide as its widest VALUE plus its header's longest WORD — which for
+ * 「效應中位數」 and 「安慰劑均值」 is most of the width those columns were
+ * claiming. Two lines of header cost one row of height once; a header held on
+ * one line costs width on every row.
+ */
+table.dense {
+  --cell-pad: 0.6rem;
+}
+table.dense th {
+  white-space: normal;
+  text-wrap: balance;
+  vertical-align: bottom;
 }
 
 td.wrap,

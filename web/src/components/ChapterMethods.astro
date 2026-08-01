@@ -413,7 +413,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <details>
       <summary>合成資料上的常態檢定：樣本數如何決定 p 值</summary>
       <div class="table-wrap">
-        <table>
+        <table class="dense">
           <thead>
             <tr>
               <th>樣本數</th>
@@ -497,7 +497,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <details>
       <summary>各係數在 1,000 次重抽樣下的分布</summary>
       <div class="table-wrap">
-        <table>
+        <table class="dense">
           <thead>
             <tr>
               <th>係數</th>
@@ -837,6 +837,16 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   @media (min-width: 78rem) {
     .two-up {
       grid-template-columns: 1fr minmax(200px, 260px);
+      /*
+       * Centred, the same bargain the hero makes with its map.
+       *
+       * The aside is one figure and a line of text; the plot beside it is
+       * several hundred pixels tall. Stretched, the column's content sat at the
+       * top and left a measured 260 x 364px of nothing under it, which reads as
+       * a column that stopped early. Centred, the same emptiness splits above
+       * and below and reads as an annotation standing beside a figure.
+       */
+      align-items: center;
     }
   }
   .two-up figure {
