@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { linePath, linear, markInk, n, padded, smoothPath, ticks, yGutter } from "../lib/chart";
+import { linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -377,8 +377,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
                         : "sin/cos + u/v 分量"}
                   </td>
                   <td class="num">{row.n_terms}</td>
-                  <td class="num">{n(row.r_squared as number, 4)}</td>
-                  <td class="num">{n(row.r2_relative_to_raw_bearing as number, 2)}×</td>
+                  <td class="num">{nFixed(row.r_squared as number, 4)}</td>
+                  <td class="num">{nFixed(row.r2_relative_to_raw_bearing as number, 2)}×</td>
                 </tr>
               ))
             }
@@ -442,9 +442,9 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
                 <tr>
                   <td class="num">{(row.n as number).toLocaleString()}</td>
                   <td>{SYNTHETIC_DATA[row.data as string] ?? row.data}</td>
-                  <td class="num">{n(row.skewness as number, 3)}</td>
+                  <td class="num">{nFixed(row.skewness as number, 3)}</td>
                   <td class="num">
-                    {(row.p_value as number) < 0.0001 ? "< .0001" : n(row.p_value as number, 4)}
+                    {(row.p_value as number) < 0.0001 ? "< .0001" : nFixed(row.p_value as number, 4)}
                   </td>
                   <td class={row["rejected_at_0.05"] ? "bad" : "good"}>
                     {row["rejected_at_0.05"] ? "拒絕常態" : "不拒絕"}
@@ -480,7 +480,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               published.map((row) => (
                 <tr>
                   <td>{row.variable}</td>
-                  <td class="num">{n(row.ks_statistic_published as number, 3)}</td>
+                  <td class="num">{nFixed(row.ks_statistic_published as number, 3)}</td>
                   <td class="num">&lt; .001</td>
                   <td class="bad">拒絕</td>
                 </tr>
@@ -527,11 +527,11 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               stability.map((row) => (
                 <tr>
                   <td>{row.term}</td>
-                  <td class="num">{n(row.mean as number, 3)}</td>
-                  <td class="num">{n(row.sd as number, 3)}</td>
-                  <td class="num">{n(row.min as number, 3)}</td>
-                  <td class="num">{n(row.max as number, 3)}</td>
-                  <td class="num">{n(row.coefficient_of_variation as number, 2)}</td>
+                  <td class="num">{nFixed(row.mean as number, 3)}</td>
+                  <td class="num">{nFixed(row.sd as number, 3)}</td>
+                  <td class="num">{nFixed(row.min as number, 3)}</td>
+                  <td class="num">{nFixed(row.max as number, 3)}</td>
+                  <td class="num">{nFixed(row.coefficient_of_variation as number, 2)}</td>
                   <td class="num">{n((row.share_positive as number) * 100, 0)}%</td>
                 </tr>
               ))
@@ -835,8 +835,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               {keyCoefficients.map((row) => (
                 <tr>
                   <td>{row.item}</td>
-                  <td class="num">{n(row.published_2018 as number, 4)}</td>
-                  <td class="num">{row.reproduced == null ? "—" : n(row.reproduced, 4)}</td>
+                  <td class="num">{nFixed(row.published_2018 as number, 4)}</td>
+                  <td class="num">{row.reproduced == null ? "—" : nFixed(row.reproduced, 4)}</td>
                   <td class="num">
                     {row.pct_difference == null ? "—" : `${n(row.pct_difference, 1)}%`}
                   </td>

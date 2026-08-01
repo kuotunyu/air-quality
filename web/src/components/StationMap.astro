@@ -238,10 +238,12 @@ const dots = main.map((s) => {
 });
 ---
 
-<div class="map-wrap">
+<div
+  class="map-wrap"
+  style={`--map-ratio:${width} / ${height};--map-wide:${(width / height).toFixed(4)}`}
+>
   <div
     class="map-box"
-    style={`--map-ratio:${width} / ${height};--map-wide:${(width / height).toFixed(4)}`}
   >
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -354,9 +356,22 @@ const dots = main.map((s) => {
 </div>
 
 <style>
+  /*
+   * The wrapper is sized to the map, so everything under it is too.
+   *
+   * The scale and the source note were as wide as the column while the map was
+   * as wide as the map: measured on the stacked layout at 1000, the ramp spanned
+   * 596px — the whole content column — under an inked map 331px across, so a
+   * legend 1.8x the width of the thing it explains was centred over nothing in
+   * particular. The sizing moves up one element and `.map-box` fills it, which
+   * makes the ramp and the map share an edge by construction rather than by two
+   * numbers agreeing.
+   */
   .map-wrap {
     display: flex;
     flex-direction: column;
+    width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
+    margin-inline: auto;
   }
 
   /*
@@ -407,8 +422,7 @@ const dots = main.map((s) => {
   .map-box {
     position: relative;
     aspect-ratio: var(--map-ratio);
-    width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
-    margin-inline: auto;
+    width: 100%;
   }
   .map-box > svg {
     display: block;

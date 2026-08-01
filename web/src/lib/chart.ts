@@ -56,6 +56,22 @@ export function n(value: number, places = 1): string {
 }
 
 /**
+ * The same rounding, with the zeros kept.
+ *
+ * `n` trims trailing zeroes, which is right in prose, right on an axis label and
+ * right in an SVG path — padding a `d` attribute would only make it longer. It
+ * is wrong in a column. `td.num` is right-aligned and set in tabular figures, so
+ * every digit occupies the same width and the decimal point is supposed to form
+ * a line; drop a zero and that row's point moves. Measured on chapter 8's
+ * thirteen-row K-S column at 1440: twelve rows put the point at x = 785.9 and the
+ * 「0.3」 row put it 12.5px to the right, in a column whose whole purpose is
+ * comparison down the page.
+ */
+export function nFixed(value: number, places = 1): string {
+  return value.toFixed(places);
+}
+
+/**
  * Build a path, starting a new subpath at every null.
  *
  * This is the function the whole module exists for. A null is a hole in the

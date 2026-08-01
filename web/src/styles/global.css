@@ -645,6 +645,18 @@
     /* And a lift on dark paper — away from the page either way. */
     --table-stripe: oklch(0.262 0.009 250);
 
+    /*
+     * Except inside a panel, where "away from the page" is the wrong direction.
+     *
+     * `--table-stripe` and `--bg-raised` are the same value in this theme, which
+     * is correct for the seven tables that sit on `--bg` — the stripe is a lift
+     * off the page. Chapter 8 puts all six of its tables inside a `<details>`
+     * painted `--bg-raised`, so there the stripe and its ground are the same
+     * colour and the zebra is not drawn at all. The token is right for the page
+     * and wrong for the panel, so the panel gets its own.
+     */
+    --table-stripe-on-raised: oklch(0.309 0.009 250);
+
     --tint-neutral: oklch(0.245 0.006 250);
     --tint-caution: oklch(0.258 0.022 85);
     --tint-caution-edge: oklch(0.402 0.048 85);
@@ -1584,6 +1596,15 @@ main {
   font-weight: 600;
 }
 
+/* A raised panel re-points the stripe at its own ground. Declared here rather
+   than in the dark block so the cascade is in one place; the variable it names
+   only exists in dark, so in light this resolves to the page token. */
+details,
+.card,
+.note {
+  --table-stripe-here: var(--table-stripe-on-raised, var(--table-stripe));
+}
+
 /* ---------- tables ---------- */
 
 /*
@@ -1715,7 +1736,10 @@ th.num {
  * dimmed cells resting on the stripe would have paid for the stripe.
  */
 tbody tr:nth-child(even) {
-  background: var(--table-stripe);
+  /* `--table-stripe-on-raised` when the table sits on a raised panel; the page
+     token otherwise. Only the dark theme defines the override — in light the two
+     grounds are far enough apart that one stripe serves both. */
+  background: var(--table-stripe-here, var(--table-stripe));
 }
 
 tbody tr:last-child td {
