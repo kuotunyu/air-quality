@@ -159,7 +159,10 @@ const candidates = pollutantIndex.map((p) => ({
     <p class="tables-hint">按下執行之後，這裡會列出實際可以查的表。</p>
   </div>
 
-  <div id="result" class="result"></div>
+  {/* `tabindex="-1"` so `reveal()` can move focus here after a run — not
+      reachable by Tab, only programmatically, which is what a landing target
+      wants. */}
+  <div id="result" class="result" tabindex="-1"></div>
 
   <div class="note caveat">
     <strong>查得到哪些測項，取決於這個站台放了哪些檔案。</strong>
@@ -230,6 +233,31 @@ const candidates = pollutantIndex.map((p) => ({
   function setStatus(text: string, busy = false) {
     statusEl.textContent = text;
     statusEl.dataset.busy = busy ? "true" : "false";
+    if (busy) delete statusEl.dataset.failed;
+  }
+
+  /*
+   * Put the answer where the reader is.
+   *
+   * Pressing 執行查詢 grows `#tables` from 38px to 183px — the schema list
+   * arrives with the engine — which pushes `#result` from y=737 to y=944. On
+   * every viewport at or under 900px tall the result table was then entirely
+   * below the fold: measured 0% visible at 1280x720, 1280x800, 1280x900,
+   * 1440x780 and 1024x700, with scrollY still 0 and focus still on `<body>`.
+   * The reader saw a list of table names — which looks like an answer and is a
+   * schema — and the rows they asked for were off screen. The error `<pre>` was
+   * worse, landing at y=882 and invisible on four of them.
+   *
+   * `block: "nearest"` rather than `"start"`, so on the two commonest desktop
+   * sizes — 1512x945 and 1920x1080, where the result is already visible — this
+   * is a no-op and the page does not jump under someone who could already see
+   * it. Focus moves with it so a keyboard reader is taken there too, and
+   * `#result` carries `tabindex="-1"` for that; `preventScroll` keeps the focus
+   * call from fighting the scroll that just happened.
+   */
+  function reveal() {
+    resultEl.scrollIntoView({ block: "nearest", behavior: "auto" });
+    resultEl.focus({ preventScroll: true });
   }
 
   // The whole DuckDB module tree is behind this dynamic import, so a reader
@@ -307,18 +335,29 @@ const candidates = pollutantIndex.map((p) => ({
       );
       shown = { columns, kinds, rows, total, truncated };
       paint();
+      reveal();
     } catch (error) {
-      // Say so. This set the status to empty, which on a live region announces
-      // nothing at all — a screen-reader user pressed the button and heard
-      // silence whether it had worked or failed.
-      setStatus("查詢失敗");
+      /*
+       * The reason goes in the status, not only in the box below.
+       *
+       * This said 「查詢失敗」 and nothing else, and put the cause in a `<pre>`
+       * inside `#result` — which is where a screen reader is not, and where a
+       * ≤900px-tall window cannot see. So the one reader who most needs to know
+       * WHY heard only that something had. Two sentences at most in the live
+       * region; the full text, including any SQL position marker, stays in the
+       * box where it can be read at leisure.
+       */
+      const detail = error instanceof Error ? error.message : String(error);
+      setStatus(`查詢失敗：${detail.split("\n").slice(0, 2).join(" ")}`);
+      statusEl.dataset.failed = "true";
       // A failed preparation must not be cached, or every later attempt
       // returns the same error without retrying.
       attached = null;
       const pre = document.createElement("pre");
       pre.className = "error";
-      pre.textContent = error instanceof Error ? error.message : String(error);
+      pre.textContent = detail;
       resultEl.appendChild(pre);
+      reveal();
     } finally {
       runButton.disabled = false;
     }
@@ -755,8 +794,22 @@ const candidates = pollutantIndex.map((p) => ({
   .status[data-busy="true"]::after {
     content: "…";
   }
+  /* A failure had the same ink as a row count. `--sign-neg` is the token this
+     site already solved for "the number went the wrong way", and it is the only
+     thing on this line that distinguishes 「查詢失敗：…」 from 「500 列」 for a
+     reader who is not reading the words. */
+  .status[data-failed="true"] {
+    color: var(--sign-neg);
+  }
   .result {
     margin-top: 1.2rem;
+  }
+  /* The landing target should show where it landed. Without this the jump is
+     invisible to a sighted keyboard reader: focus moves to a div with no
+     default focus style. */
+  .result:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
   }
 
   .tables {

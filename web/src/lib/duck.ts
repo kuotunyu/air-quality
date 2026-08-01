@@ -30,6 +30,82 @@ export type AsyncDuckDB = DuckDB.AsyncDuckDB;
 
 let dbPromise: Promise<AsyncDuckDB> | null = null;
 
+/**
+ * How long the engine may go without loading a single byte before we call it.
+ *
+ * Not a total timeout, and that distinction is the whole design. A total
+ * timeout has to be longer than the slowest honest load, and the slowest
+ * honest load here is long: 8.13 MB gzipped over a 250 kbps link is about 260
+ * seconds. Any cap short enough to catch a hang would turn a slow success into
+ * a false failure — and worse, the worker keeps downloading after the promise
+ * rejects, so a second press would open a second 8 MB transfer.
+ *
+ * Liveness is the property that actually separates the two. A load that is
+ * working reports progress continuously: a successful instantiation fires the
+ * callback hundreds of times, once per chunk, so the gap between ticks is set
+ * by how fast bytes arrive and not by how many there are. A load that has been
+ * blocked, or whose response was truncated mid-flight, reports nothing ever
+ * again. Twenty seconds of complete silence is not a slow link; it is a link
+ * that has stopped.
+ */
+const STALL_MS = 20_000;
+
+/**
+ * `db.instantiate`, but it settles.
+ *
+ * Measured on the shipped page: blocking the `.wasm`, blocking the worker
+ * script, and sending a Content-Length and then cutting the connection at 30%
+ * all leave this promise pending forever — 60.4 s, 40.2 s and 40.0 s of polling
+ * with no change — so the button stays disabled, the status stays 「啟動資料庫」
+ * and there is no error, no retry and no way for the reader to know the page
+ * will never finish.
+ *
+ * The obvious repair, `worker.addEventListener('error')`, does not work here:
+ * measured across those same three failures the handler never fires once. The
+ * worker is alive; it is waiting on a fetch that will not complete.
+ */
+function instantiateOrGiveUp(
+  db: AsyncDuckDB,
+  mainModule: string,
+  pthreadWorker: string | null | undefined,
+  onTick: (p: DuckDB.InstantiationProgress) => void,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>;
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(
+        () =>
+          finish(() =>
+            reject(
+              new Error(
+                `查詢引擎載入停住了：已經 ${STALL_MS / 1000} 秒沒有收到任何資料。\n` +
+                  "常見原因是網路中斷，或是瀏覽器擴充功能／公司網路擋掉了 .wasm 檔。\n" +
+                  "再按一次「執行查詢」會重新下載。",
+              ),
+            ),
+          ),
+        STALL_MS,
+      );
+    };
+    arm();
+    db.instantiate(mainModule, pthreadWorker, (p) => {
+      arm();
+      onTick(p);
+    }).then(
+      () => finish(resolve),
+      (error) => finish(() => reject(error)),
+    );
+  });
+}
+
 export async function getDb(onProgress?: (message: string) => void): Promise<AsyncDuckDB> {
   if (dbPromise) return dbPromise;
 
@@ -59,7 +135,29 @@ export async function getDb(onProgress?: (message: string) => void): Promise<Asy
     // The logger is silent on purpose: DuckDB's own console output is verbose
     // enough to bury a real page error.
     const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
-    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+
+    /*
+     * The message changes while the wait does not.
+     *
+     * 「啟動資料庫」 was set at t = 37 ms and not replaced until t = 45,649 ms on
+     * a throttled link — 45.6 seconds of one unchanging string, whose only
+     * animation is the three dots in `.status::after`. A reader cannot tell
+     * that from the hang above, and the hang is the state this same string
+     * described for as long as they were willing to wait.
+     *
+     * Elapsed seconds, and deliberately NOT a percentage. `bytesLoaded` counts
+     * decompressed bytes and `bytesTotal` is the compressed `Content-Length`,
+     * so the obvious readout prints a fraction like 「34.2 / 7.8 MB」 — and on a
+     * site whose whole register is that its numbers are measured, a number that
+     * is visibly nonsense costs more than the wait it was meant to explain.
+     * A counter that only goes up says the one thing the reader needs: this is
+     * still moving.
+     */
+    const started = Date.now();
+    await instantiateOrGiveUp(db, bundle.mainModule, bundle.pthreadWorker, () => {
+      const seconds = Math.floor((Date.now() - started) / 1000);
+      onProgress?.(seconds < 2 ? "啟動資料庫" : `啟動資料庫（${seconds} 秒）`);
+    });
     return db;
   })();
 
