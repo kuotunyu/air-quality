@@ -384,6 +384,17 @@
     color: var(--text-faint);
   }
 
+  /*
+   * The one affordance. A chart that answers a pointer should say so before the
+   * pointer arrives, and a crosshair cursor is the convention for "this surface
+   * has coordinates" — it costs no ink, no layout and no text. The attribute
+   * only exists on plots that actually carry a payload, so a chart without a
+   * readout does not promise one.
+   */
+  .plot[data-readout] {
+    cursor: crosshair;
+  }
+
   /* The focus ring goes on the plot, which is now a focusable group. */
   .plot:focus-visible {
     outline: 2px solid var(--accent);
