@@ -55,15 +55,77 @@ const breaks = events.filter((e) => e.kind === "trend_break");
  * stacking those would be a histogram of a different figure.
  */
 const DOT = 7;
-const BINS = 56;
+
+/*
+ * One frame for every strip, centred on zero.
+ *
+ * The strips are stacked directly on top of each other, which is a promise that
+ * they can be compared — and they could not be. Each event solved its own
+ * domain from its own placebo range, so measured at 1440: frame spans of 21.33
+ * and 28.83 μg/m³ across the same 903px, zero at 58.1% of one and 50.5% of the
+ * other, **69px apart on the page**. A reader lining the two up was reading a
+ * difference in scaling as a difference in effect, and the wider placebo cloud
+ * — which is the chapter's whole subject — was drawn exactly as wide as the
+ * narrower one.
+ *
+ * The old comment here argued the domains must not be touched because "the two
+ * events genuinely have different ranges and forcing a shared frame would
+ * compress one of them". They do, and it does: the COVID strip's data now
+ * occupies about two thirds of the width instead of all of it. That is the
+ * price of the two figures meaning the same thing, and it is the smaller loss.
+ *
+ * Symmetric, so zero lands at exactly 50% in both and the eye can find it
+ * without a label.
+ */
+const FRAME = (() => {
+  const all = windowed.flatMap((e) =>
+    e.placebo_effects.concat(e.station_effects.map((s) => s.effect)),
+  );
+  const reach = Math.max(1, ...all.map((v) => Math.abs(v)));
+  // The same 5% breathing room the per-event frames had, on a symmetric span.
+  const pad = reach * 0.1;
+  return { lo: -(reach + pad), hi: reach + pad };
+})();
+
+/*
+ * One bin is the same width in DATA units in every strip, so a column of five
+ * dots means the same thing in both. Bins were a fixed count across each
+ * event's own frame, which made the bin 0.38 μg/m³ wide in one strip and 0.51
+ * in the other — the taller column was partly just the coarser bin.
+ */
+const BIN = 0.38;
+const BINS = Math.max(8, Math.round((FRAME.hi - FRAME.lo) / BIN));
+
+/*
+ * The round ticks, solved once for the shared frame and used by both strips.
+ *
+ * They used to be solved per strip and then filtered against that strip's own
+ * data extremes, so one strip printed 「−5 0」 and the other 「−5 0 +5」 on what
+ * is now the same scale — a reader comparing them had to check the numbers
+ * before trusting the positions. A tick is dropped only when it would crowd an
+ * extreme label in EITHER strip, so the two axes always carry the same set.
+ *
+ * 8% of the frame, not the 14% the per-event version used: that number was
+ * calibrated against frames a third narrower, and at this width it was throwing
+ * away a tick 29px clear of its neighbour.
+ */
+const MARK_CLEARANCE = 0.08;
+const MARKS = ticks(FRAME.lo, FRAME.hi, 4)
+  .filter((t) => t >= FRAME.lo && t <= FRAME.hi)
+  .filter((t) => {
+    const at = (t - FRAME.lo) / (FRAME.hi - FRAME.lo);
+    return windowed.every((e) => {
+      const vals = e.placebo_effects.concat(e.station_effects.map((s) => s.effect));
+      return [Math.min(...vals), Math.max(...vals)].every(
+        (v) => Math.abs(at - (v - FRAME.lo) / (FRAME.hi - FRAME.lo)) > MARK_CLEARANCE,
+      );
+    });
+  });
 
 function strip(e: (typeof events)[number]) {
   const pool = e.placebo_effects.length ? e.placebo_effects : [];
   const values = pool.concat(e.station_effects.map((s) => s.effect));
-  const lo = Math.min(...values, -1);
-  const hi = Math.max(...values, 1);
-  const pad = (hi - lo) * 0.05;
-  const x = linear([lo - pad, hi + pad], [0, 100]);
+  const x = linear([FRAME.lo, FRAME.hi], [0, 100]);
   /*
    * `lo`/`hi` are the frame; `dataLo`/`dataHi` are the data.
    *
@@ -80,8 +142,8 @@ function strip(e: (typeof events)[number]) {
    * its value and two stations in the same column are within one bin of each
    * other. Sorted inside the bin so the stack is deterministic between builds.
    */
-  const frameLo = lo - pad;
-  const frameHi = hi + pad;
+  const frameLo = FRAME.lo;
+  const frameHi = FRAME.hi;
   const width = (frameHi - frameLo) / BINS;
   const bins = new Map<number, { station: string; effect: number }[]>();
   for (const st of [...e.station_effects].sort((a, b) => a.effect - b.effect)) {
@@ -109,25 +171,12 @@ function strip(e: (typeof events)[number]) {
    * marks and no round values between them. Measured at 1440 that is -11.4 at
    * x = 471.6, 0 at 957 and 8.0 ending at 1295: nothing lets a reader locate the
    * −0.96 the prose quotes, or see where the 2.5–3.5 μg/m³ noise floor it names
-   * actually falls. The domains are NOT touched — the two events genuinely have
-   * different ranges and forcing a shared frame would compress one of them —
-   * but each now carries a scale a reader can measure against.
+   * actually falls. Both strips carry a scale a reader can measure against now,
+   * and it is the same scale with the same ticks — see `FRAME` and `MARKS`.
    */
   return {
     x,
-    marks: ticks(frameLo, frameHi, 4)
-      .filter((t) => t >= frameLo && t <= frameHi)
-      // A round tick that lands next to an extreme is printed twice over: the
-      // extreme is a measurement and the tick is scaffolding, so the tick goes.
-      // 14 points of the frame, because the last label is pulled fully inside
-      // the box and so reaches further left than its own position suggests.
-      .filter((t) => {
-        const at = ((t - frameLo) / (frameHi - frameLo)) * 100;
-        const ends = [Math.min(...values), Math.max(...values)].map(
-          (v) => ((v - frameLo) / (frameHi - frameLo)) * 100,
-        );
-        return ends.every((e) => Math.abs(at - e) > 14);
-      }),
+    marks: MARKS,
     lo: frameLo,
     hi: frameHi,
     dataLo: Math.min(...values),

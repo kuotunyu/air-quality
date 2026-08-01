@@ -515,11 +515,17 @@ const cellFor = (method: string, buffer: number) =>
      * The floor is two lines of label plus its own leading. One line would leave
      * the controls figure uneven — measured, its longest label
      * 「今日分區截距（時代錯置對照）」 wraps to two in a 7.5em column while
-     * 「七區截距」 does not, and `auto` then let those rows grow past the others.
-     * Two lines is what this figure's labels actually need; a third only appears
-     * on a phone, where the rows are already reflowing.
+     * 「七區截距」 does not.
+     *
+     * `1fr` and not `auto` for the ceiling. A floor alone only equalises the
+     * rows that are SHORTER than it: on a phone the labels take a third and a
+     * fourth line, and the forest plot came out 136 / 98 / 136 / 102 / 102px —
+     * a 16% spread that is still the label talking rather than the data. In a
+     * grid whose own height is indefinite, `1fr` rows all resolve to the tallest
+     * one, so the pitch is uniform by construction at any width and for any
+     * label anyone writes later, rather than by a number tuned to today's text.
      */
-    --row-h: minmax(4.7rem, auto);
+    --row-h: minmax(4.7rem, 1fr);
 
     /* The plot column carries a floor. Without one the two `content` columns
        took what their longest string wanted and the drawing area was the
