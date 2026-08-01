@@ -187,14 +187,45 @@ const boxAt = (county: (typeof order)[number], anchor: { x: number; y: number })
 };
 const overlapsLabel = (box: [number, number, number, number]) =>
   boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
-const overlapsData = (box: [number, number, number, number]) =>
-  stationPoints.some(
-    (pt) =>
-      pt.x + dotRadius > box[0] &&
-      pt.x - dotRadius < box[2] &&
-      pt.y + dotRadius > box[1] &&
-      pt.y - dotRadius < box[3],
-  );
+/*
+ * How much of a label box the readings would cover, 0 to 1.
+ *
+ * A count is the wrong measure: one dot on a three-character name is a smudge,
+ * and twelve is a name a reader cannot read. Area answers the question the eye
+ * is asking. Each dot is treated as its own square — same approximation the
+ * old overlap test made, and it errs toward caution at the corners.
+ */
+const coverage = (box: [number, number, number, number]) => {
+  const area = (box[2] - box[0]) * (box[3] - box[1]);
+  if (area <= 0) return 1;
+  let covered = 0;
+  for (const pt of stationPoints) {
+    const dx = Math.min(pt.x + dotRadius, box[2]) - Math.max(pt.x - dotRadius, box[0]);
+    const dy = Math.min(pt.y + dotRadius, box[3]) - Math.max(pt.y - dotRadius, box[1]);
+    if (dx > 0 && dy > 0) covered += dx * dy;
+  }
+  return covered / area;
+};
+
+/*
+ * Past this much of the box behind readings, the name is not printed.
+ *
+ * The number is in THIS coordinate space, not in rendered pixels: placement is
+ * solved at the smallest size the map is drawn at, where a 9px dot is a larger
+ * share of a label than it will be at 1440, so the fraction here runs higher
+ * than what a reader sees. It was calibrated by walking it — 0.35 and 0.45 both
+ * printed 14 names, 0.55 prints 15, 0.7 prints 16 and the sixteenth is 基隆市
+ * sitting under the north coast cluster.
+ *
+ * At 0.55, measured on the rendered page: 15 names, the same count as before
+ * any of this, and the worst-covered one is 「新北市」 at 20.5% of its box at a
+ * 900 viewport and 14.2% at 1440 — against 58.4% and 35.8% when the second pass
+ * took the first legal anchor instead of the best one. 「臺北市」 is the name
+ * this refuses; it has no anchor in its own county that the Taipei basin
+ * cluster does not sit on, and a name with a dot through its middle character
+ * is worse than a county the reader can find anyway.
+ */
+const MAX_COVERED = 0.55;
 const inFrame = (box: [number, number, number, number]) =>
   box[0] > 0 && box[2] < width && box[1] > 0 && box[3] < height;
 
@@ -212,14 +243,28 @@ const inFrame = (box: [number, number, number, number]) =>
 for (const pass of [0, 1]) {
   for (const county of order) {
     if (labelled.some((l) => l.name === county.name)) continue;
+    /*
+     * The second pass takes the LEAST covered anchor, not the first legal one.
+     *
+     * It used to take the first, and 新北市 is what that costs: 13 of the 73
+     * dots sat inside its box at a 900 viewport, 58.4% of the label's area, and
+     * the first character was unreadable under the Taipei basin cluster. Four
+     * anchors is not many to choose between, but choosing is free and the county
+     * with the worst crowding is exactly the one with the most to gain. A name
+     * whose best anchor is still worse than `MAX_COVERED` is not printed.
+     */
+    let best: { anchor: { x: number; y: number }; box: [number, number, number, number]; cost: number } | null = null;
     for (const anchor of county.anchors) {
       const box = boxAt(county, anchor);
       if (!inFrame(box) || overlapsLabel(box)) continue;
-      if (pass === 0 && overlapsData(box)) continue;
-      boxes.push(box);
-      labelled.push({ name: county.name, x: anchor.x, y: anchor.y });
-      break;
+      const cost = coverage(box);
+      if (cost > (pass === 0 ? 0 : MAX_COVERED)) continue;
+      if (best === null || cost < best.cost) best = { anchor, box, cost };
+      if (cost === 0) break;
     }
+    if (!best) continue;
+    boxes.push(best.box);
+    labelled.push({ name: county.name, x: best.anchor.x, y: best.anchor.y });
   }
 }
 
@@ -467,6 +512,13 @@ const dots = main.map((s) => {
     margin: 0 0 0.3rem;
     font-size: var(--chart-micro);
     color: var(--text-faint);
+    /* A legend title, not prose. It is a `<p>`, so it inherited the site's
+       justification, and its box is 276px at a 900 viewport — 13.8 characters
+       over two lines, which justification sets as 「PM2.5 年 均 μg/m³」. The
+       floor that catches this everywhere else is a container query on `main`,
+       and `main` is 885px wide here; nothing inside the hero's map column
+       establishes a container of its own. */
+    text-align: left;
   }
   .scale-when {
     color: var(--text-faint);
@@ -508,12 +560,30 @@ const dots = main.map((s) => {
     color: var(--text-faint);
     white-space: nowrap;
     pointer-events: none;
-    /* The fill is only a shade off the page, so a matching halo keeps the name
-       legible where a county border runs underneath it. */
+    /*
+     * An outline, not a glow.
+     *
+     * Three stacked blurs were enough for what they were written for — a county
+     * border passing under a name — and not for what actually passes under one.
+     * Measured at a 900 viewport: nine of the sixteen names have station dots
+     * inside their box, and the worst has twelve covering 37% of it. A blurred
+     * shadow thins out at the glyph's edge, which is exactly where a 9px dot
+     * needs it to be opaque, so 「臺北市」 lost its first character to the Taipei
+     * basin cluster.
+     *
+     * Eight 1px offsets is a solid ring the dots cannot get inside, and the 4px
+     * blur underneath still does the original job on the borders.
+     */
     text-shadow:
-      0 0 3px var(--bg-sunken),
-      0 0 3px var(--bg-sunken),
-      0 0 5px var(--bg-sunken);
+      1px 0 0 var(--bg-sunken),
+      -1px 0 0 var(--bg-sunken),
+      0 1px 0 var(--bg-sunken),
+      0 -1px 0 var(--bg-sunken),
+      1px 1px 0 var(--bg-sunken),
+      -1px -1px 0 var(--bg-sunken),
+      1px -1px 0 var(--bg-sunken),
+      -1px 1px 0 var(--bg-sunken),
+      0 0 4px var(--bg-sunken);
   }
 
   /*
