@@ -115,6 +115,23 @@ const sharePath = spreadShare
   .join(" ");
 
 const fn = functions[0];
+
+/*
+ * Which language a data string is in.
+ *
+ * Several of these fields quote the literature and come back in English —
+ * `outcome`, `source` and `caveat` on the exposure-response function, `why` on
+ * the panel — while others in the same shape come back in Chinese. So it cannot
+ * be written into the markup; it has to be asked of the string.
+ *
+ * It buys two things. A screen reader switches voice instead of reading English
+ * with Chinese phonetics, and the stylesheet stops justifying it: the site's own
+ * note on justification says Latin has to stretch word spaces and that is why
+ * English is usually left-aligned, and the citation was the one block on the
+ * site that proved it — four lines of stretched English at 934px.
+ */
+const langOf = (s: string | null | undefined) =>
+  s && !/[㐀-鿿]/.test(s) ? "en" : undefined;
 ---
 
 <section id="health" class="page">
@@ -374,7 +391,7 @@ const fn = functions[0];
         <tbody>
           {functions.map((f) => (
             <tr>
-              <td>{f.outcome}</td>
+              <td lang={langOf(f.outcome)}>{f.outcome}</td>
               <td class="num">
                 {n(f.rr_per_10, 3)}
                 <span class="dim">
@@ -396,7 +413,7 @@ const fn = functions[0];
     functions.map((f) => (
       <dl class="erf">
         <dt>結果變數</dt>
-        <dd>{f.outcome}</dd>
+        <dd lang={langOf(f.outcome)}>{f.outcome}</dd>
         <dt>每 10 μg/m³ 的相對風險</dt>
         <dd class="erf-rr">
           {n(f.rr_per_10, 3)}
@@ -406,7 +423,7 @@ const fn = functions[0];
           </span>
         </dd>
         <dt class="erf-src">來源</dt>
-        <dd class="erf-src small">
+        <dd class="erf-src small" lang={langOf(f.source)}>
           <a href={f.source_url} target="_blank" rel="noopener">
             {f.source}
           </a>
@@ -415,16 +432,16 @@ const fn = functions[0];
     ))
   )}
 
-  <p class="small">{fn.caveat}</p>
+  <p class="small" lang={langOf(fn.caveat)}>{fn.caveat}</p>
 
   <div class="note caveat">
     <strong>{n(extrapolation.share_above * 100, 1)}%</strong> 的測站-年落在
-    {" "}{n(extrapolation.ceiling_ugm3, 0)} μg/m³ 以上。{extrapolation.why}
+    {" "}{n(extrapolation.ceiling_ugm3, 0)} μg/m³ 以上。<span lang={langOf(extrapolation.why)}>{extrapolation.why}</span>
   </div>
 
   <h2>固定測站樣本</h2>
 
-  <p class="small">{panel.why}</p>
+  <p class="small" lang={langOf(panel.why)}>{panel.why}</p>
 
   <h2>兩項刻意不做的推論</h2>
 

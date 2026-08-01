@@ -708,8 +708,10 @@ const candidates = pollutantIndex.map((p) => ({
   }
 
   .sql-panel > summary {
-    /* The global rule pads this to a 59px row; a footnote is the height of its
-       own line, plus just enough to stay a comfortable target. */
+    /* The global rule pads this to a 59px row, which is a panel header; a
+       footnote wants its own line and no more. The padding goes, and what sets
+       the height instead is the global `min-height: 44px` — a thumb's target,
+       which this still has to be. Measured: 45px tall and 206px wide. */
     padding: 0.15rem 0;
     width: fit-content;
     font-weight: 500;

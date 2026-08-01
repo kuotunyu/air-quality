@@ -920,6 +920,21 @@ main :is(p, .note, .aside, figcaption, dd, blockquote) {
 }
 
 /*
+ * ...and never for English, at any width.
+ *
+ * The argument above is about Chinese. Latin justification has to stretch word
+ * spaces, which the note on the base rule already says is why English is usually
+ * left-aligned — and chapter 7 quotes the literature, so two blocks on the site
+ * are effectively all Latin and both were being justified: the Chen & Hoek
+ * citation over four lines at 934px, and the log-linear caveat over four at 983.
+ * Marked with `lang` in the component, because the field they come from is
+ * English in one record and Chinese in the next.
+ */
+main :is(p, .note, .aside, figcaption, dd, blockquote):lang(en) {
+  text-align: left;
+}
+
+/*
  * A link whose text is an address rather than a phrase.
  *
  * Chapter 6 ends by linking a demo, and the address is 56 characters with no
