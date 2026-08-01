@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -32,7 +32,33 @@ from twair.paths import manifest_path
 
 log = logging.getLogger(__name__)
 
-RETRYABLE = (httpx.TransportError, httpx.HTTPStatusError)
+# Statuses that mean "ask again later" rather than "no".
+RETRY_STATUSES = frozenset({429})
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Transport failures, 429, and 5xx. Nothing else.
+
+    The retry used to be ``retry_if_exception_type((TransportError,
+    HTTPStatusError))``, with a comment above ``get`` reading 「4xx other than
+    429 are not worth retrying — fail fast with a clear error」. The comment was
+    the intent; the code retried every status equally, because the ``if`` under
+    it called ``raise_for_status`` in both branches and the type predicate could
+    not see a status code.
+
+    Measured on a mocked 404: five requests, thirty seconds of exponential
+    backoff, and the same 404 at the end. A missing file is still missing in
+    sixteen seconds, and those four extra requests went to a government server
+    that had already answered clearly — which is the one thing this module
+    exists to avoid. It is worst on `twair verify`, where a wrong key answers
+    401 for every source in turn.
+    """
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status in RETRY_STATUSES or status >= 500
+    return False
 
 
 @contextmanager
@@ -108,7 +134,7 @@ class PoliteClient:
         self._client.close()
 
     @retry(
-        retry=retry_if_exception_type(RETRYABLE),
+        retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=2, min=2, max=60),
         reraise=True,
@@ -117,14 +143,13 @@ class PoliteClient:
         self._throttle.wait(url)
         log.debug("GET %s", url)
         response = self._client.get(url, **kwargs)
-        # 4xx other than 429 are not worth retrying — fail fast with a clear error.
-        if response.status_code == 429 or response.status_code >= 500:
-            response.raise_for_status()
+        # Which failures are worth repeating is decided in `_is_retryable`, the
+        # only place that can see the status code and tell tenacity about it.
         response.raise_for_status()
         return response
 
     @retry(
-        retry=retry_if_exception_type(RETRYABLE),
+        retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=2, min=2, max=60),
         reraise=True,
