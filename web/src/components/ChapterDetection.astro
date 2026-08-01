@@ -502,21 +502,6 @@ const shortName = (name: string) =>
     font-size: var(--text-sm);
     color: var(--text-muted);
   }
-  /*
-   * `margin-block`, not `margin`.
-   *
-   * The shorthand also sets the INLINE margins, and `.page > figure` uses
-   * negative inline margins to let a figure bleed symmetrically past the reading
-   * measure. Astro scopes this rule to `figure[data-astro-cid-…]`, which has the
-   * same specificity as `.page > figure` and is injected after it — so the width
-   * half of the bleed applied and the margin half did not, and every figure on
-   * this page grew to the RIGHT only. Measured at 1920: the strip ran to 1985px
-   * against a 1905px viewport, and /detection was the one page on the site that
-   * scrolled sideways.
-   */
-  figure {
-    margin-block: 1.4rem;
-  }
   code {
     background: var(--bg-sunken);
     padding: 0.1em 0.35em;

@@ -1314,6 +1314,18 @@ main {
    the section's own flow. A figure inside a layout — `.two-up` puts one in a
    grid cell beside a note — is sized by that layout, and pulling it sideways
    would drag it out of its own track. */
+/*
+ * A chapter that wants to change a figure's vertical margin must use
+ * `margin-block`, never the `margin` shorthand.
+ *
+ * The shorthand also sets the inline margins, and the bleed below is half width
+ * and half negative inline margin. An Astro-scoped `figure` rule compiles to
+ * `figure[data-astro-cid-…]`, the same specificity as this selector, and is
+ * injected after it — so the width half applied and the margin half did not,
+ * and every figure on that page grew to the RIGHT only. Measured at 1920 when
+ * chapter 5 did it: the strip ran to 1985px against a 1905px viewport, and
+ * /detection was the one page on the site that scrolled sideways.
+ */
 .page > figure {
   --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
   /* Less 1.5rem so the figure never runs to the column's own edge, and capped
