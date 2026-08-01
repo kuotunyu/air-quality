@@ -875,6 +875,41 @@ blockquote {
   line-break: strict;
 }
 
+/*
+ * A link whose text is an address rather than a phrase.
+ *
+ * Chapter 6 ends by linking a demo, and the address is 56 characters with no
+ * space and no CJK in it — one unbreakable token. It could not share a line, so
+ * it took its own, and the line before it was justified across the full 983px
+ * column with 654px of text in it: 「若 要 自 行 選 擇 測 站 與 時 刻」, the
+ * loosest line on the site by a distance. Breaking an address across two lines
+ * is ordinary; setting a line of Chinese at 150% tracking is not.
+ *
+ * Two rules, and the order of preference is the point. FIRST, stop justifying
+ * the paragraph: a ragged line before an address is ordinary, and it keeps the
+ * address whole for a reader who wants to read or copy it. `break-all` fixed
+ * the stretch too, but at the cost of breaking the domain — 「huggingface.c」 /
+ * 「o/spaces/…」 — which is a worse thing to hand a reader than a short line.
+ *
+ * SECOND, `overflow-wrap` as the floor, because the address is 653px and the
+ * column is 584 at a 1000 viewport and 258 at 320: below about 1200 it cannot
+ * have a line to itself either. `anywhere` has exactly the semantics wanted
+ * here — it introduces break points only when the line has no otherwise-
+ * acceptable one, which is why it did nothing while the space before the
+ * address was still available and does the work once it is not.
+ *
+ * A class and not a selector on `a`, because this is a property of the link's
+ * TEXT and no selector can see that. Ordinary in-prose links — 「見第二章」 —
+ * must not be broken between characters.
+ */
+p:has(> .url) {
+  text-align: left;
+}
+
+.url {
+  overflow-wrap: anywhere;
+}
+
 a {
   color: var(--accent);
   text-underline-offset: 3px;
