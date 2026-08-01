@@ -48,20 +48,47 @@ __all__ = [
 # added on 2012-05-14 (民國101年5月14日) at 15 annual / 35 daily, and on
 # 2024-09-30 (民國113年9月30日) those were tightened to 12 and 30.
 #
-# ⚠️ The exported layers in `data/` were generated against the OLD daily value,
-# so every `days_over_taiwan` the site currently shows counts days above 35, not
-# above 30. Changing the constant here does not change them — the pipeline has
-# to be re-run. Worse, a single threshold is itself a simplification over a
-# record that spans the change: "days over the standard" for 2012–2024 and for
-# 2025 are counted against different limits. Decide which before re-running.
+# Which limit to count against, on a record that spans the change.
 #
-# PM10 was tightened by the same 2024 revision. Its new values are published
-# only as an image on the ministry's page, so they are NOT updated below —
-# TODO: measure. The numbers there are the pre-2024 ones and are now wrong.
-# Annotated because the inner dict is genuinely heterogeneous — four float
-# limits beside a nested `source` mapping — and left to infer, mypy widens the
-# values to `object`, which then refuses to be compared against a Polars
-# column. The shape is what the site reads, so it stays as it is.
+# Two kinds of figure ask two different questions, and they get two different
+# answers.
+#
+# A TIME SERIES against the standard — chapter 1's annual line — uses the limit
+# in force at the end of each year, drawn as a step and null before PM2.5 was
+# regulated at all. There the x axis IS time, so the change in the law is part
+# of what the reader is looking at.
+#
+# A PER-STATION SNAPSHOT — the station card's `days_over_taiwan` — uses ONE
+# limit, the current one, for every station and every year. Three reasons, and
+# the first is the one that decided it:
+#
+#   1. The card shows each station's most recent COMPLETE year, and those years
+#      differ: 2025 for most, earlier for stations that stopped reporting. Under
+#      a contemporaneous rule the same column would silently count against 35
+#      for one station and 30 for the next — a number whose denominator moves
+#      without saying so, which is the failure this project exists to avoid.
+#   2. The card ranks stations against each other (「全台排名 43／77 站」). A
+#      ranking needs one yardstick or it is not a ranking.
+#   3. The statistic sitting beside it already works this way: 「超過 WHO 日均
+#      指引的天數」 applies the 2021 guideline to years before 2021. Counting
+#      Taiwan's limit contemporaneously next to a WHO limit applied
+#      retroactively would be two rules in one row of one card.
+#
+# What the card is asking is an exposure question — how many days was the air
+# over the line we now consider acceptable — not a compliance question. Whether
+# a station broke the law in 2019 is a question about 2019's law, and this site
+# is not a compliance report. The site says which limit it used, and the value
+# it prints is read from this dict rather than written into the markup, so the
+# label cannot drift away from the count again.
+#
+# PM10 was tightened by the same 2024 revision, and its new values are published
+# only as an image on the ministry's page. They are not recorded here: nothing
+# on the site consumes PM10 limits, and a constant that is wrong is worse than
+# one that is absent. The WHO values stay because those are verifiable.
+# Annotated because the inner dict is genuinely heterogeneous — float limits
+# beside a nested `source` mapping — and left to infer, mypy widens the values
+# to `object`, which then refuses to be compared against a Polars column. The
+# shape is what the site reads, so it stays as it is.
 GUIDELINES: dict[str, dict[str, Any]] = {
     "PM2.5": {
         "who_2021_annual": 5.0,
@@ -76,8 +103,6 @@ GUIDELINES: dict[str, dict[str, Any]] = {
     "PM10": {
         "who_2021_annual": 15.0,
         "who_2021_daily": 45.0,
-        "taiwan_annual": 50.0,
-        "taiwan_daily": 100.0,
         "source": {
             "who": "WHO global air quality guidelines (2021)",
             "taiwan": "空氣品質標準（2020 年修正）",

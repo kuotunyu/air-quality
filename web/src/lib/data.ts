@@ -269,7 +269,23 @@ export const trend = trendNational;
 export const trendByAirzone = trendAirzone;
 export const trendByCounty = trendCounty;
 export const cards = stationCards.cards as StationCard[];
-export const guidelines = stationCards.guidelines as Record<string, number | object>;
+/**
+ * The limits the exceedance counts were actually made against.
+ *
+ * Typed rather than `Record<string, number | object>` because the card prints
+ * these numbers, and the whole point of reading them from the payload is that
+ * the label cannot disagree with the count. A loose type puts that guarantee
+ * back in the author's hands.
+ */
+export interface Guidelines {
+  who_2021_annual: number;
+  who_2021_daily: number;
+  taiwan_annual: number;
+  taiwan_daily: number;
+  source: { who: string; taiwan: string };
+}
+
+export const guidelines = stationCards.guidelines as unknown as Guidelines;
 export const cigaretteCaveat = stationCards.cigarette_caveat as string;
 export const pitfallTables = pitfalls.tables as Record<string, Record<string, unknown>[]>;
 /** Chapter 1's second correction: how much of the fall was the weather.

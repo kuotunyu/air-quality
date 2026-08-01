@@ -9,6 +9,7 @@
 import TrendChart from "./TrendChart.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
+import { taiwanAnnual } from "../lib/standards";
 
 const firstYear = trend.years[0];
 const lastYear = trend.years[trend.years.length - 1];
@@ -177,14 +178,16 @@ const airzoneSeries = (trendByAirzone.series as {
  * So the old line asserted a limit that did not exist for fourteen of the
  * twenty-eight years it was drawn across, and the wrong limit for the last two.
  *
- * The rule here is "the standard in force at the END of each year", which is
- * the only one that lands cleanly on a series of annual means: 2012 ends under
- * 15, 2024 ends under 12 because the revision took effect that September.
- * Before 2012 the value is null — and a null on this site is drawn as a gap,
- * which is exactly right: there was no limit to draw.
+ * The rule is "the standard in force at the END of each year", which is the only
+ * one that lands cleanly on a series of annual means: 2012 ends under 15, 2024
+ * ends under 12 because the revision took effect that September. Before 2012 the
+ * value is null — and a null on this site is drawn as a gap, which is exactly
+ * right: there was no limit to draw.
+ *
+ * The dates moved to `lib/standards` when chapter 2 needed to name the same
+ * revision in its caveat. Two chapters citing one law should not be able to
+ * disagree about when it changed.
  */
-const TW_PM25_ADDED = 2012;
-const TW_PM25_TIGHTENED = 2024;
 /*
  * Built per chart, from THAT chart's own year axis.
  *
@@ -195,8 +198,7 @@ const TW_PM25_TIGHTENED = 2024;
  * past the right edge of its own plot area. A reference line has to be indexed
  * against the axis it is drawn on.
  */
-const taiwanAnnualFor = (years: number[]) =>
-  years.map((year) => (year < TW_PM25_ADDED ? null : year < TW_PM25_TIGHTENED ? 15 : 12));
+const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
 
 ---
 

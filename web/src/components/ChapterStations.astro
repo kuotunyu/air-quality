@@ -6,7 +6,7 @@
  * routes.
  */
 import StationPicker from "./StationPicker.astro";
-import { cards, cigaretteCaveat } from "../lib/data";
+import { cards, cigaretteCaveat, guidelines } from "../lib/data";
 ---
 
 <section id="stations" class="page">
@@ -17,5 +17,5 @@ import { cards, cigaretteCaveat } from "../lib/data";
     已停用的測站顯示的是停用前最後一個完整年份。
   </p>
 
-  <StationPicker cards={cards} caveat={cigaretteCaveat} />
+  <StationPicker cards={cards} caveat={cigaretteCaveat} guidelines={guidelines} />
 </section>
