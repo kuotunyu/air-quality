@@ -876,11 +876,23 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     padding-top: 1.75rem;
     border-top: 1px solid var(--line-soft);
   }
-  .mistake h3 {
+  /*
+   * The numbered title. `>` and `h2`, both load-bearing.
+   *
+   * This was `.mistake h3` from when the titles were `h3`s. They moved up a
+   * level and the rule did not, so the only thing left matching it was the two
+   * `h3`s inside the cards at the end of the chapter — which then rendered at
+   * `--text-xl`, the same 33.84px as the `h2` above them, and a card heading
+   * claimed the rank of a section heading. A descendant selector for a direct
+   * child is how that happens; this one cannot reach into a card.
+   *
+   * No `font-size`: `h2` is already `--text-xl` and saying it twice is how the
+   * two got out of step in the first place.
+   */
+  .mistake > h2 {
     display: flex;
     align-items: baseline;
     gap: 0.8rem;
-    font-size: var(--text-xl);
   }
   .num {
     font-family: var(--font-numeric);
