@@ -58,8 +58,20 @@
    *
    * Media queries are unaffected: `rem` inside a media query always resolves
    * against the initial 16px, never against this, so `40rem` stays 640px.
+   *
+   * In `rem`, not px, and that is the whole point of the unit here. On the root
+   * element `rem` resolves against the browser's INITIAL font size — the number
+   * a reader sets in their preferences — so this expression scales with it. It
+   * used to be `clamp(20.4px, 19.3px + 0.38vw, 23.5px)`, which is the same
+   * document at every setting: a reader who asks for large type got 20.4–23.5px
+   * exactly like everyone else, and the only way left to make the text bigger
+   * was full-page zoom, which makes the layout bigger too. 20.4/16 = 1.275 and
+   * 23.5/16 = 1.46875, so at the default setting nothing moves at all.
+   *
+   * The `vw` term stays in viewport units on purpose. The window does not get
+   * bigger when a reader asks for bigger type.
    */
-  font-size: clamp(20.4px, 19.3px + 0.38vw, 23.5px);
+  font-size: clamp(1.275rem, 1.20625rem + 0.38vw, 1.46875rem);
 
   /*
    * A trace of hue, not none.
@@ -753,6 +765,33 @@ body {
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/*
+ * A word that cannot fit its line breaks rather than leaving the page.
+ *
+ * The base size follows the reader's own font preference now, and a single
+ * unbreakable Latin word is what that breaks first: measured at a 24px
+ * preference on a 320px screen, 「climatology」 in a chapter-6 card heading was
+ * wider than the 235px card, nothing clipped it, and the whole document
+ * scrolled sideways by 25px. `break-word` only breaks a word that cannot fit a
+ * line BY ITSELF, so ordinary text is untouched — this is a floor, not a policy.
+ */
+h1,
+h2,
+h3,
+h4,
+p,
+li,
+dd,
+dt,
+th,
+td,
+figcaption,
+blockquote,
+.note,
+.aside {
+  overflow-wrap: break-word;
 }
 
 h1,
