@@ -22,6 +22,8 @@ Read-only. Prints; writes nothing.
 from __future__ import annotations
 
 import io
+import pathlib
+import re
 import sys
 from dataclasses import dataclass
 
@@ -220,57 +222,84 @@ class Palette:
     note: str = ""
 
 
-SHIPPED_LIGHT = Palette(
-    name="shipped light (Morandi)",
-    surfaces={
-        "--bg": (0.970, 0.009, 250),
-        "--bg-raised": (0.993, 0.012, 250),
-        "--bg-sunken": (0.945, 0.009, 250),
-    },
-    inks={
-        "--text": (0.252, 0.010, 250),
-        "--text-muted": (0.404, 0.012, 250),
-        "--text-faint": (0.493, 0.012, 250),
-    },
-    ramp=(
-        (0.615, 0.088, 252),
-        (0.569, 0.088, 206),
-        (0.522, 0.088, 143),
-        (0.475, 0.088, 82),
-        (0.429, 0.088, 34),
-        (0.383, 0.092, 11),
-        (0.336, 0.133, 346),
-    ),
-    note="what the site ships today",
+# ── reading the palette the site actually ships ──────────────────────────────
+
+CSS = pathlib.Path(__file__).resolve().parent.parent / "web" / "src" / "styles" / "global.css"
+
+SURFACE_TOKENS = ("--bg", "--bg-raised", "--bg-sunken")
+INK_TOKENS = ("--text", "--text-muted", "--text-faint")
+RAMP_TOKENS = tuple(f"--c{i}" for i in range(7))
+
+_OKLCH = re.compile(
+    r"^\s*(--[a-z0-9-]+)\s*:\s*oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)",
+    re.M,
 )
 
-SHIPPED_DARK = Palette(
-    name="shipped dark (Morandi)",
-    surfaces={
-        "--bg": (0.205, 0.009, 250),
-        "--bg-raised": (0.262, 0.009, 250),
-        "--bg-sunken": (0.168, 0.012, 250),
-    },
-    inks={
-        "--text": (0.940, 0.010, 250),
-        "--text-muted": (0.881, 0.012, 250),
-        "--text-faint": (0.830, 0.012, 250),
-    },
-    ramp=(
-        (0.566, 0.130, 247),
-        (0.614, 0.091, 211),
-        (0.661, 0.079, 170),
-        (0.709, 0.131, 82),
-        (0.757, 0.090, 52),
-        (0.804, 0.088, 12),
-        (0.852, 0.091, 346),
-    ),
-    note="already runs at macaron lightness; its own comment says 'dusty pastels'",
+
+def _block(css: str, opener: str) -> str:
+    """The text between `opener` and its matching close brace.
+
+    Brace matching rather than a regex because these blocks contain nested
+    rules, and because the print sheet declares the same token names in hex —
+    a looser search would read `--bg: #ffffff` as the light theme's background.
+    """
+    start = css.index(opener)
+    depth = 0
+    for i in range(start, len(css)):
+        if css[i] == "{":
+            depth += 1
+        elif css[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[start : i + 1]
+    raise SystemExit(f"{CSS}: no closing brace for {opener!r}")
+
+
+def read_shipped(name: str, opener: str, note: str) -> Palette:
+    """Build a palette from the stylesheet instead of from a copy of it.
+
+    This file used to carry `SHIPPED_LIGHT` and `SHIPPED_DARK` as literal
+    tuples. The transcription happened to be exact — checked by hand, all
+    fourteen ramp entries and both surface and ink sets — but nothing enforced
+    it: an edit to `global.css` could not make this script fail, so the one tool
+    that can re-derive the site's published accessibility numbers was verifying
+    a copy rather than the thing that ships.
+
+    A token that disappears or stops being `oklch()` is a hard error. Falling
+    back to a remembered value is exactly the failure being removed.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    found = {
+        m.group(1): (float(m.group(2)), float(m.group(3)), float(m.group(4)))
+        for m in _OKLCH.finditer(_block(css, opener))
+    }
+
+    missing = [t for t in SURFACE_TOKENS + INK_TOKENS + RAMP_TOKENS if t not in found]
+    if missing:
+        raise SystemExit(
+            f"{CSS}: {opener} does not declare {', '.join(missing)} as oklch() — "
+            "the palette check cannot verify what it cannot read"
+        )
+
+    return Palette(
+        name=name,
+        surfaces={t: found[t] for t in SURFACE_TOKENS},
+        inks={t: found[t] for t in INK_TOKENS},
+        ramp=tuple(found[t] for t in RAMP_TOKENS),
+        note=note,
+    )
+
+
+SHIPPED_LIGHT = read_shipped(
+    "shipped light (Morandi)", ":root {", "read from web/src/styles/global.css"
+)
+SHIPPED_DARK = read_shipped(
+    "shipped dark (Morandi)",
+    "@media (prefers-color-scheme: dark) {",
+    "read from web/src/styles/global.css",
 )
 
-# A macaron ramp on the light page: the hue ORDER the site uses, moved to the
-# lightness and chroma that make a colour read as macaron. Anything darker than
-# roughly L 0.75 stops being one — that is the whole identity of the palette.
+
 MACARON_LIGHT = Palette(
     name="macaron on the light page",
     surfaces=SHIPPED_LIGHT.surfaces,
