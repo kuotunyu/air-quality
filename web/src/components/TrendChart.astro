@@ -382,10 +382,20 @@ const keyed = series.map((s) => {
     text-align: left;
   }
 
-  /* The band the unit hangs in. Without it the unit sat in the key row's margin
-     and printed over 「固定樣本（68 站，2006–）」. */
+  /*
+   * The band the unit hangs in.
+   *
+   * Without it the unit sat in the key row's margin and printed over
+   * 「固定樣本（68 站，2006–）」. With a CONSTANT band it still collided, just with
+   * something else: the topmost y tick is centred on its own gridline, so half of
+   * it hangs above the plot box, and on the zone figure — whose top tick is 70,
+   * drawn at the very top of the scale — the unit printed straight through it at
+   * every width. The band has to clear half a tick as well as the unit itself,
+   * and `--chart-tick` is the size of a tick, so it is the thing to measure
+   * against rather than a number chosen once.
+   */
   .plot {
-    padding-top: 1.45em;
+    padding-top: calc(1.05em + var(--chart-tick) * 0.95);
   }
 
   /* The unit. Anchored to the gutter's LEFT edge and allowed to run right into
@@ -394,7 +404,9 @@ const keyed = series.map((s) => {
      and none at 375. */
   .y-unit {
     top: auto;
-    bottom: calc(100% + 0.35em);
+    /* Above the topmost tick, not above the plot box: the tick is centred on the
+       box's own top edge, so half of it is already in this band. */
+    bottom: calc(100% + var(--chart-tick) * 0.9);
     left: 0;
     right: auto;
     transform: none;

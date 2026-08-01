@@ -111,8 +111,17 @@ const literal = controls.find((c) => c.control === "within_zone_separate_fits");
 const CTRL_HEAD = 1.12;
 const maxI = Math.max(...controls.map((c) => c.mean_i_hi)) * CTRL_HEAD;
 const pct = (v: number) => (v / maxI) * 100;
-// Three intervals, not four: the plot column is the narrow one on this page and
-// four steps put 「0 0.05 0.1 0.15」 into a 120px band, where they touched.
+/*
+ * Three intervals, not four: the plot column is the narrow one on this page and
+ * four steps put 「0 0.05 0.1 0.15」 into a 120px band, where they touched.
+ *
+ * And the last tick has to reach the data. `ticks()` returns round values inside
+ * the domain, so with a domain of 0–0.176 it stopped at 0.15 and the axis ran
+ * out 89px before the widest interval did — a reader measuring the top bar was
+ * extrapolating past the end of the scale. The domain's own upper bound is added
+ * as an unlabelled end mark, so the band is closed without inventing a round
+ * number that is not one.
+ */
 const ctrlTicks = ticks(0, maxI, 3).filter((t) => t >= 0 && t <= maxI);
 
 // Correlogram bars are signed, so its scale is symmetric about zero and the
@@ -247,6 +256,7 @@ const cellFor = (method: string, buffer: number) =>
         {ctrlTicks.map((t) => (
           <span class={t === 0 ? "rule zero" : "rule"} style={`left:${n(pct(t), 3)}%`} />
         ))}
+        <span class="rule end" style="left:100%" />
       </span>
 
       {controls.map((c, i) => (
@@ -545,12 +555,42 @@ const cellFor = (method: string, buffer: number) =>
   .rules .rule.zero {
     background: var(--rule);
   }
+  /* Closes the band at the domain's own edge. It carries no label because it is
+     not a round number; it is there so the scale has two ends. */
+  .rules .rule.end {
+    background: var(--line-soft);
+  }
 
+  /*
+   * The axis, and a container so it can thin itself.
+   *
+   * These labels are absolutely positioned by value with no collision handling
+   * at all, and the plot column is the narrow one on this page. Measured at
+   * 390px they overprinted into 「-0.0.2 0 +00.24」 on the correlogram and
+   * 「0 0.05 00.15」 on the controls — five numbers rendered as three strings
+   * that are not numbers.
+   *
+   * The cartesian charts solve this with tiers on `.plot-x`; these two are not
+   * `.plot`, so they carry their own. Same idea, same unit, and it counts from
+   * the END so whatever survives stays evenly spaced — see the note on the
+   * thinning tiers in global.css.
+   */
   .axis {
     grid-column: 2;
     position: relative;
     height: 1.4em;
     align-self: start;
+    container-type: inline-size;
+  }
+  @container (max-width: 240px) {
+    .axis span:not(:nth-last-child(odd)) {
+      display: none;
+    }
+  }
+  @container (max-width: 120px) {
+    .axis span:not(:nth-last-child(4n + 1)) {
+      display: none;
+    }
   }
   .axis span {
     position: absolute;
@@ -595,12 +635,26 @@ const cellFor = (method: string, buffer: number) =>
     height: 15px;
   }
 
+  /*
+   * A bar that is not significant is still a measurement.
+   *
+   * It was painted `--line` — the same token as the gridlines behind it, 1.41:1
+   * on this ground — so the 20–30 km band, 168px of bar and the longest negative
+   * one in the figure, read as furniture rather than as the −0.206 it is. The
+   * figure's argument is that the SIGN flips with distance, and it flips on a
+   * band that was drawn as background. Significance is carried by the ＊ in the
+   * value column and by hue; magnitude is carried by length, and length has to
+   * be visible for every bar or the axis is lying about half of them.
+   *
+   * `--text-faint` measures 5.00:1 here, so a non-significant bar is now clearly
+   * a bar; it stays neutral, so it is still clearly not one of the coloured ones.
+   */
   .corr-bar {
     position: absolute;
     top: 1px;
     bottom: 1px;
     width: var(--w);
-    background: var(--line);
+    background: var(--text-faint);
     border-radius: 1px;
   }
 

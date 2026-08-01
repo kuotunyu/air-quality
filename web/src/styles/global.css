@@ -1023,25 +1023,7 @@ section > :last-child > :last-child:last-child {
   container-type: inline-size;
 }
 
-/*
- * Justification needs a line long enough to distribute.
- *
- * Principle 15 sets Chinese prose justified, and the structural argument for it
- * is sound: every glyph is one em, so the breaks land on exact multiples of the
- * character box and nothing has to stretch. That holds at the measure. It stops
- * holding in a card: measured on chapter 7's two-up, the lines run about nine
- * CJK characters, and at nine characters one unbreakable Latin run
- * (「published TMREL」) leaves gaps the eye joins up the block into rivers.
- * Below a line long enough to absorb one, the same rule that makes the measure
- * tidy makes a card ragged, so the card sets its prose flush left instead.
- */
-@container (max-width: 21em) {
-  .card p,
-  .card .note,
-  .card .aside {
-    text-align: start;
-  }
-}
+
 
 .stat {
   display: flex;
@@ -1397,34 +1379,46 @@ main {
  *
  * 72px is one label: the widest this site produces is a four-digit year, which
  * at `--chart-tick` (24px) in the numeric face measures about 53px, plus a gap.
+ *
+ * The halving counts from the END, and that is a fix rather than a preference.
+ * It used to hide `nth-child(even)` while forcing the last one to stay, which is
+ * correct only for an odd count — the note further up says the charts emit odd
+ * counts "for exactly this rule". Round year intervals broke that promise:
+ * 1998–2025 at a five-year step is SIX labels, and hiding every second one while
+ * keeping the last left 2000 / 2010 / 2020 / 2025, so the final pair sat five
+ * years apart where every other pair sat ten. Measured at 390px, 「2020」 and
+ * 「2025」 overlapped by 30.3px on all three of chapter 1's figures.
+ * `:not(:nth-last-child(odd))` keeps the last label and every second one BACK
+ * from it, which is evenly spaced whatever the count is.
  */
 @container (max-width: 288px) {
-  .plot-x[data-n="4"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="4"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 360px) {
-  .plot-x[data-n="5"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="5"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 432px) {
-  .plot-x[data-n="6"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="6"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 504px) {
-  .plot-x[data-n="7"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="7"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 576px) {
-  .plot-x[data-n="8"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="8"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 648px) {
-  .plot-x[data-n="9"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="9"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 720px) {
-  .plot-x[data-n="10"]:not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x[data-n="10"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
   /* No `data-n` means a caller that has not been updated; keep the old
      behaviour rather than silently letting labels overlap. */
-  .plot-x:not([data-n]):not(.keep) span:nth-child(even):not(:last-child) { display: none; }
+  .plot-x:not([data-n]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 
+/* One tier deeper, and anchored to the end for the same reason. */
 @container (max-width: 260px) {
-  .plot-x:not(.keep) span:nth-child(4n + 3) {
+  .plot-x:not(.keep) span:not(:nth-last-child(4n + 1)) {
     display: none;
   }
 }
@@ -1510,14 +1504,30 @@ main {
   opacity: 0.5;
 }
 
+/*
+ * The two structures a reader uses to turn a line into a number, and they were
+ * the faintest marks in the figure.
+ *
+ * Measured against the card they sit on: gridlines at `--line-soft` are 1.09:1
+ * and the origin rule at `--line` is 1.31:1, while the data they exist to
+ * measure sits at 4.67:1. A gridline SHOULD be recessive — it is scaffolding,
+ * not content — but a reader converting a curve into a value is reading the
+ * scaffolding, and at 1.09 it is not there to read.
+ *
+ * One step each, and the origin gets its own weight. `--line` measures 1.31 for
+ * the grid; `--rule` is the token this site already solved to the 3:1 non-text
+ * threshold, and the origin is the one line on a chart that carries an argument
+ * — whether a series is above it or below it — so it gets that one and half a
+ * pixel more.
+ */
 .plot-grid {
-  stroke: var(--line-soft);
+  stroke: var(--line);
   stroke-width: 1;
 }
 
 .plot-axis {
-  stroke: var(--line);
-  stroke-width: 1;
+  stroke: var(--rule);
+  stroke-width: 1.5;
 }
 
 .plot-line {
