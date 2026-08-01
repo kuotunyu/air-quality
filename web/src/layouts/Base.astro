@@ -11,6 +11,7 @@ import {
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
 import { repoCommit, repoUrl } from "../lib/repo";
 import FigureTools from "../components/FigureTools.astro";
+import TableTools from "../components/TableTools.astro";
 import PlotReadout from "../components/PlotReadout.astro";
 
 interface Props {
@@ -285,6 +286,10 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         one opens into. Outside `.shell` because a `<dialog>` in the top layer
         belongs to the document rather than to the column it was opened from. */}
     <FigureTools />
+    {/* Names the data tables, and gives keyboard access to the ones that scroll.
+        Mounted here for the same reason FigureTools is: it finds its subjects by
+        shape, so a chapter added later is covered without being told. */}
+    <TableTools />
 
     <PlotReadout />
     <style>

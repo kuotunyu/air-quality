@@ -1,0 +1,154 @@
+---
+/**
+ * Names every data table, and makes the ones that scroll reachable by keyboard.
+ *
+ * ## Two defects, one shape
+ *
+ * The twelve hand-written tables all reported `role=table, name=""` — a table
+ * list in a screen reader offered twelve identical rows of "table, N rows, M
+ * columns", and none of them said which table.
+ *
+ * And five of them scroll sideways at ordinary window sizes while being
+ * unreachable by keyboard. Measured across `/space`, `/detection`, `/forecast`
+ * and `/methods`, counting `.table-wrap` elements whose `scrollWidth` exceeds
+ * their `clientWidth`:
+ *
+ *     500px  10 of 12 overflow      768px  0 of 12
+ *     600px   6 of 12               1024px 0 of 12
+ *     700px   3 of 12               1280px 0 of 12
+ *
+ * every one of them `tabIndex -1` with no focusable descendant. A pointer can
+ * reach the right-hand columns; a keyboard cannot. WCAG 2.1.1, and it is the
+ * project's own rule too — PROGRESS.md records exactly this being fixed for
+ * `.chart` and the same reasoning never reaching `.table-wrap`.
+ *
+ * ## Why conditional, and why by script at all
+ *
+ * The zeroes in that table are the whole reason this is not a `tabindex="0"`
+ * typed into the markup: above 768px nothing overflows, so a static attribute
+ * would add up to six focus stops on `/methods` alone that land on a box which
+ * cannot scroll and show nothing when they do. PROGRESS.md records that pattern
+ * being removed once already. Only a measurement knows, and only at the width
+ * the reader is actually at, so a `ResizeObserver` decides.
+ *
+ * By shape rather than per component, for the reason FigureTools gives for the
+ * same choice: these tables live in four files today, the rule cannot be
+ * forgotten when a fifth is written, and it cannot drift out of step with a
+ * table that moves.
+ *
+ * ## Why the name is not a `<caption>`
+ *
+ * `<caption>` is the standard way to name a table, and here it would be the
+ * wrong one: it renders INSIDE `.table-wrap`, which is `overflow-x: auto`, so
+ * on exactly the narrow widths where a name matters most the caption scrolls
+ * away with the table. Every one of the twelve already has a heading or a
+ * `<summary>` immediately above it — 「把 t 統計量重新標價」, 「各扇區的濃度與
+ * 樣本數」 — so `aria-labelledby` points at the words already on the page. No
+ * new visible text, nothing to keep in sync, and nothing that can scroll out of
+ * view.
+ *
+ * Without JavaScript a table keeps every row and column it had; what it loses
+ * is a name it never had anyway. That is an enhancement failing to arrive, not
+ * content failing to render, which is the line this project draws.
+ */
+---
+
+<script>
+  const wraps = Array.from(document.querySelectorAll<HTMLElement>(".table-wrap"));
+
+  if (wraps.length > 0) {
+    /*
+     * The words already above the table. `<summary>` counts: six of the twelve
+     * live inside a `<details>` whose summary is the only thing naming them.
+     */
+    const NAMES = "h2, h3, h4, summary";
+
+    /** Nearest preceding heading in document order, not just among siblings. */
+    function labelFor(wrap: HTMLElement): HTMLElement | null {
+      let node: Element | null = wrap;
+      while (node) {
+        let prev: Element | null = node.previousElementSibling;
+        while (prev) {
+          if (prev.matches(NAMES)) return prev as HTMLElement;
+          const inside = prev.querySelectorAll<HTMLElement>(NAMES);
+          if (inside.length > 0) return inside[inside.length - 1];
+          prev = prev.previousElementSibling;
+        }
+        node = node.parentElement;
+        if (node && node.tagName === "MAIN") break;
+      }
+      return null;
+    }
+
+    let seq = 0;
+    for (const wrap of wraps) {
+      const table = wrap.querySelector("table");
+      if (!table) continue;
+      const heading = labelFor(wrap);
+      if (!heading) continue;
+      if (!heading.id) heading.id = `table-name-${(seq += 1)}`;
+      // Only if the table has not been named by hand.
+      if (!table.hasAttribute("aria-label") && !table.hasAttribute("aria-labelledby")) {
+        table.setAttribute("aria-labelledby", heading.id);
+      }
+      wrap.dataset.name = heading.textContent?.trim() ?? "";
+    }
+
+    /*
+     * A scrollable region is a landmark a screen reader can enter, so it needs
+     * a name of its own — the same words, plus what the box does, because
+     * "table" is already announced by the table inside it.
+     */
+    const measure = (wrap: HTMLElement) => {
+      const scrolls = wrap.scrollWidth - wrap.clientWidth > 1;
+      const already = wrap.getAttribute("tabindex") === "0";
+      if (scrolls === already) return;
+      if (scrolls) {
+        wrap.setAttribute("tabindex", "0");
+        wrap.setAttribute("role", "region");
+        const name = wrap.dataset.name;
+        wrap.setAttribute("aria-label", name ? `${name}（可左右捲動）` : "可左右捲動的表格");
+      } else {
+        wrap.removeAttribute("tabindex");
+        wrap.removeAttribute("role");
+        wrap.removeAttribute("aria-label");
+      }
+    };
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) measure(entry.target as HTMLElement);
+    });
+    for (const wrap of wraps) {
+      measure(wrap);
+      observer.observe(wrap);
+    }
+
+    /*
+     * A table inside a closed `<details>` has a client width of zero and
+     * measures as not scrolling. `ResizeObserver` does fire when the disclosure
+     * opens, but only after layout — and on `/methods` six of the twelve are
+     * inside one, so the first measurement of those is always the wrong one
+     * until this runs.
+     */
+    for (const details of document.querySelectorAll("details")) {
+      details.addEventListener("toggle", () => {
+        for (const wrap of details.querySelectorAll<HTMLElement>(".table-wrap")) measure(wrap);
+      });
+    }
+  }
+</script>
+
+<style is:global>
+  /*
+   * The focus ring goes on the box, not inside it.
+   *
+   * `.table-wrap` is the scroll container, so it is what takes focus, and
+   * without a visible ring the jump into it is invisible — a keyboard reader
+   * would press Tab, land on a table, and see nothing move until they pressed
+   * an arrow key.
+   */
+  .table-wrap:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+</style>
