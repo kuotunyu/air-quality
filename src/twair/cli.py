@@ -148,8 +148,24 @@ def ingest_airtw(
         "--patient",
         help="Wait out Google Drive rate limits (adds up to ~25 min per file).",
     ),
+    kind: str = typer.Option(
+        "全年逐時資料",
+        "--kind",
+        help=(
+            "Which MOENV file type. 全年逐時資料 is the hourly archive the pipeline "
+            "builds from; 品保查核報告 is the QA audit report and 年報 the annual "
+            "report, neither of which the store reads."
+        ),
+    ),
 ) -> None:
-    """Download annual hourly archives (全部 station group, one file per year)."""
+    """Download annual archives (全部 station group, one file per year).
+
+    Defaults to the hourly data. The other two types MOENV publishes are
+    reachable with `--kind` — their links have always been in
+    `conf/sources.yaml`, and only a hardcoded filter stood in front of them.
+    They land under their own filenames; before this they would have overwritten
+    the hourly archive for the same year.
+    """
     from twair.ingest.download import download_archives
 
     download_archives(
@@ -157,6 +173,7 @@ def ingest_airtw(
         refresh_catalog=refresh_catalog,
         force=force,
         patient=patient,
+        data_type=kind,
     )
 
 
