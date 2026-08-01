@@ -231,9 +231,19 @@ const cellFor = (method: string, buffer: number) =>
         </div>
       ))}
 
+      {/*
+        The axis prints its own sign, so its minus is a minus and not a hyphen.
+        
+        The value column two lines up already writes 「−0.241」 with U+2212. The
+        axis under the same bars wrote 「+0.2」 against 「-0.2」 — a full-width plus
+        against a glyph half its width, on the one axis on the site where the two
+        appear at the same distance either side of a zero.
+      */}
       <span class="axis" aria-hidden="true" style={`grid-row:${correlogram.length + 1}`}>
         {corrTicks.map((t) => (
-          <span class={t === 0 ? "zero-label" : undefined} style={`left:${n(corrX(t), 3)}%`}>{t > 0 ? `+${n(t, 2)}` : n(t, 2)}</span>
+          <span class={t === 0 ? "zero-label" : undefined} style={`left:${n(corrX(t), 3)}%`}>
+            {t > 0 ? `+${n(t, 2)}` : t < 0 ? `−${n(Math.abs(t), 2)}` : n(t, 2)}
+          </span>
         ))}
       </span>
     </div>
