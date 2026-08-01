@@ -1404,33 +1404,90 @@ main {
  * from it, which is evenly spaced whatever the count is.
  */
 @container (max-width: 288px) {
-  .plot-x[data-n="4"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="4"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 360px) {
-  .plot-x[data-n="5"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="5"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 432px) {
-  .plot-x[data-n="6"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="6"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 504px) {
-  .plot-x[data-n="7"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="7"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 576px) {
-  .plot-x[data-n="8"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="8"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 @container (max-width: 648px) {
-  .plot-x[data-n="9"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="9"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
+/*
+ * The same ladder for short labels, at 50px each instead of 72.
+ *
+ * `data-tw` is set at build time by `xLabelBucket`, because a container query
+ * cannot read a custom property and 72px is a four-digit year. Chapter 6's
+ * widest label is 「48h」 at 40.3px: on the year ladder its four-label axis was
+ * told it needed 288px when it had 255.8, and dropped 6h and 24h — the two
+ * horizons that chapter's prose argues from — with 124px to spare.
+ *
+ * 50 and not 46: at exactly 46 the tier fires only once the labels already touch.
+ * Measured at a 360px viewport, a four-label axis 184px wide sat one sub-pixel
+ * above its own 184px threshold and printed 「1h 6h 24h 48h」 with a collision.
+ * A threshold is a promise about the gap, so it has to include one.
+ */
+@container (max-width: 200px) {
+  .plot-x[data-n="4"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+@container (max-width: 250px) {
+  .plot-x[data-n="5"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+@container (max-width: 300px) {
+  .plot-x[data-n="6"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+@container (max-width: 350px) {
+  .plot-x[data-n="7"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+@container (max-width: 400px) {
+  .plot-x[data-n="8"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+@container (max-width: 450px) {
+  .plot-x[data-n="9"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+
 @container (max-width: 720px) {
-  .plot-x[data-n="10"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+  .plot-x[data-n="10"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
   /* No `data-n` means a caller that has not been updated; keep the old
      behaviour rather than silently letting labels overlap. */
   .plot-x:not([data-n]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 
-/* One tier deeper, and anchored to the end for the same reason. */
-@container (max-width: 260px) {
-  .plot-x:not(.keep) span:not(:nth-last-child(4n + 1)) {
+/*
+ * One tier deeper, anchored to the end for the same reason, and gated on the
+ * label size like the tier above it.
+ *
+ * At 260px it was firing on a 241px axis that had already halved — so chapter 6
+ * went from four labels to one, and chapter 1's second figure printed 「2025」 and
+ * nothing else. Two halvings only make sense once one is not enough: three
+ * four-digit years need about 160px and four short labels about 160px too, so
+ * the second cut belongs well below that, not just under it.
+ */
+/*
+ * The deepest cut keeps the two ENDS, not every fourth label.
+ *
+ * After one halving a six-year axis is three labels, and three four-digit years
+ * need about 216px. Measured at a 360px viewport, chapter 1's axis is 211: the
+ * three survivors rendered 2005 / 2015 / 2025 with one pixel between the last
+ * two, because the final label is pulled fully inside the box and the first is
+ * inset to its own value. A fourth-from-the-end rule would have left a single
+ * label; the ends are what an axis cannot do without.
+ */
+@container (max-width: 240px) {
+  .plot-x:not([data-tw="s"]):not(.keep) span:not(:first-child):not(:last-child) {
+    display: none;
+  }
+}
+@container (max-width: 120px) {
+  .plot-x[data-tw="s"]:not(.keep) span:not(:nth-last-child(4n + 1)) {
     display: none;
   }
 }

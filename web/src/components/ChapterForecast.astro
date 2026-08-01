@@ -14,7 +14,7 @@
  */
 import forecast from "../../public/data/story/forecast.json";
 import { sarimaEvidence } from "../lib/data";
-import { linear, markInk, n, ticks, yGutter } from "../lib/chart";
+import { linear, markInk, n, ticks, xLabelBucket, yGutter } from "../lib/chart";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -326,7 +326,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-x" data-n={horizons.length}>
+        <div class="plot-x" data-n={horizons.length} data-tw={xLabelBucket(horizons.map((h) => `${h.horizon}h`))}>
           {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
       </div>
@@ -466,7 +466,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-x" data-n={horizons.length}>
+        <div class="plot-x" data-n={horizons.length} data-tw={xLabelBucket(horizons.map((h) => `${h.horizon}h`))}>
           {horizons.map((h, i) => <span style={`left:${n(xAt(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
       </div>
@@ -708,7 +708,7 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
           }
         </div>
 
-        <div class="plot-x" data-n={sar.horizons.length}>
+        <div class="plot-x" data-n={sar.horizons.length} data-tw={xLabelBucket(sar.horizons.map((h) => `${h.horizon}h`))}>
           {sar.horizons.map((h, i) => <span style={`left:${n(sarX(i), 3)}%`}>{h.horizon}h</span>)}
         </div>
       </div>

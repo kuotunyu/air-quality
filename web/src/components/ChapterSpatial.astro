@@ -226,7 +226,7 @@ const cellFor = (method: string, buffer: number) =>
 
       <span class="axis" aria-hidden="true" style={`grid-row:${correlogram.length + 1}`}>
         {corrTicks.map((t) => (
-          <span style={`left:${n(corrX(t), 3)}%`}>{t > 0 ? `+${n(t, 2)}` : n(t, 2)}</span>
+          <span class={t === 0 ? "zero-label" : undefined} style={`left:${n(corrX(t), 3)}%`}>{t > 0 ? `+${n(t, 2)}` : n(t, 2)}</span>
         ))}
       </span>
     </div>
@@ -277,7 +277,9 @@ const cellFor = (method: string, buffer: number) =>
       ))}
 
       <span class="axis" aria-hidden="true" style={`grid-row:${controls.length + 1}`}>
-        {ctrlTicks.map((t) => <span style={`left:${n(pct(t), 3)}%`}>{n(t, 2)}</span>)}
+        {ctrlTicks.map((t) => (
+          <span class={t === 0 ? "zero-label" : undefined} style={`left:${n(pct(t), 3)}%`}>{n(t, 2)}</span>
+        ))}
       </span>
     </div>
     <figcaption>
@@ -582,13 +584,28 @@ const cellFor = (method: string, buffer: number) =>
     align-self: start;
     container-type: inline-size;
   }
+  /* Zero is exempt from every tier. On the controls figure its ticks are
+     0 / 0.05 / 0.1 / 0.15, so zero is fourth from the end — an even position,
+     which the halving hides. Combined with the rule below that left the axis
+     with no labels at all under 130px. The one tick that is an argument is not
+     something a thinning rule gets to drop. */
   @container (max-width: 240px) {
-    .axis span:not(:nth-last-child(odd)) {
+    .axis span:not(:nth-last-child(odd)):not(.zero-label) {
       display: none;
     }
   }
-  @container (max-width: 120px) {
-    .axis span:not(:nth-last-child(4n + 1)) {
+  /*
+   * Under about 130px the band cannot carry a scale at all, so it carries the
+   * one tick that is an argument.
+   *
+   * Measured at a 320px viewport — below this site's stated 375px floor, but it
+   * renders — the three-column grid leaves the plot band 64px, and two labels of
+   * 34 and 40px overlapped by 9.6px whatever the thinning did. Nothing arranges
+   * five numbers in 64px. Every row already prints its own value beside its bar,
+   * so what the axis has left to say is where zero is.
+   */
+  @container (max-width: 130px) {
+    .axis span:not(.zero-label) {
       display: none;
     }
   }

@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, yGutter } from "../lib/chart";
+import { linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, xLabelBucket, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -225,7 +225,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
               </span>
             </div>
 
-            <div class="plot-x" data-n={5}>
+            <div class="plot-x" data-n={5} data-tw={xLabelBucket(["0 時", "6 時", "12 時", "18 時", "23 時"])}>
               {[0, 6, 12, 18, 23].map((hour) => <span style={`left:${n(dx(hour), 3)}%`}>{hour}時</span>)}
             </div>
           </div>
@@ -722,7 +722,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
           </div>
 
 
-          <div class="plot-x" data-n={gapBuckets.length}>
+          <div class="plot-x" data-n={gapBuckets.length} data-tw={xLabelBucket(gapBuckets)}>
             {gapBuckets.map((bucket, index) => <span style={`left:${n(gx(index), 3)}%`}>{bucket}</span>)}
           </div>
         </div>

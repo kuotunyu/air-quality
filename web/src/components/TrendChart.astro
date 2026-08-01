@@ -7,6 +7,7 @@ import {
   padded,
   spreadLabels,
   ticks,
+  xLabelBucket,
   yearTicks,
   yGutter,
 } from "../lib/chart";
@@ -328,7 +329,7 @@ const keyed = series.map((s) => {
       }
     </div>
 
-    <div class="plot-x" data-n={xTicks.length}>
+    <div class="plot-x" data-n={xTicks.length} data-tw={xLabelBucket(xTicks.map((t) => t.year))}>
       {xTicks.map(({ year, index }) => <span style={`left:${n(x(index), 3)}%`}>{year}</span>)}
     </div>
   </div>

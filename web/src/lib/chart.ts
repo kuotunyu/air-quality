@@ -354,6 +354,34 @@ export function labelGutter(labels: (string | number)[], size = 24, pad = 16): n
 }
 
 /**
+ * How wide the widest x label is, so the axis can thin on ITS labels' size.
+ *
+ * The thinning tiers are `count x 72px`, and 72px is a four-digit year at
+ * `--chart-tick`. Chapter 6's labels are 「1h」「6h」「24h」「48h」 — measured 26.5,
+ * 26.5, 39.5 and 39.5px — so a four-label axis with 255.8px of room was told it
+ * needed 288 and dropped 6h and 24h, the two horizons the prose argues from,
+ * with 124px to spare. A container query cannot read a custom property, so the
+ * BUILD picks which tier set applies and the tiers stay literal px.
+ *
+ * Two buckets is enough for what this site produces: short categorical labels,
+ * and years.
+ */
+export function xLabelBucket(labels: (string | number)[]): "s" | "l" {
+  // Same estimator as `labelGutter`, at the tick size, without its padding.
+  const widest = Math.max(
+    0,
+    ...labels.map((label) =>
+      [...String(label)].reduce(
+        (sum, ch) => sum + (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56),
+        0,
+      ),
+    ),
+  ) * 24;
+  // 46, so 「48h」 (40.3px) is short and a four-digit year (53.8px) is not.
+  return widest <= 46 ? "s" : "l";
+}
+
+/**
  * Width the y-axis gutter needs for its own labels.
  *
  * `.plot-y` reads `var(--y-w, calc(3.4 * var(--chart-tick)))`, and until now
