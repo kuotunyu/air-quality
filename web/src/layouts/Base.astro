@@ -10,6 +10,7 @@ import {
 } from "../lib/data";
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
 import FigureTools from "../components/FigureTools.astro";
+import PlotReadout from "../components/PlotReadout.astro";
 
 interface Props {
   title: string;
@@ -217,6 +218,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         belongs to the document rather than to the column it was opened from. */}
     <FigureTools />
 
+    <PlotReadout />
     <style>
       /* ── the shell ──────────────────────────────────────────────────────── */
 

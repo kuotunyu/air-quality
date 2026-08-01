@@ -224,8 +224,29 @@ const keyed = series.map((s) => {
 
   <div
     class="plot"
-    style={`--plot-ar:${ar};--plot-min:${minH}px;--plot-max:${maxH}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px`}
+    data-readout
+    style={`--plot-ar:${ar};--plot-min:${minH}px;--plot-max:${maxH}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px;--y-lo:${lo};--y-hi:${hi}`}
   >
+    {/* The domain and the values, for the readout. Written from the same `lo`,
+        `hi` and `series` the marks above were drawn from, so the crosshair
+        cannot end up describing a different chart than the one it is over. */}
+    <script
+      type="application/json"
+      class="plot-readout-data"
+      is:inline
+      set:html={JSON.stringify({
+        x: years.map(String),
+        unit,
+        places: 1,
+        series: series.map((s) => ({
+          label: s.label,
+          colour: s.colour,
+          ink: markInk(s.colour),
+          dash: s.dash,
+          values: s.values,
+        })),
+      })}
+    />
     <div class="plot-y">
       {/* On the axis it measures — always. It used to be the last entry of the
           legend, which put the units in a row of series names at the bottom of

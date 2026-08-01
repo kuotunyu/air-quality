@@ -1,0 +1,393 @@
+---
+/**
+ * Ask a chart what a year is worth.
+ *
+ * Every cartesian figure on this site is a picture of a series and, until now,
+ * only a picture: the key carries the latest value and the axis carries the
+ * scale, so a reader who wants 2013 has to measure it off a gridline by eye. The
+ * map has had hover since it shipped and the CBPF cells have carried titles, so
+ * the two figures that are *not* the argument were the two you could interrogate.
+ *
+ * Injected by script and driven by a JSON payload, for the same two reasons
+ * `FigureTools` is: a crosshair that cannot move is worse than no crosshair, so
+ * nothing renders without JavaScript; and a rule that finds plots by shape
+ * cannot be forgotten when an eleventh chart is written.
+ *
+ * ## What it does not do
+ *
+ * It does not interpolate. The crosshair snaps to a measured index and reports
+ * that index's values — a reader is never shown a number between two readings.
+ * A null is printed as 「無資料」 rather than skipped, because the single most
+ * important rule on this site is that a hole looks like a hole; a readout that
+ * silently omitted the missing series would say the same thing a bridged line
+ * says.
+ *
+ * It also does not animate anything but opacity, and it never moves the page:
+ * the crosshair and the panel are both absolutely positioned inside the plot
+ * area, so nothing below a figure shifts when a pointer enters one.
+ */
+---
+
+<script>
+  interface Series {
+    label: string;
+    colour: string;
+    ink: string;
+    dash?: string;
+    values: (number | null)[];
+  }
+  interface Payload {
+    x: string[];
+    unit: string;
+    places: number;
+    /*
+     * Two optional shapes for the value, because not every chart on this site
+     * stores what it prints. Chapter 7 holds attributable fraction as 0.207 and
+     * prints 20.7%; chapter 6 holds skill as a bare ratio. `scale` multiplies
+     * before rounding and `suffix` is appended after, so the readout says the
+     * same thing the axis beside it says rather than the number in the JSON.
+     */
+    scale?: number;
+    suffix?: string;
+    series: Series[];
+  }
+
+  const plots = Array.from(
+    document.querySelectorAll<HTMLElement>(".plot[data-readout]"),
+  );
+
+  for (const plot of plots) {
+    const holder = plot.querySelector<HTMLElement>(".plot-readout-data");
+    const area = plot.querySelector<HTMLElement>(".plot-area");
+    if (!holder?.textContent || !area) continue;
+
+    let data: Payload;
+    try {
+      data = JSON.parse(holder.textContent) as Payload;
+    } catch {
+      continue;
+    }
+    if (!data.x?.length || !data.series?.length) continue;
+
+    equip(plot, area, data);
+  }
+
+  function equip(plot: HTMLElement, area: HTMLElement, data: Payload) {
+    const last = data.x.length - 1;
+
+    const rule = document.createElement("span");
+    rule.className = "readout-rule";
+    rule.setAttribute("aria-hidden", "true");
+
+    const dots = data.series.map((s) => {
+      const dot = document.createElement("span");
+      dot.className = "readout-dot";
+      dot.style.setProperty("--mark", s.colour);
+      dot.setAttribute("aria-hidden", "true");
+      return dot;
+    });
+
+    const panel = document.createElement("div");
+    panel.className = "readout-panel";
+    panel.setAttribute("aria-hidden", "true");
+
+    /*
+     * The live region is separate from the panel and carries text only.
+     *
+     * The panel is a grid of coloured marks and numbers positioned over the
+     * plot; read aloud it would be a stream of unlabelled fragments. A screen
+     * reader gets one sentence per index instead, and the panel is hidden from
+     * the tree entirely.
+     */
+    const say = document.createElement("p");
+    say.className = "readout-say visually-hidden";
+    say.setAttribute("role", "status");
+    say.setAttribute("aria-live", "polite");
+
+    area.append(rule, ...dots, panel);
+    plot.append(say);
+
+    /*
+     * The plot becomes focusable so this works without a pointer.
+     *
+     * `role="application"` is deliberately NOT used: arrow keys are the only
+     * binding and the page's own scrolling still matters more than they do, so
+     * the element stays a plain focusable group and the keys are only taken
+     * when the chart actually has focus.
+     */
+    plot.tabIndex = 0;
+    plot.setAttribute("role", "group");
+    plot.setAttribute(
+      "aria-label",
+      `${data.series.map((s) => s.label).join("、")}。用左右方向鍵逐點讀值。`,
+    );
+
+    let at: number | null = null;
+
+    const fmt = (v: number | null) =>
+      v == null || !Number.isFinite(v)
+        ? "無資料"
+        : `${Number((v * (data.scale ?? 1)).toFixed(data.places))}${data.suffix ?? ""}`;
+
+    function show(index: number) {
+      const i = Math.max(0, Math.min(last, index));
+      if (i === at) return;
+      at = i;
+
+      const pct = last === 0 ? 50 : (i / last) * 100;
+      rule.style.left = `${pct}%`;
+
+      data.series.forEach((s, k) => {
+        const v = s.values[i];
+        const dot = dots[k];
+        if (v == null || !Number.isFinite(v)) {
+          dot.hidden = true;
+          return;
+        }
+        dot.hidden = false;
+        dot.style.left = `${pct}%`;
+        dot.style.top = `${topFor(v)}%`;
+      });
+
+      panel.replaceChildren(head(data.x[i]), ...rows(i));
+      /*
+       * Placed in px and clamped, not flipped by a threshold.
+       *
+       * Two earlier versions were wrong in the same direction. A fixed
+       * "flip past the midpoint" is only right when the panel is narrow, and
+       * this one is as wide as its longest series name — on the zone figure that
+       * is 427px against an 850px plot at 1440. Choosing the side by measurement
+       * fixed the right edge and left the left one: `translateX(-100%)` from 55%
+       * of an 850px plot puts a 427px panel at −60px, i.e. out of the plot and
+       * over the y-axis labels, which is where it was measured sitting.
+       *
+       * So the offset is computed: prefer the right of the crosshair, fall back
+       * to its left, and clamp inside the plot either way. A panel wider than
+       * its own plot ends up flush left, which is the least-bad answer and is
+       * still inside the figure.
+       */
+      const room = area.getBoundingClientRect().width;
+      const wide = panel.getBoundingClientRect().width;
+      const gutter = 12;
+      const atPx = (pct / 100) * room;
+      let left = atPx + gutter;
+      if (left + wide > room) left = atPx - gutter - wide;
+      panel.style.left = `${Math.max(0, Math.min(left, Math.max(0, room - wide)))}px`;
+
+      plot.dataset.reading = "true";
+      say.textContent =
+        `${data.x[i]}：` +
+        data.series
+          .map((s) => `${s.label} ${fmt(s.values[i])}`)
+          .join("，") +
+        (data.unit ? `（${data.unit}）` : "");
+    }
+
+    function head(label: string) {
+      const p = document.createElement("p");
+      p.className = "readout-when";
+      p.textContent = data.unit ? `${label}・${data.unit}` : label;
+      return p;
+    }
+
+    function rows(i: number) {
+      return data.series.map((s) => {
+        const row = document.createElement("p");
+        row.className = "readout-row";
+        row.style.setProperty("--mark", s.colour);
+        row.style.setProperty("--mark-ink", s.ink);
+
+        /*
+         * An SVG line, the same as the key's mark and for the same reason:
+         * `border-top-style: dashed` has two settings and this site ships four
+         * dash patterns, so a CSS border cannot draw 「10 3 2 3」. Measured on
+         * the probe page, the CSS version rendered chapter 1's dashed series as
+         * a solid rule — the readout was disagreeing with the line it described.
+         */
+        const mark = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        mark.setAttribute("class", "readout-mark");
+        mark.setAttribute("viewBox", "0 0 22 8");
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", "1");
+        line.setAttribute("y1", "4");
+        line.setAttribute("x2", "21");
+        line.setAttribute("y2", "4");
+        line.setAttribute("stroke", s.colour);
+        line.setAttribute("stroke-width", "2.5");
+        line.setAttribute("stroke-linecap", "round");
+        if (s.dash) line.setAttribute("stroke-dasharray", s.dash);
+        mark.append(line);
+
+        const name = document.createElement("span");
+        name.className = "readout-name";
+        name.textContent = s.label;
+
+        const value = document.createElement("span");
+        const v = s.values[i];
+        const missing = v == null || !Number.isFinite(v);
+        value.className = `readout-value${missing ? " missing" : ""}`;
+        value.textContent = fmt(v);
+
+        row.append(mark, name, value);
+        return row;
+      });
+    }
+
+    /*
+     * Where a value sits, as a percentage of the plot box.
+     *
+     * The scale is not published to the client — the marks were drawn at build
+     * time and the y positions are already in the SVG — so it is recovered from
+     * the extremes the payload carries. `--y-lo` and `--y-hi` are written onto
+     * the plot by whichever component emitted the payload, which keeps one
+     * source for the domain instead of two that can drift.
+     */
+    const lo = Number(getComputedStyle(plot).getPropertyValue("--y-lo"));
+    const hi = Number(getComputedStyle(plot).getPropertyValue("--y-hi"));
+    function topFor(v: number) {
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi === lo) return 50;
+      return (1 - (v - lo) / (hi - lo)) * 100;
+    }
+
+    function indexAt(clientX: number) {
+      const box = area.getBoundingClientRect();
+      if (box.width <= 0) return 0;
+      const frac = (clientX - box.left) / box.width;
+      return Math.round(Math.max(0, Math.min(1, frac)) * last);
+    }
+
+    function clear() {
+      at = null;
+      plot.dataset.reading = "false";
+      say.textContent = "";
+    }
+
+    plot.addEventListener("pointermove", (event) => show(indexAt(event.clientX)));
+    plot.addEventListener("pointerleave", clear);
+    plot.addEventListener("blur", clear);
+    plot.addEventListener("focus", () => show(at ?? last));
+
+    plot.addEventListener("keydown", (event) => {
+      const step =
+        event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+      if (step === 0) {
+        if (event.key === "Escape") clear();
+        return;
+      }
+      event.preventDefault();
+      show((at ?? last) + step);
+    });
+  }
+</script>
+
+<style is:global>
+  /*
+   * Nothing here is visible until a pointer or the keyboard asks for it, and the
+   * marks are `opacity` only — the crosshair is already in the right place when
+   * it appears, so a reader who has switched motion off loses a fade and not a
+   * position. The whole layer is inert to the pointer so it can never intercept
+   * the events that drive it.
+   */
+  /* The payload is data, not content. A browser's UA stylesheet already hides
+     `<script>`, but the PNG export renders into a document that has none — see
+     the note in FigureTools — and this site's own rule is that a figure exports
+     as what it looks like. Belt as well as braces. */
+  .plot-readout-data {
+    display: none;
+  }
+
+  .readout-rule,
+  .readout-dot,
+  .readout-panel {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 90ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .plot[data-reading="true"] .readout-rule,
+  .plot[data-reading="true"] .readout-dot:not([hidden]),
+  .plot[data-reading="true"] .readout-panel {
+    opacity: 1;
+  }
+
+  .readout-rule {
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--rule);
+  }
+
+  .readout-dot {
+    width: 9px;
+    height: 9px;
+    margin: -4.5px 0 0 -4.5px;
+    border-radius: 50%;
+    background: var(--mark);
+    /* A ring of the card, so a dot that lands on its own line still reads as a
+       dot and two coincident series still read as two. */
+    box-shadow: 0 0 0 2px var(--bg-sunken);
+  }
+
+  .readout-panel {
+    top: 0;
+    z-index: 2;
+    min-width: max-content;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--bg-raised);
+    box-shadow: 0 2px 8px oklch(0 0 0 / 0.08);
+    line-height: 1.35;
+  }
+
+  .readout-when {
+    margin: 0 0 0.15rem;
+    font-size: var(--chart-micro);
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    text-align: start;
+  }
+
+  .readout-row {
+    display: grid;
+    grid-template-columns: 1.35em auto auto;
+    align-items: baseline;
+    gap: 0 0.5em;
+    margin: 0;
+    font-size: var(--chart-label);
+    color: var(--mark-ink);
+    white-space: nowrap;
+    text-align: start;
+  }
+
+  .readout-mark {
+    align-self: center;
+    width: 1.35em;
+    height: 0.5em;
+    overflow: visible;
+  }
+
+  .readout-value {
+    justify-self: end;
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  /* A withheld value is not a small number. It is set as words, in the ink the
+     rest of the page uses for "nothing here", so it cannot be misread as one. */
+  .readout-value.missing {
+    font-weight: 400;
+    font-family: var(--font-sans);
+    color: var(--text-faint);
+  }
+
+  /* The focus ring goes on the plot, which is now a focusable group. */
+  .plot:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+</style>

@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { labelGutter, linePath, linear, smoothPath, markInk, n, padded, spreadLabels, ticks, yGutter } from "../lib/chart";
+import { gapPct, labelGutter, linePath, linear, markInk, n, padded, smoothPath, spreadLabels, ticks, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -93,8 +93,6 @@ const GAP_SERIES = [
   return { ...series, values, lastIndex, lastValue: values[lastIndex] ?? null };
 });
 
-// Percent of the plot box; marks stretch with the box, HTML labels do not.
-const GAP_H = 300;
 const gapValues = GAP_SERIES.flatMap((s) => s.values).filter((v): v is number => v != null);
 const gDomain = padded(gapValues, { zero: true });
 const gx = (index: number) => (100 / (gapBuckets.length - 1)) * index;
@@ -104,7 +102,8 @@ const gTicks = ticks(gDomain[0], gDomain[1], 4);
 // close need spreading, the same as chapters 5 and 6.
 const gLabelY = spreadLabels(
   GAP_SERIES.map((s) => gy(s.lastValue ?? gDomain[0])),
-  (26 / GAP_H) * 100,
+  // Against the shortest the box can be, not a nominal height — see `gapPct`.
+  gapPct(26),
 );
 
 // The replication table, filtered to the comparisons worth showing.
@@ -113,7 +112,6 @@ const keyCoefficients = replicationRows.filter(
 );
 
 // --- small inline chart for the diurnal cycle -------------------------------
-const DIURNAL_H = 250;
 const dDomain = padded(diurnalValues, { zero: false });
 const dx = linear([0, 23], [0, 100]);
 const dy = linear(dDomain, [100, 0]);
@@ -170,7 +168,30 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <div class="two-up">
       <figure>
         <div class="chart">
-          <div class="plot" style={`--plot-h:${DIURNAL_H}px;--y-w:${yGutter(dTicks.map((t) => n(t, 0)))}px`}>
+          <div
+            class="plot"
+            data-readout
+            style={`--plot-ar:36;--plot-min:220px;--plot-max:320px;--y-w:${yGutter(dTicks.map((t) => n(t, 0)))}px;--y-lo:${dDomain[0]};--y-hi:${dDomain[1]}`}
+          >
+            <script
+              type="application/json"
+              class="plot-readout-data"
+              is:inline
+              set:html={JSON.stringify({
+              x: diurnalValues.map((_, h) => `${h} 時`),
+              unit: "PM2.5 μg/m³",
+              places: 1,
+              series: [
+                {
+                  label: "日內平均",
+                  colour: "var(--k0)",
+                  ink: markInk("var(--k0)"),
+                  values: diurnalValues,
+                },
+              ],
+            })}
+            />
+
             <div class="plot-y">
               {dTicks.map((tick) => <span style={`top:${n(dy(tick), 3)}%`}>{n(tick, 0)}</span>)}
             </div>
@@ -602,8 +623,27 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <div class="chart">
         <div
           class="plot"
-          style={`--plot-h:${GAP_H}px;--key-w:${labelGutter(GAP_SERIES.map((s) => s.label))}px;--y-w:${yGutter(gTicks.map((t) => n(t, 0)))}px`}
+          data-readout
+          style={`--plot-ar:40;--plot-min:240px;--plot-max:380px;--key-w:${labelGutter(GAP_SERIES.map((s) => s.label))}px;--y-w:${yGutter(gTicks.map((t) => n(t, 0)))}px;--y-lo:${gDomain[0]};--y-hi:${gDomain[1]}`}
         >
+            <script
+              type="application/json"
+              class="plot-readout-data"
+              is:inline
+              set:html={JSON.stringify({
+            x: gapBuckets.map(String),
+            unit: "平均絕對誤差 μg/m³",
+            places: 2,
+            series: GAP_SERIES.map((series) => ({
+              label: series.label,
+              colour: series.colour,
+              ink: markInk(series.colour),
+              dash: series.dash,
+              values: series.values,
+            })),
+          })}
+            />
+
           <div class="plot-y">
             {gTicks.map((tick) => <span style={`top:${n(gy(tick), 3)}%`}>{n(tick, 0)}</span>)}
           </div>

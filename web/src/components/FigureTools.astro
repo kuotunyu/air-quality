@@ -305,7 +305,22 @@
       const scale = Math.min(Math.max(window.devicePixelRatio || 1, 2), 3);
 
       const copy = root.cloneNode(true) as HTMLElement;
-      copy.querySelectorAll(".fig-tools").forEach((el) => el.remove());
+      /*
+       * Two things the copy must not carry.
+       *
+       * `.fig-tools` because a sheet of paper — or a PNG — opens no dialogs.
+       * And the readout's JSON payload, because the export is a `<foreignObject>`
+       * inside an SVG *image*: it is a separate document with no UA stylesheet,
+       * so the `display: none` a browser gives `<script>` for free does not
+       * apply and the whole series would print as a wall of numbers across the
+       * figure. Its crosshair and panel go too — they are a pointer's state, and
+       * a still image has no pointer.
+       */
+      copy
+        .querySelectorAll(
+          ".fig-tools, .plot-readout-data, .readout-rule, .readout-dot, .readout-panel, .readout-say",
+        )
+        .forEach((el) => el.remove());
       copy.style.margin = "0";
 
       const host = document.createElement("div");

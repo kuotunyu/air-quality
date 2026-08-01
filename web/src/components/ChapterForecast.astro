@@ -242,8 +242,27 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
       </ul>
       <div
         class="plot"
-        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(rmseTicks.map((t) => n(t, 0)))}px`}
+        data-readout
+        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(rmseTicks.map((t) => n(t, 0)))}px;--y-lo:${yRmse.domain[0]};--y-hi:${yRmse.domain[1]}`}
       >
+    <script
+      type="application/json"
+      class="plot-readout-data"
+      is:inline
+      set:html={JSON.stringify({
+        x: horizons.map((h) => `${h.horizon}h`),
+        unit: "RMSE μg/m³",
+        places: 2,
+        series: rmseSeries.map((s) => ({
+          label: s.label,
+          colour: s.colour,
+          ink: markInk(s.colour),
+          dash: DASH[s.key],
+          values: s.values,
+        })),
+      })}
+    />
+
         <div class="plot-y">
           {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{n(t, 0)}</span>)}
         </div>
@@ -339,8 +358,27 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
       </ul>
       <div
         class="plot"
-        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(metricTicks.map((t) => n(t, 1)))}px`}
+        data-readout
+        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(metricTicks.map((t) => n(t, 1)))}px;--y-lo:${yMetric.domain[0]};--y-hi:${yMetric.domain[1]}`}
       >
+    <script
+      type="application/json"
+      class="plot-readout-data"
+      is:inline
+      set:html={JSON.stringify({
+        x: horizons.map((h) => `${h.horizon}h`),
+        unit: "四個分割的平均",
+        places: 3,
+        series: metricSeries.map((s) => ({
+          label: s.label,
+          colour: s.colour,
+          ink: markInk(s.colour),
+          dash: DASH[s.key],
+          values: s.values,
+        })),
+      })}
+    />
+
         <div class="plot-y">
           {metricTicks.map((t) => <span style={`top:${n(yMetric(t), 3)}%`}>{n(t, 1)}</span>)}
         </div>
@@ -586,8 +624,27 @@ const totalRows = horizons.reduce((sum, h) => Math.max(sum, h.n), 0);
       </ul>
       <div
         class="plot"
-        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(sarTicks.map((t) => n(t, 0)))}px`}
+        data-readout
+        style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(sarTicks.map((t) => n(t, 0)))}px;--y-lo:${ySar.domain[0]};--y-hi:${ySar.domain[1]}`}
       >
+    <script
+      type="application/json"
+      class="plot-readout-data"
+      is:inline
+      set:html={JSON.stringify({
+        x: sar.horizons.map((h) => `${h.horizon}h`),
+        unit: "RMSE μg/m³",
+        places: 2,
+        series: sarSeries.map((s) => ({
+          label: s.label,
+          colour: s.colour,
+          ink: markInk(s.colour),
+          dash: DASH[s.key],
+          values: s.values,
+        })),
+      })}
+    />
+
         <div class="plot-y">
           {sarTicks.map((t) => <span style={`top:${n(ySar(t), 3)}%`}>{n(t, 0)}</span>)}
         </div>

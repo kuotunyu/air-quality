@@ -1958,30 +1958,43 @@ button:hover {
  * Fourteen figures times two buttons is twenty-eight controls in a document
  * whose subject is not its own interface.
  */
+/*
+ * The two controls under a figure, as controls rather than as a second caption.
+ *
+ * They were bordered buttons in `--text-muted` at `--text-sm` — measured, the
+ * exact colour and the exact size of the `figcaption` above them, in two boxes
+ * 55px tall. A page with three figures spent 207px on them, and the eye read the
+ * row as another line of the caption because nothing distinguished it from one.
+ *
+ * Now: no box until they are pointed at, one step down the ink scale, and a
+ * hairline rule tying the row to the figure above it rather than two frames
+ * floating under it. The row costs 33px instead of 69. The type size does NOT
+ * move — the accessibility floor for it is measured at 18.7px at 375px, and a
+ * control in `--text-xs` would be the smallest text on the page.
+ */
 .fig-tools {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
 }
 
 .fig-tool {
-  /*
-   * `--text-sm`, which is what every other control here uses, and not a step
-   * smaller. The accessibility floor is measured — 18.7px at 375px — and a
-   * button set in `--text-xs` would become the smallest text on the page.
-   */
-  padding: 0.32rem 0.7rem;
-  color: var(--text-muted);
+  padding: 0.2rem 0.5rem;
+  color: var(--text-faint);
   background: transparent;
-  border-color: var(--line-soft);
+  border-color: transparent;
+  transition:
+    color 120ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .fig-tool:hover,
 .fig-tool:focus-visible {
   color: var(--text);
-  background: var(--bg-raised);
-  border-color: var(--text-faint);
+  background: var(--bg-sunken);
+  border-color: transparent;
 }
 
 /* Holds the gap in the page while the figure is in the dialog, so nothing

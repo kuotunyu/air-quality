@@ -169,8 +169,29 @@ const fn = functions[0];
       </ul>
       <div
         class="plot"
-        style={`--plot-ar:44;--plot-min:250px;--plot-max:420px;--y-w:${yGutter(pafTicks.map((t) => `${n(t * 100, 0)}%`))}px`}
+        data-readout
+        style={`--plot-ar:44;--plot-min:250px;--plot-max:420px;--y-w:${yGutter(pafTicks.map((t) => `${n(t * 100, 0)}%`))}px;--y-lo:${yPaf.domain[0]};--y-hi:${yPaf.domain[1]}`}
       >
+    <script
+      type="application/json"
+      class="plot-readout-data"
+      is:inline
+      set:html={JSON.stringify({
+        x: years.map(String),
+        unit: "可歸因比例",
+        places: 1,
+        scale: 100,
+        suffix: "%",
+        series: series.map((s, i) => ({
+          label: s.label,
+          colour: COLOURS[i % COLOURS.length],
+          ink: markInk(COLOURS[i % COLOURS.length]),
+          dash: DASHES[i % DASHES.length],
+          values: s.paf,
+        })),
+      })}
+    />
+
         <div class="plot-y">
           {pafTicks.map((t) => <span style={`top:${n(yPaf(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
         </div>
@@ -249,7 +270,32 @@ const fn = functions[0];
 
   <figure>
     <div class="chart">
-      <div class="plot" style={`--plot-ar:38;--plot-min:230px;--plot-max:360px;--y-w:${yGutter(shareTicks.map((t) => `${n(t * 100, 0)}%`))}px`}>
+      <div
+        class="plot"
+        data-readout
+        style={`--plot-ar:38;--plot-min:230px;--plot-max:360px;--y-w:${yGutter(shareTicks.map((t) => `${n(t * 100, 0)}%`))}px;--y-lo:${yShare.domain[0]};--y-hi:${yShare.domain[1]}`}
+      >
+    <script
+      type="application/json"
+      class="plot-readout-data"
+      is:inline
+      set:html={JSON.stringify({
+        x: years.map(String),
+        unit: "四種假設的落差",
+        places: 1,
+        scale: 100,
+        suffix: "%",
+        series: [
+          {
+            label: "落差佔估計值的比例",
+            colour: "var(--k1)",
+            ink: markInk("var(--k1)"),
+            values: spreadShare,
+          },
+        ],
+      })}
+    />
+
         <div class="plot-y">
           {shareTicks.map((t) => <span style={`top:${n(yShare(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
         </div>
