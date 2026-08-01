@@ -51,9 +51,6 @@ const baselines = forecast.baselines as {
 // Percent of the plot box, not pixels: the box has no width until the browser
 // lays it out. Labels are HTML over the same box, so they never inherit the
 // stretch that the marks do.
-const xAt = (index: number) =>
-  horizons.length === 1 ? 50 : (index / (horizons.length - 1)) * 100;
-
 /*
  * Where one split sits inside its horizon's cloud, in percent of plot width.
  *
@@ -61,6 +58,24 @@ const xAt = (index: number) =>
  * horizon it belongs to and never reads as a different x.
  */
 const FOLD_BAND = 3.2;
+
+/*
+ * The categorical scale is inset by half that band, so no category sits ON the
+ * frame.
+ *
+ * Spreading the four splits about each horizon is right; doing it at x = 0 and
+ * x = 100 puts half of each end cloud outside the box. Measured at 1440 on
+ * figure 2: the 1h marks landed at −13.2, −4.4, +4.4 and +13.2px from the plot's
+ * left edge and the 48h marks at 809.6 to 836.0 against an 822.8px plot — 12 of
+ * the 48 marks with their centres outside the plotting rectangle, two of four
+ * splits for all three series at both ends. An inset costs a little width and
+ * keeps every mark inside the frame that gives it meaning.
+ */
+const X_INSET = FOLD_BAND / 2;
+const xAt = (index: number) =>
+  horizons.length === 1
+    ? 50
+    : X_INSET + (index / (horizons.length - 1)) * (100 - 2 * X_INSET);
 const spreadAt = (k: number, count: number) =>
   count > 1 ? (k / (count - 1) - 0.5) * FOLD_BAND : 0;
 
@@ -161,8 +176,11 @@ const DASH: Record<string, string | undefined> = {
 // two above: these are six stations at 72-hour origins, not the 74-station rows
 // the model figures come from. See `sarimaEvidence.not_comparable`.
 const sar = sarimaEvidence;
+// Same inset as `xAt`, so the two panels of this chapter share a frame rule.
 const sarX = (index: number) =>
-  sar.horizons.length === 1 ? 50 : (index / (sar.horizons.length - 1)) * 100;
+  sar.horizons.length === 1
+    ? 50
+    : X_INSET + (index / (sar.horizons.length - 1)) * (100 - 2 * X_INSET);
 
 const sarSeries = [
   {

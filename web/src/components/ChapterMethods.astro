@@ -13,7 +13,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
-import { gapPct, labelGutter, linePath, linear, markInk, n, padded, smoothPath, spreadLabels, ticks, yGutter } from "../lib/chart";
+import { linePath, linear, markInk, n, padded, smoothPath, ticks, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 
 type Row = Record<string, any>;
@@ -98,14 +98,6 @@ const gDomain = padded(gapValues, { zero: true });
 const gx = (index: number) => (100 / (gapBuckets.length - 1)) * index;
 const gy = linear(gDomain, [100, 0]);
 const gTicks = ticks(gDomain[0], gDomain[1], 4);
-// Two of the three end within a microgram of each other; inline labels that
-// close need spreading, the same as chapters 5 and 6.
-const gLabelY = spreadLabels(
-  GAP_SERIES.map((s) => gy(s.lastValue ?? gDomain[0])),
-  // Against the shortest the box can be, not a nominal height — see `gapPct`.
-  gapPct(26),
-);
-
 // The replication table, filtered to the comparisons worth showing.
 const keyCoefficients = replicationRows.filter(
   (r) => r.kind === "correlation" && r.published_2018 != null,
@@ -621,10 +613,31 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <figure>
       <div class="chart">
+        {/*
+          The fifth chart to move its series names out of a right-hand gutter.
+          
+          `labelGutter` sized that column to 「鄰近測站（當年做法）」: measured at a
+          1000px viewport the keys took 256px while the plot they labelled had
+          236px, and the x axis thinned from five bucket names to two — so the
+          point where 線性內插 stops, and the 3-hour limit beside it, both sat over
+          unlabelled positions. That break is the entire argument of this section.
+          A 390px phone did better than a 1000px laptop.
+        */}
+        <ul class="chart-key">
+          {GAP_SERIES.map((series) => (
+            <li style={`--mark:${series.colour};--mark-ink:${markInk(series.colour)}`}>
+              <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+                <line x1="1" y1="4" x2="21" y2="4" stroke={series.colour} stroke-width="2.5"
+                  stroke-linecap="round" stroke-dasharray={series.dash} />
+              </svg>
+              <span>{series.label}</span>
+            </li>
+          ))}
+        </ul>
         <div
           class="plot"
           data-readout
-          style={`--plot-ar:40;--plot-min:240px;--plot-max:380px;--key-w:${labelGutter(GAP_SERIES.map((s) => s.label))}px;--y-w:${yGutter(gTicks.map((t) => n(t, 0)))}px;--y-lo:${gDomain[0]};--y-hi:${gDomain[1]}`}
+          style={`--plot-ar:40;--plot-min:240px;--plot-max:380px;--y-w:${yGutter(gTicks.map((t) => n(t, 0)))}px;--y-lo:${gDomain[0]};--y-hi:${gDomain[1]}`}
         >
             <script
               type="application/json"
@@ -708,15 +721,6 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
             }
           </div>
 
-          <div class="plot-keys">
-            {
-              GAP_SERIES.map((series, index) => (
-                <span style={`top:${n(gLabelY[index], 3)}%;--mark:${series.colour};--mark-ink:${markInk(series.colour)}`}>
-                  {series.label}
-                </span>
-              ))
-            }
-          </div>
 
           <div class="plot-x" data-n={gapBuckets.length}>
             {gapBuckets.map((bucket, index) => <span style={`left:${n(gx(index), 3)}%`}>{bucket}</span>)}
@@ -968,6 +972,30 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   }
   /* The "interpolation stops here" marker labels a column, not a row, so it
      anchors beside its own vertical line instead of at the plot's right edge. */
+  /*
+   * The diurnal note goes to the plot's empty LEFT, not its right.
+   *
+   * `.plot-note` anchors right by default, and on this figure the curve is at its
+   * highest on the right — so the olive line ran straight through the glyphs of
+   * 「月平均看到的只有這條線」 at every width. Scanning the label's own box for
+   * curve-coloured pixels: 167 of them across 107 distinct columns at 1440, 160
+   * at 1000.
+   *
+   * The curve stays below the mean rule until about hour 7, so the note's own y
+   * band is clear on the left for 179px of a 556px plot at 1440 and 159px of 492px
+   * at 1000 — both 32%, which is what the cap is. It wraps upward into empty plot
+   * (the base rule already translates -100%), and the measured headroom above the
+   * mean rule is 81px to the next gridline alone.
+   *
+   * `:not(.limit)` leaves the gap chart's own column-anchored note alone.
+   */
+  .plot-note:not(.limit) {
+    right: auto;
+    left: 0;
+    text-align: left;
+    max-width: 32%;
+  }
+
   .plot-note.limit {
     top: 0;
     right: auto;

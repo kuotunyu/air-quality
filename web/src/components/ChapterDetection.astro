@@ -201,7 +201,6 @@ const shortName = (name: string) =>
             >
               <div class="plot-area">
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <line x1={zero} x2={zero} y1="0" y2="100" class="zero" vector-effect="non-scaling-stroke" />
                   {/*
                     One `<path>` per placebo estimate, and the reason it is not
                     ONE path for all of them is the encoding.
@@ -227,6 +226,19 @@ const shortName = (name: string) =>
                   <g class="placebo-pool">
                     {s.pool.map((v) => <path d={`M${n(s.x(v), 2)} 2V30`} />)}
                   </g>
+                  {/*
+                    Zero is drawn LAST, and that is the whole point of it.
+                    
+                    Emitted before the rug, it was painted first and then covered:
+                    measured at 1440 on the COVID strip, the 1,295 placebo
+                    hairlines cover y 2.9 to 43.2 and the tallest dot column lands
+                    within 34px of the rule, so what survived was a 2.9px stub
+                    above the band. The figure asks the reader to judge how far
+                    the real estimates sit from zero, and zero was the one mark
+                    not on screen. Painting it over the cloud costs the cloud one
+                    hairline's width and gives the figure its reference back.
+                  */}
+                  <line x1={zero} x2={zero} y1="0" y2="100" class="zero" vector-effect="non-scaling-stroke" />
                 </svg>
                 {s.stacked.map((st) => (
                   <span

@@ -194,7 +194,18 @@ const legend = BREAKS.map((b, i) => ({
 
         {
           data.sectors.map((s) => {
-            const a = ((s - 90) * Math.PI) / 180;
+            /*
+             * The wedge's MIDPOINT, not its edge.
+             *
+             * `cell()` draws sector s from s to s + sweep, so an angle of s is the
+             * wedge's counter-clockwise boundary — the radial gridline between two
+             * wedges. Measured at 1440, 「北」 sat at exactly the disc's centre x,
+             * which is the divider between the 330–360° wedge and the 0–30° one,
+             * with a hatched cell on one side and a filled cell on the other. Every
+             * one of the twelve labels named the line beside its wedge rather than
+             * the wedge.
+             */
+            const a = ((s + sweep / 2 - 90) * Math.PI) / 180;
             return (
               <span
                 class="bearing"
@@ -206,10 +217,6 @@ const legend = BREAKS.map((b, i) => ({
           })
         }
 
-        <span class="hub-text">
-          <span class="hub-label">靜風</span>
-          <span class="hub-value" id="cbpf-calm">{(start.calm_fraction * 100).toFixed(1)}%</span>
-        </span>
         </div>
 
         {/*
@@ -273,6 +280,30 @@ const legend = BREAKS.map((b, i) => ({
           <span class="stat-label">方向集中度</span>
           <span class="stat-note">0 = 四面八方；1 = 只有一個方位</span>
         </div>
+        {/*
+          Out of the disc, into the readout.
+
+          It was printed inside the white hub, and the hub scales with the SVG
+          while the number is HTML at a fixed size — so the two only agreed at one
+          width. Measured at 375: the hub circle is 46px across and 「3.0%」 is
+          51px, and because the value sits below the circle's centre the chord at
+          its own line is about 40px, leaving roughly 11px of the number lying on
+          the 0.5–1.5 m/s ring, which is 21px wide there.
+
+          The two obvious repairs are both blocked. Scaling the label with the box
+          shrinks chart type at exactly the widths where it is already smallest,
+          and chart type sizes are the owner's decision. Growing the hub to fit
+          the number means growing `R_INNER`, which IS the radius where the first
+          speed ring begins — the white centre would eat the 0.5–1.5 ring and the
+          radial scale's 「圓心 › 0.5–1.5 › …」 would stop being true. Nothing is
+          lost by moving it: the radial scale already names the centre, and this
+          column already holds the figure's other three scalars.
+        */}
+        <div class="stat">
+          <span class="stat-value" id="cbpf-calm">{(start.calm_fraction * 100).toFixed(1)}%</span>
+          <span class="stat-label">靜風時數佔比</span>
+          <span class="stat-note">沒有風就沒有方位，上不了極座標圖</span>
+        </div>
       </div>
     </div>
 
@@ -318,7 +349,7 @@ const legend = BREAKS.map((b, i) => ({
     <strong>靜風時數被排除，但沒有被忽略。</strong>
     沒有風就沒有方位，那些小時上不了極座標圖——但停滯正是污染累積的時候。
     全台靜風時數的中位數佔比是 {n(data.median_calm_fraction * 100, 1)}%，
-    標在每張圖的圓心。<strong>圖上沒有，不代表問題沒有。</strong>
+    列在每張圖旁邊的讀數欄裡。<strong>圖上沒有，不代表問題沒有。</strong>
   </div>
 
   <div class="note caveat">
@@ -458,7 +489,18 @@ const legend = BREAKS.map((b, i) => ({
   figure {
     container-type: inline-size;
   }
-  @container (min-width: 660px) {
+  /*
+   * 790, not 660: the row may only split when splitting does not shrink the disc.
+   *
+   * Measured — at a 1000px viewport the figure is 584px, the row is one column,
+   * `.polar-box` is at its 440px cap and the coloured disc is 369px. At 1120 the
+   * query fired, the tracks resolved to 403.5px + 250px, and the disc dropped to
+   * 299px. Widening the window by 12% made the chart 19% smaller, and it did not
+   * recover until the chart column's own content box reached 440 again. A
+   * breakpoint that makes the figure worse on the wide side of itself is the
+   * wrong number, not the wrong idea.
+   */
+  @container (min-width: 790px) {
     .plot-row {
       grid-template-columns: minmax(0, 1fr) minmax(190px, 250px);
     }
@@ -523,33 +565,36 @@ const legend = BREAKS.map((b, i) => ({
     font-size: var(--chart-micro);
     color: var(--text-faint);
   }
-  .bearing,
-  .hub-text {
+  /* Positioned over the square in percentages, like every other chart label on
+     this site — the SVG scales and the type must not. */
+  .bearing {
     position: absolute;
     transform: translate(-50%, -50%);
     white-space: nowrap;
     line-height: 1.15;
   }
-  .hub-text {
-    left: 50%;
-    top: 50%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
   .cell {
     stroke: var(--bg-sunken);
     stroke-width: 1;
   }
-  /* No fill means no data. Hatching says so rather than leaving a hole that
-     reads as background. */
+  /*
+   * No fill means no data. Hatching says so rather than leaving a hole that
+   * reads as background — but only if the hatch can be seen.
+   *
+   * It was drawn in `--line`. Sampled inside a suppressed cell at 1440 in the
+   * light theme, the darkest hatch pixel measured 1.23:1 against the card and the
+   * cell as a whole about 1.08:1, so 13 of the station's 72 cells rendered as a
+   * bite taken out of the rose. This chapter's caption argues that an unfilled
+   * cell is 「不知道」 rather than 「乾淨」, and the mark carrying that argument was
+   * the one mark on the figure a reader could not see. `--rule` is the token
+   * already solved to the 3:1 non-text threshold, in both themes.
+   */
   .cell[fill="none"] {
     fill: url(#cbpf-hatch);
-    stroke: var(--line);
+    stroke: var(--rule);
   }
   .hatch-line {
-    stroke: var(--line);
+    stroke: var(--rule);
     stroke-width: 1.5;
   }
   .bearing {
@@ -560,16 +605,6 @@ const legend = BREAKS.map((b, i) => ({
   .hub {
     fill: var(--bg-raised);
     stroke: var(--line);
-  }
-  .hub-label {
-    color: var(--text-faint);
-    font-size: var(--chart-micro);
-  }
-  .hub-value {
-    color: var(--text-muted);
-    font-size: var(--chart-label);
-    font-family: var(--font-numeric);
-    font-variant-numeric: tabular-nums;
   }
   .readout {
     display: grid;
