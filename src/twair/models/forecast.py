@@ -59,11 +59,32 @@ the summary line read "4/4 horizons beat persistence", true of the four means
 and false of 1 of the 16 horizon-split cells.
 
 The table above has no losing cell; the worst is +0.080, in the same place.
-That is not a reason to stop reporting the worst split. Nothing announced the
-losing cell the first time either, and what removed it was fixing an unrelated
-bug in `features/lags.py` — every station's first 167 hours had been carrying
-the previous station's history, and dropping those rows moved six-hour skill
-from +0.190 to +0.237. `summarise_scores` carries `skill_worst_split` and
+What removed it was fixing an unrelated bug in `features/lags.py` — every
+station's first 167 hours had been carrying the previous station's history, and
+dropping those rows moved six-hour skill from +0.190 to +0.237.
+
+**That is a claim about the fix, so it was checked against refit noise.** These
+models run `subsample=0.8, subsample_freq=1`, so a different row count is a
+different random path through every tree, and 0.22% fewer rows is not a small
+perturbation. Re-running the whole backtest at seeds 11 and 22 on the corrected
+frame gives, per horizon:
+
+    skill vs persistence   spread 0.001 (h=1) to 0.023 (h=24)
+    model RMSE             spread up to 0.12 ug/m3, at h=24
+    losing horizon-split cells   0, in all 12 horizon-by-seed combinations
+
+The six-hour movement is +0.05 to +0.06 against a spread of 0.006 — an order of
+magnitude clear of it — and the worst six-hour split is +0.080, +0.132, +0.152
+across the three seeds, never negative. The 48h movement is +0.07 against 0.013.
+The 24h movement, -0.04 against 0.023, is under twice the noise and is the one
+figure here not to lean on.
+
+The published numbers therefore carry roughly +/-0.02 on skill and +/-0.1 ug/m3
+on RMSE from refitting alone, before any question about the data.
+
+None of which is a reason to stop reporting the worst split. Nothing announced
+the losing cell the first time either. `summarise_scores` carries
+`skill_worst_split` and
 `splits_not_beating_persistence` beside every mean because a mean cannot tell
 you when it has started hiding something.
 
