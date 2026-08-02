@@ -704,6 +704,18 @@ surfaces somewhere less useful.
   excluded by default (`addopts` carries `-m 'not slow'`). Run them with
   `pytest -m slow`. Never run two full-store scans in one process — that OOMs.
 
+The complete inventory is an equality gate, not a minimum:
+
+```bash
+uv run python scripts/check_test_count.py
+```
+
+It clears project `addopts` while collecting, so deselected slow tests remain
+part of the reviewed total. Both a lower and a higher count fail: accepting a
+higher count without updating the record lets the supposed floor drift below
+the suite again. Add or remove tests and update the measured value in
+`conf/project.yaml` in the same commit.
+
 ### Commits
 
 Explain what was *learned*, not just what changed — especially when a finding
@@ -857,7 +869,8 @@ behaviour and touches no `.md` is the smell.
 
 Each commit that adds or changes a result:
 
-1. `uv run --no-sync pytest -q` and `ruff check src tests` — both clean.
+1. Run every completion gate in `AGENTS.md`; partial test or lint paths are not
+   substitutes for the repository gates.
 2. Update **`PROGRESS.md`**: what moved, what is running, what is next.
 3. Update the affected **`docs/*.md`**. If a measurement contradicts something
    already written, correct it in place — never leave both versions standing.

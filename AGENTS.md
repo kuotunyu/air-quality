@@ -106,15 +106,16 @@ This checks every commit reachable from `HEAD`: author, committer, and the
 commit body. A latest-commit check is not enough.
 
 ```bash
+uv run python scripts/check_test_count.py
+```
+
+This collects the complete suite without project `addopts` and requires exact
+equality with `conf/project.yaml`. When a commit adds or removes tests, measure
+the new total and update that one value in the same commit.
+
+```bash
 uv run pytest -q
 ```
-Currently **679 passed, 3 deselected**. This number must **not go down**.
-
-> Raise it in the same commit that adds tests. This line said 299 for long
-> enough that the real figure reached 470 — a floor 171 tests below reality,
-> which would have let someone delete a third of the suite and still pass the
-> rule as written. A guardrail nobody updates is a guardrail that quietly stops
-> guarding.
 
 **A green suite on this machine is not the same as a green suite.** Most of
 `data/` is gitignored, so a test can reach a local artefact and pass here while
@@ -125,7 +126,8 @@ at an empty directory:
 TWAIR_DATA_DIR="$TEMP/twair-empty" uv run pytest -q
 ```
 
-Same count as above, or something depends on data a fresh clone does not have.
+Same passed/deselected result as the ordinary run, or something depends on
+data a fresh clone does not have.
 `paths.data_root()` reads the variable at call time, so this needs no fixture.
 
 ```bash
