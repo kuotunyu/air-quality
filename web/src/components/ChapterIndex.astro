@@ -57,9 +57,11 @@ import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
   .toc a {
     display: grid;
     gap: 0.1rem var(--space-4);
-    padding: var(--space-3) 0;
+    padding: var(--space-3) var(--space-2);
+    margin-inline: calc(-1 * var(--space-2));
     text-decoration: none;
     color: var(--text);
+    transition: background-color 160ms ease;
   }
 
   /* The chapter number sizes to its own content and the title column takes the
@@ -93,18 +95,19 @@ import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
 
   .toc-claim {
     color: var(--text-muted);
-    text-align: justify;
+    text-align: start;
     line-break: strict;
   }
 
   /* The whole row is the target, so the hover has to be on the row: an underline
      under the title alone would suggest only the title is clickable. */
-  .toc a:hover .toc-title,
-  .toc a:focus-visible .toc-title {
-    color: var(--accent);
+  .toc a:hover,
+  .toc a:focus-visible {
+    background: var(--tint-neutral);
   }
 
-  .toc a:hover .toc-n {
+  .toc a:hover :is(.toc-title, .toc-n),
+  .toc a:focus-visible :is(.toc-title, .toc-n) {
     color: var(--accent);
   }
 </style>

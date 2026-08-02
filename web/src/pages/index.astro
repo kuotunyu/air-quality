@@ -17,17 +17,7 @@
 import Base from "../layouts/Base.astro";
 import Hero from "../components/Hero.astro";
 import ChapterIndex from "../components/ChapterIndex.astro";
-import { href } from "../lib/chapters";
-import { cards, hourlyObservationsShort, trend } from "../lib/data";
-import { n } from "../lib/chart";
-
-const latestYear = Math.max(...cards.map((c) => c.year));
-const comparable = cards.filter((c) => c.year >= latestYear - 1);
-const lastValue = trend.all_stations[trend.all_stations.length - 1] as number;
-const balancedSince = trend.panel.balanced_since as number;
-const balancedStart = trend.years.indexOf(balancedSince);
-const declineFrom = trend.all_stations[balancedStart] as number;
-const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
+import { hourlyObservationsShort } from "../lib/data";
 ---
 
 <Base
@@ -46,21 +36,6 @@ const declinePct = ((declineFrom - lastValue) / declineFrom) * 100;
     </p>
 
     <ChapterIndex />
-
-    <div class="note">
-      <p>
-        <strong>先證明能重現，再說它錯。</strong>
-        <a href={href("methods")}>第八章</a>以一份 2018 年的大學畢業專題作為方法學對照組：
-        該研究使用 8 年月平均、N = 7,286；本專案使用 44 年逐時觀測、N = {hourlyObservationsShort}。
-        復刻先跑一遍原方法，證明數字對得上，才逐項量化每個方法選擇造成的差異。
-      </p>
-      <p>
-        {balancedSince} 年以來全台 PM2.5 年均值從 {n(declineFrom)} 降到 {n(lastValue)} μg/m³
-        （少了 {n(declinePct, 0)}%），而 {latestYear} 年有可比較資料的 {comparable.length} 個測站裡
-        仍有 {comparable.filter((c) => c.annual_mean > 5).length} 個高於 WHO 的年均指引值。
-        趨勢與水準是兩個量，兩者並不衝突——第一章處理前者，第二章處理後者。
-      </p>
-    </div>
   </section>
 </Base>
 

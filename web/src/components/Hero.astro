@@ -7,6 +7,7 @@
  * shows the network, and the chapter index below it does the rest.
  */
 import StationMap from "./StationMap.astro";
+import StartHere from "./StartHere.astro";
 import {
   cards,
   hourlyObservationsFull,
@@ -76,6 +77,8 @@ const opening = [
     {overTaiwan} 個超過台灣自身的標準（{TAIWAN_PM25_ANNUAL} μg/m³）。
     趨勢與水準是兩個不同的量，這兩項結果並不衝突。
   </p>
+
+  <StartHere />
 
   {/*
     The container is the WRAPPER, not the grid.

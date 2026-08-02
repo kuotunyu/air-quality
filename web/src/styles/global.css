@@ -1545,6 +1545,85 @@ section > :last-child > :last-child:last-child {
   margin-bottom: var(--space-4);
 }
 
+.start-here {
+  margin: var(--space-5) 0;
+}
+
+.start-here-heading {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  color: var(--text-muted);
+}
+
+.start-here-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-block: 1px solid var(--line-soft);
+}
+
+.start-here-list li + li {
+  border-top: 1px solid var(--line-soft);
+}
+
+.start-here-list a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.15rem var(--space-3);
+  align-items: baseline;
+  min-height: 44px;
+  padding: var(--space-3) var(--space-2);
+  margin-inline: calc(-1 * var(--space-2));
+  color: var(--text);
+  text-decoration: none;
+  transition: background-color 160ms ease;
+}
+
+.start-here-label {
+  font-size: var(--text-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.start-here-claim {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  line-break: strict;
+}
+
+.start-here-mark {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--text-faint);
+  font-family: var(--font-numeric);
+}
+
+.start-here-list a:hover,
+.start-here-list a:focus-visible {
+  background: var(--tint-neutral);
+}
+
+.start-here-list a:hover :is(.start-here-label, .start-here-mark),
+.start-here-list a:focus-visible :is(.start-here-label, .start-here-mark) {
+  color: var(--accent);
+}
+
+@media (min-width: 46rem) {
+  .start-here-list a {
+    grid-template-columns: minmax(9rem, 0.62fr) minmax(0, 1.38fr) auto;
+    column-gap: var(--space-4);
+  }
+
+  .start-here-claim {
+    grid-column: auto;
+  }
+
+  .start-here-mark {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
 .grid {
   display: grid;
   gap: var(--space-3);

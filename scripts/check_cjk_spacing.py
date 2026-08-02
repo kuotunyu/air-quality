@@ -73,13 +73,14 @@ NUL = "\x00"
 # Each probe now names the page that carries it: with the chapters split across
 # routes, "still somewhere in the site" is a weaker claim than "still on the page
 # it belongs to".
+# 2026-08-03 — the entry-page wayfinding redesign removed the note that
+# duplicated the method comparison and Hero figures, so its three index-only
+# probes no longer name prose that ships there. The method page keeps the
+# still-live N boundary below.
 MUST_KEEP = (
     ("第 1 版", "index.html"),
-    ("8 年月平均", "index.html"),
-    ("3.40 億", "index.html"),
     ("165 公尺", "index.html"),
     ("N = 7,286", "methods/index.html"),
-    ("N = 7,286", "index.html"),
 )
 
 

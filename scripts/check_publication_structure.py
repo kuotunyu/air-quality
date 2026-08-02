@@ -15,12 +15,15 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
+from urllib.parse import unquote, urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "web" / "dist"
 REGISTRY = ROOT / "web" / "src" / "lib" / "chapters.ts"
 TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "typescript.js"
 EXPECTED_CHAPTERS = 10
+REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
+START_HERE_DATA_DESTINATIONS = {"/explore/", "/data/"}
 IGNORED_SUBTREES = {"template", "script", "style"}
 VOID_ELEMENTS = {
     "area",
@@ -192,6 +195,7 @@ def chapter_slugs() -> list[str]:
 class Element:
     tag: str
     classes: frozenset[str]
+    attributes: dict[str, str | None]
     parent: Element | None
     visible: bool
     start_order: int
@@ -215,6 +219,27 @@ class Element:
             if child.visible and not (without_labels and "chapter-intro-label" in child.classes):
                 parts.append(child.rendered_text(without_labels=without_labels))
         return " ".join("".join(parts).split())
+
+
+def _hidden_by_inline_style(style: str | None) -> bool:
+    declarations: dict[str, tuple[str, bool]] = {}
+    for declaration in (style or "").split(";"):
+        property_name, separator, value = declaration.partition(":")
+        if separator:
+            name = property_name.strip().lower()
+            raw_value = value.strip().lower()
+            unprioritized, bang, priority = raw_value.rpartition("!")
+            important = bool(bang and priority.strip() == "important")
+            normalized = unprioritized.strip() if important else raw_value
+            current = declarations.get(name)
+            if current is None or important or not current[1]:
+                declarations[name] = (normalized, important)
+    display = declarations.get("display", ("", False))[0]
+    visibility = declarations.get("visibility", ("", False))[0]
+    return display == "none" or visibility in {
+        "hidden",
+        "collapse",
+    }
 
 
 class StructureParser(HTMLParser):
@@ -249,6 +274,7 @@ class StructureParser(HTMLParser):
             and lowered not in IGNORED_SUBTREES
             and "hidden" not in attribute_names
             and (attributes.get("aria-hidden") or "").strip().lower() != "true"
+            and not _hidden_by_inline_style(attributes.get("style"))
         )
 
         if visible and lowered in {"h1", "h2"}:
@@ -261,6 +287,7 @@ class StructureParser(HTMLParser):
         element = Element(
             tag=lowered,
             classes=frozenset((attributes.get("class") or "").split()),
+            attributes=attributes,
             parent=parent,
             visible=visible,
             start_order=self._order,
@@ -404,6 +431,111 @@ def failures_for(page: pathlib.Path) -> list[str]:
     return failures_for_text(page.read_text(encoding="utf-8"))
 
 
+def home_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    visible = [element for element in parser.elements if element.visible]
+
+    candidates = [element for element in visible if "start-here" in element.classes]
+    if not candidates:
+        failures.append("missing nav.start-here")
+        return failures
+    if len(candidates) != 1:
+        failures.append(f"expected exactly one visible nav.start-here, found {len(candidates)}")
+        return failures
+
+    navigation = candidates[0]
+    if navigation.tag != "nav":
+        failures.append("visible .start-here is not a <nav>")
+        return failures
+
+    aria_label = (navigation.attributes.get("aria-label") or "").strip()
+    labelled_by = (navigation.attributes.get("aria-labelledby") or "").strip().split()
+    labelled_ids = {
+        element.attributes.get("id")
+        for element in visible
+        if element.rendered_text() and element.attributes.get("id")
+    }
+    if not aria_label and (
+        not labelled_by or any(label not in labelled_ids for label in labelled_by)
+    ):
+        failures.append("nav.start-here has no visible accessible label")
+
+    links = [element for element in visible if element.tag == "a" and element.is_inside(navigation)]
+    if len(links) != 4:
+        failures.append(
+            f"nav.start-here must contain exactly four visible links, found {len(links)}"
+        )
+        return failures
+
+    for link in links:
+        if not link.rendered_text():
+            failures.append("nav.start-here contains a visible link with no rendered text")
+
+    parsed_destinations = [
+        _site_destination_from_href(link.attributes.get("href")) for link in links
+    ]
+    destinations = [destination[1] if destination else None for destination in parsed_destinations]
+    if len(set(destinations)) != len(destinations):
+        failures.append("nav.start-here link destinations must be unique")
+    valid_destinations = [destination for destination in parsed_destinations if destination]
+    if len(valid_destinations) == len(links) and len({item[0] for item in valid_destinations}) != 1:
+        failures.append("nav.start-here links must share one site base path")
+    destination_set = set(destinations)
+    has_required = destination_set >= REQUIRED_START_HERE_DESTINATIONS
+    chosen_data_destinations = destination_set & START_HERE_DATA_DESTINATIONS
+    has_only_expected = destination_set <= (
+        REQUIRED_START_HERE_DESTINATIONS | START_HERE_DATA_DESTINATIONS
+    )
+    if not has_required or len(chosen_data_destinations) != 1 or not has_only_expected:
+        found = ", ".join(str(destination) for destination in destinations)
+        failures.append(
+            "nav.start-here links must target /trend/, /stations/, /methods/, "
+            f"and one of /explore/ or /data/; found {found}"
+        )
+
+    return failures
+
+
+def home_failures_for(page: pathlib.Path) -> list[str]:
+    return home_failures_for_text(page.read_text(encoding="utf-8"))
+
+
+def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
+    if not href:
+        return None
+    parsed = urlsplit(href)
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+        or not parsed.path.endswith("/")
+    ):
+        return None
+    segments: list[str] = []
+    for raw_segment in parsed.path.split("/"):
+        if not raw_segment:
+            continue
+        segment = raw_segment
+        while True:
+            decoded = unquote(segment)
+            if decoded == segment:
+                break
+            segment = decoded
+        if segment in {".", ".."} or "/" in segment or "\\" in segment:
+            return None
+        segments.append(segment)
+    if not segments:
+        return None
+    base = f"/{'/'.join(segments[:-1])}" if len(segments) > 1 else ""
+    return base, f"/{segments[-1]}/"
+
+
 def _run_preflight() -> None:
     valid_slugs = [f"chapter-{index}" for index in range(EXPECTED_CHAPTERS)]
     valid_entries = ",\n".join(
@@ -540,6 +672,153 @@ def _run_preflight() -> None:
                 f"HTML preflight did not reject {name} for the expected reason: {mutation_failures}"
             )
 
+    start_here_destinations = ("/trend/", "/stations/", "/methods/", "/explore/")
+    start_here_links = "".join(
+        f'<a href="{destination}">Path {index}</a>'
+        for index, destination in enumerate(start_here_destinations, start=1)
+    )
+    valid_home = (
+        '<h2 id="start-here-heading">Start here</h2>'
+        '<nav class="start-here" aria-labelledby="start-here-heading">'
+        f"{start_here_links}</nav>"
+    )
+    valid_home_failures = home_failures_for_text(valid_home)
+    if valid_home_failures:
+        raise RuntimeError(f"home HTML preflight rejected the valid control: {valid_home_failures}")
+    valid_data_home = valid_home.replace('/explore/">Path 4', '/data/">Path 4')
+    valid_data_home_failures = home_failures_for_text(valid_data_home)
+    if valid_data_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid /data/ alternative control: "
+            f"{valid_data_home_failures}"
+        )
+    valid_prefixed_home = valid_home.replace('href="/', 'href="/project/')
+    valid_prefixed_home_failures = home_failures_for_text(valid_prefixed_home)
+    if valid_prefixed_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid base-prefixed control: "
+            f"{valid_prefixed_home_failures}"
+        )
+    valid_cascade_home = valid_home.replace(
+        '<a href="/explore/">Path 4</a>',
+        '<a href="/explore/" style="display: none; display: block">Path 4</a>',
+    )
+    valid_cascade_home_failures = home_failures_for_text(valid_cascade_home)
+    if valid_cascade_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid inline cascade control: "
+            f"{valid_cascade_home_failures}"
+        )
+    valid_important_cascade_home = valid_home.replace(
+        '<a href="/explore/">Path 4</a>',
+        '<a href="/explore/" style="display: none; display: block !important">Path 4</a>',
+    )
+    valid_important_cascade_home_failures = home_failures_for_text(valid_important_cascade_home)
+    if valid_important_cascade_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid important cascade control: "
+            f"{valid_important_cascade_home_failures}"
+        )
+
+    home_mutations = {
+        "empty start-here": (
+            "nav.start-here must contain exactly four visible links, found 0",
+            valid_home.replace(start_here_links, ""),
+        ),
+        "duplicate start-here": (
+            "expected exactly one visible nav.start-here, found 2",
+            valid_home + '<nav class="start-here" aria-label="Duplicate"></nav>',
+        ),
+        "duplicate destination": (
+            "nav.start-here link destinations must be unique",
+            valid_home.replace('/explore/">Path 4', '/trend/">Path 4'),
+        ),
+        "both data destinations": (
+            "nav.start-here must contain exactly four visible links, found 5",
+            valid_home.replace("</nav>", '<a href="/data/">Path 5</a></nav>', 1),
+        ),
+        "hidden start-here": (
+            "missing nav.start-here",
+            f"<div hidden>{valid_home}</div>",
+        ),
+        "hidden links": (
+            "nav.start-here must contain exactly four visible links, found 0",
+            valid_home.replace(start_here_links, f"<div hidden>{start_here_links}</div>"),
+        ),
+        "inline-hidden link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" style="display: none">Path 4</a>',
+            ),
+        ),
+        "important inline-hidden link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" style="display: none !important; display: block">Path 4</a>',
+            ),
+        ),
+        "later important inline-hidden link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" style="display: block; display: none !important">Path 4</a>',
+            ),
+        ),
+        "collapsed inline link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" style="visibility: visible; visibility: collapse">Path 4</a>',
+            ),
+        ),
+        "template link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<template><a href="/explore/">Path 4</a></template>',
+            ),
+        ),
+        "wrong destination": (
+            "nav.start-here links must target ",
+            valid_home.replace('/explore/">Path 4', '/space/">Path 4'),
+        ),
+        "missing fixed destination": (
+            "nav.start-here links must target ",
+            valid_home.replace('/stations/">Path 2', '/space/">Path 2'),
+        ),
+        "mixed base prefixes": (
+            "nav.start-here links must share one site base path",
+            valid_home.replace('href="/trend/', 'href="/alpha/trend/').replace(
+                'href="/stations/', 'href="/beta/stations/'
+            ),
+        ),
+        "dot segment base prefix": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/project/../'),
+        ),
+        "encoded dot segment base prefix": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/project/%2e%2e/'),
+        ),
+        "partially encoded dot segment base prefix": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/project/.%2e/'),
+        ),
+        "encoded backslash base prefix": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/project%5c../'),
+        ),
+    }
+    for name, (expected_failure, html) in home_mutations.items():
+        mutation_failures = home_failures_for_text(html)
+        if not any(failure.startswith(expected_failure) for failure in mutation_failures):
+            raise RuntimeError(
+                f"home HTML preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
+            )
+
 
 def main(argv: list[str]) -> int:
     for stream in (sys.stdout, sys.stderr):
@@ -557,6 +836,14 @@ def main(argv: list[str]) -> int:
         print(f"{dist} not found — run `npm run build` in web/ first", file=sys.stderr)
         return 1
 
+    home_page = dist / "index.html"
+    if not home_page.exists():
+        home_failures = [f"missing {home_page.relative_to(ROOT).as_posix()}"]
+    else:
+        home_failures = home_failures_for(home_page)
+    for failure in home_failures:
+        print(f"home: {failure}")
+
     failed_chapters = 0
     slugs = chapter_slugs()
     for slug in slugs:
@@ -573,7 +860,8 @@ def main(argv: list[str]) -> int:
 
     print(f"chapters checked: {len(slugs)}")
     print(f"chapters with structure failures: {failed_chapters}")
-    return 1 if failed_chapters else 0
+    print(f"home with structure failures: {int(bool(home_failures))}")
+    return 1 if failed_chapters or home_failures else 0
 
 
 if __name__ == "__main__":
