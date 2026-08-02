@@ -75,9 +75,15 @@ const MIN_LC = 60;
  * the check that would have said so — 0.84rem against a 20.725px root is 17.41,
  * and no width makes it 18.7. The line is corrected there.
  */
+/**
+ * 2026-08-03 — supersedes the fixed-pixel measurements above: the current
+ * chart tokens are rem-based, and their live contract is that every in-figure
+ * annotation retains at least 95% of the body size at the same viewport.
+ */
 const MIN_FONT_PX = 17;
 /** WCAG 2.5.5's comfortable target. The figure controls are the ones at risk. */
 const MIN_TARGET_PX = 44;
+const CSS_PX_SERIALIZATION_EPSILON = 0.0001;
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -399,6 +405,12 @@ async function main() {
       ?.value;
 
   const failures = [];
+  if (18.99 + CSS_PX_SERIALIZATION_EPSILON >= 20 * 0.95) {
+    failures.push("annotation ratio gate accepts 94.95% of body size");
+  }
+  if (17.2757 + CSS_PX_SERIALIZATION_EPSILON < 18.185 * 0.95) {
+    failures.push("annotation ratio gate rejects an exact 95% value serialized to four decimals");
+  }
   const totals = {
     nodes: 0,
     smallestAt375: Infinity,
@@ -797,9 +809,9 @@ async function main() {
             );
           }
           // Computed styles are serialized to four decimals, so allow one
-          // hundredth of a CSS pixel for that serialization while keeping the
+          // ten-thousandth of a CSS pixel for that serialization while keeping the
           // asserted ratio at 95%.
-          if (r.smallestAnnotation + 0.01 < r.body * 0.95) {
+          if (r.smallestAnnotation + CSS_PX_SERIALIZATION_EPSILON < r.body * 0.95) {
             failures.push(
               `${route} @${width} ${theme}: annotation ${r.smallestAnnotation}px is below the ` +
                 `${r.body.toFixed(1)}px body it sits among`,

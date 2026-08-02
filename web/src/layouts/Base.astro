@@ -244,7 +244,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
                 <li>
                   <a
                     href={href(c.slug)}
-                    aria-label={`${chapterLabel(c.n)}　${c.title}`}
+                    aria-label={`${chapterLabel(c.n)}　${c.nav}　${c.title}`}
                     aria-current={here?.slug === c.slug ? "page" : undefined}
                   >
                     <span class="rail-n" aria-hidden="true">{chapterNumeral(c.n)}</span>

@@ -36,6 +36,7 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
+from html import unescape
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "web" / "dist"
@@ -70,6 +71,11 @@ ENTRY = re.compile(
     re.S,
 )
 H1 = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
+RAIL_LINK = re.compile(
+    r'<a(?P<attrs>[^>]*)>\s*<span class="rail-n"[^>]*>.*?</span>\s*'
+    r'<span class="rail-t"[^>]*>(?P<visible>.*?)</span>\s*</a>',
+    re.S | re.I,
+)
 TAG = re.compile(r"<[^>]+>")
 HAN = re.compile(r"[⺀-⿕一-鿿]")
 
@@ -98,6 +104,23 @@ def h1_of(page: pathlib.Path) -> str | None:
     return " ".join(TAG.sub("", found.group(1)).split())
 
 
+def rail_link_of(page: pathlib.Path, slug: str) -> tuple[str, str, str | None] | None:
+    """(visible text, accessible name, current state) for one built rail link."""
+    for found in RAIL_LINK.finditer(page.read_text(encoding="utf-8")):
+        attrs = found["attrs"]
+        href = re.search(r'\bhref="([^"]*)"', attrs, re.I)
+        if href is None or href.group(1).rstrip("/").split("/")[-1] != slug:
+            continue
+        label = re.search(r'\baria-label="([^"]*)"', attrs, re.I)
+        current = re.search(r'\baria-current="([^"]*)"', attrs, re.I)
+        return (
+            unescape(" ".join(TAG.sub("", found["visible"]).split())),
+            unescape(label.group(1)) if label is not None else "",
+            current.group(1) if current is not None else None,
+        )
+    return None
+
+
 def main(argv: list[str]) -> int:
     # Every line this prints is Chinese, and the repo is developed on Windows,
     # where the console defaults to cp950 and turns the whole report into
@@ -114,6 +137,8 @@ def main(argv: list[str]) -> int:
     mismatched: list[str] = []
     missing: list[str] = []
     wrapped: list[str] = []
+    rail_mismatched: list[str] = []
+    current_mismatched: list[str] = []
 
     for n, slug, nav, title in chapters():
         page = dist / slug / "index.html"
@@ -137,6 +162,25 @@ def main(argv: list[str]) -> int:
                 f"      browser tab and both footer steps, then arrives at the other one."
             )
 
+        rail_link = rail_link_of(page, slug)
+        if rail_link is None:
+            rail_mismatched.append(f"  ch.{n} {slug} — built rail link not found")
+        else:
+            visible, accessible, current = rail_link
+            if visible != nav or nav not in accessible or title not in accessible:
+                rail_mismatched.append(
+                    f"  ch.{n} {slug}\n"
+                    f"      registry nav  : {nav}\n"
+                    f"      registry title: {title}\n"
+                    f"      visible rail  : {visible}\n"
+                    f"      accessible    : {accessible}\n"
+                    f"      The compact label and formal title must both remain in the link name."
+                )
+            if current != "page":
+                current_mismatched.append(
+                    f"  ch.{n} {slug} — self link has aria-current={current!r}, expected 'page'"
+                )
+
         han = len(HAN.findall(nav))
         if han > RAIL_NAV_HAN_LIMIT:
             mark = "WRAPS" if mark == "ok" else mark
@@ -149,17 +193,23 @@ def main(argv: list[str]) -> int:
 
     print(f"\nchapters checked : {len(chapters())}")
     print(f"title mismatches : {len(mismatched)}")
+    print(f"rail mismatches  : {len(rail_mismatched)}")
+    print(f"current failures : {len(current_mismatched)}")
     print(f"rail overflows   : {len(wrapped)}")
     print(f"pages missing    : {len(missing)}")
 
     for block in mismatched:
         print(f"\n{block}")
+    for block in rail_mismatched:
+        print(f"\n{block}")
+    for line in current_mismatched:
+        print(f"\n{line}")
     for line in wrapped:
         print(f"\n{line}")
     for line in missing:
         print(f"\n{line}")
 
-    return 1 if (mismatched or wrapped or missing) else 0
+    return 1 if (mismatched or rail_mismatched or current_mismatched or wrapped or missing) else 0
 
 
 if __name__ == "__main__":
