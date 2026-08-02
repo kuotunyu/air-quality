@@ -295,7 +295,7 @@ SHIPPED_LIGHT = read_shipped(
 )
 SHIPPED_DARK = read_shipped(
     "shipped dark (Morandi)",
-    "@media (prefers-color-scheme: dark) {",
+    ':root[data-theme="dark"] {',
     "read from web/src/styles/global.css",
 )
 

@@ -397,6 +397,304 @@ async function main() {
     collisions: 0,
   };
 
+  const origin = `http://127.0.0.1:${PORT}`;
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage" });
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  await send("Page.navigate", { url: `${origin}/` });
+  if (!(await settled(evaluate))) {
+    failures.push("theme preflight page never finished styling");
+  } else {
+    const firstVisit = await evaluate(`(() => ({
+      explicitTheme: document.documentElement.dataset.theme ?? null,
+      resolvedTheme: document.documentElement.dataset.theme ??
+        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
+      colourScheme: getComputedStyle(document.documentElement).colorScheme,
+      metaScheme: document.querySelector('meta[name="color-scheme"]')?.getAttribute("content"),
+      toggleCount: document.querySelectorAll("[data-theme-toggle]").length,
+      stableNames: [...document.querySelectorAll("[data-theme-toggle]")].every(
+        (button) => button.getAttribute("aria-label") === "深色模式（深色／淺色）",
+      ),
+      chromeSynchronized:
+        document.querySelector("[data-theme-color]")?.getAttribute("content") === "#f4f6f4" &&
+        document.querySelector("[data-theme-icon]")?.getAttribute("href") ===
+          document.querySelector("[data-theme-icon]")?.getAttribute("data-light"),
+    }))()`);
+    if (firstVisit?.explicitTheme !== "light") {
+      failures.push(
+        `first visit under an OS dark preference resolved to ${firstVisit?.resolvedTheme ?? "unknown"} instead of light`,
+      );
+    }
+    if (firstVisit?.colourScheme !== "light" || firstVisit?.metaScheme !== "light") {
+      failures.push("first visit left native browser controls under the OS colour scheme");
+    }
+    if (firstVisit?.toggleCount !== 2) {
+      failures.push(
+        firstVisit?.toggleCount
+          ? `expected two [data-theme-toggle] controls, found ${firstVisit.toggleCount}`
+          : "no [data-theme-toggle] control was rendered",
+      );
+    } else if (!firstVisit?.stableNames) {
+      failures.push("theme toggle accessible names do not state a stable pressed-state meaning");
+    } else if (!firstVisit?.chromeSynchronized) {
+      failures.push("theme-color and favicon did not retain the first-visit light theme");
+    } else {
+      const toggled = await evaluate(`(() => {
+        const button = document.querySelector("[data-theme-toggle]");
+        button.click();
+        const buttons = [...document.querySelectorAll("[data-theme-toggle]")];
+        const colour = document.querySelector("[data-theme-color]");
+        const icon = document.querySelector("[data-theme-icon]");
+        return {
+          theme: document.documentElement.dataset.theme ?? null,
+          pressed: button.getAttribute("aria-pressed"),
+          stored: localStorage.getItem("twair-theme"),
+          buttonsSynchronized: buttons.every((item) => item.getAttribute("aria-pressed") === "true"),
+          labelsSynchronized: buttons.every(
+            (item) => item.querySelector(".theme-toggle-label")?.textContent.trim() === "淺色",
+          ),
+          stableNames: buttons.every(
+            (item) => item.getAttribute("aria-label") === "深色模式（深色／淺色）",
+          ),
+          colourScheme: getComputedStyle(document.documentElement).colorScheme,
+          metaScheme: document.querySelector('meta[name="color-scheme"]')?.getAttribute("content"),
+          chromeSynchronized:
+            colour?.getAttribute("content") === colour?.getAttribute("data-dark") &&
+            icon?.getAttribute("href") === icon?.getAttribute("data-dark"),
+        };
+      })()`);
+      if (toggled?.theme !== "dark") {
+        failures.push(`manual theme toggle resolved to ${toggled?.theme ?? "unknown"} instead of dark`);
+      }
+      if (toggled?.pressed !== "true") {
+        failures.push("manual theme toggle did not set aria-pressed to true");
+      }
+      if (toggled?.stored !== "dark") {
+        failures.push("manual dark choice was not stored as twair-theme");
+      }
+      if (!toggled?.buttonsSynchronized || !toggled?.labelsSynchronized) {
+        failures.push("theme toggle controls did not stay synchronized");
+      }
+      if (!toggled?.stableNames) {
+        failures.push("theme toggle accessible names changed with the visible action label");
+      }
+      if (toggled?.colourScheme !== "dark" || toggled?.metaScheme !== "dark") {
+        failures.push("manual dark choice did not update the native browser colour scheme");
+      }
+      if (!toggled?.chromeSynchronized) {
+        failures.push("theme-color and favicon did not follow the manual dark choice");
+      }
+
+      await send("Page.reload", { ignoreCache: true });
+      if (!(await settled(evaluate))) {
+        failures.push("theme persistence reload never finished styling");
+      } else {
+        const reloaded = await evaluate(`({
+          theme: document.documentElement.dataset.theme,
+          toggleCount: document.querySelectorAll("[data-theme-toggle]").length,
+          stableNames: [...document.querySelectorAll("[data-theme-toggle]")].every(
+            (button) => button.getAttribute("aria-label") === "深色模式（深色／淺色）",
+          ),
+          controlsSynchronized: [...document.querySelectorAll("[data-theme-toggle]")].every(
+            (button) =>
+              button.getAttribute("aria-pressed") === "true" &&
+              button.querySelector(".theme-toggle-label")?.textContent.trim() === "淺色",
+          ),
+          chromeSynchronized:
+            document.querySelector("[data-theme-color]")?.getAttribute("content") ===
+              document.querySelector("[data-theme-color]")?.getAttribute("data-dark") &&
+            document.querySelector("[data-theme-icon]")?.getAttribute("href") ===
+              document.querySelector("[data-theme-icon]")?.getAttribute("data-dark"),
+        })`);
+        if (reloaded?.theme !== "dark") failures.push("manual dark choice did not survive a reload");
+        if (!reloaded?.stableNames) failures.push("theme toggle accessible names changed after reload");
+        if (
+          reloaded?.toggleCount !== 2 ||
+          !reloaded?.controlsSynchronized ||
+          !reloaded?.chromeSynchronized
+        ) {
+          failures.push("theme controls and browser chrome did not synchronize after reload");
+        }
+      }
+
+      await send("Page.navigate", { url: `${origin}/trend/` });
+      if (!(await settled(evaluate))) {
+        failures.push("theme persistence navigation never finished styling");
+      } else {
+        const navigated = await evaluate(`({
+          theme: document.documentElement.dataset.theme,
+          toggleCount: document.querySelectorAll("[data-theme-toggle]").length,
+          stableNames: [...document.querySelectorAll("[data-theme-toggle]")].every(
+            (button) => button.getAttribute("aria-label") === "深色模式（深色／淺色）",
+          ),
+          controlsSynchronized: [...document.querySelectorAll("[data-theme-toggle]")].every(
+            (button) =>
+              button.getAttribute("aria-pressed") === "true" &&
+              button.querySelector(".theme-toggle-label")?.textContent.trim() === "淺色",
+          ),
+          chromeSynchronized:
+            document.querySelector("[data-theme-color]")?.getAttribute("content") ===
+              document.querySelector("[data-theme-color]")?.getAttribute("data-dark") &&
+            document.querySelector("[data-theme-icon]")?.getAttribute("href") ===
+              document.querySelector("[data-theme-icon]")?.getAttribute("data-dark"),
+        })`);
+        if (navigated?.theme !== "dark") failures.push("manual dark choice did not persist to /trend/");
+        if (!navigated?.stableNames) {
+          failures.push("theme toggle accessible names changed after navigation");
+        }
+        if (
+          navigated?.toggleCount !== 2 ||
+          !navigated?.controlsSynchronized ||
+          !navigated?.chromeSynchronized
+        ) {
+          failures.push("theme controls and browser chrome did not synchronize after navigation");
+        }
+      }
+    }
+  }
+
+  const invalidSeed = await evaluate(`(() => {
+    localStorage.setItem("twair-theme", "sepia");
+    return localStorage.getItem("twair-theme");
+  })()`);
+  if (invalidSeed !== "sepia") {
+    failures.push("invalid stored theme preflight did not seed its control value");
+  }
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  await send("Page.navigate", { url: `${origin}/` });
+  if (!(await settled(evaluate))) {
+    failures.push("invalid stored theme preflight page never finished styling");
+  } else if ((await evaluate("document.documentElement.dataset.theme")) !== "light") {
+    failures.push("an invalid stored theme was accepted instead of resolving to light");
+  }
+
+  await send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage" });
+  await send("Page.enable");
+  const blockedStorage = await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `globalThis.__twairStorageBlocked = true;
+    for (const method of ["getItem", "setItem"]) {
+      Object.defineProperty(Storage.prototype, method, {
+        configurable: true,
+        value() { throw new DOMException("storage blocked", "SecurityError"); },
+      });
+    }`,
+  });
+  await send("Page.navigate", { url: `${origin}/?storage-blocked=1` });
+  if (!(await settled(evaluate))) {
+    failures.push("blocked-storage theme preflight page never finished styling");
+  } else {
+    const blocked = await evaluate(`(() => {
+      let storageReadThrows = false;
+      let storageWriteThrows = false;
+      try { localStorage.getItem("twair-theme"); } catch { storageReadThrows = true; }
+      try { localStorage.setItem("twair-theme", "dark"); } catch { storageWriteThrows = true; }
+      const initial = document.documentElement.dataset.theme ?? null;
+      document.querySelector("[data-theme-toggle]")?.click();
+      const buttons = [...document.querySelectorAll("[data-theme-toggle]")];
+      const colour = document.querySelector("[data-theme-color]");
+      const icon = document.querySelector("[data-theme-icon]");
+      return {
+        injectionRan: globalThis.__twairStorageBlocked === true,
+        storageReadThrows,
+        storageWriteThrows,
+        initial,
+        toggled: document.documentElement.dataset.theme ?? null,
+        controlsSynchronized:
+          buttons.length === 2 &&
+          buttons.every(
+            (button) =>
+              button.getAttribute("aria-pressed") === "true" &&
+              button.querySelector(".theme-toggle-label")?.textContent.trim() === "淺色",
+          ),
+        colourScheme: getComputedStyle(document.documentElement).colorScheme,
+        metaScheme: document.querySelector('meta[name="color-scheme"]')?.getAttribute("content"),
+        chromeSynchronized:
+          colour?.getAttribute("content") === colour?.getAttribute("data-dark") &&
+          icon?.getAttribute("href") === icon?.getAttribute("data-dark"),
+      };
+    })()`);
+    if (
+      !blocked?.injectionRan ||
+      !blocked?.storageReadThrows ||
+      !blocked?.storageWriteThrows ||
+      blocked?.initial !== "light" ||
+      blocked?.toggled !== "dark" ||
+      !blocked?.controlsSynchronized ||
+      blocked?.colourScheme !== "dark" ||
+      blocked?.metaScheme !== "dark" ||
+      !blocked?.chromeSynchronized
+    ) {
+      failures.push(
+        "storage errors prevented the light default or in-page theme toggle " +
+        `(registration=${blockedStorage.result?.identifier ?? blockedStorage.error?.message ?? "unknown"}, ` +
+          `injected=${blocked?.injectionRan ?? "unknown"}, ` +
+          `readThrows=${blocked?.storageReadThrows ?? "unknown"}, ` +
+          `writeThrows=${blocked?.storageWriteThrows ?? "unknown"}, ` +
+          `initial=${blocked?.initial ?? "unknown"}, ` +
+          `toggled=${blocked?.toggled ?? "unknown"}, ` +
+          `controls=${blocked?.controlsSynchronized ?? "unknown"}, ` +
+          `scheme=${blocked?.colourScheme ?? "unknown"}/${blocked?.metaScheme ?? "unknown"}, ` +
+          `chrome=${blocked?.chromeSynchronized ?? "unknown"})`,
+      );
+    }
+  }
+  await send("Page.removeScriptToEvaluateOnNewDocument", {
+    identifier: blockedStorage.result?.identifier,
+  });
+
+  await send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage" });
+  await send("Emulation.setScriptExecutionDisabled", { value: true });
+  await send("Page.navigate", { url: `${origin}/` });
+  if (!(await settled(evaluate))) {
+    failures.push("no-JavaScript theme preflight page never finished styling");
+  } else {
+    const noScript = await evaluate(`(() => ({
+      theme: document.documentElement.dataset.theme ?? null,
+      hasJs: document.documentElement.classList.contains("has-js"),
+      visibleToggles: [...document.querySelectorAll("[data-theme-toggle]")].filter((button) => {
+        const style = getComputedStyle(button);
+        return style.display !== "none" && style.visibility !== "hidden" && button.getClientRects().length;
+      }).length,
+    }))()`);
+    if (noScript?.theme !== "light" || noScript?.hasJs) {
+      failures.push("the no-JavaScript document did not retain its static light default");
+    }
+    if (noScript?.visibleToggles) {
+      failures.push("theme toggle controls remain visible when JavaScript is unavailable");
+    }
+  }
+  await send("Emulation.setScriptExecutionDisabled", { value: false });
+
+  await evaluate('localStorage.setItem("twair-theme", "dark")');
+  await send("Emulation.setEmulatedMedia", { media: "print" });
+  await send("Page.navigate", { url: `${origin}/` });
+  if (!(await settled(evaluate))) {
+    failures.push("dark-theme print preflight page never finished styling");
+  } else {
+    const printed = await evaluate(`({
+      theme: document.documentElement.dataset.theme ?? null,
+      background: getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
+      colourScheme: getComputedStyle(document.documentElement).colorScheme,
+    })`);
+    if (printed?.theme !== "dark") {
+      failures.push("print preflight did not retain the stored dark reading choice");
+    }
+    if (printed?.background !== "#fff" || printed?.colourScheme !== "light") {
+      failures.push("manual dark theme overrode the light print palette");
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -414,15 +712,55 @@ async function main() {
       mobile: width < 500,
     });
     for (const theme of ["light", "dark"]) {
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      const osTheme = theme === "light" ? "dark" : "light";
       await send("Emulation.setEmulatedMedia", {
         media: "",
-        features: [{ name: "prefers-color-scheme", value: theme }],
+        features: [{ name: "prefers-color-scheme", value: osTheme }],
       });
       for (const route of ROUTES) {
-        await send("Page.navigate", { url: `http://127.0.0.1:${PORT}${route}` });
+        await send("Page.navigate", { url: `${origin}${route}` });
         if (!(await settled(evaluate))) {
           failures.push(`${route} @${width} ${theme}: page never finished styling`);
           continue;
+        }
+        const renderedTheme = await evaluate(`(() => {
+          const colour = document.querySelector("[data-theme-color]");
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 1;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          const pixel = (value) => {
+            context.clearRect(0, 0, 1, 1);
+            context.fillStyle = value;
+            context.fillRect(0, 0, 1, 1);
+            return [...context.getImageData(0, 0, 1, 1).data];
+          };
+          return {
+            theme: document.documentElement.dataset.theme ?? null,
+            colourScheme: getComputedStyle(document.documentElement).colorScheme,
+            metaScheme: document.querySelector('meta[name="color-scheme"]')?.getAttribute("content"),
+            iconMatchesTheme:
+              document.querySelector("[data-theme-icon]")?.getAttribute("href") ===
+              document.querySelector("[data-theme-icon]")?.getAttribute("data-" + ${JSON.stringify(theme)}),
+            chromeMatchesPage:
+              colour !== null &&
+              pixel(colour.getAttribute("content"))
+                .every((channel, index) => channel === pixel(getComputedStyle(document.body).backgroundColor)[index]),
+          };
+        })()`);
+        if (renderedTheme?.theme !== theme) {
+          failures.push(
+            `${route} @${width} ${theme}: stored theme resolved to ${renderedTheme?.theme ?? "unknown"}`,
+          );
+        }
+        if (renderedTheme?.colourScheme !== theme || renderedTheme?.metaScheme !== theme) {
+          failures.push(`${route} @${width} ${theme}: native controls did not follow the stored theme`);
+        }
+        if (!renderedTheme?.chromeMatchesPage) {
+          failures.push(`${route} @${width} ${theme}: browser chrome and page theme disagree`);
+        }
+        if (!renderedTheme?.iconMatchesTheme) {
+          failures.push(`${route} @${width} ${theme}: favicon did not follow the stored theme`);
         }
         const r = await evaluate(PROBE);
         if (!r) {

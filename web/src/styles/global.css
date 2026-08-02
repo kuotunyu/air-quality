@@ -43,7 +43,9 @@
  */
 
 :root {
-  color-scheme: light dark;
+  /* 2026-08-02 — supersedes the OS-driven rationale above: native controls and
+     page tokens follow the reader's explicit root theme. */
+  color-scheme: light;
 
   /*
    * The document's base size, and the anchor for every other size on the page.
@@ -88,9 +90,14 @@
    * here: 250 is the LOW-concentration end, so even if a reader did somehow
    * read hue off a surface, it could not be mistaken for a high reading.
    */
-  --bg: oklch(0.970 0.009 250);
-  --bg-raised: oklch(0.993 0.012 250);
-  --bg-sunken: oklch(0.945 0.009 250);
+  /*
+   * 2026-08-02 — supersedes the cool-anchor rationale above for reading
+   * surfaces. Browser measurements selected fog-white and restrained green-grey
+   * surfaces that keep hue subordinate to the unchanged data palette.
+   */
+  --bg: oklch(0.971 0.003 145.5); /* #f4f6f4 */
+  --bg-raised: oklch(0.990 0.003 128.5); /* #fbfcfa */
+  --bg-sunken: oklch(0.939 0.005 165); /* #e8ecea */
   --line: oklch(0.858 0.009 250);
   --line-soft: oklch(0.918 0.009 250);
   /* The chapter divider, and the only line on the page that carries meaning
@@ -124,9 +131,10 @@
    * on purpose: it labels axes and figures, and pushing it to 80 would leave
    * the three inks too close to read as three levels.
    */
-  --text: oklch(0.252 0.010 250);
-  --text-muted: oklch(0.404 0.012 250);
-  --text-faint: oklch(0.493 0.012 250);
+  --text: oklch(0.236 0.022 210); /* #112124 */
+  --text-muted: oklch(0.392 0.016 210); /* #3c484a */
+  --text-faint: oklch(0.482 0.014 210); /* #556063 */
+  --editorial-accent: oklch(0.490 0.130 34);
 
   /*
    * Concentration ramp, low to high — and the one place on this page where
@@ -627,8 +635,9 @@
  * background. Hue order is identical in both, so both encode the same thing;
  * only the direction of the value ramp follows the paper.
  */
-@media (prefers-color-scheme: dark) {
-  :root {
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
     --bg: oklch(0.205 0.009 250);
     --bg-raised: oklch(0.262 0.009 250);
     --bg-sunken: oklch(0.168 0.012 250);
@@ -746,7 +755,6 @@
     --tint-neutral: oklch(0.245 0.006 250);
     --tint-caution: oklch(0.258 0.022 85);
     --tint-caution-edge: oklch(0.402 0.048 85);
-  }
 }
 
 * {
@@ -2963,7 +2971,7 @@ button:hover {
 @media print {
   /* Paper is paper. Forcing the light tokens rather than trusting the reader's
      system means a dark-mode reader does not print a near-black page. */
-  :root {
+  :root[data-theme] {
     color-scheme: light;
     --bg: #ffffff;
     --bg-raised: #ffffff;

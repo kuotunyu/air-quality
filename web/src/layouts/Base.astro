@@ -14,6 +14,7 @@ import { repoCommit, repoUrl } from "../lib/repo";
 import FigureTools from "../components/FigureTools.astro";
 import TableTools from "../components/TableTools.astro";
 import PlotReadout from "../components/PlotReadout.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
 
 interface Props {
   title: string;
@@ -87,7 +88,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 ---
 
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -96,7 +97,13 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
     {/* Light first, which is what `global.css` declares and what this document
         decided its reading situation is. This said `dark light` — a leftover from
         when dark was the default, and it disagreed with the stylesheet. */}
-    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="color-scheme"
+      content="light"
+      data-theme-scheme
+      data-light="light"
+      data-dark="dark"
+    />
 
     {/*
       The colour a phone paints its own chrome with, one per theme.
@@ -111,8 +118,16 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       hand — the first attempt converted the wrong lightness and came out
       #f3f6fa against the page's real #f1f6fb.
     */}
-    <meta name="theme-color" content="#f1f6fb" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#14181b" media="(prefers-color-scheme: dark)" />
+    {/* 2026-08-02 — supersedes the media-query mechanism above: the reading
+        theme is now an explicit stored choice, and the light chrome uses the
+        measured fog-white page surface. */}
+    <meta
+      name="theme-color"
+      content="#f4f6f4"
+      data-theme-color
+      data-light="#f4f6f4"
+      data-dark="#14181b"
+    />
 
     {
       unaddressed ? (
@@ -139,8 +154,33 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
     />
     <meta name="twitter:card" content="summary_large_image" />
 
-    <link rel="icon" href={iconLight} media="(prefers-color-scheme: light)" />
-    <link rel="icon" href={iconDark} media="(prefers-color-scheme: dark)" />
+    <link
+      rel="icon"
+      href={iconLight}
+      data-theme-icon
+      data-light={iconLight}
+      data-dark={iconDark}
+    />
+    <script is:inline>
+      (() => {
+        const root = document.documentElement;
+        root.classList.add("has-js");
+        let theme = "light";
+        try {
+          const stored = localStorage.getItem("twair-theme");
+          if (stored === "light" || stored === "dark") theme = stored;
+        } catch {
+          /* The static light theme remains usable when storage is unavailable. */
+        }
+        root.dataset.theme = theme;
+        for (const element of document.querySelectorAll(
+          "[data-theme-scheme], [data-theme-color], [data-theme-icon]",
+        )) {
+          const value = element.getAttribute(`data-${theme}`);
+          if (value) element.setAttribute(element.matches("meta") ? "content" : "href", value);
+        }
+      })();
+    </script>
     <link rel="sitemap" type="application/xml" href={href("sitemap.xml")} />
   </head>
   <body>
@@ -215,6 +255,8 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
           </ol>
         </nav>
 
+        <ThemeToggle />
+
         {/* Reading progress, on the rail's own edge rather than across the top.
             Driven by a scroll timeline, so there is no listener to keep in sync;
             where the timeline is unsupported the bar simply stays at zero
@@ -244,6 +286,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
               )
             }
           </p>
+          <ThemeToggle />
         </div>
 
         <main id="main">

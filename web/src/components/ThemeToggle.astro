@@ -1,0 +1,114 @@
+<button
+  type="button"
+  class="theme-toggle"
+  data-theme-toggle
+  aria-label="深色模式（深色／淺色）"
+  aria-pressed="false"
+>
+  <span aria-hidden="true" class="theme-toggle-mark"></span>
+  <span class="theme-toggle-label">深色</span>
+</button>
+
+<script>
+  const KEY = "twair-theme";
+  type Theme = "light" | "dark";
+
+  function syncChrome(theme: Theme) {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      "[data-theme-scheme], [data-theme-color], [data-theme-icon]",
+    )) {
+      const value = element.dataset[theme];
+      if (value) {
+        element.setAttribute(element.matches("meta") ? "content" : "href", value);
+      }
+    }
+  }
+
+  function apply(theme: Theme, persist = true) {
+    document.documentElement.dataset.theme = theme;
+    if (persist) {
+      try {
+        localStorage.setItem(KEY, theme);
+      } catch {
+        /* light remains usable */
+      }
+    }
+    for (const button of document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]")) {
+      const dark = theme === "dark";
+      button.setAttribute("aria-pressed", String(dark));
+      const label = button.querySelector<HTMLElement>(".theme-toggle-label");
+      if (label) label.textContent = dark ? "淺色" : "深色";
+    }
+    syncChrome(theme);
+  }
+
+  const initialTheme: Theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  apply(initialTheme, false);
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]")) {
+    button.addEventListener("click", () => {
+      apply(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+    });
+  }
+</script>
+
+<style>
+  .theme-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    min-height: 2.4rem;
+    padding: 0 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :global(.has-js) .theme-toggle {
+    display: inline-flex;
+  }
+
+  .theme-toggle:hover {
+    border-color: var(--rule);
+    background: var(--bg-sunken);
+    color: var(--text);
+  }
+
+  .theme-toggle-mark {
+    width: 0.85em;
+    height: 0.85em;
+    flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+    transform: rotate(-25deg);
+  }
+
+  :global(.rail) .theme-toggle {
+    width: 100%;
+    justify-content: flex-start;
+    margin-block-start: auto;
+  }
+
+  :global(.handle) .theme-toggle {
+    flex: none;
+    margin-inline-start: auto;
+  }
+
+  @media (max-width: 79.999rem) {
+    :global(.rail) .theme-toggle {
+      display: none;
+    }
+  }
+</style>
