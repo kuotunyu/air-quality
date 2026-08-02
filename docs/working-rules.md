@@ -1,9 +1,12 @@
----
-name: twair
-description: Working rules for the air-quality / twair repo — the reanalysis of a 2018 PM2.5 graduation project over 44 years of MOENV hourly data. Load when touching anything in this repo: the ingest pipeline, QC, the Parquet store, analysis modules, forecasting, or the web front end. Covers architecture, hard-won data gotchas, commands, testing conventions, and the per-commit handoff routine that keeps PROGRESS.md and the docs from drifting.
----
-
 # twair — working rules
+
+> Read this before touching anything in this repository: the ingest
+> pipeline, QC, the Parquet store, the analysis modules, forecasting, or
+> the web front end. It covers the architecture, the data gotchas that cost
+> real time to find, the commands, the testing conventions, and the
+> per-commit routine that keeps `PROGRESS.md` and the docs from drifting.
+>
+> `AGENTS.md` is the short version. This is the long one.
 
 ## What this project is
 
@@ -704,11 +707,20 @@ Explain what was *learned*, not just what changed — especially when a finding
 contradicts an earlier claim. Prior commits corrected the "three generations by
 era" story and the wind-sentinel overreach; keep doing that.
 
-**No `Co-Authored-By` trailer.** The owner wants this repository authored by
-one person, which is their call to make about their own project. The first 55
-commits carried `Co-Authored-By: Claude Opus 5` and were rewritten before the
-repo ever had a remote — free then, a force-push and a diverged history after.
-If you are about to add one, do not.
+**No `Co-Authored-By` trailer, ever.** The owner wants this repository authored
+by one person and its contributor list to name one person, which is their call
+to make about their own project.
+
+This has gone wrong twice, and the second time is the instructive one. Checking
+`git log --format='%an <%ae>' | sort -u` and seeing a single name proves
+nothing: GitHub builds its Contributors panel from co-author trailers as well as
+the author field, so that check passed while the panel showed two. The first 55
+commits were rewritten before the repo had a remote — free then. Forty-nine
+more were rewritten after it had one, which cost a force-push and a diverged
+history.
+
+Verify with `git log --format='%B' | grep -ci "^co-authored-by"`; it must be 0.
+If you are about to add a trailer, do not.
 
 Use `git commit -F <file>` — this is Git Bash, so PowerShell here-strings
 (`@'...'@`) break, and apostrophes in `-m` truncate the message.

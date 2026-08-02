@@ -14,7 +14,7 @@ This gate exists because the drift has already happened three times:
         lockdown, not a government.
   ch.4  registry 污染物的來向 / h1 污染來向與風速條件 — and the registry was
         holding a THIRD name. The rename to 污染來向與風速條件 is recorded in
-        `.claude/skills/twair/SKILL.md`; the component took it, this file did not.
+        `docs/working-rules.md`; the component took it, this file did not.
   ch.7  registry 健康負擔與它的假設 / h1 健康負擔估計的假設敏感度.
 
 Nothing was watching, so a fix by hand on one chapter said nothing about the

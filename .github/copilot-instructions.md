@@ -4,7 +4,7 @@
 # Rules for AI coding agents
 
 > 給人看的說明：這份檔案是給 AI coding agent（GitHub Copilot、Antigravity、
-> Claude Code 等）讀的規則。`.github/copilot-instructions.md` 是它的**產生物**——
+> GitHub Copilot 等）讀的規則。`.github/copilot-instructions.md` 是它的**產生物**——
 > 改這一份，然後跑 `uv run python scripts/mirror_agents.py`，絕不手改副本。
 > CI 會用 `--check` 驗，所以忘記重生是紅燈而不是兩個 agent 讀到不同規則。
 > 人類看的完整規劃在 `PLAN.md` 與 `PROGRESS.md`。

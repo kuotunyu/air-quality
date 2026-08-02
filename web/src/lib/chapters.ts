@@ -65,7 +65,7 @@ export const CHAPTERS: readonly Chapter[] = [
      * 污染來向與風速條件, matching the h1 — and this entry was the stale one.
      *
      * The rename 「壞空氣是從哪個方向來的」 → 「污染來向與風速條件」 is recorded in
-     * `.claude/skills/twair/SKILL.md`; the component took it and this file did
+     * `docs/working-rules.md`; the component took it and this file did
      * not, so the registry sat on a THIRD name that was neither. It named half
      * the method: the chart is a CBPF, conditioned on wind speed as well as
      * direction, and 風速條件 is the half that makes the finding a finding.
