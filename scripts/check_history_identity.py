@@ -106,10 +106,14 @@ def _expected_identity(config: dict[str, Any]) -> tuple[str, str]:
     return name, email
 
 
-def main() -> int:
+def main(argv: Sequence[str] = ()) -> int:
     try:
+        args = list(argv)
+        if len(args) > 1:
+            raise ValueError("history identity check accepts at most one revision")
+        revision = args[0] if args else "HEAD"
         expected_name, expected_email = _expected_identity(load_conf("project"))
-        commits = read_history()
+        commits = read_history(revision)
     except (
         OSError,
         RuntimeError,
@@ -130,9 +134,9 @@ def main() -> int:
             print(violation, file=sys.stderr)
         return 1
 
-    print(f"history identity check passed: {len(commits)} commits reachable from HEAD")
+    print(f"history identity check passed: {len(commits)} commits reachable from {revision}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

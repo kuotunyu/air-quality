@@ -19,9 +19,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          # A pull request normally checks out a synthetic merge commit whose
-          # identity will never enter the branch. Audit the proposed head.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Keep the default synthetic merge checkout for pull requests. The
+          # identity gate below audits the proposed head revision explicitly.
           # Full history, because `check_web_export.py` verifies that the sha
           # the data export stamped is a commit this repository actually has.
           # The default depth-1 clone holds only the tip, so an export stamped
@@ -44,7 +43,7 @@ jobs:
       # The contributor panel can change through author metadata or a trailer;
       # checking only the latest commit misses both historical routes.
       - name: The published history keeps one identity
-        run: uv run python scripts/check_history_identity.py
+        run: uv run python scripts/check_history_identity.py "${{ github.event.pull_request.head.sha || github.sha }}"
 
       - name: The test inventory matches its reviewed count
         run: uv run python scripts/check_test_count.py

@@ -8,6 +8,8 @@ import pytest
 from scripts import check_history_identity
 from scripts.check_history_identity import find_violations, parse_history
 
+from twair.paths import REPO_ROOT
+
 EXPECTED_NAME = "kuotunyu"
 EXPECTED_EMAIL = "61350295+kuotunyu@users.noreply.github.com"
 
@@ -90,10 +92,49 @@ def test_the_cli_reports_how_many_reachable_commits_it_checked(
             "history": {"allowed_identity": {"name": EXPECTED_NAME, "email": EXPECTED_EMAIL}}
         },
     )
-    monkeypatch.setattr(check_history_identity, "read_history", lambda: parse_history(_record()))
+    monkeypatch.setattr(
+        check_history_identity,
+        "read_history",
+        lambda _revision="HEAD": parse_history(_record()),
+    )
 
     assert check_history_identity.main() == 0
     assert "1 commits reachable from HEAD" in capsys.readouterr().out
+
+
+def test_the_cli_can_audit_an_explicit_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str] = []
+    monkeypatch.setattr(
+        check_history_identity,
+        "load_conf",
+        lambda _name: {
+            "history": {"allowed_identity": {"name": EXPECTED_NAME, "email": EXPECTED_EMAIL}}
+        },
+    )
+
+    def read_revision(revision: str = "HEAD") -> list[check_history_identity.CommitIdentity]:
+        seen.append(revision)
+        return parse_history(_record())
+
+    monkeypatch.setattr(check_history_identity, "read_history", read_revision)
+
+    assert check_history_identity.main(["candidate-sha"]) == 0
+    assert seen == ["candidate-sha"]
+
+
+def test_prs_audit_the_head_but_test_the_default_merge_checkout() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    checkout = workflow.split("      - name: Checkout Code", 1)[1].split(
+        "      - name: Install Astral uv", 1
+    )[0]
+
+    assert "\n          ref:" not in checkout
+    assert (
+        'run: uv run python scripts/check_history_identity.py "${{ '
+        'github.event.pull_request.head.sha || github.sha }}"'
+    ) in workflow
 
 
 def test_the_cli_lists_every_bad_commit_but_not_the_unexpected_identity(
@@ -109,7 +150,11 @@ def test_the_cli_lists_every_bad_commit_but_not_the_unexpected_identity(
             "history": {"allowed_identity": {"name": EXPECTED_NAME, "email": EXPECTED_EMAIL}}
         },
     )
-    monkeypatch.setattr(check_history_identity, "read_history", lambda: parse_history(raw))
+    monkeypatch.setattr(
+        check_history_identity,
+        "read_history",
+        lambda _revision="HEAD": parse_history(raw),
+    )
 
     assert check_history_identity.main() == 1
     stderr = capsys.readouterr().err
@@ -144,7 +189,7 @@ def test_an_operational_git_error_is_a_quiet_nonzero_exit(
         },
     )
 
-    def fail() -> list[check_history_identity.CommitIdentity]:
+    def fail(_revision: str = "HEAD") -> list[check_history_identity.CommitIdentity]:
         raise RuntimeError("private git diagnostic")
 
     monkeypatch.setattr(check_history_identity, "read_history", fail)
