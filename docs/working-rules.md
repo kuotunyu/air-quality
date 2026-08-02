@@ -722,7 +722,15 @@ commits were rewritten before the repo had a remote — free then. Forty-nine
 more were rewritten after it had one, which cost a force-push and a diverged
 history.
 
-Verify with `git log --format='%B' | grep -ci "^co-authored-by"`; it must be 0.
+The completion and CI gate is:
+
+```bash
+uv run python scripts/check_history_identity.py
+```
+
+It checks every commit reachable from `HEAD`, not just the latest one, and
+names each offending SHA and field without copying an unexpected identity into
+a public log. Manual `git log` commands are diagnostic aids, not the gate.
 If you are about to add a trailer, do not.
 
 Use `git commit -F <file>` — this is Git Bash, so PowerShell here-strings

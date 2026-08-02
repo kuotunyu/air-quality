@@ -47,7 +47,7 @@ class TestNorwayProblem:
 
 
 class TestShippedConfigs:
-    @pytest.mark.parametrize("name", ["pollutants", "qc"])
+    @pytest.mark.parametrize("name", ["pollutants", "project", "qc"])
     def test_configs_load_without_boolean_keys(self, name: str) -> None:
         assert load_conf(name)
 

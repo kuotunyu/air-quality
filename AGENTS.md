@@ -96,7 +96,14 @@ If you are about to write a person's name, stop.
 
 ## ✅ Before you say a task is done
 
-Run all three. All three must pass.
+Run every gate below. Every one must pass.
+
+```bash
+uv run python scripts/check_history_identity.py
+```
+
+This checks every commit reachable from `HEAD`: author, committer, and the
+commit body. A latest-commit check is not enough.
 
 ```bash
 uv run pytest -q
@@ -236,6 +243,7 @@ Windows; PowerShell here-strings break, and apostrophes in `-m` truncate).
 | What is actually on disk now? | `uv run twair status` |
 | What is decided, blocked, or next? | `HANDOFF.md` |
 | Why was a decision made? | `PROGRESS.md` |
+| What identity may appear in history? | `conf/project.yaml` |
 | What is the overall plan? | `PLAN.md` |
 | Why is the archive parsing so complicated? | `docs/archive-formats.md` |
 | What are the known data-quality properties? | `docs/data-quality.md` |
