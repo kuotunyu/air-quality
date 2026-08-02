@@ -221,9 +221,43 @@ class Element:
         return " ".join("".join(parts).split())
 
 
+def _without_css_comments(style: str) -> str | None:
+    result: list[str] = []
+    index = 0
+    quote: str | None = None
+    while index < len(style):
+        character = style[index]
+        if quote is not None:
+            result.append(character)
+            if character == "\\" and index + 1 < len(style):
+                index += 1
+                result.append(style[index])
+            elif character == quote:
+                quote = None
+            index += 1
+            continue
+        if character in {'"', "'"}:
+            quote = character
+            result.append(character)
+            index += 1
+            continue
+        if style.startswith("/*", index):
+            end = style.find("*/", index + 2)
+            if end < 0:
+                return None
+            index = end + 2
+            continue
+        result.append(character)
+        index += 1
+    return "".join(result)
+
+
 def _hidden_by_inline_style(style: str | None) -> bool:
+    uncommented = _without_css_comments(style or "")
+    if uncommented is None:
+        return True
     declarations: dict[str, tuple[str, bool]] = {}
-    for declaration in (style or "").split(";"):
+    for declaration in uncommented.split(";"):
         property_name, separator, value = declaration.partition(":")
         if separator:
             name = property_name.strip().lower()
@@ -504,8 +538,20 @@ def home_failures_for(page: pathlib.Path) -> list[str]:
     return home_failures_for_text(page.read_text(encoding="utf-8"))
 
 
+def _fully_unquote(value: str) -> str:
+    decoded = value
+    while True:
+        previous = decoded
+        decoded = unquote(previous)
+        if decoded == previous:
+            return decoded
+
+
 def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
     if not href:
+        return None
+    normalized_href = _fully_unquote(href).replace("\\", "/")
+    if normalized_href.startswith("//"):
         return None
     parsed = urlsplit(href)
     if (
@@ -521,12 +567,7 @@ def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
     for raw_segment in parsed.path.split("/"):
         if not raw_segment:
             continue
-        segment = raw_segment
-        while True:
-            decoded = unquote(segment)
-            if decoded == segment:
-                break
-            segment = decoded
+        segment = _fully_unquote(raw_segment)
         if segment in {".", ".."} or "/" in segment or "\\" in segment:
             return None
         segments.append(segment)
@@ -719,6 +760,29 @@ def _run_preflight() -> None:
             "home HTML preflight rejected the valid important cascade control: "
             f"{valid_important_cascade_home_failures}"
         )
+    valid_commented_cascade_home = valid_home.replace(
+        '<a href="/explore/">Path 4</a>',
+        '<a href="/explore/" style="display: none; dis/**/play: block">Path 4</a>',
+    )
+    valid_commented_cascade_home_failures = home_failures_for_text(valid_commented_cascade_home)
+    if valid_commented_cascade_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid commented cascade control: "
+            f"{valid_commented_cascade_home_failures}"
+        )
+    valid_commented_important_cascade_home = valid_home.replace(
+        '<a href="/explore/">Path 4</a>',
+        '<a href="/explore/" '
+        'style="display: none !important; display: b/**/lock !/**/important">Path 4</a>',
+    )
+    valid_commented_important_cascade_home_failures = home_failures_for_text(
+        valid_commented_important_cascade_home
+    )
+    if valid_commented_important_cascade_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid commented important cascade control: "
+            f"{valid_commented_important_cascade_home_failures}"
+        )
 
     home_mutations = {
         "empty start-here": (
@@ -757,6 +821,37 @@ def _run_preflight() -> None:
             valid_home.replace(
                 '<a href="/explore/">Path 4</a>',
                 '<a href="/explore/" style="display: none !important; display: block">Path 4</a>',
+            ),
+        ),
+        "commented important inline-hidden link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" '
+                'style="display: none/**/!important; display: block">Path 4</a>',
+            ),
+        ),
+        "commented property inline-hidden link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" '
+                'style="dis/**/play: none !important; display: block">Path 4</a>',
+            ),
+        ),
+        "commented value inline-hidden link": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" '
+                'style="display/**/: n/**/one !important; display: block">Path 4</a>',
+            ),
+        ),
+        "unclosed style comment": (
+            "nav.start-here must contain exactly four visible links, found 3",
+            valid_home.replace(
+                '<a href="/explore/">Path 4</a>',
+                '<a href="/explore/" style="display: block; /*">Path 4</a>',
             ),
         ),
         "later important inline-hidden link": (
@@ -809,6 +904,22 @@ def _run_preflight() -> None:
         "encoded backslash base prefix": (
             "nav.start-here links must target ",
             valid_home.replace('href="/', 'href="/project%5c../'),
+        ),
+        "triple-slash network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="///'),
+        ),
+        "authority network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="//host/'),
+        ),
+        "encoded authority network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="%2f%2fhost/'),
+        ),
+        "encoded backslash authority path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="%5c%5chost/'),
         ),
     }
     for name, (expected_failure, html) in home_mutations.items():
