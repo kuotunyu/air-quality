@@ -284,7 +284,6 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 | `impute_method` | categorical | |
 | `source` | categorical | airtw_yearly / moenv_api / … |
 
-**Wide 表**（衍生，`data/processed/hourly_wide/`）：DuckDB PIVOT 產生，供建模直接使用
 **日/月聚合表**：含 `n_valid`、`coverage_ratio` 欄位（**聚合前必須檢查覆蓋率，原專題沒做**）
 
 #### 1.4 資料品質報告

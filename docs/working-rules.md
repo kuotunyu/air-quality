@@ -60,7 +60,7 @@ comparison. Every such choice is written into the payload beside the numbers it
 produced, so a reader sees the assumption without reading the source.
 
 Data flow: `raw archives → long observations (Parquet, Hive year/month) →
-{daily, monthly, hourly_wide} → analysis → web export`.
+{daily, monthly} → analysis → web export`.
 
 **The long table is the source of truth.** It is the only shape that can
 record *why* a value is absent. Wide and aggregate tables are derived and
@@ -173,8 +173,9 @@ dtype drift.
 
 ### PM10 is not a predictor of PM2.5
 
-PM2.5 is a physical subset of PM10. `modelling_columns()` excludes it by
-default. It remains available for ratio features. Measured cost of the leak:
+PM2.5 is a physical subset of PM10. Every module that builds a feature
+matrix excludes it by default — see `FEATURE_SETS` in
+`analysis/drivers.py`. It remains available for ratio features. Measured cost of the leak:
 **32.1% of the leaking model's R²** (0.524 without, 0.772 with).
 
 ### Circular encoding matters for linear models, not for trees
