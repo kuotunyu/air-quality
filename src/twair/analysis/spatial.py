@@ -1123,7 +1123,27 @@ def weights_sensitivity(
             record["main_island_only"] = main_island_only
             rows.append(record)
 
-    return pl.DataFrame(rows, infer_schema_length=None)
+    # `_score` returns four keys when it refuses and twelve when it succeeds, and
+    # `infer_schema_length=None` unions whatever it is given — so this frame's
+    # SCHEMA depends on whether any weighting produced a result. If every one
+    # refused, `n_islands` and `z` are simply absent, and `cli.py` selects them
+    # unconditionally: ColumnNotFoundError after `field_skill`'s kriging and five
+    # rounds of 999 residual null draws, with nothing written.
+    #
+    # Reachable: `run_spatial`'s guard counts stations that have COORDINATES,
+    # while every scope here needs stations complete in every month. Reproduced
+    # on a synthetic panel with 40 placed and 6 complete — the guard passes, this
+    # returns 7 columns, and the CLI raises. At 5 or fewer `lisa` fails earlier
+    # inside `run_spatial`, so the window is exactly 6 and 7.
+    #
+    # `_attach_fdr` already guards the same hazard with
+    # `if "p_simulated" not in frame.columns`. This is that guard, stated as the
+    # schema rather than discovered by a caller.
+    frame = pl.DataFrame(rows, infer_schema_length=None)
+    for column in ("i", "z", "n_islands", "p_simulated"):
+        if column not in frame.columns:
+            frame = frame.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
+    return frame
 
 
 # --------------------------------------------------------------------------- #

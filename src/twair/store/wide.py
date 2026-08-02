@@ -6,6 +6,13 @@ artefact, regenerated rather than edited, and it deliberately keeps the
 distinction the 2018 project erased: a cell is null here because the reading
 was missing, rejected, or never measured at that station, and the companion
 ``*_flag`` columns say which.
+
+⚠️ **Nothing in the pipeline calls this yet.** M2, M9 and the Space bundle each
+pivot their own frame inline, so `build_wide` and `scan_wide` have no callers
+outside the tests — which is how `scan_wide` came to raise `SchemaError` on any
+multi-decade store without anyone noticing. That is fixed, but the choice
+between wiring this in and deleting it in favour of the three inline pivots is
+still open.
 """
 
 from __future__ import annotations
@@ -90,8 +97,30 @@ def build_wide(years: list[int], root: Path | None = None) -> dict[int, int]:
 
 
 def scan_wide(root: Path | None = None) -> pl.LazyFrame:
-    target = (root or processed_dir(WIDE)) if root else processed_dir(WIDE)
-    return pl.scan_parquet(str(target / "*.parquet"))
+    """Every year's wide file as one lazy frame.
+
+    This was ``pl.scan_parquet(target / "*.parquet")``, and a glob scan needs
+    one schema. These files do not have one: :func:`wide_year` pivots on the
+    pollutants a year actually contains, and the network's measurands changed
+    over four decades. 1994 has no PM2.5 column at all; 2015 does. Files sort
+    numerically, so the oldest and narrowest year is always the anchor and every
+    later one is 「extra column in file outside of expected schema」.
+
+    Measured on a two-year fixture: 1994 pivots to 6 columns, 2015 to 8, and the
+    scan raised ``SchemaError`` on PM2.5 — meaning it failed on every store
+    spanning a measurand's introduction, which is every real one.
+
+    ``diagonal_relaxed`` is what :mod:`twair.build` already uses for this exact
+    shape, a column that appears partway through the record. Years before a
+    measurand existed read null, which is the honest value: the long table is
+    still where 「missing」, 「rejected」 and 「never measured here」 are told
+    apart, and that is why it remains the source of truth.
+    """
+    target = root or processed_dir(WIDE)
+    files = sorted(target.glob("*.parquet"))
+    if not files:
+        return pl.LazyFrame()
+    return pl.concat([pl.scan_parquet(path) for path in files], how="diagonal_relaxed")
 
 
 def modelling_columns(frame: pl.DataFrame | pl.LazyFrame) -> list[str]:

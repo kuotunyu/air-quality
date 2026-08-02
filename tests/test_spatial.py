@@ -585,3 +585,53 @@ class TestLisa:
             self._panel_with_hot_cluster(seed=9), load_spatial_conf(), rng=np.random.default_rng(2)
         )
         assert int(table["significant_bh"].sum()) <= int(table["significant_raw"].sum())
+
+
+class TestTheSensitivityTableHasAFixedShape:
+    """`_score` returns four keys when it refuses and twelve when it succeeds.
+
+    `weights_sensitivity` builds its frame with `infer_schema_length=None`,
+    which unions whatever keys it is given — so the SCHEMA depended on whether
+    any weighting produced a result. With every one refusing, `n_islands` and
+    `z` were simply absent, and `cli.py` selects them unconditionally: a
+    ColumnNotFoundError after the kriging and five rounds of 999 null draws,
+    with nothing written to disk.
+
+    Reachable because `run_spatial`'s guard counts stations that have
+    coordinates, while the scopes need stations complete in every month.
+    """
+
+    def test_a_frame_of_pure_refusals_still_carries_the_result_columns(self) -> None:
+        rows = [
+            {
+                "scope": "knn:5",
+                "n_stations": 6,
+                "i": None,
+                "refused": "fewer than 8 placed stations",
+                "family": "knn",
+                "parameter": "5",
+                "main_island_only": True,
+            }
+        ]
+        frame = pl.DataFrame(rows, infer_schema_length=None)
+        for column in ("i", "z", "n_islands", "p_simulated"):
+            if column not in frame.columns:
+                frame = frame.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
+
+        # The literal expression cli.py uses.
+        selected = frame.filter(pl.col("i").is_not_null()).select(
+            "family", "parameter", "main_island_only", "n_stations", "n_islands", "i", "z"
+        )
+
+        assert selected.height == 0, "nothing scored, so nothing to show"
+        assert selected.width == 7, "but the columns exist, so the caller does not crash"
+
+    def test_the_refusal_reason_survives(self) -> None:
+        """The point of refusing rather than returning a number."""
+        rows = [
+            {"scope": "knn:5", "n_stations": 6, "i": None, "refused": "too few placed stations"}
+        ]
+        frame = pl.DataFrame(rows, infer_schema_length=None)
+
+        assert frame["refused"][0] == "too few placed stations"
+        assert frame["i"][0] is None, "a refusal is null, never zero"

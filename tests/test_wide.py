@@ -122,3 +122,61 @@ def test_missing_year_returns_empty(tmp_path: Path) -> None:
     root = _store(tmp_path, [("二林", "PM2.5", TS, 20.0, Flag.VALID.value)])
 
     assert wide_year(1999, root).is_empty()
+
+
+class TestTheYearsUnionEvenThoughTheirColumnsDiffer:
+    """`wide_year` pivots on the pollutants a year contains, and they changed.
+
+    The network did not measure the same things in 1994 and 2015, so the two
+    files have different columns — and `scan_wide` used to be a glob
+    `scan_parquet`, which needs one schema. Files sort numerically, so the
+    oldest and narrowest year is always the anchor: polars raised
+    「extra column in file outside of expected schema: PM2.5」 on every store
+    spanning a measurand's introduction, which is every real one.
+
+    Nothing in the pipeline calls `scan_wide`, which is why it went unnoticed.
+    """
+
+    @staticmethod
+    def _two_years(tmp_path: Path) -> Path:
+        pl.DataFrame(
+            {
+                "station_name": ["二林"] * 3,
+                "ts_local": [1, 2, 3],
+                "PM10": [10.0] * 3,
+                "PM10_flag": ["valid"] * 3,
+            }
+        ).write_parquet(tmp_path / "1994.parquet")
+        pl.DataFrame(
+            {
+                "station_name": ["二林"] * 3,
+                "ts_local": [4, 5, 6],
+                "PM10": [11.0] * 3,
+                "PM10_flag": ["valid"] * 3,
+                "PM2.5": [7.0] * 3,
+                "PM2.5_flag": ["valid"] * 3,
+            }
+        ).write_parquet(tmp_path / "2015.parquet")
+        return tmp_path
+
+    def test_a_measurand_the_older_year_lacks_does_not_break_the_scan(self, tmp_path: Path) -> None:
+        from twair.store.wide import scan_wide
+
+        out = scan_wide(self._two_years(tmp_path)).collect()
+
+        assert out.height == 6, "both years are present"
+        assert "PM2.5" in out.columns
+
+    def test_the_years_before_a_measurand_existed_read_null(self, tmp_path: Path) -> None:
+        """Null and not zero: 1994 has no PM2.5 reading, it does not have a low one."""
+        from twair.store.wide import scan_wide
+
+        out = scan_wide(self._two_years(tmp_path)).collect().sort("ts_local")
+
+        assert out.filter(pl.col("ts_local") < 4)["PM2.5"].null_count() == 3
+        assert out.filter(pl.col("ts_local") >= 4)["PM2.5"].to_list() == [7.0, 7.0, 7.0]
+
+    def test_an_empty_directory_is_an_empty_frame_not_a_crash(self, tmp_path: Path) -> None:
+        from twair.store.wide import scan_wide
+
+        assert scan_wide(tmp_path).collect().height == 0
