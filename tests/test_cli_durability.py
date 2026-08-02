@@ -111,3 +111,75 @@ def test_the_cli_talks_utf8_whatever_the_console_says() -> None:
             assert encoding in {"utf-8", "utf8"}, f"{stream} is {encoding}"
 
     assert "┆".encode() == b"\xe2\x94\x86"
+
+
+def causal_tables() -> dict[str, pl.DataFrame]:
+    return {
+        "effects": pl.DataFrame(
+            [
+                {
+                    "event": "禁燒生煤",
+                    "station_name": "忠明",
+                    "effect": -1.5,
+                    "placebo_sd": 0.4,
+                    "credible": True,
+                }
+            ]
+        )
+    }
+
+
+def test_m5_keeps_its_event_study_when_the_optional_trend_break_cannot_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M4 is not a precondition of M5, and used to be able to destroy it.
+
+    `run_trend_breaks` reads `m4_deweather/monthly.parquet` and raises
+    FileNotFoundError when M4 has not been run. That call sat after the whole
+    event study and before `write_causal_report`, so a complete pass over every
+    station — placebo controls and all — was discarded because an optional
+    comparison could not start. Nothing orders the two: `run_causal` never
+    touches M4's output and there is no pipeline command.
+    """
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+
+    from twair.analysis import causal
+
+    monkeypatch.setattr(causal, "run_causal", lambda **_: causal_tables())
+
+    def no_m4() -> pl.DataFrame:
+        raise FileNotFoundError("m4_deweather/monthly.parquet not found — run `twair analyze m4`")
+
+    monkeypatch.setattr(causal, "run_trend_breaks", no_m4)
+
+    result = CliRunner().invoke(cli.app, ["analyze", "m5"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "outputs" / "m5_causal" / "effects.parquet").exists(), (
+        "the event study was thrown away by a step that is not a prerequisite"
+    )
+    assert "skipping trend breaks" in result.output, "the skip has to be visible, not silent"
+
+
+def test_m5_still_reports_the_trend_break_when_m4_has_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The optional step is still wired up; it is only no longer fatal."""
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+
+    from twair.analysis import causal
+
+    monkeypatch.setattr(causal, "run_causal", lambda **_: causal_tables())
+    monkeypatch.setattr(
+        causal,
+        "run_trend_breaks",
+        lambda: pl.DataFrame(
+            [{"event": "空污法修正", "station_name": "忠明", "delta": -0.2, "credible": False}]
+        ),
+    )
+
+    result = CliRunner().invoke(cli.app, ["analyze", "m5"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "outputs" / "m5_causal" / "trend_breaks.parquet").exists()
+    assert "skipping trend breaks" not in result.output

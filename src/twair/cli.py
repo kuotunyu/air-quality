@@ -748,6 +748,15 @@ def analyze_m5(
     subset = [s.strip() for s in stations.split(",")] if stations else None
 
     tables = run_causal(period=period, stations=subset, max_stations=max_stations)
+
+    # Persisted here and again below, for the reason m9 persists before it
+    # prints. The trend-break step further down reads M4's output and raises
+    # FileNotFoundError when M4 has not run — nothing makes M4 a precondition of
+    # M5, `run_causal` does not touch it, and there is no pipeline command that
+    # orders them. So a complete event study over every station was thrown away
+    # by an optional extra that could not start.
+    written = write_causal_report(tables)
+
     effects = tables["effects"]
 
     for name, group in effects.group_by("event", maintain_order=True):
@@ -773,7 +782,13 @@ def analyze_m5(
     # normalised series instead.
     from twair.analysis.causal import run_trend_breaks
 
-    breaks = run_trend_breaks()
+    try:
+        breaks = run_trend_breaks()
+    except FileNotFoundError as exc:
+        # An optional comparison, not a prerequisite. Saying so beats dying with
+        # the event study already computed and unsaved.
+        console.print(f"\n[yellow]skipping trend breaks:[/yellow] {exc}")
+        breaks = pl.DataFrame()
     if not breaks.is_empty():
         tables["trend_breaks"] = breaks
         for name, group in breaks.group_by("event", maintain_order=True):
@@ -791,7 +806,10 @@ def analyze_m5(
             if n_credible <= expected:
                 console.print("  [yellow]at or below the chance rate — no break detected[/yellow]")
 
+    # Again, because `trend_breaks` may have been added since the first write.
     for table_name, path in write_causal_report(tables).items():
+        written[table_name] = path
+    for table_name, path in written.items():
         console.print(f"wrote {table_name}: {path}")
 
 
