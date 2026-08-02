@@ -31,6 +31,7 @@ export interface Chapter {
   nav: string;
   /** The chapter's heading, repeated here for the index and for `<title>`. */
   title: string;
+  question: string;
   /** One sentence: what a reader gets by opening it. */
   claim: string;
 }
@@ -41,6 +42,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "trend",
     nav: "趨勢",
     title: "長期趨勢與氣象校正",
+    question: "監測網擴張與天氣條件扣除後，長期下降還成立嗎？",
     claim: "全台 PM2.5 確實在降，但監測網同期持續擴張——扣除這項因素，再扣除天氣，剩下的才是排放。",
   },
   {
@@ -48,6 +50,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "stations",
     nav: "測站統計",
     title: "測站個別統計",
+    question: "選定測站最近哪一年有足夠完整、可比較的資料？",
     claim: "選定測站後，顯示該站最近一個資料完整到可以比較的年份，以及它在全國的位置。",
   },
   {
@@ -55,6 +58,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "space",
     nav: "空間結構",
     title: "空間結構與官方分區",
+    question: "官方分區是否足以處理測站殘差的空間相依？",
     claim: "當年的「分區各跑一次」其實移除了大部分的空間相依——但它刊出的 t 值來自合併式模型。",
   },
   {
@@ -74,6 +78,7 @@ export const CHAPTERS: readonly Chapter[] = [
      * line — see the note on the mismatch gate in `chapterTitleMismatches`.
      */
     title: "污染來向與風速條件",
+    question: "高濃度空氣通常從什麼方位、在什麼風速下抵達？",
     claim: "把濃度按風速與風向拆開，即可看出高濃度集中在哪幾個方位。",
   },
   {
@@ -91,6 +96,7 @@ export const CHAPTERS: readonly Chapter[] = [
      * lockdown.
      */
     title: "事件效應的偵測極限",
+    question: "現有方法能分辨多小的事件效應？",
     claim: "一個方法能看見多小的效應，是可以先量出來的——量測之後才能分辨哪些「沒有顯著」其實是偵測不到。",
   },
   {
@@ -98,6 +104,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "forecast",
     nav: "預測技巧",
     title: "預測技巧與有效期距",
+    question: "預測往前走多久後不再比簡單基準有用？",
     claim: "預報到多長的期距仍然有用，以及為什麼一小時後最該有用的模型會不如一行規則。",
   },
   {
@@ -105,6 +112,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "health",
     nav: "健康負擔",
     title: "健康負擔與它的假設",
+    question: "暴露反應函數與比較基準會把可歸因比例推動多少？",
     claim: "可歸因比例算得出來，但它取決於一個幾乎從未被明說的選擇：以什麼作為比較基準。",
   },
   {
@@ -112,6 +120,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "methods",
     nav: "方法學對照",
     title: "方法選擇的量化代價",
+    question: "2018 年的方法選擇各自付出了什麼可量化代價？",
     claim: "同一份資料做兩次，一次照 2018 年的做法，一次照現在的——逐項量出每個方法選擇的代價。",
   },
   {
@@ -119,6 +128,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "explore",
     nav: "資料查詢",
     title: "資料查詢",
+    question: "如何直接查詢公開 Parquet，而不經過伺服器？",
     claim: "以 SQL 直接查詢 Parquet 檔，不經過任何伺服器。",
   },
   {
@@ -126,6 +136,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "data",
     nav: "資料與方法",
     title: "資料與方法",
+    question: "哪些資料可下載、如何重建，以及缺值為何保留？",
     claim: "三層資料的內容、授權，以及這個專案為什麼不補值。",
   },
 ] as const;

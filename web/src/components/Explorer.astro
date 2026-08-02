@@ -13,6 +13,7 @@
  * from what happened to exist on the machine that built the page.
  */
 import { pollutantIndex } from "../lib/data";
+import ChapterIntro from "./ChapterIntro.astro";
 
 const EXAMPLES = [
   {
@@ -100,13 +101,14 @@ const candidates = pollutantIndex.map((p) => ({
 ---
 
 <section id="explore" class="page">
-  <p class="eyebrow">第九章</p>
-  <h1>資料查詢</h1>
-
+  <ChapterIntro slug="explore">
   <p class="lede">
     這是一個在讀者瀏覽器內執行的資料庫。沒有查詢伺服器，沒有 API 金鑰，
     沒有任何東西被送到別的地方。按下執行才會開始下載查詢引擎（約 8 MB 傳輸量）。
   </p>
+  </ChapterIntro>
+
+  <h2>公開站日資料的瀏覽器內查詢</h2>
 
   <p>
     資料是站-日層級。每個測項一張表，表名就是測項代碼；

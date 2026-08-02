@@ -15,6 +15,7 @@
 import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data";
 import { linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, xLabelBucket, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
+import ChapterIntro from "./ChapterIntro.astro";
 
 type Row = Record<string, any>;
 const t = (name: string) => (pitfallTables[name] ?? []) as Row[];
@@ -133,15 +134,14 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 ---
 
 <section id="methods" class="page">
-  <p class="eyebrow">第八章</p>
-  <h1>方法選擇的量化代價</h1>
-
+  <ChapterIntro slug="methods">
   <p class="lede">
     這一章的對照組是一份 2018 年的大學畢業專題。它的方法是：
     取 2010–2017 年的<strong>月平均</strong>、12 個解釋變數、Pearson 相關、
     逐步剔除的 OLS，再加一個 AR(1) 混合模型，N = 7,286。
     在當時的大學部水準是合格的。
   </p>
+  </ChapterIntro>
 
   <p>
     這裡不談那份報告的作者是誰，也不重製它的任何圖表——

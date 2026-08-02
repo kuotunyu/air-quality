@@ -17,6 +17,7 @@ import sourcesData from "../../public/data/story/sources.json";
 import { bearingName, compass, SIGNATURE } from "../lib/labels";
 import { n } from "../lib/chart";
 import { groupByCountyNorthToSouth } from "../lib/data";
+import ChapterIntro from "./ChapterIntro.astro";
 
 const data = sourcesData as {
   explains: string;
@@ -124,10 +125,9 @@ const legend = BREAKS.map((b, i) => ({
 ---
 
 <section id="sources" class="page">
-  <p class="eyebrow">第四章</p>
-  <h1>污染來向與風速條件</h1>
-
+  <ChapterIntro slug="sources">
   <p class="lede">{data.explains}</p>
+  </ChapterIntro>
 
   <p>
     這張圖叫 CBPF。角度是<strong>風吹來的方位</strong>，半徑是<strong>風速</strong>——

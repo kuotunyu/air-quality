@@ -21,16 +21,16 @@
  */
 import { asset, dataFiles, hourlyObservationsShort, layerBytes, mb } from "../lib/data";
 import { repoFile } from "../lib/repo";
+import ChapterIntro from "./ChapterIntro.astro";
 ---
 
 <section id="data" class="page">
-  <p class="eyebrow">第十章</p>
-  <h1>資料與方法</h1>
-
+  <ChapterIntro slug="data">
   <p class="lede">
     所有數字都可以獨立重算。原始資料來自環境部空氣品質監測網公開的年度逐時檔，
     管線、品管規則、分析程式全部開源。
   </p>
+  </ChapterIntro>
 
   <h2>三層資料</h2>
 

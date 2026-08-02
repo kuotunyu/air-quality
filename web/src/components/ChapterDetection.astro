@@ -14,6 +14,7 @@
 import detection from "../../public/data/story/detection-limit.json";
 import { linear, n, ticks } from "../lib/chart";
 import { href } from "../lib/chapters";
+import ChapterIntro from "./ChapterIntro.astro";
 
 const events = detection.events as {
   event: string;
@@ -194,14 +195,13 @@ const shortName = (name: string) =>
 ---
 
 <section id="detection" class="page">
-  <p class="eyebrow">第五章</p>
-  <h1>事件效應的偵測極限</h1>
-
+  <ChapterIntro slug="detection">
   <p class="lede">
     這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」——
     測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
     <strong>分析方法也有偵測極限。</strong>這一章量的就是它。
   </p>
+  </ChapterIntro>
 
   <p>
     測了三個事件：2018 年空氣污染防制法修正、台中電廠 2、3 號機的生煤許可爭議、

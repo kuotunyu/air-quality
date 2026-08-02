@@ -7,6 +7,7 @@
  * this chapter used.
  */
 import TrendChart from "./TrendChart.astro";
+import ChapterIntro from "./ChapterIntro.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
 import { taiwanAnnual } from "../lib/standards";
@@ -203,14 +204,13 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
 ---
 
 <section id="trend" class="page">
-  <p class="eyebrow">第一章</p>
-  <h1>長期趨勢與氣象校正</h1>
-
+  <ChapterIntro slug="trend">
   <p class="lede">
     {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
     {" "}{n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
     <strong>監測網的測站數在同期間持續增加</strong>。
   </p>
+  </ChapterIntro>
 
   <p>
     1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，

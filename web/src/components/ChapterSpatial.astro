@@ -14,6 +14,7 @@
  */
 import spatial from "../../public/data/story/spatial-structure.json";
 import { n, nFixed, ticks } from "../lib/chart";
+import ChapterIntro from "./ChapterIntro.astro";
 
 const network = spatial.network as {
   stations: number;
@@ -150,14 +151,14 @@ const cellFor = (method: string, buffer: number) =>
 ---
 
 <section id="space" class="page">
-  <p class="eyebrow">第三章</p>
-  <h1>空間結構與官方分區</h1>
+  <ChapterIntro slug="space">
   <p class="lede">
     原始清單把這個缺陷記成「78 個測站的空間維度沒用」。動手量了之後，這句話需要修正：
     當年的做法是按空品區分層、每區各跑一次——所以誠實的問題不是「有沒有用空間」，
     而是<strong>那個分層是不是足夠的空間控制</strong>。這個問題有數字可答，
     而且答案對原文比清單上的指控公平。
   </p>
+  </ChapterIntro>
 
   <p>
     量測對象是第八章那個復刻模型的<strong>殘差</strong>，不是 PM2.5 本身——

@@ -171,6 +171,9 @@ jobs:
       - name: Every chapter's <h1> matches the name the navigation uses
         run: python3 scripts/check_chapter_titles.py
 
+      - name: Every chapter opens with the shared publication structure
+        run: python3 scripts/check_publication_structure.py
+
       # PRODUCT.md's accessibility section states four measured properties, and
       # the nineteen throwaway browser scripts that produced them were deleted
       # on purpose — .gitignore says so in prose. So the one regression that

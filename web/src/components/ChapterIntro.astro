@@ -1,0 +1,23 @@
+---
+import { chapterBySlug, chapterLabel } from "../lib/chapters";
+
+interface Props {
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const chapter = chapterBySlug(slug);
+---
+
+<header class="chapter-intro">
+  <p class="eyebrow">{chapterLabel(chapter.n)}</p>
+  <h1>{chapter.title}</h1>
+  <div class="chapter-question">
+    <p class="chapter-intro-label">本章問題</p>
+    <p>{chapter.question}</p>
+  </div>
+  <div class="chapter-finding">
+    <p class="chapter-intro-label">主要發現</p>
+    <slot />
+  </div>
+</header>

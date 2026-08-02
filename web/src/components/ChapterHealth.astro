@@ -19,6 +19,7 @@
  */
 import health from "../../public/data/story/health.json";
 import { linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter } from "../lib/chart";
+import ChapterIntro from "./ChapterIntro.astro";
 
 const series = health.series as {
   name: string;
@@ -135,7 +136,7 @@ const langOf = (s: string | null | undefined) =>
 ---
 
 <section id="health" class="page">
-  <p class="eyebrow">第七章</p>
+  <ChapterIntro slug="health">
   {/*
     健康負擔與它的假設 — the name the rail, the index, the browser tab and both
     footer steps already use. This h1 read 健康負擔估計的假設敏感度, so a reader
@@ -148,13 +149,12 @@ const langOf = (s: string | null | undefined) =>
     because chapter 5 had this same defect, it was fixed by hand, and it came
     back here and on chapter 4 with nothing watching.
   */}
-  <h1>健康負擔與它的假設</h1>
-
   <p class="lede">
     「空污每年造成 N 人死亡」這種句子裡藏著三個選擇：用哪條暴露反應函數、
     以什麼濃度作為比較基準、以及誰暴露在裡面。
     第三個這個專案沒有資料回答，前兩個有——這一章量的是<strong>這兩個選擇把答案推動多少</strong>。
   </p>
+  </ChapterIntro>
 
   <p>
     報的是<strong>可歸因比例</strong>（attributable fraction），不是人數。
