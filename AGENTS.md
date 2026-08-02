@@ -1,12 +1,14 @@
-# Rules for AI coding agents
+# Rules for coding agents
 
-> 給人看的說明：這份檔案是給 AI coding agent（GitHub Copilot、Antigravity、
-> GitHub Copilot 等）讀的規則。`.github/copilot-instructions.md` 是它的**產生物**——
+> 這是短版規則的唯一來源；版本庫中的另一份短版規則是它的**產生物**。
 > 改這一份，然後跑 `uv run python scripts/mirror_agents.py`，絕不手改副本。
-> CI 會用 `--check` 驗，所以忘記重生是紅燈而不是兩個 agent 讀到不同規則。
-> 人類看的完整規劃在 `PLAN.md` 與 `PROGRESS.md`。
+> CI 會用 `--check` 驗，所以忘記重生是紅燈而不是兩個入口讀到不同規則。
 
 Read this before changing anything. It is short on purpose.
+
+When returning to the project: read this file, read `docs/working-rules.md`,
+run `uv run twair status`, then read `HANDOFF.md`. Search `PROGRESS.md` only
+when the reason or evidence behind a decision is needed.
 
 ---
 
@@ -229,7 +231,11 @@ Windows; PowerShell here-strings break, and apostrophes in `-m` truncate).
 
 | Question | File |
 |---|---|
-| What is the current state? | `PROGRESS.md` |
+| What must I read before changing anything? | `AGENTS.md` |
+| What are the stable, hard-won rules? | `docs/working-rules.md` |
+| What is actually on disk now? | `uv run twair status` |
+| What is decided, blocked, or next? | `HANDOFF.md` |
+| Why was a decision made? | `PROGRESS.md` |
 | What is the overall plan? | `PLAN.md` |
 | Why is the archive parsing so complicated? | `docs/archive-formats.md` |
 | What are the known data-quality properties? | `docs/data-quality.md` |

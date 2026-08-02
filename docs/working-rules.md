@@ -7,6 +7,10 @@
 > per-commit routine that keeps `PROGRESS.md` and the docs from drifting.
 >
 > `AGENTS.md` is the short version. This is the long one.
+>
+> When returning: read `AGENTS.md`, read this file, run `uv run twair status`,
+> then read `HANDOFF.md`. Search `PROGRESS.md` only when a decision needs its
+> evidence or history.
 
 ## What this project is
 
@@ -20,8 +24,6 @@ The point is **not** "same analysis, newer tools". It is:
 
 Every module should be traceable to a defect in `PLAN.md`'s table (D1–D11).
 If a piece of work does not map to one, ask whether it belongs.
-
-Read `PROGRESS.md` first — it is the current state of play.
 
 ## The governing principle
 
@@ -262,9 +264,10 @@ after adding any pattern that names a common directory.
 Rebuilds `spaces/forecast/` from the store — four LightGBM models, a demo slice,
 a climatology table and a manifest. That command does **not** publish anything.
 
-Live at <https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast>
-(pushed 2026-07-29, confirmed `RUNNING`). To push an update after changing the
-bundle or `app.py`:
+The configured remote target is
+<https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast>. Its live
+state must be checked at release time, not recorded here. To push an update
+after changing the bundle or `app.py`:
 
 ```python
 from huggingface_hub import HfApi
@@ -642,9 +645,8 @@ npm run build && npm run check          # check must be 0 errors
 ```
 
 CI cannot regenerate the site's data — it has no copy of the store. **Exporting
-is a local step followed by a commit.** L0 and the story payloads are
-committed; L1 (55 MB) is gitignored except PM2.5 and PM10, which are
-committed so the explorer has something to query; L2 is not published at all.
+is a local step followed by a commit.** The publication policy for each layer
+lives in `web/README.md`; L2 is not published at all.
 
 Long runs (`ingest`, `build`) belong in the background — a full build is hours.
 `build_year` catches every exception and records it in the summary, so one bad
@@ -673,10 +675,10 @@ forty-three. Anything written per-run needs the same treatment.
 
 ### mypy is at zero — keep it there
 
-`mypy src tests` reports no issues across 75 files, and CI gates on it along
-with `ruff check .`, `ruff format --check .` and `pytest`. This is recent: the
-baseline was over a hundred errors, so a new one used to be invisible. It is
-now a regression.
+`mypy src tests` and `mypy scripts` must both report no issues. They run as two
+commands because `scripts/` contains standalone modules rather than a package;
+combining the paths makes mypy resolve the same file under two module names.
+CI gates on both commands along with ruff and pytest.
 
 Most of those errors were one thing. A Polars aggregate — `.mean()`, `.std()`,
 `.sum()`, `.max()` — is typed as a union of every value a cell could hold, and
@@ -805,22 +807,22 @@ Before any publish step, grep for names. `docs/legal.md` records the reasoning.
    exist outside this machine. `twair export web --levels L2` refuses for that
    reason.
 
-## Delegating to a cheaper agent
+## Delegation boundary
 
-Simple, well-specified work goes to GitHub Copilot / Antigravity (Gemini Flash).
-The test is **not** difficulty — it is whether verifying the result requires
-re-deriving the answer. Type annotations across 300 errors are a fine delegation
-(mypy verifies them); a one-line docstring explaining a design choice is not.
+Simple, well-specified work may be delegated. The test is **not** difficulty —
+it is whether verifying the result requires re-deriving the answer. Mechanical
+type corrections are suitable when mypy verifies them; prose explaining a
+scientific design choice is not.
 
-`AGENTS.md` and `.github/copilot-instructions.md` carry the rules those agents
-see. **`AGENTS.md` is the source; never edit the copy.** Regenerate it:
+`AGENTS.md` is the source for the two tracked short-rule entries; never edit
+the generated copy. Regenerate it:
 
 ```bash
 uv run python scripts/mirror_agents.py
 ```
 
 CI runs the same script with `--check`, so a forgotten regeneration is a red
-build rather than two agents reading different rules.
+build rather than two entry points reading different rules.
 
 The old one-liner wrote the copy with `newline="\n"` while `AGENTS.md` is
 checked out CRLF, so `diff` reported all 224 lines as different *immediately
@@ -852,7 +854,7 @@ Each commit that adds or changes a result:
 3. Update the affected **`docs/*.md`**. If a measurement contradicts something
    already written, correct it in place — never leave both versions standing.
 4. Tick the phase boxes in **`README.md`** / `PLAN.md` if a phase moved.
-5. Add any new gotcha to **this skill** — see below for what qualifies.
+5. Add any new gotcha to **this document** — see below for what qualifies.
 6. Commit.
 
 ### `uv run twair status` — the half that cannot go stale
@@ -886,7 +888,7 @@ so a renamed command breaks a test instead of misleading a reader.
 When adding a module, add it to `MODULES` in the same commit. An output
 directory with no entry prints as `?? undeclared`.
 
-### What belongs in this skill
+### What belongs in these working rules
 
 Only what would otherwise **cost the next session an hour**: a measurement that
 overturned an assumption, a bug whose symptom pointed at the wrong cause, a
@@ -895,4 +897,5 @@ format that does not behave as documented. Not a summary of what the code does
 keep in sync.
 
 The test of a good handoff: someone returning in two weeks runs `twair status`
-to see where things stand and reads `PROGRESS.md` to see why.
+to see what is on disk, reads `HANDOFF.md` to see what is decided and next, and
+searches `PROGRESS.md` only when they need the evidence behind it.
