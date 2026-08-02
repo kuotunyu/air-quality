@@ -111,20 +111,31 @@ for (const [entryIndex, entry] of initializer.elements.entries()) {
   if (!ts.isObjectLiteralExpression(entry)) {
     fail(`CHAPTERS entry ${entryIndex + 1} is not an object literal`);
   }
-  const slugProperties = entry.properties.filter((property) => {
-    if (!ts.isPropertyAssignment(property)) return false;
-    const name = property.name;
+  for (const member of entry.properties) {
+    if (ts.isSpreadAssignment(member)) {
+      fail(`entry ${entryIndex + 1} must not contain a spread assignment`);
+    }
+    if (ts.isComputedPropertyName(member.name)) {
+      fail(`entry ${entryIndex + 1} must not contain a computed property name`);
+    }
+  }
+  const slugMembers = entry.properties.filter((member) => {
+    const name = member.name;
     return (
       (ts.isIdentifier(name) && name.text === "slug") ||
       (ts.isStringLiteral(name) && name.text === "slug")
     );
   });
-  if (slugProperties.length !== 1) {
+  if (slugMembers.length !== 1) {
     fail(
-      `entry ${entryIndex + 1} must have exactly one direct slug property, found ${slugProperties.length}`,
+      `entry ${entryIndex + 1} must have exactly one direct slug member, found ${slugMembers.length}`,
     );
   }
-  const value = slugProperties[0].initializer;
+  const slugProperty = slugMembers[0];
+  if (!ts.isPropertyAssignment(slugProperty)) {
+    fail(`entry ${entryIndex + 1} slug must be a property assignment`);
+  }
+  const value = slugProperty.initializer;
   if (!ts.isStringLiteral(value) && !ts.isNoSubstitutionTemplateLiteral(value)) {
     fail(`entry ${entryIndex + 1} slug must be a string literal`);
   }
@@ -411,6 +422,9 @@ def _run_preflight() -> None:
     if _chapter_slugs_from_source(valid_registry) != valid_slugs:
         raise RuntimeError("registry preflight rejected the valid control")
 
+    def registry_with_entries(entries: list[str]) -> str:
+        return "export const CHAPTERS = [\n" + ",\n".join(entries) + "\n] as const;"
+
     comment_decoys = "\n".join(f'// slug: "comment-{index}"' for index in range(EXPECTED_CHAPTERS))
     for name, source in {
         "empty array with comment slugs": f"export const CHAPTERS = [\n{comment_decoys}\n]",
@@ -421,9 +435,21 @@ def _run_preflight() -> None:
         "slug expression": valid_registry.replace(
             f'slug: "{valid_slugs[0]}"', f'slug: "{valid_slugs[0]}" + suffix', 1
         ),
-        "regex literal slugs": "export const CHAPTERS = [\n"
-        + ",\n".join(f'{{pattern:/slug:"{slug}",/}}' for slug in valid_slugs)
-        + "\n] as const;",
+        "regex literal slugs": registry_with_entries(
+            [f'{{pattern:/slug:"{slug}",/}}' for slug in valid_slugs]
+        ),
+        "shorthand slug override": registry_with_entries(
+            [f'{{slug:"{slug}", slug}}' for slug in valid_slugs]
+        ),
+        "spread override": registry_with_entries(
+            [f'{{slug:"{slug}", ...override}}' for slug in valid_slugs]
+        ),
+        "computed property override": registry_with_entries(
+            [
+                f'{{slug:"{slug}", ["sl"+"ug"]:"override-{index}"}}'
+                for index, slug in enumerate(valid_slugs)
+            ]
+        ),
     }.items():
         try:
             _chapter_slugs_from_source(source)
