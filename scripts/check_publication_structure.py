@@ -24,6 +24,7 @@ TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "ty
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
 START_HERE_DATA_DESTINATIONS = {"/explore/", "/data/"}
+URL_C0_AND_SPACE = "".join(chr(value) for value in range(0x21))
 IGNORED_SUBTREES = {"template", "script", "style"}
 VOID_ELEMENTS = {
     "area",
@@ -150,6 +151,16 @@ if (new Set(slugs).size !== slugs.length) fail("chapter slugs must be unique");
 process.stdout.write(JSON.stringify(slugs));
 """
 
+NODE_URL_CONTROL = r"""
+const fs = require("fs");
+const hrefs = JSON.parse(fs.readFileSync(0, "utf8"));
+const base = "https://local.invalid/project/";
+process.stdout.write(JSON.stringify(hrefs.map((href) => {
+  const url = new URL(href, base);
+  return [url.origin, url.pathname];
+})));
+"""
+
 
 def _chapter_slugs_from_source(source: str) -> list[str]:
     if not TYPESCRIPT_COMPILER.exists():
@@ -189,6 +200,35 @@ def chapter_slugs() -> list[str]:
         return _chapter_slugs_from_source(source)
     except ValueError as exc:
         raise SystemExit(f"{REGISTRY} — {exc}") from exc
+
+
+def _whatwg_url_results(hrefs: list[str]) -> list[list[str]]:
+    try:
+        result = subprocess.run(
+            ["node", "-e", NODE_URL_CONTROL],
+            input=json.dumps(hrefs),
+            text=True,
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("Node.js was not found; URL preflight cannot run") from exc
+    if result.returncode != 0:
+        message = result.stderr.strip() or f"Node.js exited with status {result.returncode}"
+        raise ValueError(message)
+    try:
+        resolved = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("WHATWG URL preflight returned invalid JSON") from exc
+    if not isinstance(resolved, list) or any(
+        not isinstance(item, list)
+        or len(item) != 2
+        or any(not isinstance(value, str) for value in item)
+        for item in resolved
+    ):
+        raise ValueError("WHATWG URL preflight returned invalid results")
+    return resolved
 
 
 @dataclass
@@ -538,21 +578,25 @@ def home_failures_for(page: pathlib.Path) -> list[str]:
     return home_failures_for_text(page.read_text(encoding="utf-8"))
 
 
-def _fully_unquote(value: str) -> str:
-    decoded = value
+def _unquote_rounds(value: str) -> list[str]:
+    rounds = [value]
     while True:
-        previous = decoded
-        decoded = unquote(previous)
-        if decoded == previous:
-            return decoded
+        decoded = unquote(rounds[-1])
+        if decoded == rounds[-1]:
+            return rounds
+        rounds.append(decoded)
 
 
 def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
     if not href:
         return None
-    normalized_href = _fully_unquote(href).replace("\\", "/")
-    if normalized_href.startswith("//"):
+    href = href.strip(URL_C0_AND_SPACE)
+    href = href.replace("\t", "").replace("\n", "").replace("\r", "")
+    if not href:
         return None
+    for decoded_href in _unquote_rounds(href):
+        if decoded_href.replace("\\", "/").startswith("//"):
+            return None
     parsed = urlsplit(href)
     if (
         parsed.scheme
@@ -567,9 +611,12 @@ def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
     for raw_segment in parsed.path.split("/"):
         if not raw_segment:
             continue
-        segment = _fully_unquote(raw_segment)
-        if segment in {".", ".."} or "/" in segment or "\\" in segment:
-            return None
+        segment = raw_segment
+        for decoded_segment in _unquote_rounds(raw_segment):
+            normalized_segment = decoded_segment.replace("\\", "/")
+            if normalized_segment in {".", ".."} or "/" in normalized_segment:
+                return None
+            segment = decoded_segment
         segments.append(segment)
     if not segments:
         return None
@@ -578,6 +625,33 @@ def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
 
 
 def _run_preflight() -> None:
+    url_controls = [
+        " ///trend/",
+        "\t///trend/",
+        "\r\n///trend/",
+        "/\t//host/trend/",
+        "/\n//host/trend/",
+        "/\r//host/trend/",
+        "/%09///trend/",
+        "/%09//host/trend/",
+    ]
+    expected_url_results = [
+        ["https://trend", "/"],
+        ["https://trend", "/"],
+        ["https://trend", "/"],
+        ["https://host", "/trend/"],
+        ["https://host", "/trend/"],
+        ["https://host", "/trend/"],
+        ["https://local.invalid", "/%09///trend/"],
+        ["https://local.invalid", "/%09//host/trend/"],
+    ]
+    url_results = _whatwg_url_results(url_controls)
+    if url_results != expected_url_results:
+        raise RuntimeError(
+            "WHATWG URL preflight no longer distinguishes literal C0 prefixes "
+            f"from percent-encoded path data: {url_results}"
+        )
+
     valid_slugs = [f"chapter-{index}" for index in range(EXPECTED_CHAPTERS)]
     valid_entries = ",\n".join(
         f'{{ ratio: total / divisor, slug: "{slug}", pattern: /[a/]+\\/not-slug/giu, '
@@ -739,6 +813,31 @@ def _run_preflight() -> None:
         raise RuntimeError(
             "home HTML preflight rejected the valid base-prefixed control: "
             f"{valid_prefixed_home_failures}"
+        )
+    valid_padded_home = valid_home.replace('href="/', 'href=" \t/').replace(
+        '/">Path', '/ \r\n">Path'
+    )
+    valid_padded_home_failures = home_failures_for_text(valid_padded_home)
+    if valid_padded_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid C0-padded control: "
+            f"{valid_padded_home_failures}"
+        )
+    valid_encoded_tab_home = valid_home.replace('href="/', 'href="/%09///')
+    valid_encoded_tab_home_failures = home_failures_for_text(valid_encoded_tab_home)
+    if valid_encoded_tab_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid percent-encoded tab path control: "
+            f"{valid_encoded_tab_home_failures}"
+        )
+    valid_embedded_encoded_tab_home = valid_home.replace('href="/', 'href="/%09//host/')
+    valid_embedded_encoded_tab_home_failures = home_failures_for_text(
+        valid_embedded_encoded_tab_home
+    )
+    if valid_embedded_encoded_tab_home_failures:
+        raise RuntimeError(
+            "home HTML preflight rejected the valid embedded percent-encoded tab path "
+            f"control: {valid_embedded_encoded_tab_home_failures}"
         )
     valid_cascade_home = valid_home.replace(
         '<a href="/explore/">Path 4</a>',
@@ -908,6 +1007,50 @@ def _run_preflight() -> None:
         "triple-slash network path": (
             "nav.start-here links must target ",
             valid_home.replace('href="/', 'href="///'),
+        ),
+        "space-prefixed triple-slash network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href=" ///'),
+        ),
+        "tab-prefixed triple-slash network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="\t///'),
+        ),
+        "line-break-prefixed triple-slash network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="\r\n///'),
+        ),
+        "decimal-tab-entity-prefixed triple-slash network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="&#9;///'),
+        ),
+        "hex-space-entity-prefixed triple-slash network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="&#x20;///'),
+        ),
+        "embedded decimal-tab entity network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/&#9;//host/'),
+        ),
+        "embedded literal-tab network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/\t//host/'),
+        ),
+        "embedded literal-line-feed network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/\n//host/'),
+        ),
+        "embedded literal-carriage-return network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/\r//host/'),
+        ),
+        "embedded decimal-line-feed entity network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/&#10;//host/'),
+        ),
+        "embedded decimal-carriage-return entity network path": (
+            "nav.start-here links must target ",
+            valid_home.replace('href="/', 'href="/&#13;//host/'),
         ),
         "authority network path": (
             "nav.start-here links must target ",
