@@ -1,0 +1,34 @@
+---
+interface Props {
+  number: string;
+  title: string;
+  hint?: string;
+}
+
+const { number, title, hint } = Astro.props;
+const titleId = `evidence-${number.replaceAll(".", "-")}-title`;
+
+if (!Astro.slots.has("caption")) {
+  throw new Error(`EvidenceFigure ${number} requires a caption slot`);
+}
+---
+
+<section class="evidence-figure" aria-labelledby={titleId}>
+  <header class="evidence-header">
+    <p class="evidence-number">圖 {number}</p>
+    <p class="evidence-title" id={titleId}>{title}</p>
+    {hint && <p class="evidence-hint">{hint}</p>}
+  </header>
+  <figure>
+    <slot />
+    <figcaption><slot name="caption" /></figcaption>
+  </figure>
+  {
+    Astro.slots.has("meta") && (
+      <details class="evidence-meta">
+        <summary>方法與來源</summary>
+        <slot name="meta" />
+      </details>
+    )
+  }
+</section>

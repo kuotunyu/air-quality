@@ -1770,6 +1770,50 @@ figure {
   margin: var(--space-4) 0;
 }
 
+.evidence-figure {
+  width: 100%;
+  max-width: var(--evidence-measure);
+  margin-block: var(--space-5);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--rule);
+}
+
+.evidence-header {
+  max-width: var(--measure);
+}
+
+.evidence-number {
+  margin: 0 0 var(--space-1);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.evidence-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-xl);
+  font-weight: 650;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.evidence-hint {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.evidence-figure > figure {
+  margin-block: var(--space-3) 0;
+}
+
+.evidence-meta {
+  max-width: var(--measure);
+  margin-block-start: var(--space-3);
+}
+
 /*
  * A caption is apparatus, and it was set as prose.
  *

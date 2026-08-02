@@ -505,6 +505,93 @@ def failures_for(page: pathlib.Path) -> list[str]:
     return failures_for_text(page.read_text(encoding="utf-8"))
 
 
+def _nearest_ancestor_with_class(element: Element, class_name: str) -> Element | None:
+    ancestor = element.parent
+    while ancestor is not None:
+        if class_name in ancestor.classes:
+            return ancestor
+        ancestor = ancestor.parent
+    return None
+
+
+def trend_figure_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    visible = [element for element in parser.elements if element.visible]
+    figures = [element for element in visible if element.tag == "figure"]
+    failures: list[str] = []
+
+    if len(figures) != 3:
+        failures.append(f"expected exactly three visible figures, found {len(figures)}")
+
+    used_shells: dict[int, Element] = {}
+    checked_shells: set[int] = set()
+    for figure in figures:
+        shell = _nearest_ancestor_with_class(figure, "evidence-figure")
+        if shell is None:
+            failures.append("unframed figure")
+            continue
+        used_shells[id(shell)] = shell
+        if shell.tag != "section":
+            failures.append("figure evidence ancestor is not a <section>")
+        if figure.parent is not shell:
+            failures.append("figure is not a direct child of its nearest .evidence-figure ancestor")
+
+        shell_id = id(shell)
+        if shell_id in checked_shells:
+            continue
+        checked_shells.add(shell_id)
+        shell_figures = [
+            candidate
+            for candidate in figures
+            if _nearest_ancestor_with_class(candidate, "evidence-figure") is shell
+        ]
+        if len(shell_figures) != 1:
+            failures.append(
+                "evidence figure must contain exactly one native figure, "
+                f"found {len(shell_figures)}"
+            )
+
+        titles = [
+            candidate
+            for candidate in visible
+            if "evidence-title" in candidate.classes
+            and _nearest_ancestor_with_class(candidate, "evidence-figure") is shell
+        ]
+        if not titles:
+            failures.append("evidence figure has no visible .evidence-title")
+        elif len(titles) != 1:
+            failures.append(
+                "evidence figure must contain exactly one visible .evidence-title, "
+                f"found {len(titles)}"
+            )
+        else:
+            title = titles[0]
+            if title.tag != "p":
+                failures.append("visible .evidence-title is not a <p>")
+            if not title.rendered_text():
+                failures.append("visible .evidence-title has no rendered text")
+            if title.is_inside(figure):
+                failures.append("visible .evidence-title is inside the native figure")
+
+    shells = [element for element in visible if "evidence-figure" in element.classes]
+    unused_shells = [shell for shell in shells if id(shell) not in used_shells]
+    if unused_shells:
+        failures.append(f"unused visible .evidence-figure: {len(unused_shells)}")
+    if len(used_shells) != len(
+        [figure for figure in figures if _nearest_ancestor_with_class(figure, "evidence-figure")]
+    ):
+        failures.append("each framed figure must have its own .evidence-figure ancestor")
+
+    return failures
+
+
+def trend_figure_failures_for(page: pathlib.Path) -> list[str]:
+    return trend_figure_failures_for_text(page.read_text(encoding="utf-8"))
+
+
 def home_failures_for_text(html: str) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
@@ -785,6 +872,106 @@ def _run_preflight() -> None:
         if expected_failure not in mutation_failures:
             raise RuntimeError(
                 f"HTML preflight did not reject {name} for the expected reason: {mutation_failures}"
+            )
+
+    def evidence_shell(title: str = "Question", body: str = "Chart") -> str:
+        return (
+            '<section class="evidence-figure"><header class="evidence-header">'
+            f'<p class="evidence-title">{title}</p></header><figure>{body}</figure></section>'
+        )
+
+    first_evidence_shell = evidence_shell("Question one")
+    valid_trend = (
+        first_evidence_shell + evidence_shell("Question two") + evidence_shell("Question three")
+    )
+    valid_trend_failures = trend_figure_failures_for_text(valid_trend)
+    if valid_trend_failures:
+        raise RuntimeError(
+            f"trend figure preflight rejected the valid control: {valid_trend_failures}"
+        )
+
+    evidence_mutations = {
+        "unframed figure": (
+            "unframed figure",
+            "<figure>Chart</figure>"
+            + evidence_shell("Question two")
+            + evidence_shell("Question three"),
+        ),
+        "hidden evidence shell": (
+            "expected exactly three visible figures, found 2",
+            valid_trend.replace(
+                '<section class="evidence-figure">',
+                '<section class="evidence-figure" hidden>',
+                1,
+            ),
+        ),
+        "template evidence shell": (
+            "expected exactly three visible figures, found 2",
+            valid_trend.replace(
+                first_evidence_shell,
+                f"<template>{first_evidence_shell}</template>",
+                1,
+            ),
+        ),
+        "hidden title": (
+            "evidence figure has no visible .evidence-title",
+            valid_trend.replace('class="evidence-title"', 'class="evidence-title" hidden', 1),
+        ),
+        "template title": (
+            "evidence figure has no visible .evidence-title",
+            valid_trend.replace(
+                '<p class="evidence-title">Question one</p>',
+                '<template><p class="evidence-title">Question one</p></template>',
+                1,
+            ),
+        ),
+        "empty title": (
+            "visible .evidence-title has no rendered text",
+            valid_trend.replace(">Question one</p>", "></p>", 1),
+        ),
+        "title outside its shell": (
+            "evidence figure has no visible .evidence-title",
+            valid_trend.replace(
+                '<section class="evidence-figure"><header class="evidence-header">'
+                '<p class="evidence-title">Question one</p></header>',
+                '<p class="evidence-title">Question one</p>'
+                '<section class="evidence-figure"><header class="evidence-header"></header>',
+                1,
+            ),
+        ),
+        "figure below an intervening wrapper": (
+            "figure is not a direct child of its nearest .evidence-figure ancestor",
+            valid_trend.replace("<figure>Chart</figure>", "<div><figure>Chart</figure></div>", 1),
+        ),
+        "duplicate title": (
+            "evidence figure must contain exactly one visible .evidence-title, found 2",
+            valid_trend.replace(
+                '<p class="evidence-title">Question one</p>',
+                '<p class="evidence-title">Question one</p>'
+                '<p class="evidence-title">Question duplicate</p>',
+                1,
+            ),
+        ),
+        "duplicate figure": (
+            "evidence figure must contain exactly one native figure, found 2",
+            valid_trend.replace(
+                "<figure>Chart</figure>", "<figure>Chart</figure><figure>Copy</figure>", 1
+            ),
+        ),
+        "unused duplicate shell": (
+            "unused visible .evidence-figure: 1",
+            valid_trend
+            + '<section class="evidence-figure"><p class="evidence-title">Copy</p></section>',
+        ),
+    }
+    if not evidence_mutations:
+        raise RuntimeError("trend figure preflight has no negative controls")
+    for name, (expected_failure, html) in evidence_mutations.items():
+        mutation_failures = trend_figure_failures_for_text(html)
+        if expected_failure not in mutation_failures:
+            raise RuntimeError(
+                f"trend figure preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
             )
 
     start_here_destinations = ("/trend/", "/stations/", "/methods/", "/explore/")
@@ -1106,6 +1293,8 @@ def main(argv: list[str]) -> int:
             failures = [f"missing {page.relative_to(ROOT).as_posix()}"]
         else:
             failures = failures_for(page)
+            if slug == "trend":
+                failures.extend(trend_figure_failures_for(page))
 
         if failures:
             failed_chapters += 1

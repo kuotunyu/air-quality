@@ -8,6 +8,7 @@
  */
 import TrendChart from "./TrendChart.astro";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
 import { taiwanAnnual } from "../lib/standards";
@@ -225,7 +226,7 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
     {" "}{balancedCount} 個測站，前後比的是同一批地方。
   </p>
 
-  <figure>
+  <EvidenceFigure number="1.1" title="固定測站後，全台 PM2.5 的下降仍然成立嗎？">
     <TrendChart
       years={trend.years}
       series={[
@@ -250,11 +251,11 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
       unit="μg/m³"
       notesAt="left"
     />
-    <figcaption>
+    <Fragment slot="caption">
       全台 PM2.5 年均值。線在中斷處是真的斷開——那一年沒有足以計算的資料，
       而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <div class="note">
     <strong>此項校正未改變結論，而陰性結果同樣需要報告。</strong>
@@ -278,7 +279,7 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
     得到的序列可以讀成「如果每一年的天氣都是這 18 年的平均，濃度會是多少」。
   </p>
 
-  <figure>
+  <EvidenceFigure number="1.2" title="扣除天氣後，下降幅度還剩多少？">
     <TrendChart
       years={dwYears}
       series={[
@@ -300,12 +301,12 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
       unit="μg/m³"
       notesAt="left"
     />
-    <figcaption>
+    <Fragment slot="caption">
       {dw.panel.n_stations} 個測站、{dw.panel.balanced_since}–{dwYears[dwYears.length - 1]} 年，
       兩條線都出自同一批列。實線是實際量到的；虛線是同一批資料在「平均天氣」下的樣子。
       {dwCrossing && <>兩條線在 {dwCrossing} 年前後交叉。</>}
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <div class="note caveat">
     <p>
@@ -372,7 +373,7 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
     於是從中段升到全台第 {azLeastRank} 高。
   </p>
 
-  <figure>
+  <EvidenceFigure number="1.3" title="各空品區的長期趨勢是否一致？">
     <TrendChart
       years={trend.years}
       series={airzoneSeries}
@@ -383,10 +384,10 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
       maxH={620}
       notesAt="left"
     />
-    <figcaption>
+    <Fragment slot="caption">
       各空品區 PM2.5 年均值。八條線的名字與 2025 年的值列在圖的上方，依 2025 年的高低排序。
       線經過平滑（僅平滑線條，每個量到的點仍在線上），
       不畫資料點。同樣只採計年覆蓋率 ≥ 75% 的測站年。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 </section>
