@@ -56,11 +56,17 @@ RAIL_LABEL_PX = 205.9
 HAN_ADVANCE_PX = 22.56
 RAIL_ONE_LINE = 9
 
+# 2026-08-03 — supersedes the title-width model above for the redesigned rail:
+# the visible rail copy now comes from `nav`, whose compact editorial contract
+# is expressed directly in Han characters rather than inferred from the former
+# full-title box.
+RAIL_NAV_HAN_LIMIT = 5
+
 # One object per chapter in the `CHAPTERS` array. Parsed rather than imported
 # because this runs under Python and the registry is TypeScript; the array is a
 # plain literal and has to stay one, which is itself worth pinning.
 ENTRY = re.compile(
-    r"\{\s*n:\s*(?P<n>\d+),.*?slug:\s*\"(?P<slug>[^\"]+)\".*?title:\s*\"(?P<title>[^\"]+)\"",
+    r"\{\s*n:\s*(?P<n>\d+),.*?slug:\s*\"(?P<slug>[^\"]+)\".*?nav:\s*\"(?P<nav>[^\"]+)\".*?title:\s*\"(?P<title>[^\"]+)\"",
     re.S,
 )
 H1 = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S | re.I)
@@ -68,11 +74,13 @@ TAG = re.compile(r"<[^>]+>")
 HAN = re.compile(r"[⺀-⿕一-鿿]")
 
 
-def chapters() -> list[tuple[int, str, str]]:
+def chapters() -> list[tuple[int, str, str, str]]:
     """(n, slug, title) for every chapter, in document order."""
+    # 2026-08-03 — the tuple description above predates the compact rail; `nav`
+    # now sits between `slug` and `title`, while `title` remains the h1 contract.
     src = REGISTRY.read_text(encoding="utf-8")
     body = src[src.index("export const CHAPTERS") :]
-    found = [(int(m["n"]), m["slug"], m["title"]) for m in ENTRY.finditer(body)]
+    found = [(int(m["n"]), m["slug"], m["nav"], m["title"]) for m in ENTRY.finditer(body)]
     if not found:
         raise SystemExit(f"{REGISTRY} — could not parse any chapter out of CHAPTERS")
     return found
@@ -107,7 +115,7 @@ def main(argv: list[str]) -> int:
     missing: list[str] = []
     wrapped: list[str] = []
 
-    for n, slug, title in chapters():
+    for n, slug, nav, title in chapters():
         page = dist / slug / "index.html"
         if not page.exists():
             missing.append(f"  ch.{n} {slug} — no {page.relative_to(ROOT).as_posix()}")
@@ -129,15 +137,15 @@ def main(argv: list[str]) -> int:
                 f"      browser tab and both footer steps, then arrives at the other one."
             )
 
-        han = len(HAN.findall(title))
-        if han > RAIL_ONE_LINE:
+        han = len(HAN.findall(nav))
+        if han > RAIL_NAV_HAN_LIMIT:
             mark = "WRAPS" if mark == "ok" else mark
             wrapped.append(
-                f"  ch.{n} {slug} — title is {han} Han characters; the {RAIL_LABEL_PX}px "
-                f"rail label holds {RAIL_ONE_LINE} on one line"
+                f"  ch.{n} {slug} — nav is {han} Han characters; the compact rail "
+                f"allows {RAIL_NAV_HAN_LIMIT}"
             )
 
-        print(f"  ch.{n:>2} {slug:<10} {han:>2} 字  {mark:<8} {title}")
+        print(f"  ch.{n:>2} {slug:<10} {han:>2} 字  {mark:<8} {nav} / {title}")
 
     print(f"\nchapters checked : {len(chapters())}")
     print(f"title mismatches : {len(mismatched)}")

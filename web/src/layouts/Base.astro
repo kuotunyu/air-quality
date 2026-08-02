@@ -244,10 +244,11 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
                 <li>
                   <a
                     href={href(c.slug)}
+                    aria-label={`${chapterLabel(c.n)}　${c.title}`}
                     aria-current={here?.slug === c.slug ? "page" : undefined}
                   >
                     <span class="rail-n" aria-hidden="true">{chapterNumeral(c.n)}</span>
-                    <span class="rail-t">{c.title}</span>
+                    <span class="rail-t">{c.nav}</span>
                   </a>
                 </li>
               ))
@@ -367,8 +368,13 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       .shell {
         display: grid;
+        grid-template-columns: clamp(12rem, 14vw, 13.5rem) minmax(0, 1fr);
         min-height: 100vh;
       }
+
+      /* 2026-08-03 — supersedes the 80rem and full-title measurements below:
+         the approved compact rail uses `nav` labels and can coexist with the
+         evidence column from 72rem onward. */
 
       /*
        * 80rem, and the number is the whole decision.
@@ -412,7 +418,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
        * that a chapter title wraps to three lines, never so wide that it
        * competes with the column it serves.
        */
-      @media (min-width: 80rem) {
+      @media (min-width: 72rem) {
         .shell {
           /*
            * The floor is what decides whether a chapter title wraps, and a
@@ -428,7 +434,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
            * 13.9rem is the width the widest label needs plus the numeral column,
            * the gap and both paddings — solved, not rounded up by eye.
            */
-          grid-template-columns: clamp(13.9rem, 17vw, 15.5rem) minmax(0, 1fr);
+          grid-template-columns: clamp(12rem, 14vw, 13.5rem) minmax(0, 1fr);
         }
       }
 
@@ -442,7 +448,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         border-right: 1px solid var(--line-soft);
       }
 
-      @media (min-width: 80rem) {
+      @media (min-width: 72rem) {
         .rail {
           /* Sticky, and its own scroller: ten chapters fit, but an eleventh
              should scroll the rail rather than the page. */
@@ -561,7 +567,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       /* Below the rail breakpoint the rail is a drawer, so a bar down its edge
          would be reporting progress on something that is not on screen. */
-      @media (max-width: 79.999rem) {
+      @media (max-width: 71.999rem) {
         .progress {
           display: none;
         }
@@ -610,11 +616,15 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         z-index: var(--z-sticky);
       }
 
+      .handle :global(.theme-toggle) {
+        min-height: 44px;
+      }
+
       .rail-open {
         display: inline-flex;
         align-items: center;
         gap: 0.5em;
-        min-height: 2.4rem;
+        min-height: max(2.4rem, 44px);
         padding: 0 0.8rem;
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -680,7 +690,11 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         display: none;
       }
 
-      @media (max-width: 79.999rem) {
+      @media (max-width: 71.999rem) {
+        .shell {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
         /*
          * Off-canvas AND out of the tab order while it is closed.
          *
@@ -748,7 +762,16 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       /* Above the breakpoint the rail is simply present, so every control whose
          only job is to reveal it has nothing left to do. */
-      @media (min-width: 80rem) {
+      /* 2026-08-03 — `ThemeToggle.astro` still carries the former 80rem hiding
+         rule. This bridge keeps the rail utility available across the newly
+         admitted desktop band without changing that component outside Task 2. */
+      @media (min-width: 72rem) and (max-width: 79.999rem) {
+        :global(.has-js) .rail :global(.theme-toggle) {
+          display: inline-flex;
+        }
+      }
+
+      @media (min-width: 72rem) {
         .handle {
           display: none;
         }

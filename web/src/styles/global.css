@@ -73,7 +73,10 @@
    * The `vw` term stays in viewport units on purpose. The window does not get
    * bigger when a reader asks for bigger type.
    */
-  font-size: clamp(1.275rem, 1.20625rem + 0.38vw, 1.46875rem);
+  /* 2026-08-03 — supersedes the larger scale above: the approved redesign
+     restores an 18–20px reading range while keeping every apparatus token at
+     or above the measured accessibility floor. */
+  font-size: clamp(1.125rem, 1.085rem + 0.22vw, 1.25rem);
 
   /*
    * A trace of hue, not none.
@@ -502,12 +505,14 @@
    * the gap is 1.143x and apparatus finally reads as apparatus: 19.7px against
    * a 23.5px body at 1440, 17.2px against 20.5px at 320.
    */
-  --text-xs: 0.84rem;
-  --text-sm: 0.96rem;
+  /* 2026-08-03 — supersedes the former modular-scale measurements above; the
+     compact shell uses a quieter but still fully legible apparatus scale. */
+  --text-xs: 0.95rem;
+  --text-sm: 1rem;
   --text-base: 1rem;
   --text-lg: 1.2rem;
-  --text-xl: 1.44rem;
-  --text-2xl: 1.8rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.9rem;
 
   /*
    * Chart annotation, in px rather than rem — deliberately.
@@ -533,8 +538,10 @@
      axes and inside the plot, three times over. Nothing else on the page
      moves, so this is the figures getting louder relative to the prose,
      which is the right direction for a document whose subject is figures. */
-  --chart-tick: 24px;
-  --chart-label: 24px;
+  /* 2026-08-03 — supersedes the fixed-pixel chart scale above: annotations now
+     follow reader zoom while retaining at least 95% of the body size. */
+  --chart-tick: 1rem;
+  --chart-label: 1rem;
   /*
    * ...and `--chart-micro` did not come with them, which meant chapter 3's axis
    * never got the increase that was asked for three times.
@@ -562,7 +569,7 @@
    * three roles, and a later change that separates them again should not have
    * to reintroduce the distinction.
    */
-  --chart-micro: 24px;
+  --chart-micro: 0.95rem;
 
   /* Spacing rhythm. Related things sit one step apart, unrelated things three;
      using the same gap everywhere is what makes a page read as undifferentiated. */
@@ -607,7 +614,10 @@
    * right trade: they are fluid and already legible at 375px, whereas an
    * alignment that changes by element type is a thing every reader sees.
    */
-  --measure: 42rem;
+  /* 2026-08-03 — the approved redesign separates reading measure from the
+     wider evidence register instead of making either one stand in for both. */
+  --measure: 46rem;
+  --evidence-measure: 64rem;
   --radius: 10px;
 
   /* Named so a stacking order is a decision rather than an escalating number. */
@@ -1004,6 +1014,21 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 2026-08-03 — the prior 2.4rem control floor resolved below the existing
+   44px interaction gate after the approved root-size reset. */
+button,
+select {
+  min-height: 44px;
+}
+
+/* 2026-08-03 — chapter 3's mobile `.85em` unit qualifier compounded the new
+   chart-micro token and fell below the 17px apparatus floor. `!important` is
+   necessary because the component's scoped mobile rule otherwise outranks this
+   task-scoped global correction. */
+.ctrl-value > small {
+  font-size: var(--text-xs) !important;
+}
+
 /*
  * A word that cannot fit its line breaks rather than leaving the page.
  *
@@ -1177,7 +1202,9 @@ blockquote {
  * the floor below was added, and every one of them was outside `main`.
  */
 main :is(p, .note, .aside, figcaption, dd, blockquote) {
-  text-align: justify;
+  /* 2026-08-03 — supersedes the historical justification rationale above: the
+     approved redesign favors natural Chinese spacing over filled edges. */
+  text-align: start;
 }
 
 /*
@@ -1376,7 +1403,9 @@ code,
    * margin is outside the column where a margin belongs.
    */
   --page-pad: clamp(1.15rem, 4vw, 2.75rem);
-  max-width: calc(var(--measure) + 2 * var(--page-pad));
+  /* 2026-08-03 — the page now holds the evidence register; running prose keeps
+     its independent `--measure` cap. */
+  max-width: calc(var(--evidence-measure) + 2 * var(--page-pad));
   margin: 0 auto;
   padding-inline: var(--page-pad);
 }

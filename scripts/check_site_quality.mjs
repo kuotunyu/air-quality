@@ -331,6 +331,16 @@ const PROBE = `(() => {
 
   out.body = parseFloat(getComputedStyle(document.body).fontSize);
   out.overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+  const rail = document.querySelector(".rail");
+  const main = document.querySelector("main");
+  const handle = document.querySelector(".handle");
+  const handleStyle = handle ? getComputedStyle(handle) : null;
+  out.railWidth = rail ? +rail.getBoundingClientRect().width.toFixed(1) : 0;
+  out.mainWidth = main ? +main.getBoundingClientRect().width.toFixed(1) : 0;
+  out.handleVisible = Boolean(
+    handle && handleStyle?.display !== "none" && handleStyle?.visibility !== "hidden" &&
+      handle.getClientRects().length,
+  );
   if (out.smallestFont === Infinity) out.smallestFont = 0;
   return out;
 })()`;
@@ -786,7 +796,10 @@ async function main() {
                 `annotation (${r.smallestAnnotation}px)`,
             );
           }
-          if (r.smallestAnnotation < r.body * 0.95) {
+          // Computed styles are serialized to four decimals, so allow one
+          // hundredth of a CSS pixel for that serialization while keeping the
+          // asserted ratio at 95%.
+          if (r.smallestAnnotation + 0.01 < r.body * 0.95) {
             failures.push(
               `${route} @${width} ${theme}: annotation ${r.smallestAnnotation}px is below the ` +
                 `${r.body.toFixed(1)}px body it sits among`,
@@ -796,6 +809,20 @@ async function main() {
 
         if (r.overflow > 0) {
           failures.push(`${route} @${width} ${theme}: page scrolls sideways by ${r.overflow}px`);
+        }
+        if (width === 1440) {
+          if (r.railWidth > 272) {
+            failures.push(`${route} @${width} ${theme}: rail width exceeds 272px`);
+          }
+          if (r.mainWidth < 720) {
+            failures.push(`${route} @${width} ${theme}: main content is narrower than 720px`);
+          }
+          if (r.handleVisible) {
+            failures.push(`${route} @${width} ${theme}: handle remains visible on desktop`);
+          }
+        }
+        if (width === 375 && !r.handleVisible) {
+          failures.push(`${route} @${width} ${theme}: handle is hidden on mobile`);
         }
         for (const bad of r.lowContrast) {
           failures.push(
