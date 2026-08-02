@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import polars as pl
 import pytest
 
-from twair.qc.stuck import calibration_curve, stuck_conf, stuck_runs
+from twair.qc.stuck import StuckReport, calibration_curve, stuck_conf, stuck_runs
 
 START = datetime(2003, 6, 1)
 
@@ -212,3 +212,64 @@ class TestCalibration:
 
         assert curve.height == 0
         assert "agency_rejected" in curve.columns
+
+
+class TestTheAcceptanceRateHasOneDenominator:
+    """`total_accepted / total_flagged` divided two different populations.
+
+    `stuck_runs` deliberately nulls `agency_rejected` for the 2018-on archives:
+    a rejected reading there is stored with no number, so it is absent from the
+    run table entirely, and 「we could not look」 must not read as 「accepted」.
+    `accepted_runs` honours that by counting `== 0.0`, which drops the nulls.
+    `flagged_runs` did not — it counted every run.
+
+    So on the shipped store the published rate was 68,970 / 148,397 = 46.5%
+    where the population the question can be asked of is 110,714 and the answer
+    is 62.3%. The error understated the finding, which is why it survived: a
+    number that weakens your own case does not look wrong.
+    """
+
+    @staticmethod
+    def _report(
+        accepted: dict[str, int], measurable: dict[str, int], flagged: dict[str, int]
+    ) -> StuckReport:
+        return StuckReport(
+            pollutants=("PM2.5",),
+            years=(1982, 2025),
+            flagged_runs=flagged,
+            accepted_runs=accepted,
+            measurable_runs=measurable,
+        )
+
+    def test_the_rate_is_over_the_runs_whose_verdict_is_readable(self) -> None:
+        report = self._report({"PM2.5": 60}, {"PM2.5": 100}, {"PM2.5": 150})
+
+        assert report.total_measurable == 100
+        assert "60.0%" in report.summary(), report.summary()
+        assert "40.0%" not in report.summary(), "divided by every flagged run"
+
+    def test_the_unreadable_ones_are_counted_out_loud(self) -> None:
+        """Not silently dropped: 37,683 of the real ones are in this bucket."""
+        report = self._report({"PM2.5": 60}, {"PM2.5": 100}, {"PM2.5": 150})
+
+        assert "50 from 2018 on carry no verdict" in report.summary(), report.summary()
+
+    def test_a_pass_with_nothing_readable_says_so_rather_than_dividing(self) -> None:
+        """A modern-only window has no agency verdict anywhere in it."""
+        report = self._report({"PM2.5": 0}, {"PM2.5": 0}, {"PM2.5": 40})
+
+        assert "—" in report.summary()
+
+    def test_the_two_counters_come_from_one_scan(self) -> None:
+        """The numerator can never exceed its own denominator."""
+        frame = _frame(
+            [12.0] * 8,
+            generation="legacy_csv_big5",
+            flags=["valid"] * 8,
+        )
+        runs = stuck_runs(frame, min_length_hours=6)
+        accepted = runs.filter(pl.col("agency_rejected") == 0.0).height
+        measurable = runs.filter(pl.col("agency_rejected").is_not_null()).height
+
+        assert accepted <= measurable
+        assert measurable <= runs.height

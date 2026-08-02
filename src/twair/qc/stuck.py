@@ -43,8 +43,17 @@ measurement.
 What it found
 -------------
 Over 1982-2025 and six measurands, 123,114,626 readings gave 148,397 flatlines
-of six hours or more, and **the agency accepted 68,970 of them outright** —
-46.5%. Setting aside the ones at exactly zero and the eight negative ones,
+of six hours or more. On 110,714 of them the agency's own verdict is readable —
+the other 37,683 are all 2018 or later, where a rejected reading is stored with
+no number and so cannot appear here at all. **The agency accepted 68,970 of the
+110,714 outright**, 62.3%.
+
+That rate used to be published as 46.5%, which was 68,970 over all 148,397: a
+1982-2017 numerator divided by a 1982-2025 denominator. The mistake understated
+the finding, which is why nobody caught it — a number that makes your own case
+weaker does not look wrong.
+
+Setting aside the ones at exactly zero and the eight negative ones,
 **55,308 mid-range flatlines passed every official check**. Two, verified
 against the raw record rather than inferred from the run table:
 
@@ -194,6 +203,16 @@ class StuckReport:
     flagged_runs: dict[str, int] = field(default_factory=dict)
     flagged_hours: dict[str, int] = field(default_factory=dict)
     accepted_runs: dict[str, int] = field(default_factory=dict)
+    measurable_runs: dict[str, int] = field(default_factory=dict)
+    """Flagged runs where the agency's verdict is knowable at all.
+
+    From 2018 the archives replace a rejected reading with a flag and no number,
+    so a rejected hour is absent from this table entirely — `stuck_runs` nulls
+    `agency_rejected` for that generation rather than letting 「we could not
+    look」 read as 「accepted」. The acceptance rate has to be taken over this
+    count, not over every flagged run, or it divides a 1982-2017 numerator by a
+    1982-2025 denominator.
+    """
     longest: dict[str, int] = field(default_factory=dict)
     params: dict[str, Any] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
@@ -201,6 +220,11 @@ class StuckReport:
     @property
     def total_flagged(self) -> int:
         return sum(self.flagged_runs.values())
+
+    @property
+    def total_measurable(self) -> int:
+        """Flagged runs the agency's own verdict can be read off."""
+        return sum(self.measurable_runs.values())
 
     @property
     def total_accepted(self) -> int:
@@ -212,11 +236,23 @@ class StuckReport:
         return sum(self.accepted_runs.values())
 
     def summary(self) -> str:
-        share = f"{self.total_accepted / self.total_flagged:.1%}" if self.total_flagged else "—"
+        # Over `total_measurable`, not `total_flagged`. `accepted_runs` counts
+        # `agency_rejected == 0.0`, which drops the nulls — correctly, and with
+        # a comment saying so — while `flagged_runs` counted every run. So the
+        # published rate was 68,970 / 148,397 = 46.5% when the population the
+        # question can be asked of is 110,714, and the answer is 62.3%. The
+        # error was in the conservative direction, which is why it survived: an
+        # understated finding does not look wrong.
+        share = (
+            f"{self.total_accepted / self.total_measurable:.1%}" if self.total_measurable else "—"
+        )
+        unknown = self.total_flagged - self.total_measurable
         return (
             f"{len(self.pollutants)} measurand(s), {self.years[0]}-{self.years[1]} | "
             f"{self.rows:,} readings | {self.total_flagged:,} flatlines | "
-            f"{self.total_accepted:,} of them wholly accepted by the agency ({share})"
+            f"{self.total_accepted:,} of the {self.total_measurable:,} checkable ones "
+            f"wholly accepted by the agency ({share}); {unknown:,} from 2018 on carry "
+            f"no verdict to read"
         )
 
 
@@ -364,6 +400,7 @@ def run_stuck(
     flagged_runs: dict[str, int] = {}
     flagged_hours: dict[str, int] = {}
     accepted_runs: dict[str, int] = {}
+    measurable_runs: dict[str, int] = {}
     longest: dict[str, int] = {}
     notes: list[str] = []
 
@@ -400,6 +437,8 @@ def run_stuck(
         # `== 0.0` and not `!= null`: a modern run's null is "we could not
         # look", which is not the finding this counter is about.
         accepted_runs[pollutant] = flagged.filter(pl.col("agency_rejected") == 0.0).height
+        # The denominator that goes with that numerator.
+        measurable_runs[pollutant] = flagged.filter(pl.col("agency_rejected").is_not_null()).height
         if not flagged.is_empty():
             frames.append(flagged)
 
@@ -431,6 +470,7 @@ def run_stuck(
         flagged_runs=flagged_runs,
         flagged_hours=flagged_hours,
         accepted_runs=accepted_runs,
+        measurable_runs=measurable_runs,
         longest=longest,
         params={"min_length_hours": min_length},
         notes=tuple(notes),
