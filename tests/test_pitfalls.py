@@ -354,3 +354,87 @@ class TestAllPitfallsRunner:
         assert "wind.summary" in tables
         assert "collinearity.stability" in tables
         assert "leakage.price" not in tables, "no M2 output, so it is skipped not faked"
+
+
+class TestTheAggregationTheOriginalActuallyPerformed:
+    """Pitfall 1 charged monthly averaging with a loss half of which was spatial.
+
+    The 2018 project averaged to one value per station per month, N = 7,286.
+    This function grouped by month alone, pooling every station into a single
+    national series — a second and much lossier operation the original never
+    performed. It published 20.3% retained where the original's own aggregation
+    retains 40.3%, and the difference is almost exactly the between-station
+    variance.
+
+    Both tests above use a single-station fixture, which is why neither could
+    see it: with one station the two aggregations are identical.
+    """
+
+    @staticmethod
+    def _two_stations(tmp_path: Path) -> Path:
+        """Two stations, flat in time and far apart in level.
+
+        Nothing here varies by hour or month, so a correct per-station monthly
+        aggregation loses NOTHING — every station-month mean equals its
+        station's constant. Pooling the two stations destroys all of it.
+        """
+        start = datetime(2010, 1, 1)
+        rows = [
+            (station, "PM2.5", start + timedelta(hours=h), level)
+            for station, level in (("二林", 10.0), ("關山", 50.0))
+            for h in range(24 * 365)
+        ]
+        return _store(tmp_path, rows)
+
+    def test_a_per_station_monthly_mean_keeps_what_only_varies_between_stations(
+        self, tmp_path: Path
+    ) -> None:
+        result = diurnal_cycle_lost_to_monthly_means(
+            self._two_stations(tmp_path), period=(2010, 2010)
+        )
+        variance = result["variance"]
+
+        kept = variance.filter(pl.col("scale") == "station_month")["variance_retained"][0]
+
+        # Above 1.0 rather than at it: `std()` is the sample estimate, so the
+        # n-1 correction inflates the 24-value station-month sd against the
+        # 17,520-value hourly one by 4% here. In the real store it is 7,269
+        # against 5,136,594 and the same correction is worth 0.014%.
+        assert kept > 0.95, (
+            "the only variance in this fixture is between stations, and a "
+            "per-station monthly mean keeps all of it"
+        )
+        assert kept < 1.1, "and it cannot manufacture variance either"
+
+    def test_pooling_the_stations_destroys_it_and_is_reported_separately(
+        self, tmp_path: Path
+    ) -> None:
+        """The number that used to be the only one published."""
+        result = diurnal_cycle_lost_to_monthly_means(
+            self._two_stations(tmp_path), period=(2010, 2010)
+        )
+        variance = result["variance"]
+
+        pooled = variance.filter(pl.col("scale") == "monthly_mean")["variance_retained"][0]
+
+        assert pooled == pytest.approx(0.0, abs=0.01), (
+            "one national mean per month cannot see a difference between stations"
+        )
+
+    def test_the_station_month_count_is_stations_times_months(self, tmp_path: Path) -> None:
+        """7,269 station-months in the real store against the 2018 report's 7,286."""
+        result = diurnal_cycle_lost_to_monthly_means(
+            self._two_stations(tmp_path), period=(2010, 2010)
+        )
+        counts = dict(zip(result["variance"]["scale"], result["variance"]["n"], strict=True))
+
+        assert counts["monthly_mean"] == 12
+        assert counts["station_month"] == 24, "two stations over twelve months"
+
+    def test_both_aggregations_ship(self, tmp_path: Path) -> None:
+        """A reader comparing them is what makes the spatial half visible."""
+        variance = diurnal_cycle_lost_to_monthly_means(
+            self._two_stations(tmp_path), period=(2010, 2010)
+        )["variance"]
+
+        assert variance["scale"].to_list() == ["hourly", "station_month", "monthly_mean"]

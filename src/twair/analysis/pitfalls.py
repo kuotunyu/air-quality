@@ -46,6 +46,28 @@ def diurnal_cycle_lost_to_monthly_means(
     Returns the hourly and weekday profiles alongside the monthly series. The
     monthly series is flat where the others are not, and the gap is the
     information the original discarded before it began analysing.
+
+    **Two monthly aggregations, and the difference between them is the point.**
+    The 2018 project averaged to one value per station per month — N = 7,286,
+    and this store's own count over the same window is 7,269. Pooling every
+    station into a single national mean per month is a *different* and much
+    lossier operation, and this function used to report only that one:
+
+        hourly                         sd 19.3738    retained 1.000
+        station_month  (n = 7,269)     sd 12.2938    retained 0.403
+        monthly_mean   (n =    96)     sd  8.7286    retained 0.203
+
+    So the published figure was 20.3% — and half of the 79.7% it charged to
+    monthly averaging is between-station variance the 2018 project kept. The
+    exact n-weighted decomposition over these 5,136,594 rows agrees:
+    Var(E[X | month]) is 0.20105 of the total and Var(E[X | station, month]) is
+    0.40234, leaving 0.20129 as the purely spatial part.
+
+    The honest number for what the original's own aggregation cost is 40.3%
+    retained, not 20.3%. Both ship, because a reader comparing them learns
+    something a single row cannot say: averaging over time and averaging over
+    space cost about the same, and only one of them was the mistake under
+    discussion.
     """
     start, end = period
     hourly = (
@@ -85,15 +107,29 @@ def diurnal_cycle_lost_to_monthly_means(
         .sort("month")
     )
 
-    # How much of the hourly variance survives monthly averaging.
+    # One value per station per month: the aggregation the 2018 project actually
+    # performed, and the one this pitfall is about. Not published until now, so
+    # the loss it charged to monthly averaging included the between-station
+    # variance that the original retained. See the docstring for the numbers.
+    station_month = hourly.group_by(
+        "station_name", pl.col("ts_local").dt.truncate("1mo").alias("month")
+    ).agg(pl.col("value").mean().alias("mean"), pl.len().alias("n"))
+
+    # How much of the hourly variance survives each monthly averaging.
     hourly_sd = as_float(hourly["value"].std())
+    station_month_sd = as_float(station_month["mean"].std())
     monthly_sd = as_float(monthly["mean"].std())
 
     variance = pl.DataFrame(
         {
-            "scale": ["hourly", "monthly_mean"],
-            "sd": [hourly_sd, monthly_sd],
-            "variance_retained": [1.0, (monthly_sd / hourly_sd) ** 2],
+            "scale": ["hourly", "station_month", "monthly_mean"],
+            "n": [hourly.height, station_month.height, monthly.height],
+            "sd": [hourly_sd, station_month_sd, monthly_sd],
+            "variance_retained": [
+                1.0,
+                (station_month_sd / hourly_sd) ** 2,
+                (monthly_sd / hourly_sd) ** 2,
+            ],
         }
     )
 

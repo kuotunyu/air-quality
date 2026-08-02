@@ -223,14 +223,25 @@ def _m3_section() -> str:
     parts = ["同一批資料，兩種做法，兩個結論。"]
 
     if variance is not None:
-        retained = variance.filter(pl.col("scale") == "monthly_mean")["variance_retained"]
-        if len(retained):
+        # `station_month` and not `monthly_mean`: the 2018 project averaged to
+        # one value per station per month, and `monthly_mean` additionally pools
+        # all 78 stations into one national series. Quoting the national figure
+        # here charged the original with losing variance it kept — 20.3% where
+        # its own aggregation retains 40.3%. Both rows still ship; this line
+        # names the one the comparison is about.
+        own = variance.filter(pl.col("scale") == "station_month")["variance_retained"]
+        pooled = variance.filter(pl.col("scale") == "monthly_mean")["variance_retained"]
+        if len(own) and len(pooled):
             parts += [
                 "",
                 "### 陷阱 1：月平均抹掉了什麼",
                 "",
-                f"逐時資料的變異，月平均後只剩 **{100 * float(retained[0]):.1f}%**。",
-                "日夜循環、週末效應、污染事件全部消失在平均裡。",
+                f"原專題把逐時資料平均成「每站每月一個值」，變異只剩 "
+                f"**{100 * float(own[0]):.1f}%**。日夜循環、週末效應、污染事件"
+                f"全部消失在平均裡。",
+                "",
+                f"若再把各站併成單一全台月序列，只剩 **{100 * float(pooled[0]):.1f}%**"
+                f"——兩者的差額是**測站之間**的變異，那一半原專題並沒有丟掉。",
                 "",
                 _table(variance),
             ]

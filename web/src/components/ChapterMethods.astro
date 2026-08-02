@@ -23,9 +23,18 @@ const t = (name: string) => (pitfallTables[name] ?? []) as Row[];
 const diurnal = t("diurnal_diurnal");
 const weekly = t("diurnal_weekly");
 const variance = t("diurnal_variance");
-const retained = (variance.find((r) => r.scale === "monthly_mean")?.variance_retained ?? 0) as number;
+/* `station_month` is the aggregation the 2018 project performed — one value per
+   station per month, N = 7,286 in its own report and 7,269 in this store over
+   the same window. `monthly_mean` additionally pools all 78 stations into one
+   national series, which is a second and separate loss. This paragraph used to
+   quote the pooled figure while naming the original's aggregation, charging it
+   with losing variance it kept: 20.3% where its own aggregation retains 40.3%.
+   The difference is almost exactly the between-station variance. */
+const retained = (variance.find((r) => r.scale === "station_month")?.variance_retained ?? 0) as number;
+const pooledRetained = (variance.find((r) => r.scale === "monthly_mean")?.variance_retained ?? 0) as number;
 const hourlySd = (variance.find((r) => r.scale === "hourly")?.sd ?? 0) as number;
-const monthlySd = (variance.find((r) => r.scale === "monthly_mean")?.sd ?? 0) as number;
+const monthlySd = (variance.find((r) => r.scale === "station_month")?.sd ?? 0) as number;
+const pooledSd = (variance.find((r) => r.scale === "monthly_mean")?.sd ?? 0) as number;
 
 const diurnalValues = diurnal.map((r) => r.mean as number);
 const diurnalPeak = diurnal.reduce((a, b) => (a.mean > b.mean ? a : b), diurnal[0]);
@@ -156,13 +165,23 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
   <!-- ─── 錯誤一 ─── -->
   <article class="mistake">
-    <h2><span class="num">01</span> 月平均抹掉了八成的變異</h2>
+    <h2><span class="num">01</span> 月平均抹掉了六成的變異</h2>
 
     <p>
       2010–2017 年逐時 PM2.5 的標準差是 {n(hourlySd)} μg/m³。
-      壓成月平均之後只剩 {n(monthlySd)} μg/m³——
+      壓成原專題用的「每站每月一個值」之後只剩 {n(monthlySd)} μg/m³——
       變異保留了 <strong>{n(retained * 100, 1)}%</strong>。
-      當年的模型無論怎麼調，能解釋的上限就是這剩下的兩成。
+      當年的模型無論怎麼調，能解釋的上限就是這剩下的四成。
+    </p>
+
+    <p class="small">
+      這裡要小心一件事，我們自己先弄錯過：如果再把各站併成單一的全台月序列，
+      保留率會掉到 {n(pooledRetained * 100, 1)}%（標準差 {n(pooledSd)} μg/m³）。
+      那個數字曾經是本節的標題，但它不是原專題做的事——
+      原專題保留了測站維度（N = 7,286，本站同期資料為 7,269）。
+      兩者的差額幾乎剛好是<strong>測站之間</strong>的變異：
+      逐時變異中，月份解釋 20.1%，「測站 × 月份」解釋 40.2%。
+      把後面那 20 個百分點也算到「月平均」頭上，是把空間的損失記在時間帳上。
     </p>
 
     <p>
