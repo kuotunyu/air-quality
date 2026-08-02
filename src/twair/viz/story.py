@@ -958,9 +958,12 @@ def _export_forecast(root: Path) -> list[Path]:
     rather than a paragraph: R² falling, skill-vs-persistence rising,
     skill-vs-climatology collapsing.
 
-    Every split ships too, not just the mean over them. At six hours the mean
-    is +0.190 and one split is -0.111, and a chart drawn from means alone would
-    make the same mistake the module's own summary line made.
+    Every split ships too, not just the mean over them. The first backtest had
+    a mean of +0.190 at six hours and one split at -0.111, and a chart drawn
+    from means alone would have made the same mistake the module's own summary
+    line made. The corrected frame has no losing cell, which is a reason to keep
+    shipping the splits rather than to stop: nothing announced the first one
+    either.
     """
     source = outputs_dir("m9_forecast")
     scores_path = source / "scores.parquet"
@@ -1037,44 +1040,52 @@ def _export_forecast(root: Path) -> list[Path]:
                 ],
                 "reading": [
                     {
-                        "claim": "R² 掉四倍的同時，skill 是往上的",
+                        "claim": "R² 掉三倍的同時，skill 沒有跟著掉",
                         "detail": (
+                            "R² 從 0.859 掉到 0.289，而 skill 收在比起點更高的地方。"
                             "R² 衡量的是「這個目標本來多好預測」，而 PM2.5 一小時後"
                             "任何人都很好預測——包括一條說「跟現在一樣」的規則。"
                             "skill 問的是不同的問題：模型有沒有加到東西。"
-                            "答案隨距離變好，因為 persistence 衰退得比模型快。"
+                            "它不是單調上升的（1、6、24、48 小時分別是 +0.172、+0.237、"
+                            "+0.196、+0.315），但確實沒有隨 R² 一起崩，"
+                            "因為 persistence 衰退得比模型快。"
                         ),
                     },
                     {
                         "claim": "只看一條基準線，一定會高估模型",
                         "detail": (
-                            "vs persistence 一路漲到 48 小時，單看這條會讀成「愈遠愈好」。"
-                            "但 vs climatology 在同一段從 +0.84 崩到 +0.09——"
-                            "兩天後模型已經幾乎退化成「這站、這個月、這個小時的平均」。"
+                            "vs persistence 在 48 小時最高，單看這條會讀成「愈遠愈好」。"
+                            "但 vs climatology 在同一段從 +0.84 崩到 +0.17——"
+                            "兩天後模型已經大致退化成「這站、這個月、這個小時的平均」。"
                             "在 persistence 已經輸給長期平均的地方贏過 persistence，不算成就。"
                             "實用範圍大約到 24 小時。"
                         ),
                     },
                     {
-                        "claim": "平均值會藏掉一個輸掉的分割",
+                        "claim": "平均值會藏掉一個輸掉的分割——而且真的藏過一次",
                         "detail": (
-                            "16 個「期距 × 分割」格子裡有一個是 −0.111（6 小時、rolling_1），"
-                            "而四個期距的平均全是正的。rolling_1 是訓練資料最少的分割。"
-                            "這跟「R² 藏掉一個爛模型」是同一個錯，只是高了一層——"
-                            "所以每個平均值旁邊都畫著它最差的分割。"
+                            "第一次回測時，16 個「期距 × 分割」格子裡有一個是 −0.111"
+                            "（6 小時、訓練資料最少的 rolling_1），四個期距的平均卻全是正的。"
+                            "這跟「R² 藏掉一個爛模型」是同一個錯，只是高了一層。"
+                            "現在這張表沒有負的格子，最差是 +0.080，仍在同一格——"
+                            "讓它變號的是修掉 features/lags.py 裡一個跟預測無關的洩漏"
+                            "（每個測站的前 167 小時帶著前一個測站的歷史）。"
+                            "所以最差分割照畫：第一次也沒有任何東西提醒過我們。"
                         ),
                     },
                     {
-                        "claim": "6 小時是最不穩的期距，而且有兩批獨立資料同意",
+                        "claim": "6 小時仍是最不穩的期距，但當初那個負值是我們自己的 bug",
                         "detail": (
-                            "回測裡 6 小時的四個分割從 −0.111 到 +0.303，跨度 0.41，"
-                            "是四個期距裡最大的（1 小時只有 0.07）。"
-                            "後來為了做互動 demo，另外用 2015–2024 訓練、2025 完全保留，"
-                            "在六個測站上重跑一次——6 小時的 skill 是 −0.043，"
-                            "六站沒有一個明顯為正，而 1、24、48 小時全都穩定為正。"
-                            "兩批不同的資料指向同一件事，那就不是某個分割運氣差。"
-                            "合理的解釋是 6 小時卡在兩種訊號中間：太遠，此刻的漲跌動量已經用完；"
-                            "又太近，隔天同一時刻的日夜循環還沒接上。"
+                            "6 小時的四個分割是 +0.080 到 +0.305，跨度 0.225，"
+                            "仍是四個期距裡最大的（1 小時 0.074、24 小時 0.139、48 小時 0.055）。"
+                            "但這一章原本寫的是「兩批獨立資料都說 6 小時會輸」——"
+                            "回測有一格 −0.111，互動 demo 的 6 小時 skill 是 −0.043、"
+                            "六個測站沒有一個明顯為正。兩批都翻面了："
+                            "同一個 demo 在修好洩漏後重跑，6 小時 skill 是 +0.256，"
+                            "六站全為正（+0.098 到 +0.384）。"
+                            "兩批資料確實指向同一件事，只是那件事是 features/lags.py 的 bug，"
+                            "不是大氣。留著這段，是因為「兩個獨立來源同意」"
+                            "在它們共用同一個特徵建構器時，並不構成獨立證據。"
                         ),
                     },
                 ],
