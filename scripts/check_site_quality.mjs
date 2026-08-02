@@ -47,6 +47,7 @@ const ROUTES = [
   "/explore/",
   "/data/",
 ];
+const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
 
 /** APCA Lc 60 is the floor below which text stops carrying meaning reliably. */
 const MIN_LC = 60;
@@ -84,6 +85,7 @@ const MIN_FONT_PX = 17;
 /** WCAG 2.5.5's comfortable target. The figure controls are the ones at risk. */
 const MIN_TARGET_PX = 44;
 const CSS_PX_SERIALIZATION_EPSILON = 0.0001;
+const READOUT_OVERLAP_TOLERANCE_PX = 1;
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -404,6 +406,68 @@ async function main() {
       .result?.result
       ?.value;
 
+  const pressKey = async (key) => {
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key });
+    await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+  };
+
+  const readoutState = () =>
+    evaluate(`(() => {
+      const plot = document.querySelector(".plot[data-readout]");
+      if (!plot) return null;
+      const panel = plot.querySelector(".readout-panel") ??
+        (plot.nextElementSibling?.matches(".readout-dock")
+          ? plot.nextElementSibling.querySelector(".readout-panel")
+          : null);
+      const dock = panel?.closest(".readout-dock") ?? null;
+      const area = plot.querySelector(".plot-area");
+      const figure = plot.closest("figure");
+      const holder = plot.querySelector(".plot-readout-data");
+      let data = null;
+      try { data = holder?.textContent ? JSON.parse(holder.textContent) : null; } catch {}
+      const panelBox = panel?.getBoundingClientRect();
+      const areaBox = area?.getBoundingClientRect();
+      return {
+        panelReady: Boolean(panel),
+        panelInDock: Boolean(dock && dock.previousElementSibling === plot),
+        overlaysInArea: Boolean(
+          area?.querySelector(".readout-rule") && area?.querySelectorAll(".readout-dot").length,
+        ),
+        active: document.activeElement === plot,
+        role: plot.getAttribute("role"),
+        reading: plot.dataset.reading ?? null,
+        visible: panel ? getComputedStyle(panel).opacity !== "0" : false,
+        when: panel?.querySelector(".readout-when")?.textContent?.trim() ?? null,
+        first: data?.x?.[0] == null
+          ? null
+          : data.unit ? String(data.x[0]) + "・" + data.unit : String(data.x[0]),
+        second: data?.x?.length > 1
+          ? data.unit ? String(data.x[1]) + "・" + data.unit : String(data.x[1])
+          : null,
+        penultimate: data?.x?.length > 1
+          ? data.unit
+            ? String(data.x[data.x.length - 2]) + "・" + data.unit
+            : String(data.x[data.x.length - 2])
+          : null,
+        last: data?.x?.length
+          ? data.unit
+            ? String(data.x[data.x.length - 1]) + "・" + data.unit
+            : String(data.x[data.x.length - 1])
+          : null,
+        points: data?.x?.length ?? 0,
+        dockHeight: dock?.getBoundingClientRect().height ?? 0,
+        dockMinBlock: dock ? parseFloat(getComputedStyle(dock).minBlockSize) : 0,
+        figureHeight: figure?.getBoundingClientRect().height ?? 0,
+        overlapX: panelBox && areaBox
+          ? Math.max(0, Math.min(panelBox.right, areaBox.right) - Math.max(panelBox.left, areaBox.left))
+          : null,
+        overlapY: panelBox && areaBox
+          ? Math.max(0, Math.min(panelBox.bottom, areaBox.bottom) - Math.max(panelBox.top, areaBox.top))
+          : null,
+      };
+    })()`);
+
   const failures = [];
   if (18.99 + CSS_PX_SERIALIZATION_EPSILON >= 20 * 0.95) {
     failures.push("annotation ratio gate accepts 94.95% of body size");
@@ -417,6 +481,7 @@ async function main() {
     smallestAt1440: Infinity,
     annotationAt375: Infinity,
     collisions: 0,
+    readouts: 0,
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
@@ -746,6 +811,160 @@ async function main() {
           failures.push(`${route} @${width} ${theme}: page never finished styling`);
           continue;
         }
+        const hasReadout = await evaluate(
+          `Boolean(document.querySelector(".plot[data-readout]"))`,
+        );
+        if (READOUT_ROUTES.has(route) && !hasReadout) {
+          failures.push(`${route} @${width} ${theme}: expected a keyboard readout but found none`);
+        }
+        if (hasReadout) {
+          let ready = false;
+          for (let attempt = 0; attempt < 40; attempt += 1) {
+            const state = await readoutState();
+            if (state?.panelReady) {
+              ready = true;
+              break;
+            }
+            await sleep(50);
+          }
+          if (!ready) {
+            failures.push(`${route} @${width} ${theme}: .readout-panel was never equipped`);
+          } else {
+            await evaluate(`document.activeElement?.blur()`);
+            await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+            const closed = await readoutState();
+            await evaluate(`document.querySelector(".plot[data-readout]").focus()`);
+            await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+            const focused = await readoutState();
+            totals.readouts += 1;
+            if (
+              !focused?.active ||
+              focused.role !== "group" ||
+              !focused.panelInDock ||
+              !focused.overlaysInArea
+            ) {
+              failures.push(
+                `${route} @${width} ${theme}: the readout did not retain its group/dock/overlay structure`,
+              );
+            }
+            if (
+              focused?.points < 3 ||
+              !focused.first ||
+              !focused.second ||
+              !focused.penultimate ||
+              !focused.last
+            ) {
+              failures.push(`${route} @${width} ${theme}: readout keyboard probe had fewer than three x labels`);
+            } else {
+              await pressKey("End");
+              let opened = await readoutState();
+              for (let attempt = 0; attempt < 10 && !opened?.visible; attempt += 1) {
+                await sleep(20);
+                opened = await readoutState();
+              }
+              if (opened?.reading !== "true" || !opened.visible || opened.when !== focused.last) {
+                failures.push(
+                  `${route} @${width} ${theme}: keyboard focus did not open the readout ` +
+                    `(reading=${opened?.reading ?? "unknown"}, visible=${opened?.visible ?? "unknown"}, ` +
+                    `when=${JSON.stringify(opened?.when)}, expected=${JSON.stringify(focused.last)})`,
+                );
+              }
+              await pressKey("ArrowLeft");
+              const left = await readoutState();
+              if (left?.when === opened?.when || left?.when !== focused.penultimate) {
+                failures.push(`${route} @${width} ${theme}: ArrowLeft did not change .readout-when`);
+              }
+              await pressKey("ArrowRight");
+              const right = await readoutState();
+              if (right?.when === left?.when || right?.when !== focused.last) {
+                failures.push(`${route} @${width} ${theme}: ArrowRight did not advance .readout-when`);
+              }
+              await pressKey("Home");
+              const home = await readoutState();
+              if (home?.when !== focused.first) {
+                failures.push(`${route} @${width} ${theme}: Home did not reach the first x label`);
+              }
+              await pressKey("End");
+              const end = await readoutState();
+              if (end?.when !== focused.last) {
+                failures.push(`${route} @${width} ${theme}: End did not reach the last x label`);
+              }
+              const dockHeights = [closed, focused, opened, left, right, home, end]
+                .map((state) => state?.dockHeight)
+                .filter(Number.isFinite);
+              const figureHeights = [closed, focused, opened, left, right, home, end]
+                .map((state) => state?.figureHeight)
+                .filter(Number.isFinite);
+              if (
+                closed?.reading !== "false" ||
+                closed?.dockMinBlock <= 0 ||
+                dockHeights.length !== 7 ||
+                figureHeights.length !== 7 ||
+                Math.max(...dockHeights) - Math.min(...dockHeights) > 1 ||
+                Math.max(...figureHeights) - Math.min(...figureHeights) > 1
+              ) {
+                failures.push(
+                  `${route} @${width} ${theme}: closed and open readouts changed reserved geometry`,
+                );
+              }
+              if (
+                end?.overlapX > READOUT_OVERLAP_TOLERANCE_PX &&
+                end?.overlapY > READOUT_OVERLAP_TOLERANCE_PX
+              ) {
+                failures.push(
+                  `${route} @${width} ${theme}: .readout-panel overlaps .plot-area ` +
+                    `by ${end.overlapX.toFixed(1)}x${end.overlapY.toFixed(1)}px`,
+                );
+              }
+              await pressKey("Escape");
+              const escaped = await readoutState();
+              if (escaped?.reading !== "false") {
+                failures.push(`${route} @${width} ${theme}: Escape did not close the readout`);
+              }
+            }
+          }
+        }
+        if (route === "/trend/" && width === 375 && theme === "light") {
+          const trendMarks = await evaluate(`(() => {
+            const plots = [...document.querySelectorAll(".plot[data-readout]")].slice(0, 3);
+            const charts = plots.map((plot) => ({
+              lines: [...plot.querySelectorAll(".plot-line")].map((line) => ({
+                weight: parseFloat(getComputedStyle(line).strokeWidth),
+                dash: getComputedStyle(line).strokeDasharray,
+              })),
+              payloadHasEmphasis: (() => {
+                try {
+                  const raw = plot.querySelector(".plot-readout-data")?.textContent ?? "";
+                  return JSON.parse(raw).series.some((series) => "emphasis" in series);
+                } catch { return true; }
+              })(),
+            }));
+            return charts;
+          })()`);
+          const twoLineCharts = trendMarks?.slice(0, 2) ?? [];
+          if (
+            twoLineCharts.length !== 2 ||
+            twoLineCharts.some(
+              (chart) =>
+                chart.lines.length !== 2 ||
+                Math.abs(chart.lines[0].weight - 2.5) > 0.01 ||
+                Math.abs(chart.lines[1].weight - 1.75) > 0.01 ||
+                chart.lines[1].dash === "none" ||
+                chart.payloadHasEmphasis,
+            )
+          ) {
+            failures.push("/trend/ @375 light: primary/comparison line emphasis is not visual-only");
+          }
+          const zones = trendMarks?.[2];
+          if (
+            !zones ||
+            zones.lines.length !== 8 ||
+            zones.lines.some((line) => Math.abs(line.weight - zones.lines[0].weight) > 0.01) ||
+            zones.payloadHasEmphasis
+          ) {
+            failures.push("/trend/ @375 light: eight-zone lines do not retain a uniform weight");
+          }
+        }
         const renderedTheme = await evaluate(`(() => {
           const colour = document.querySelector("[data-theme-color]");
           const canvas = document.createElement("canvas");
@@ -855,6 +1074,85 @@ async function main() {
               `${JSON.stringify(bad.b)} overlap by ${bad.px}px in .${bad.strip}`,
           );
         }
+        if (route === "/trend/" && width === 375 && theme === "light") {
+          const exported = await evaluate(`(() => {
+            const root = document.querySelector("main figure:has(.plot[data-readout])");
+            const button = [...(root?.querySelectorAll(".fig-tool") ?? [])]
+              .find((item) => item.textContent?.trim() === "下載 PNG");
+            if (!root || !button) return null;
+            const outerBlockSize = (element) => {
+              const style = getComputedStyle(element);
+              return element.getBoundingClientRect().height +
+                parseFloat(style.marginTop || "0") +
+                parseFloat(style.marginBottom || "0");
+            };
+            const tools = root.querySelector(".fig-tools");
+            const toolsShed = tools ? outerBlockSize(tools) : 0;
+            const dockShed = [...root.querySelectorAll(".readout-dock")]
+              .reduce((total, dock) => total + outerBlockSize(dock), 0);
+            const expectedInner = Math.max(
+              root.getBoundingClientRect().height - toolsShed - dockShed,
+              1,
+            );
+            const originalSerialize = XMLSerializer.prototype.serializeToString;
+            const originalEncode = window.encodeURIComponent;
+            let transient = null;
+            let serializedSvg = null;
+            XMLSerializer.prototype.serializeToString = function(node) {
+              transient = {
+                dock: node.querySelectorAll?.(".readout-dock").length ?? -1,
+                tools: node.querySelectorAll?.(".fig-tools").length ?? -1,
+                payload: node.querySelectorAll?.(".plot-readout-data").length ?? -1,
+                rule: node.querySelectorAll?.(".readout-rule").length ?? -1,
+                dot: node.querySelectorAll?.(".readout-dot").length ?? -1,
+                panel: node.querySelectorAll?.(".readout-panel").length ?? -1,
+                say: node.querySelectorAll?.(".readout-say").length ?? -1,
+              };
+              return originalSerialize.call(this, node);
+            };
+            window.encodeURIComponent = function(value) {
+              if (String(value).startsWith("<svg ")) serializedSvg = String(value);
+              return originalEncode(value);
+            };
+            try {
+              button.click();
+            } finally {
+              XMLSerializer.prototype.serializeToString = originalSerialize;
+              window.encodeURIComponent = originalEncode;
+            }
+            const actualInner = Number(
+              serializedSvg?.match(/<foreignObject[^>]*height="([^"]+)"/)?.[1],
+            );
+            const actualFrame = Number(
+              serializedSvg?.match(/viewBox="0 0 [^ ]+ ([^"]+)"/)?.[1],
+            );
+            return {
+              transient,
+              dockShed,
+              expectedInner,
+              actualInner,
+              expectedFrame: Math.ceil(expectedInner) + 36,
+              actualFrame,
+            };
+          })()`);
+          if (!exported?.transient || Object.values(exported.transient).some((count) => count !== 0)) {
+            failures.push(
+              `/trend/ @375 light: PNG export retained transient nodes ${JSON.stringify(exported?.transient)}`,
+            );
+          }
+          if (
+            !Number.isFinite(exported?.dockShed) ||
+            exported.dockShed <= 0 ||
+            !Number.isFinite(exported?.actualInner) ||
+            !Number.isFinite(exported?.actualFrame) ||
+            Math.abs(exported.actualInner - exported.expectedInner) > 1 ||
+            Math.abs(exported.actualFrame - exported.expectedFrame) > 1
+          ) {
+            failures.push(
+              `/trend/ @375 light: PNG export frame retained dock space ${JSON.stringify(exported)}`,
+            );
+          }
+        }
       }
     }
   }
@@ -862,12 +1160,16 @@ async function main() {
   if (totals.smallestAt375 < MIN_FONT_PX) {
     failures.push(`smallest type at 375px is ${totals.smallestAt375}px (floor ${MIN_FONT_PX})`);
   }
+  if (totals.readouts === 0) {
+    failures.push("readout keyboard and overlap probe exercised no chart");
+  }
 
   console.log(`routes checked   : ${ROUTES.length} x 3 widths x 2 themes`);
   console.log(`text nodes       : ${totals.nodes.toLocaleString("en-US")}`);
   console.log(`smallest type    : ${totals.smallestAt375}px @375, ${totals.smallestAt1440}px @1440`);
   console.log(`smallest in-figure annotation @375 : ${totals.annotationAt375}px`);
   console.log(`overlapping axis labels : ${totals.collisions}`);
+  console.log(`readouts exercised : ${totals.readouts}`);
   console.log(`APCA floor       : Lc ${MIN_LC}`);
   console.log(`problems         : ${failures.length}`);
   for (const line of failures.slice(0, 40)) console.log(`  FAIL: ${line}`);

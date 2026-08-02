@@ -13,10 +13,19 @@ import {
 } from "../lib/chart";
 
 type Guide = { value?: number; values?: (number | null)[]; label: string; colour: string };
+type Emphasis = "primary" | "comparison";
+type Series = {
+  key: string;
+  label: string;
+  values: (number | null)[];
+  colour: string;
+  dash?: string;
+  emphasis?: Emphasis;
+};
 
 interface Props {
   years: number[];
-  series: { key: string; label: string; values: (number | null)[]; colour: string; dash?: string }[];
+  series: Series[];
   /*
    * A reference line. `value` draws it flat; `values` draws it per year, for a
    * limit that has a history — see the Taiwan PM2.5 standard in chapter 1,
@@ -215,6 +224,13 @@ const noteY = spreadLabels(
  * carries its own latest value, so the key answers "which line" and "how much"
  * in the same glance.
  */
+/* The two comparison figures already distinguish their secondary series with
+   a dash. That existing mark can supply the visual hierarchy without changing
+   ChapterTrend or adding a field to the readout payload; crowded charts keep
+   their established uniform weight unless a caller opts in explicitly. */
+const emphasisFor = (s: Series): Emphasis | undefined =>
+  s.emphasis ?? (series.length === 2 ? (s.dash ? "comparison" : "primary") : undefined);
+
 const keyed = series.map((s) => {
   let last: number | null = null;
   for (let i = s.values.length - 1; i >= 0; i -= 1) {
@@ -224,7 +240,7 @@ const keyed = series.map((s) => {
       break;
     }
   }
-  return { ...s, last };
+  return { ...s, last, emphasis: emphasisFor(s) };
 });
 ---
 
@@ -240,7 +256,8 @@ const keyed = series.map((s) => {
         {keyed.map((s) => (
           <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
             <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
-              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour} stroke-width="2.5"
+              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour}
+                stroke-width={s.emphasis === "comparison" ? "1.75" : "2.5"}
                 stroke-linecap="round" stroke-dasharray={s.dash} />
             </svg>
             <span class="key-name">{s.label}</span>
@@ -361,10 +378,16 @@ const keyed = series.map((s) => {
         />
 
         {
-          series.map((s) => (
+          keyed.map((s) => (
             <path
               d={smoothPath(s.values, x, y)}
-              class="plot-line"
+              class:list={[
+                "plot-line",
+                {
+                  "emphasis-primary": s.emphasis === "primary",
+                  "emphasis-comparison": s.emphasis === "comparison",
+                },
+              ]}
               stroke={s.colour}
               stroke-dasharray={s.dash}
               vector-effect="non-scaling-stroke"
@@ -416,6 +439,14 @@ const keyed = series.map((s) => {
 </div>
 
 <style>
+  .plot-line.emphasis-primary {
+    stroke-width: 2.5;
+  }
+
+  .plot-line.emphasis-comparison {
+    stroke-width: 1.75;
+  }
+
   /*
    * Reference-line labels.
    *

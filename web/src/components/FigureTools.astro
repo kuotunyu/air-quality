@@ -305,10 +305,23 @@
        * is on the screen.
        */
       const tools = root.querySelector<HTMLElement>(".fig-tools");
-      const shed = tools
-        ? tools.getBoundingClientRect().height +
-          parseFloat(getComputedStyle(tools).marginTop || "0")
-        : 0;
+      /* 2026-08-03 — the reserved readout dock is transient too. Its outer
+         block size must leave the export frame with the same tight ending as
+         the clone after the dock is removed, rather than a dock-sized field. */
+      const outerBlockSize = (element: HTMLElement) => {
+        const style = getComputedStyle(element);
+        return (
+          element.getBoundingClientRect().height +
+          parseFloat(style.marginTop || "0") +
+          parseFloat(style.marginBottom || "0")
+        );
+      };
+      const shed =
+        (tools ? outerBlockSize(tools) : 0) +
+        Array.from(root.querySelectorAll<HTMLElement>(".readout-dock")).reduce(
+          (total, dock) => total + outerBlockSize(dock),
+          0,
+        );
       const inner = Math.max(box.height - shed, 1);
 
       const w = Math.ceil(box.width) + pad * 2;
@@ -331,7 +344,7 @@
        */
       copy
         .querySelectorAll(
-          ".fig-tools, .plot-readout-data, .readout-rule, .readout-dot, .readout-panel, .readout-say",
+          ".fig-tools, .plot-readout-data, .readout-dock, .readout-rule, .readout-dot, .readout-panel, .readout-say",
         )
         .forEach((el) => el.remove());
       copy.style.margin = "0";

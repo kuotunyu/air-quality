@@ -26,6 +26,11 @@
  * the crosshair and the panel are both absolutely positioned inside the plot
  * area, so nothing below a figure shifts when a pointer enters one.
  */
+/**
+ * 2026-08-03 — supersedes the final paragraph above. The rule and dots remain
+ * overlays, but the panel now occupies a reserved dock after the plot so an
+ * exact value never covers the evidence it describes.
+ */
 ---
 
 <script>
@@ -113,6 +118,10 @@
     panel.className = "readout-panel";
     panel.setAttribute("aria-hidden", "true");
 
+    const dock = document.createElement("div");
+    dock.className = "readout-dock";
+    dock.setAttribute("aria-hidden", "true");
+
     /*
      * The live region is separate from the panel and carries text only.
      *
@@ -126,7 +135,9 @@
     say.setAttribute("role", "status");
     say.setAttribute("aria-live", "polite");
 
-    area.append(rule, ...dots, panel);
+    plot.insertAdjacentElement("afterend", dock);
+    dock.append(panel);
+    area.append(rule, ...dots);
     plot.append(say);
 
     /*
@@ -190,13 +201,11 @@
        * the figure", and measured at 320 that panel was 449px in a 231px plot
        * and put 237px of horizontal scroll on the document.
        */
-      const room = area.getBoundingClientRect().width;
-      const wide = panel.getBoundingClientRect().width;
-      const gutter = 12;
-      const atPx = (pct / 100) * room;
-      let left = atPx + gutter;
-      if (left + wide > room) left = atPx - gutter - wide;
-      panel.style.left = `${Math.max(0, Math.min(left, Math.max(0, room - wide)))}px`;
+      /*
+       * 2026-08-03 — supersedes the clamping strategy above. The panel no
+       * longer has a horizontal coordinate because its dock is outside the
+       * drawing box; only the rule and dots follow the selected x position.
+       */
 
       plot.dataset.reading = "true";
       say.textContent =
@@ -280,6 +289,11 @@
       return Math.round(Math.max(0, Math.min(1, frac)) * last);
     }
 
+    /* The hidden panel still takes its final space, so first focus changes
+       opacity and content without moving the chart or the material below it. */
+    panel.replaceChildren(head(data.x[last]), ...rows(last));
+    plot.dataset.reading = "false";
+
     function clear() {
       at = null;
       plot.dataset.reading = "false";
@@ -340,9 +354,13 @@
   }
 
   .readout-rule,
+  .readout-dot {
+    position: absolute;
+  }
+
+  .readout-rule,
   .readout-dot,
   .readout-panel {
-    position: absolute;
     opacity: 0;
     pointer-events: none;
     transition: opacity 90ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -350,7 +368,7 @@
 
   .plot[data-reading="true"] .readout-rule,
   .plot[data-reading="true"] .readout-dot:not([hidden]),
-  .plot[data-reading="true"] .readout-panel {
+  .plot[data-reading="true"] + .readout-dock .readout-panel {
     opacity: 1;
   }
 
@@ -372,9 +390,14 @@
     box-shadow: 0 0 0 2px var(--bg-sunken);
   }
 
+  .readout-dock {
+    display: grid;
+    min-block-size: 3.25rem;
+    margin-block-start: 0.55rem;
+    pointer-events: none;
+  }
+
   .readout-panel {
-    top: 0;
-    z-index: 2;
     /*
      * As wide as it needs and never wider than the plot.
      *
@@ -385,14 +408,28 @@
      * the whole document the moment a finger touched a chart. Three of the three
      * chapter-1 figures did it, at every width up to 640.
      */
-    width: max-content;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
     max-width: 100%;
+    box-sizing: border-box;
     padding: 0.35rem 0.6rem;
     border: 1px solid var(--line);
     border-radius: calc(var(--radius) - 4px);
     background: var(--bg-raised);
     box-shadow: 0 2px 8px oklch(0 0 0 / 0.08);
     line-height: 1.35;
+  }
+
+  @container (min-width: 560px) {
+    .readout-panel {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.1rem 1rem;
+    }
+
+    .readout-when {
+      grid-column: 1 / -1;
+    }
   }
 
   .readout-when {
@@ -444,6 +481,9 @@
    * the same array. So the swatch is not a hint here, it is an index. The live
    * region a screen reader hears is untouched and still names every series.
    */
+  /* 2026-08-03 — the dock now uses the chart container rather than the drawing
+     box. The narrow swap remains because it preserves one readable value column
+     when the full series names would compete with the numbers. */
   @container (max-width: 420px) {
     .readout-row {
       grid-template-columns: 1.35em auto;
