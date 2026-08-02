@@ -15,6 +15,7 @@
 import spatial from "../../public/data/story/spatial-structure.json";
 import { n, nFixed, ticks } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 
 const network = spatial.network as {
   stations: number;
@@ -182,7 +183,7 @@ const cellFor = (method: string, buffer: number) =>
     這就是為什麼本章不發表單一的「空間自相關係數」：
   </p>
 
-  <figure>
+  <EvidenceFigure number="3.1" title="官方分區移除了多少空間相依？">
     {/*
       No `role="img"`.
 
@@ -248,7 +249,7 @@ const cellFor = (method: string, buffer: number) =>
         ))}
       </span>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       {/* Three decimals, matching the figure. The caption rounded to two while
           the column beside it printed three, so the same quantity appeared twice
           on one screen at two precisions. And `I =` followed by a newline
@@ -257,8 +258,8 @@ const cellFor = (method: string, buffer: number) =>
       （I = +{correlogram[0].i.toFixed(3)}），100 公里外反號
       （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）——
       北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <h2>五種空間控制，各買到多少</h2>
 
@@ -268,7 +269,7 @@ const cellFor = (method: string, buffer: number) =>
     沒有可加分解的性質：
   </p>
 
-  <figure>
+  <EvidenceFigure number="3.2" title="純地理分群會得到不同結論嗎？">
     <div
       class="controls-fig"
       style={`grid-template-rows: repeat(${controls.length}, var(--row-h)) auto`}
@@ -306,13 +307,13 @@ const cellFor = (method: string, buffer: number) =>
         ))}
       </span>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       每月殘差 Moran's I 的平均（點）與 95% 塊狀 bootstrap 區間（線）。
       <strong>刻度與上圖不同</strong>：上圖是 ±0.4 的距離分帶，這裡是 0 到 0.18
       的五種控制，同一個統計量、兩張圖、兩個尺度，長度不能跨圖比。
       「顯著月數」為 BH 校正後計數。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   {pooled && literal && (
     <div class="note">

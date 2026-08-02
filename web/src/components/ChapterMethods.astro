@@ -16,6 +16,7 @@ import { pitfallTables, replicationRows, imputationEvidence } from "../lib/data"
 import { linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, xLabelBucket, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 
 type Row = Record<string, any>;
 const t = (name: string) => (pitfallTables[name] ?? []) as Row[];
@@ -189,7 +190,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </p>
 
     <div class="two-up">
-      <figure>
+      <EvidenceFigure number="8.1" title="月平均隱藏了多少逐時變異？">
         <div class="chart">
           <div
             class="plot"
@@ -261,12 +262,12 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
             </div>
           </div>
         </div>
-        <figcaption>
+        <Fragment slot="caption">
           2010–2017 年逐時 PM2.5 的日內平均。峰值在 {diurnalPeak.hour} 時
           （{n(diurnalPeak.mean)} μg/m³），谷底在 {diurnalTrough.hour} 時
           （{n(diurnalTrough.mean)} μg/m³）。月平均把整條曲線壓成一個點。
-        </figcaption>
-      </figure>
+        </Fragment>
+      </EvidenceFigure>
 
       <div class="verdict">
         <div class="stat">
@@ -642,7 +643,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       「缺了多少」有兩個答案而且方向相反——所以一個不附缺口長度分布的填補率，等於沒有說明。
     </div>
 
-    <figure>
+    <EvidenceFigure number="8.2" title="不同補值方法對不同缺口長度付出什麼代價？">
       <div class="chart">
         {/*
           The fifth chart to move its series names out of a right-hand gutter.
@@ -758,14 +759,14 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
           </div>
         </div>
       </div>
-      <figcaption>
+      <Fragment slot="caption">
         平均絕對誤差（μg/m³），依被隱藏的缺口長度分。做法是把
         {" "}{imputationEvidence.hidden.toLocaleString()} 筆<strong>真的存在</strong>的讀數藏起來，
         叫每個策略猜回來，再跟實際值比對。
         隱藏的洞是<strong>成串的</strong>，長度抽自這批資料自己量到的缺口分布——
         隨機遮蔽單一格會把每個洞都變成 1 小時，而那正是線性內插不可能失敗的情況。
-      </figcaption>
-    </figure>
+      </Fragment>
+    </EvidenceFigure>
 
     <div class="compare">
       <div class="card">
@@ -942,7 +943,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       align-items: center;
     }
   }
-  .two-up figure {
+  .two-up .evidence-figure {
     margin: 0;
     min-width: 0;
   }

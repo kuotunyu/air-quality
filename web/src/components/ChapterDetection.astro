@@ -15,6 +15,7 @@ import detection from "../../public/data/story/detection-limit.json";
 import { linear, n, ticks } from "../lib/chart";
 import { href } from "../lib/chapters";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 
 const events = detection.events as {
   event: string;
@@ -266,13 +267,14 @@ const shortName = (name: string) =>
     兩張圖共用同一個刻度，零在正中間，所以雲的寬度可以直接比。
   </p>
 
+  <EvidenceFigure number="5.1" title="三個事件各自需要多大的效應才看得見？">
   {
     windowed.map((e) => {
       const s = strip(e);
       const zero = s.x(0);
       return (
         <>
-        <figure>
+        <div class="event-strip-panel">
           <div class="chart">
             {/*
               Named, and deliberately NOT focusable.
@@ -383,17 +385,36 @@ const shortName = (name: string) =>
               </div>
             </div>
           </div>
+        </div>
+        </>
+      );
+    })
+  }
+  <Fragment slot="caption">
+    {
+      windowed.map((e) => {
+        const s = strip(e);
+        return (
+          <>
           {/* `n_stations` and `station_effects.length` are the same number and
               the caption printed both of them — 「73 站的估計值（73 個亮點）」.
               One of them is the count and the other is how the count is drawn,
               so the second says only what a reader can already see. */}
-          <figcaption>
+          <span class="event-caption">
             <strong>{shortName(e.event)}</strong> —— {e.n_stations} 站的估計值
             （亮點）落在 {s.pool.length} 個安慰劑估計值（淡線）構成的散布之中。
             單位 μg/m³，兩張圖共用刻度。
-          </figcaption>
-        </figure>
+          </span>
+          </>
+        );
+      })
+    }
+  </Fragment>
+  </EvidenceFigure>
 
+  {
+    windowed.map((e) => (
+      <>
         {/*
           The 145 values, in a form that is not a hover.
 
@@ -436,9 +457,8 @@ const shortName = (name: string) =>
             </table>
           </div>
         </details>
-        </>
-      );
-    })
+      </>
+    ))
   }
 
   <div class="note caveat">
@@ -597,6 +617,10 @@ const shortName = (name: string) =>
   .strip-tick {
     color: var(--text-faint);
     opacity: 0.75;
+  }
+
+  .event-caption {
+    display: block;
   }
 
   /* Below this the intermediate NUMBERS stop fitting — measured at a 320px

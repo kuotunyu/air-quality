@@ -20,6 +20,7 @@
 import health from "../../public/data/story/health.json";
 import { linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 
 const series = health.series as {
   name: string;
@@ -170,7 +171,7 @@ const langOf = (s: string | null | undefined) =>
 
   <h2>四種反事實濃度下的可歸因比例</h2>
 
-  <figure>
+  <EvidenceFigure number="7.1" title="比較基準如何改變可歸因比例？">
     <div class="chart">
       {/*
         The four counterfactuals, named above the plot rather than at the ends
@@ -257,13 +258,13 @@ const langOf = (s: string | null | undefined) =>
         </div>
       </div>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       可歸因比例，{panel.stations} 個固定測站、{panel.start_year}–{
         years[years.length - 1]
       } 年。四條線是<strong>同一批濃度資料</strong>，只差在以哪個濃度作為比較基準。
       標籤上的數字就是那個基準。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <div class="grid grid-2">
     <div class="card">
@@ -295,7 +296,7 @@ const langOf = (s: string | null | undefined) =>
     但它佔估計值的<strong>比例</strong>幾乎翻了三倍。
   </p>
 
-  <figure>
+  <EvidenceFigure number="7.2" title="不同暴露反應函數會把結果推動多少？">
     <div class="chart">
       <div
         class="plot"
@@ -361,11 +362,11 @@ const langOf = (s: string | null | undefined) =>
         </div>
       </div>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       基準選擇造成的範圍，除以估計值本身。從 {n(headline.first_share * 100, 0)}% 上升到
       {" "}{n(headline.last_share * 100, 0)}%。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <div class="note caveat">
     <p>

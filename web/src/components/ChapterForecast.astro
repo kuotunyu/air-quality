@@ -16,6 +16,7 @@ import forecast from "../../public/data/story/forecast.json";
 import { sarimaEvidence } from "../lib/data";
 import { linear, markInk, n, ticks, xLabelBucket, yGutter } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 
 const horizons = forecast.horizons as {
   horizon: number;
@@ -244,7 +245,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 
   <h2>均方根誤差（μg/m³）</h2>
 
-  <figure>
+  <EvidenceFigure number="6.1" title="各預測期距的誤差如何變化？">
     <div class="chart">
       {/*
         Named above the plot rather than at the ends of the lines. The gutter was
@@ -337,12 +338,12 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
         </div>
       </div>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       均方根誤差（RMSE），越低越好。<strong>climatology 那條是平的</strong>——
       它根本不看今天發生什麼事，所以期距對它毫無影響，
       因此它是這張圖裡唯一固定不動的參考線。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <div class="note">
     <strong>關鍵是那個交叉點。</strong>
@@ -360,7 +361,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     所以三個可以畫在同一根軸上。畫在同一根軸上，它們的矛盾就變成一個形狀。
   </p>
 
-  <figure>
+  <EvidenceFigure number="6.2" title="模型相對兩條基準線何時失去優勢？">
     <div class="chart">
       {/*
         Named above the plot rather than at the ends of the lines. The gutter was
@@ -477,11 +478,11 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
         </div>
       </div>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       粗線是四個分割的平均，<strong>小點是每一個分割各自的值</strong>。
       三條線來自同一批模型、同一批預測。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   <div class="grid grid-2">
     {
@@ -626,7 +627,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 
   <h3>二、那個不便，買到了什麼</h3>
 
-  <figure>
+  <EvidenceFigure number="6.3" title="自動搜尋買到的準確度足以抵銷成本嗎？">
     <div class="chart">
       {/*
         Named above the plot rather than at the ends of the lines. The gutter was
@@ -719,12 +720,12 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
         </div>
       </div>
     </div>
-    <figcaption>
+    <Fragment slot="caption">
       均方根誤差（μg/m³），越低越好。三種方法評分在<strong>完全相同的預測原點</strong>上，
       每個期距約 {sar.horizons[0].origins.toLocaleString()} 個原點。
       SARIMA 是<strong>固定階數</strong>，不是搜尋出來的——搜尋的代價就是上面那張表。
-    </figcaption>
-  </figure>
+    </Fragment>
+  </EvidenceFigure>
 
   {
     sarOneHour && (

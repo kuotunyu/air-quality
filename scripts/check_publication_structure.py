@@ -24,6 +24,32 @@ TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "ty
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
 START_HERE_DATA_DESTINATIONS = {"/explore/", "/data/"}
+EXPECTED_ANALYTICAL_FIGURES = {
+    "trend": (
+        ("1.1", "固定測站後，全台 PM2.5 的下降仍然成立嗎？"),
+        ("1.2", "扣除天氣後，下降幅度還剩多少？"),
+        ("1.3", "各空品區的長期趨勢是否一致？"),
+    ),
+    "space": (
+        ("3.1", "官方分區移除了多少空間相依？"),
+        ("3.2", "純地理分群會得到不同結論嗎？"),
+    ),
+    "sources": (("4.1", "高濃度空氣在什麼風向與風速條件下出現？"),),
+    "detection": (("5.1", "三個事件各自需要多大的效應才看得見？"),),
+    "forecast": (
+        ("6.1", "各預測期距的誤差如何變化？"),
+        ("6.2", "模型相對兩條基準線何時失去優勢？"),
+        ("6.3", "自動搜尋買到的準確度足以抵銷成本嗎？"),
+    ),
+    "health": (
+        ("7.1", "比較基準如何改變可歸因比例？"),
+        ("7.2", "不同暴露反應函數會把結果推動多少？"),
+    ),
+    "methods": (
+        ("8.1", "月平均隱藏了多少逐時變異？"),
+        ("8.2", "不同補值方法對不同缺口長度付出什麼代價？"),
+    ),
+}
 URL_C0_AND_SPACE = "".join(chr(value) for value in range(0x21))
 IGNORED_SUBTREES = {"template", "script", "style"}
 VOID_ELEMENTS = {
@@ -514,7 +540,10 @@ def _nearest_ancestor_with_class(element: Element, class_name: str) -> Element |
     return None
 
 
-def trend_figure_failures_for_text(html: str) -> list[str]:
+def analytical_figure_failures_for_text(
+    html: str,
+    expected: tuple[tuple[str, str], ...] | None = None,
+) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
     parser.close()
@@ -523,15 +552,19 @@ def trend_figure_failures_for_text(html: str) -> list[str]:
     figures = [element for element in visible if element.tag == "figure"]
     failures: list[str] = []
 
-    if len(figures) != 3:
-        failures.append(f"expected exactly three visible figures, found {len(figures)}")
+    if expected is not None and len(figures) != len(expected):
+        failures.append(
+            f"expected exactly {len(expected)} visible analytical figures, found {len(figures)}"
+        )
 
     used_shells: dict[int, Element] = {}
     checked_shells: set[int] = set()
-    for figure in figures:
+    observed: list[tuple[str, str] | None] = []
+    for figure_index, figure in enumerate(figures, start=1):
         shell = _nearest_ancestor_with_class(figure, "evidence-figure")
         if shell is None:
-            failures.append("unframed figure")
+            failures.append(f"unframed figure {figure_index}")
+            observed.append(None)
             continue
         used_shells[id(shell)] = shell
         if shell.tag != "section":
@@ -554,12 +587,38 @@ def trend_figure_failures_for_text(html: str) -> list[str]:
                 f"found {len(shell_figures)}"
             )
 
+        numbers = [
+            candidate
+            for candidate in visible
+            if "evidence-number" in candidate.classes
+            and _nearest_ancestor_with_class(candidate, "evidence-figure") is shell
+        ]
+        number_text = ""
+        if not numbers:
+            failures.append("evidence figure has no visible .evidence-number")
+        elif len(numbers) != 1:
+            failures.append(
+                "evidence figure must contain exactly one visible .evidence-number, "
+                f"found {len(numbers)}"
+            )
+        else:
+            number = numbers[0]
+            number_text = number.rendered_text()
+            if number.tag != "p":
+                failures.append("visible .evidence-number is not a <p>")
+            if not number_text:
+                failures.append("visible .evidence-number has no rendered text")
+            if number.is_inside(figure):
+                failures.append("visible .evidence-number is inside the native figure")
+
         titles = [
             candidate
             for candidate in visible
             if "evidence-title" in candidate.classes
             and _nearest_ancestor_with_class(candidate, "evidence-figure") is shell
         ]
+        title_text = ""
+        title: Element | None = None
         if not titles:
             failures.append("evidence figure has no visible .evidence-title")
         elif len(titles) != 1:
@@ -569,12 +628,37 @@ def trend_figure_failures_for_text(html: str) -> list[str]:
             )
         else:
             title = titles[0]
+            title_text = title.rendered_text()
             if title.tag != "p":
                 failures.append("visible .evidence-title is not a <p>")
-            if not title.rendered_text():
+            if not title_text:
                 failures.append("visible .evidence-title has no rendered text")
             if title.is_inside(figure):
                 failures.append("visible .evidence-title is inside the native figure")
+
+        labelledby = (shell.attributes.get("aria-labelledby") or "").split()
+        if len(labelledby) != 1:
+            failures.append("evidence figure must have exactly one aria-labelledby target")
+        elif title is not None:
+            title_id = (title.attributes.get("id") or "").strip()
+            if not title_id:
+                failures.append("visible .evidence-title has no id")
+            elif labelledby[0] != title_id:
+                failures.append("evidence figure aria-labelledby does not reference its title")
+            targets = [
+                candidate
+                for candidate in visible
+                if (candidate.attributes.get("id") or "").strip() == labelledby[0]
+            ]
+            if len(targets) != 1:
+                failures.append(
+                    "evidence figure aria-labelledby must resolve to exactly one visible element, "
+                    f"found {len(targets)}"
+                )
+            elif targets[0] is not title:
+                failures.append("evidence figure aria-labelledby resolves outside its title")
+
+        observed.append((number_text, title_text))
 
     shells = [element for element in visible if "evidence-figure" in element.classes]
     unused_shells = [shell for shell in shells if id(shell) not in used_shells]
@@ -585,11 +669,42 @@ def trend_figure_failures_for_text(html: str) -> list[str]:
     ):
         failures.append("each framed figure must have its own .evidence-figure ancestor")
 
+    complete = [item for item in observed if item is not None]
+    observed_numbers = [number for number, _ in complete if number]
+    if len(observed_numbers) != len(set(observed_numbers)):
+        failures.append("evidence figure numbers must be unique within chapter")
+    observed_titles = [title for _, title in complete if title]
+    if len(observed_titles) != len(set(observed_titles)):
+        failures.append("evidence figure titles must be unique within chapter")
+
+    if expected is not None:
+        for index, (expected_number, expected_title) in enumerate(expected):
+            if index >= len(observed):
+                continue
+            observed_item = observed[index]
+            if observed_item is None:
+                continue
+            actual_number, actual_title = observed_item
+            number_label = f"圖 {expected_number}"
+            if actual_number and actual_number != number_label:
+                failures.append(
+                    f"analytical figure {index + 1} number must be {number_label!r}, "
+                    f"found {actual_number!r}"
+                )
+            if actual_title and actual_title != expected_title:
+                failures.append(
+                    f"analytical figure {index + 1} title must be {expected_title!r}, "
+                    f"found {actual_title!r}"
+                )
+
     return failures
 
 
-def trend_figure_failures_for(page: pathlib.Path) -> list[str]:
-    return trend_figure_failures_for_text(page.read_text(encoding="utf-8"))
+def analytical_figure_failures_for(
+    page: pathlib.Path,
+    expected: tuple[tuple[str, str], ...] | None = None,
+) -> list[str]:
+    return analytical_figure_failures_for_text(page.read_text(encoding="utf-8"), expected)
 
 
 def home_failures_for_text(html: str) -> list[str]:
@@ -874,103 +989,197 @@ def _run_preflight() -> None:
                 f"HTML preflight did not reject {name} for the expected reason: {mutation_failures}"
             )
 
-    def evidence_shell(title: str = "Question", body: str = "Chart") -> str:
+    def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
+        title_id = f"evidence-{number.replace('.', '-')}-title"
         return (
-            '<section class="evidence-figure"><header class="evidence-header">'
-            f'<p class="evidence-title">{title}</p></header><figure>{body}</figure></section>'
+            f'<section class="evidence-figure" aria-labelledby="{title_id}">'
+            '<header class="evidence-header">'
+            f'<p class="evidence-number">圖 {number}</p>'
+            f'<p class="evidence-title" id="{title_id}">{title}</p>'
+            f"</header><figure>{body}</figure></section>"
         )
 
-    first_evidence_shell = evidence_shell("Question one")
-    valid_trend = (
-        first_evidence_shell + evidence_shell("Question two") + evidence_shell("Question three")
+    expected_evidence = (
+        ("1.1", "Question one"),
+        ("1.2", "Question two"),
+        ("1.3", "Question three"),
     )
-    valid_trend_failures = trend_figure_failures_for_text(valid_trend)
-    if valid_trend_failures:
+    first_evidence_shell = evidence_shell(*expected_evidence[0])
+    valid_evidence = "".join(evidence_shell(*item) for item in expected_evidence)
+    valid_evidence_failures = analytical_figure_failures_for_text(valid_evidence, expected_evidence)
+    if valid_evidence_failures:
         raise RuntimeError(
-            f"trend figure preflight rejected the valid control: {valid_trend_failures}"
+            f"analytical figure preflight rejected the valid control: {valid_evidence_failures}"
+        )
+    ignored_figure_failures = analytical_figure_failures_for_text(
+        valid_evidence
+        + "<figure hidden>Hidden chart</figure>"
+        + "<template><figure>Template chart</figure></template>",
+        expected_evidence,
+    )
+    if ignored_figure_failures:
+        raise RuntimeError(
+            "analytical figure preflight counted hidden or template figures: "
+            f"{ignored_figure_failures}"
         )
 
     evidence_mutations = {
         "unframed figure": (
-            "unframed figure",
+            "unframed figure 1",
             "<figure>Chart</figure>"
-            + evidence_shell("Question two")
-            + evidence_shell("Question three"),
+            + evidence_shell(*expected_evidence[1])
+            + evidence_shell(*expected_evidence[2]),
         ),
         "hidden evidence shell": (
-            "expected exactly three visible figures, found 2",
-            valid_trend.replace(
-                '<section class="evidence-figure">',
-                '<section class="evidence-figure" hidden>',
+            "expected exactly 3 visible analytical figures, found 2",
+            valid_evidence.replace(
+                '<section class="evidence-figure"',
+                '<section class="evidence-figure" hidden',
                 1,
             ),
         ),
         "template evidence shell": (
-            "expected exactly three visible figures, found 2",
-            valid_trend.replace(
+            "expected exactly 3 visible analytical figures, found 2",
+            valid_evidence.replace(
                 first_evidence_shell,
                 f"<template>{first_evidence_shell}</template>",
                 1,
             ),
         ),
+        "non-section evidence shell": (
+            "figure evidence ancestor is not a <section>",
+            valid_evidence.replace("<section ", "<div ", 1).replace(
+                "</figure></section>", "</figure></div>", 1
+            ),
+        ),
+        "hidden number": (
+            "evidence figure has no visible .evidence-number",
+            valid_evidence.replace('class="evidence-number"', 'class="evidence-number" hidden', 1),
+        ),
+        "template number": (
+            "evidence figure has no visible .evidence-number",
+            valid_evidence.replace(
+                '<p class="evidence-number">圖 1.1</p>',
+                '<template><p class="evidence-number">圖 1.1</p></template>',
+                1,
+            ),
+        ),
+        "empty number": (
+            "visible .evidence-number has no rendered text",
+            valid_evidence.replace("圖 1.1</p>", "</p>", 1),
+        ),
+        "number outside its shell": (
+            "evidence figure has no visible .evidence-number",
+            valid_evidence.replace(
+                '<section class="evidence-figure" aria-labelledby="evidence-1-1-title">'
+                '<header class="evidence-header"><p class="evidence-number">圖 1.1</p>',
+                '<p class="evidence-number">圖 1.1</p>'
+                '<section class="evidence-figure" aria-labelledby="evidence-1-1-title">'
+                '<header class="evidence-header">',
+                1,
+            ),
+        ),
         "hidden title": (
             "evidence figure has no visible .evidence-title",
-            valid_trend.replace('class="evidence-title"', 'class="evidence-title" hidden', 1),
+            valid_evidence.replace('class="evidence-title"', 'class="evidence-title" hidden', 1),
         ),
         "template title": (
             "evidence figure has no visible .evidence-title",
-            valid_trend.replace(
-                '<p class="evidence-title">Question one</p>',
-                '<template><p class="evidence-title">Question one</p></template>',
+            valid_evidence.replace(
+                '<p class="evidence-title" id="evidence-1-1-title">Question one</p>',
+                '<template><p class="evidence-title" '
+                'id="evidence-1-1-title">Question one</p></template>',
                 1,
             ),
         ),
         "empty title": (
             "visible .evidence-title has no rendered text",
-            valid_trend.replace(">Question one</p>", "></p>", 1),
+            valid_evidence.replace(">Question one</p>", "></p>", 1),
         ),
         "title outside its shell": (
             "evidence figure has no visible .evidence-title",
-            valid_trend.replace(
-                '<section class="evidence-figure"><header class="evidence-header">'
-                '<p class="evidence-title">Question one</p></header>',
-                '<p class="evidence-title">Question one</p>'
-                '<section class="evidence-figure"><header class="evidence-header"></header>',
+            valid_evidence.replace(
+                '<section class="evidence-figure" aria-labelledby="evidence-1-1-title">'
+                '<header class="evidence-header"><p class="evidence-number">圖 1.1</p>'
+                '<p class="evidence-title" id="evidence-1-1-title">Question one</p></header>',
+                '<p class="evidence-title" id="evidence-1-1-title">Question one</p>'
+                '<section class="evidence-figure" aria-labelledby="evidence-1-1-title">'
+                '<header class="evidence-header"><p class="evidence-number">圖 1.1</p></header>',
                 1,
             ),
         ),
         "figure below an intervening wrapper": (
             "figure is not a direct child of its nearest .evidence-figure ancestor",
-            valid_trend.replace("<figure>Chart</figure>", "<div><figure>Chart</figure></div>", 1),
+            valid_evidence.replace(
+                "<figure>Chart</figure>", "<div><figure>Chart</figure></div>", 1
+            ),
         ),
-        "duplicate title": (
+        "duplicate title node": (
             "evidence figure must contain exactly one visible .evidence-title, found 2",
-            valid_trend.replace(
-                '<p class="evidence-title">Question one</p>',
-                '<p class="evidence-title">Question one</p>'
+            valid_evidence.replace(
+                '<p class="evidence-title" id="evidence-1-1-title">Question one</p>',
+                '<p class="evidence-title" id="evidence-1-1-title">Question one</p>'
                 '<p class="evidence-title">Question duplicate</p>',
                 1,
             ),
         ),
+        "duplicate number node": (
+            "evidence figure must contain exactly one visible .evidence-number, found 2",
+            valid_evidence.replace(
+                '<p class="evidence-number">圖 1.1</p>',
+                '<p class="evidence-number">圖 1.1</p><p class="evidence-number">圖 1.1 copy</p>',
+                1,
+            ),
+        ),
+        "duplicate chapter-local number": (
+            "evidence figure numbers must be unique within chapter",
+            valid_evidence.replace("圖 1.2</p>", "圖 1.1</p>", 1),
+        ),
+        "duplicate chapter-local title": (
+            "evidence figure titles must be unique within chapter",
+            valid_evidence.replace(">Question two</p>", ">Question one</p>", 1),
+        ),
+        "missing aria-labelledby": (
+            "evidence figure must have exactly one aria-labelledby target",
+            valid_evidence.replace(' aria-labelledby="evidence-1-1-title"', "", 1),
+        ),
+        "missing title id": (
+            "visible .evidence-title has no id",
+            valid_evidence.replace(' id="evidence-1-1-title"', "", 1),
+        ),
+        "aria-labelledby outside its shell": (
+            "evidence figure aria-labelledby does not reference its title",
+            '<p id="outside-title">Outside</p>'
+            + valid_evidence.replace(
+                'aria-labelledby="evidence-1-1-title"',
+                'aria-labelledby="outside-title"',
+                1,
+            ),
+        ),
+        "duplicate aria-labelledby target": (
+            "evidence figure aria-labelledby must resolve to exactly one visible element, found 2",
+            '<span id="evidence-1-1-title">Duplicate</span>' + valid_evidence,
+        ),
         "duplicate figure": (
             "evidence figure must contain exactly one native figure, found 2",
-            valid_trend.replace(
+            valid_evidence.replace(
                 "<figure>Chart</figure>", "<figure>Chart</figure><figure>Copy</figure>", 1
             ),
         ),
         "unused duplicate shell": (
             "unused visible .evidence-figure: 1",
-            valid_trend
-            + '<section class="evidence-figure"><p class="evidence-title">Copy</p></section>',
+            valid_evidence + '<section class="evidence-figure" aria-labelledby="copy-title">'
+            '<p class="evidence-number">圖 1.4</p>'
+            '<p class="evidence-title" id="copy-title">Copy</p></section>',
         ),
     }
     if not evidence_mutations:
-        raise RuntimeError("trend figure preflight has no negative controls")
+        raise RuntimeError("analytical figure preflight has no negative controls")
     for name, (expected_failure, html) in evidence_mutations.items():
-        mutation_failures = trend_figure_failures_for_text(html)
+        mutation_failures = analytical_figure_failures_for_text(html, expected_evidence)
         if expected_failure not in mutation_failures:
             raise RuntimeError(
-                f"trend figure preflight did not reject {name} for the expected reason: "
+                f"analytical figure preflight did not reject {name} for the expected reason: "
                 f"{mutation_failures}"
             )
 
@@ -1293,8 +1502,9 @@ def main(argv: list[str]) -> int:
             failures = [f"missing {page.relative_to(ROOT).as_posix()}"]
         else:
             failures = failures_for(page)
-            if slug == "trend":
-                failures.extend(trend_figure_failures_for(page))
+            failures.extend(
+                analytical_figure_failures_for(page, EXPECTED_ANALYTICAL_FIGURES.get(slug))
+            )
 
         if failures:
             failed_chapters += 1

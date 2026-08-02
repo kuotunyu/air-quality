@@ -18,6 +18,7 @@ import { bearingName, compass, SIGNATURE } from "../lib/labels";
 import { n } from "../lib/chart";
 import { groupByCountyNorthToSouth } from "../lib/data";
 import ChapterIntro from "./ChapterIntro.astro";
+import EvidenceFigure from "./EvidenceFigure.astro";
 
 const data = sourcesData as {
   explains: string;
@@ -222,7 +223,7 @@ const legend = BREAKS.map((b, i) => ({
     stays outside: it is a control on the figure, not part of it, and a
     `<select>` has no business inside an exported image.
   */}
-  <figure>
+  <EvidenceFigure number="4.1" title="高濃度空氣在什麼風向與風速條件下出現？">
     <div class="plot-row">
       <div class="chart polar">
         <div class="polar-box">
@@ -406,13 +407,13 @@ const legend = BREAKS.map((b, i) => ({
       `#cbpf-where` is updated by the same handler that redraws the grid, so the
       three cannot drift.
     */}
-    <figcaption id="cbpf-caption">
+    <Fragment slot="caption"><span id="cbpf-caption">
       <strong id="cbpf-where">{initial}</strong>的 CBPF 極座標圖。<strong
         >沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，機率不予報告</strong
       >——那是「不知道」，不是「乾淨」。
       全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
-    </figcaption>
-  </figure>
+    </span></Fragment>
+  </EvidenceFigure>
 
   <h2>近源與遠源的風速特徵</h2>
 
@@ -620,7 +621,7 @@ const legend = BREAKS.map((b, i) => ({
   /* The query subject is the figure, not `.plot-row`: an element cannot answer
      its own container query. Astro scopes this, so no other figure is a
      container because of it. */
-  figure {
+  .evidence-figure :global(figure) {
     container-type: inline-size;
   }
   /*
@@ -798,7 +799,7 @@ const legend = BREAKS.map((b, i) => ({
     );
     border: 1px solid var(--line);
   }
-  figcaption {
+  .evidence-figure :global(figcaption) {
     margin-top: 0.8rem;
   }
 </style>
