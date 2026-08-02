@@ -149,6 +149,44 @@ async function connect(port) {
   throw new Error("Chrome did not open a debugging port");
 }
 
+/**
+ * Wait for the page to be *styled*, not merely for 600ms to have passed.
+ *
+ * This was `await sleep(600)`, and a fixed sleep is a guess about a machine.
+ * Three identical runs on a loaded workstation produced 309, 73 and 0 problems:
+ * the probe was measuring pages whose stylesheet had not applied yet, so it saw
+ * the browser defaults — 16px body type, a 13x17 unstyled `<summary>` — and
+ * reported them as design regressions. Every one of those "failures" was the
+ * check racing the page.
+ *
+ * A gate that fails at random is worse than no gate, because the first response
+ * to a spurious red is to stop believing the next one. So: poll for signals the
+ * page itself can only produce once it is dressed — the document parsed, the
+ * site's own custom property resolving, and the webfonts settled, since every
+ * measurement here is of glyph boxes.
+ */
+const READY = `(() => {
+  if (document.readyState !== "complete") return false;
+  const tick = getComputedStyle(document.documentElement).getPropertyValue("--chart-tick");
+  if (!tick.trim()) return false;
+  return !document.fonts || document.fonts.status === "loaded";
+})()`;
+
+async function settled(evaluate, budgetMs = 8000) {
+  for (let waited = 0; waited < budgetMs; waited += 100) {
+    if (await evaluate(READY)) {
+      // One more frame, so a layout invalidated by the last stylesheet has been
+      // flushed before anything reads a bounding box off it.
+      await evaluate(
+        `new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`,
+      );
+      return true;
+    }
+    await sleep(100);
+  }
+  return false;
+}
+
 // ── the probe, run inside the page ──────────────────────────────────────────
 //
 // APCA is written out rather than imported for the same reason the colour maths
@@ -344,7 +382,10 @@ async function main() {
       ws.send(JSON.stringify({ id: i, method, params }));
     });
   const evaluate = async (expr) =>
-    (await send("Runtime.evaluate", { expression: expr, returnByValue: true })).result?.result
+    // `awaitPromise` so `settled()` can wait on a requestAnimationFrame pair
+    // instead of getting a Promise object back and treating it as truthy.
+    (await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }))
+      .result?.result
       ?.value;
 
   const failures = [];
@@ -379,7 +420,10 @@ async function main() {
       });
       for (const route of ROUTES) {
         await send("Page.navigate", { url: `http://127.0.0.1:${PORT}${route}` });
-        await sleep(600);
+        if (!(await settled(evaluate))) {
+          failures.push(`${route} @${width} ${theme}: page never finished styling`);
+          continue;
+        }
         const r = await evaluate(PROBE);
         if (!r) {
           failures.push(`${route} @${width} ${theme}: probe returned nothing`);

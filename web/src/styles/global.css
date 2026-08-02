@@ -1959,6 +1959,26 @@ main {
  * 72px is one label: the widest this site produces is a four-digit year, which
  * at `--chart-tick` (24px) in the numeric face measures about 53px, plus a gap.
  *
+ * ⚠️ **Each tier is `n × 72` PLUS one more label, and that 72 is the end
+ * anchors.** `n × 72` prices every label as half a width either side of its
+ * tick. True of the interior ones and false of the outer two: `:first-child`
+ * gets `transform: none` and `:last-child` gets `translateX(-100%)`, so each
+ * pulls a FULL width inward to stay off the plot's edge — see the rule fifty
+ * lines up. The axis needs one extra label's width beyond the naive count, and
+ * because the ticks keep their data positions the whole shortfall lands on the
+ * two end gaps.
+ *
+ * Found by measuring slack rather than collisions. 53px is this machine's Segoe
+ * UI; CI's Linux stack renders the same year at about 62px, 20% wider. At a 600
+ * viewport chapter 1's six-label axis sat just above the old 432px tier, so
+ * nothing thinned, and 「2000」/「2005」 had **5.7px** of clearance — clean here
+ * and colliding on any device whose font stack is a fifth wider, which is most
+ * Android phones. Across ten routes and nine widths, five label pairs had under
+ * 25% width headroom before this change and none have after.
+ *
+ * The 16px on the five-label tier (376 rather than 360) is kept on top of the
+ * penalty, for the uneven-tick reason recorded below it.
+ *
  * The halving counts from the END, and that is a fix rather than a preference.
  * It used to hide `nth-child(even)` while forcing the last one to stay, which is
  * correct only for an odd count — the note further up says the charts emit odd
@@ -1970,7 +1990,7 @@ main {
  * `:not(:nth-last-child(odd))` keeps the last label and every second one BACK
  * from it, which is evenly spaced whatever the count is.
  */
-@container (max-width: 288px) {
+@container (max-width: 360px) {
   .plot-x[data-n="4"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 /* 376 and not 5 × 72 = 360. The ladder's per-label budget assumes the ticks are
@@ -1979,19 +1999,19 @@ main {
    「2010」 sit closer than any other pair. Measured at a 540 viewport, a 367px
    axis printed them 0.5px APART — overlapping — while every other gap on the
    same axis was 19 to 45px. */
-@container (max-width: 376px) {
+@container (max-width: 448px) {
   .plot-x[data-n="5"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 432px) {
+@container (max-width: 504px) {
   .plot-x[data-n="6"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 504px) {
+@container (max-width: 576px) {
   .plot-x[data-n="7"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 576px) {
+@container (max-width: 648px) {
   .plot-x[data-n="8"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 648px) {
+@container (max-width: 720px) {
   .plot-x[data-n="9"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 /*
@@ -2008,30 +2028,81 @@ main {
  * above its own 184px threshold and printed 「1h 6h 24h 48h」 with a collision.
  * A threshold is a promise about the gap, so it has to include one.
  */
-@container (max-width: 200px) {
+@container (max-width: 250px) {
   .plot-x[data-n="4"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 250px) {
+@container (max-width: 300px) {
   .plot-x[data-n="5"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 300px) {
+@container (max-width: 350px) {
   .plot-x[data-n="6"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 350px) {
+@container (max-width: 400px) {
   .plot-x[data-n="7"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 400px) {
+@container (max-width: 450px) {
   .plot-x[data-n="8"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
-@container (max-width: 450px) {
+@container (max-width: 500px) {
   .plot-x[data-n="9"][data-tw="s"]:not(.keep) span:not(:nth-last-child(odd)) { display: none; }
 }
 
-@container (max-width: 720px) {
+@container (max-width: 792px) {
   .plot-x[data-n="10"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
   /* No `data-n` means a caller that has not been updated; keep the old
      behaviour rather than silently letting labels overlap. */
   .plot-x:not([data-n]):not(.keep) span:not(:nth-last-child(odd)) { display: none; }
+}
+
+/*
+ * A second rung, because one halving is not always enough.
+ *
+ * Chapter 1 at 375px is where that shows. Six year labels thin once to
+ * 2005 / 2015 / 2025 inside a 241.1px strip, the ticks keep their data
+ * positions — 25.9%, 63.0%, and the last anchored at the right edge — so the
+ * final gap is `241.1 × 0.370 − 1.5 × label`, which is 11.7px of clearance in
+ * Segoe UI and **−2.3px** in CI's. `scripts/check_site_quality.mjs` failed on
+ * its first CI run with 「"2015" and "2025" overlap by 2.3px」 on /trend/, in
+ * both themes, on a layout that measures clean on the machine it was built on.
+ *
+ * The threshold prices the SURVIVING count the same way the first rung prices
+ * the emitted one, end penalty included: `ceil(n / 2) × 72 + 72`. Six labels
+ * give `3 × 72 + 72 = 288px`, and 241.1 is inside it.
+ *
+ * `:nth-last-child(4n-3)` keeps the last label and every fourth back from it —
+ * the first rung's count-from-the-end reasoning applied twice. Six labels become
+ * 2005 and 2025, 101px apart, which no font metric closes.
+ */
+@container (max-width: 216px) {
+  .plot-x[data-n="4"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+@container (max-width: 288px) {
+  .plot-x[data-n="5"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+  .plot-x[data-n="6"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+@container (max-width: 360px) {
+  .plot-x[data-n="7"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+  .plot-x[data-n="8"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+@container (max-width: 432px) {
+  .plot-x[data-n="9"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+  .plot-x[data-n="10"]:not([data-tw="s"]):not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+
+/* The same rung for short labels, at 50px each plus one end penalty. */
+@container (max-width: 150px) {
+  .plot-x[data-n="4"][data-tw="s"]:not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+@container (max-width: 200px) {
+  .plot-x[data-n="5"][data-tw="s"]:not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+  .plot-x[data-n="6"][data-tw="s"]:not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+@container (max-width: 250px) {
+  .plot-x[data-n="7"][data-tw="s"]:not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+  .plot-x[data-n="8"][data-tw="s"]:not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
+}
+@container (max-width: 300px) {
+  .plot-x[data-n="9"][data-tw="s"]:not(.keep) span:not(:nth-last-child(4n-3)) { display: none; }
 }
 
 /*
