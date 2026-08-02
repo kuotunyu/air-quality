@@ -9,8 +9,9 @@ the Astro source that produced it.
 
 from __future__ import annotations
 
-import ast
+import json
 import pathlib
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -18,10 +19,8 @@ from html.parser import HTMLParser
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "web" / "dist"
 REGISTRY = ROOT / "web" / "src" / "lib" / "chapters.ts"
+TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "typescript.js"
 EXPECTED_CHAPTERS = 10
-REQUIRED_CLASSES = ("chapter-intro", "chapter-question", "chapter-finding")
-OPEN_TO_CLOSE = {"{": "}", "[": "]", "(": ")"}
-CLOSE_TO_OPEN = {close: open_ for open_, close in OPEN_TO_CLOSE.items()}
 IGNORED_SUBTREES = {"template", "script", "style"}
 VOID_ELEMENTS = {
     "area",
@@ -41,192 +40,131 @@ VOID_ELEMENTS = {
 }
 
 
-@dataclass(frozen=True)
-class Token:
-    kind: str
-    value: str
-    offset: int
+NODE_REGISTRY_PARSER = r"""
+const ts = require(process.argv[1]);
+const fs = require("fs");
+const sourceText = fs.readFileSync(0, "utf8");
+const source = ts.createSourceFile(
+  "chapters.ts",
+  sourceText,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
 
+function fail(message) {
+  process.stderr.write(message);
+  process.exit(2);
+}
 
-def _quoted_token(source: str, start: int) -> tuple[Token, int]:
-    quote = source[start]
-    index = start + 1
-    while index < len(source):
-        char = source[index]
-        if char == quote:
-            literal = source[start : index + 1]
-            if quote == "`":
-                return Token("template", literal, start), index + 1
-            try:
-                value = ast.literal_eval(literal)
-            except (SyntaxError, ValueError) as exc:
-                raise ValueError(f"invalid string at offset {start}") from exc
-            if not isinstance(value, str):
-                raise ValueError(f"non-string literal at offset {start}")
-            return Token("string", value, start), index + 1
-        if char in "\r\n" and quote != "`":
-            raise ValueError(f"unterminated string at offset {start}")
-        index += 2 if char == "\\" else 1
+if (source.parseDiagnostics.length) {
+  const message = ts.flattenDiagnosticMessageText(
+    source.parseDiagnostics[0].messageText,
+    " ",
+  );
+  fail(`TypeScript parse error: ${message}`);
+}
 
-    raise ValueError(f"unterminated string at offset {start}")
+const declarations = [];
+for (const statement of source.statements) {
+  if (!ts.isVariableStatement(statement)) continue;
+  const exported = statement.modifiers?.some(
+    (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+  );
+  const constant = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0;
+  if (!exported || !constant) continue;
+  for (const declaration of statement.declarationList.declarations) {
+    if (ts.isIdentifier(declaration.name) && declaration.name.text === "CHAPTERS") {
+      declarations.push(declaration);
+    }
+  }
+}
 
+if (declarations.length !== 1) {
+  fail(`expected one exported const CHAPTERS declaration, found ${declarations.length}`);
+}
 
-def _typescript_tokens(source: str) -> list[Token]:
-    tokens: list[Token] = []
-    index = 0
-    punctuation = set(OPEN_TO_CLOSE) | set(CLOSE_TO_OPEN) | {":", ",", "=", ";"}
+let initializer = declarations[0].initializer;
+if (!initializer) fail("CHAPTERS declaration has no initializer");
+while (ts.isParenthesizedExpression(initializer)) initializer = initializer.expression;
+if (ts.isAsExpression(initializer)) {
+  const type = initializer.type;
+  const isConst =
+    ts.isTypeReferenceNode(type) &&
+    ts.isIdentifier(type.typeName) &&
+    type.typeName.text === "const" &&
+    !type.typeArguments;
+  if (!isConst) fail("CHAPTERS initializer assertion must be 'as const'");
+  initializer = initializer.expression;
+  while (ts.isParenthesizedExpression(initializer)) initializer = initializer.expression;
+}
 
-    while index < len(source):
-        char = source[index]
-        if char.isspace():
-            index += 1
-            continue
-        if source.startswith("//", index):
-            newline = source.find("\n", index + 2)
-            index = len(source) if newline == -1 else newline + 1
-            continue
-        if source.startswith("/*", index):
-            closing = source.find("*/", index + 2)
-            if closing == -1:
-                raise ValueError(f"unterminated block comment at offset {index}")
-            index = closing + 2
-            continue
-        if char in {'"', "'", "`"}:
-            token, index = _quoted_token(source, index)
-            tokens.append(token)
-            continue
-        if char.isalpha() or char in "_$":
-            end = index + 1
-            while end < len(source) and (source[end].isalnum() or source[end] in "_$"):
-                end += 1
-            tokens.append(Token("identifier", source[index:end], index))
-            index = end
-            continue
-        if char in punctuation:
-            tokens.append(Token("punctuation", char, index))
-        else:
-            tokens.append(Token("other", char, index))
-        index += 1
+if (!ts.isArrayLiteralExpression(initializer)) {
+  fail("CHAPTERS initializer is not an array literal");
+}
+if (initializer.elements.length !== 10) {
+  fail(`expected 10 CHAPTERS entries, found ${initializer.elements.length}`);
+}
 
-    return tokens
+const slugs = [];
+for (const [entryIndex, entry] of initializer.elements.entries()) {
+  if (!ts.isObjectLiteralExpression(entry)) {
+    fail(`CHAPTERS entry ${entryIndex + 1} is not an object literal`);
+  }
+  const slugProperties = entry.properties.filter((property) => {
+    if (!ts.isPropertyAssignment(property)) return false;
+    const name = property.name;
+    return (
+      (ts.isIdentifier(name) && name.text === "slug") ||
+      (ts.isStringLiteral(name) && name.text === "slug")
+    );
+  });
+  if (slugProperties.length !== 1) {
+    fail(
+      `entry ${entryIndex + 1} must have exactly one direct slug property, found ${slugProperties.length}`,
+    );
+  }
+  const value = slugProperties[0].initializer;
+  if (!ts.isStringLiteral(value) && !ts.isNoSubstitutionTemplateLiteral(value)) {
+    fail(`entry ${entryIndex + 1} slug must be a string literal`);
+  }
+  if (!value.text) fail(`entry ${entryIndex + 1} slug must not be empty`);
+  slugs.push(value.text);
+}
 
-
-def _chapters_array_index(tokens: list[Token]) -> int:
-    declaration = ("export", "const", "CHAPTERS")
-    declarations = [
-        index
-        for index in range(len(tokens) - 2)
-        if tuple(token.value for token in tokens[index : index + 3]) == declaration
-        and all(token.kind == "identifier" for token in tokens[index : index + 3])
-    ]
-    if len(declarations) != 1:
-        raise ValueError(f"expected one CHAPTERS declaration, found {len(declarations)}")
-
-    stack: list[str] = []
-    index = declarations[0] + 3
-    while index < len(tokens):
-        token = tokens[index]
-        if token.value in OPEN_TO_CLOSE:
-            stack.append(token.value)
-        elif token.value in CLOSE_TO_OPEN:
-            if not stack or stack[-1] != CLOSE_TO_OPEN[token.value]:
-                raise ValueError(f"unmatched {token.value!r} before CHAPTERS assignment")
-            stack.pop()
-        elif token.value == "=" and not stack:
-            break
-        elif token.value == ";" and not stack:
-            raise ValueError("CHAPTERS declaration has no array assignment")
-        index += 1
-
-    if index + 1 >= len(tokens) or tokens[index + 1].value != "[":
-        raise ValueError("CHAPTERS assignment is not an array literal")
-    return index + 1
-
-
-def _matching_end(tokens: list[Token], start: int) -> int:
-    if tokens[start].value not in OPEN_TO_CLOSE:
-        raise ValueError(f"token at offset {tokens[start].offset} does not open a structure")
-    stack = [tokens[start].value]
-    for index in range(start + 1, len(tokens)):
-        value = tokens[index].value
-        if value in OPEN_TO_CLOSE:
-            stack.append(value)
-        elif value in CLOSE_TO_OPEN:
-            if not stack or stack[-1] != CLOSE_TO_OPEN[value]:
-                raise ValueError(f"unmatched {value!r} at offset {tokens[index].offset}")
-            stack.pop()
-            if not stack:
-                return index
-    raise ValueError(f"unclosed {tokens[start].value!r} at offset {tokens[start].offset}")
-
-
-def _chapter_entries(tokens: list[Token], array_start: int) -> list[list[Token]]:
-    entries: list[list[Token]] = []
-    index = array_start + 1
-    while index < len(tokens):
-        token = tokens[index]
-        if token.value == "]":
-            return entries
-        if token.value != "{":
-            raise ValueError(
-                f"CHAPTERS entry {len(entries) + 1} is not an object literal "
-                f"at offset {token.offset}"
-            )
-        end = _matching_end(tokens, index)
-        entries.append(tokens[index : end + 1])
-        index = end + 1
-        if index >= len(tokens):
-            break
-        if tokens[index].value == ",":
-            index += 1
-            continue
-        if tokens[index].value == "]":
-            return entries
-        raise ValueError(f"expected ',' or ']' after CHAPTERS entry {len(entries)}")
-    raise ValueError("CHAPTERS array is not closed")
-
-
-def _entry_slug(entry: list[Token], entry_number: int) -> str:
-    nested: list[str] = []
-    found: list[str] = []
-    for index in range(1, len(entry) - 1):
-        token = entry[index]
-        if token.value in OPEN_TO_CLOSE:
-            nested.append(token.value)
-            continue
-        if token.value in CLOSE_TO_OPEN:
-            if not nested or nested[-1] != CLOSE_TO_OPEN[token.value]:
-                raise ValueError(f"entry {entry_number} has unmatched {token.value!r}")
-            nested.pop()
-            continue
-        if nested or token.value != "slug" or token.kind not in {"identifier", "string"}:
-            continue
-        if index + 2 >= len(entry) or entry[index + 1].value != ":":
-            continue
-        value = entry[index + 2]
-        if value.kind != "string":
-            raise ValueError(f"entry {entry_number} slug must be a string literal")
-        if index + 3 >= len(entry) or entry[index + 3].value not in {",", "}"}:
-            raise ValueError(f"entry {entry_number} slug must contain only a string literal")
-        found.append(value.value)
-
-    if len(found) != 1:
-        raise ValueError(
-            f"entry {entry_number} must have exactly one top-level slug, found {len(found)}"
-        )
-    if not found[0]:
-        raise ValueError(f"entry {entry_number} slug must not be empty")
-    return found[0]
+if (new Set(slugs).size !== slugs.length) fail("chapter slugs must be unique");
+process.stdout.write(JSON.stringify(slugs));
+"""
 
 
 def _chapter_slugs_from_source(source: str) -> list[str]:
-    tokens = _typescript_tokens(source)
-    entries = _chapter_entries(tokens, _chapters_array_index(tokens))
-    if len(entries) != EXPECTED_CHAPTERS:
-        raise ValueError(f"expected {EXPECTED_CHAPTERS} chapter entries, found {len(entries)}")
-    slugs = [_entry_slug(entry, index) for index, entry in enumerate(entries, start=1)]
-    if len(set(slugs)) != len(slugs):
-        raise ValueError("chapter slugs must be unique")
+    if not TYPESCRIPT_COMPILER.exists():
+        raise ValueError(
+            f"TypeScript compiler not found at {TYPESCRIPT_COMPILER}; "
+            "run `npm ci` and `npm run build` in web/ first"
+        )
+    try:
+        result = subprocess.run(
+            ["node", "-e", NODE_REGISTRY_PARSER, str(TYPESCRIPT_COMPILER)],
+            input=source,
+            text=True,
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ValueError(
+            "Node.js was not found; run `npm ci` and `npm run build` in web/ first"
+        ) from exc
+    if result.returncode != 0:
+        message = result.stderr.strip() or f"Node.js exited with status {result.returncode}"
+        raise ValueError(message)
+    try:
+        slugs = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("TypeScript registry parser returned invalid JSON") from exc
+    if not isinstance(slugs, list) or any(not isinstance(slug, str) for slug in slugs):
+        raise ValueError("TypeScript registry parser returned invalid slugs")
     return slugs
 
 
@@ -259,6 +197,8 @@ class Element:
         return False
 
     def rendered_text(self, *, without_labels: bool = False) -> str:
+        if without_labels and "chapter-intro-label" in self.classes:
+            return ""
         parts = list(self.text)
         for child in self.children:
             if child.visible and not (without_labels and "chapter-intro-label" in child.classes):
@@ -393,6 +333,8 @@ def failures_for_text(html: str) -> list[str]:
             failures.append("visible <h1> has no rendered text")
         if intro is not None and not h1.is_inside(intro):
             failures.append("visible <h1> is not inside header.chapter-intro")
+        elif intro is not None and h1.parent is not intro:
+            failures.append("visible <h1> is not a direct child of header.chapter-intro")
 
     contract: dict[str, Element] = {}
     for class_name in ("chapter-question", "chapter-finding"):
@@ -407,6 +349,8 @@ def failures_for_text(html: str) -> list[str]:
         contract[class_name] = candidate
         if intro is not None and not candidate.is_inside(intro):
             failures.append(f"visible .{class_name} is not inside header.chapter-intro")
+        elif intro is not None and candidate.parent is not intro:
+            failures.append(f"visible .{class_name} is not a direct child of header.chapter-intro")
         if not candidate.rendered_text(without_labels=True):
             failures.append(f"visible .{class_name} has no rendered text")
 
@@ -417,8 +361,8 @@ def failures_for_text(html: str) -> list[str]:
             failures.append("chapter question and finding must be independent descendants")
         if question.start_order >= finding.start_order:
             failures.append("chapter question must precede chapter finding")
-        if h1 is not None and h1.start_order >= question.start_order:
-            failures.append("chapter <h1> must precede question and finding")
+        if h1 is not None and (h1.end_order is None or h1.end_order >= question.start_order):
+            failures.append("chapter <h1> must close before question and finding")
 
     visible_h2 = [element for element in visible if element.tag == "h2"]
     if not visible_h2:
@@ -452,12 +396,14 @@ def failures_for(page: pathlib.Path) -> list[str]:
 def _run_preflight() -> None:
     valid_slugs = [f"chapter-{index}" for index in range(EXPECTED_CHAPTERS)]
     valid_entries = ",\n".join(
-        f'{{ slug: "{slug}", note: \'slug: "string-decoy"\', nested: {{ slug: "nested-decoy" }} }}'
+        f'{{ ratio: total / divisor, slug: "{slug}", pattern: /[a/]+\\/not-slug/giu, '
+        'note: \'slug: "string-decoy"\', nested: { slug: "nested-decoy" } }'
         for slug in valid_slugs
     )
     valid_registry = (
         '// export const CHAPTERS = [{ slug: "comment-decoy" }];\n'
         "const text = 'export const CHAPTERS = [{ slug: \"string-decoy\" }];';\n"
+        'const template = `outer ${`export const CHAPTERS = [{ slug: "template-decoy" }]`} tail`;\n'
         "export const CHAPTERS: readonly Chapter[] = [\n"
         f"{valid_entries}\n"
         "] as const;"
@@ -475,6 +421,9 @@ def _run_preflight() -> None:
         "slug expression": valid_registry.replace(
             f'slug: "{valid_slugs[0]}"', f'slug: "{valid_slugs[0]}" + suffix', 1
         ),
+        "regex literal slugs": "export const CHAPTERS = [\n"
+        + ",\n".join(f'{{pattern:/slug:"{slug}",/}}' for slug in valid_slugs)
+        + "\n] as const;",
     }.items():
         try:
             _chapter_slugs_from_source(source)
@@ -514,7 +463,40 @@ def _run_preflight() -> None:
             '<div class="chapter-question">Question</div><div class="chapter-finding">'
             '<i class="chapter-intro-label">Label</i></div></header><h2>Evidence</h2>',
         ),
+        "contracts nested inside h1": (
+            "chapter <h1> must close before question and finding",
+            '<header class="chapter-intro"><h1>Title'
+            '<span class="chapter-question">Question</span>'
+            '<span class="chapter-finding">Finding</span></h1></header><h2>Evidence</h2>',
+        ),
+        "self-labeled question": (
+            "visible .chapter-question has no rendered text",
+            '<header class="chapter-intro"><h1>Title</h1>'
+            '<div class="chapter-question chapter-intro-label">Label</div>'
+            '<div class="chapter-finding">Finding</div></header><h2>Evidence</h2>',
+        ),
+        "self-labeled finding": (
+            "visible .chapter-finding has no rendered text",
+            '<header class="chapter-intro"><h1>Title</h1>'
+            '<div class="chapter-question">Question</div>'
+            '<div class="chapter-finding chapter-intro-label">Label</div>'
+            "</header><h2>Evidence</h2>",
+        ),
     }
+    wrapped_contracts = {
+        "h1": '<div><h1>Title</h1></div><div class="chapter-question">Question</div>'
+        '<div class="chapter-finding">Finding</div>',
+        "chapter-question": '<h1>Title</h1><div><div class="chapter-question">Question</div></div>'
+        '<div class="chapter-finding">Finding</div>',
+        "chapter-finding": '<h1>Title</h1><div class="chapter-question">Question</div>'
+        '<div><div class="chapter-finding">Finding</div></div>',
+    }
+    for class_name, markup in wrapped_contracts.items():
+        selector = f"<{class_name}>" if class_name == "h1" else f".{class_name}"
+        mutations[f"wrapped {class_name}"] = (
+            f"visible {selector} is not a direct child of header.chapter-intro",
+            f'<header class="chapter-intro">{markup}</header><h2>Evidence</h2>',
+        )
     for tag in IGNORED_SUBTREES:
         mutations[f"contract inside {tag}"] = (
             "missing visible header.chapter-intro",
