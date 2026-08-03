@@ -919,28 +919,50 @@ async function main() {
         return style.display !== "none" && style.visibility !== "hidden" &&
           rect.width > 0 && rect.height > 0;
       };
+      // 2026-08-03 — a caption can keep a figure shell visible, and borders can
+      // keep an opened disclosure shell taller than its summary after every
+      // body child is hidden. Readability therefore comes from the body child
+      // itself, never shell geometry or textContent inherited from hidden DOM.
+      const hasVisibleMeaningfulContent = (element) => {
+        if (!visible(element)) return false;
+        const media = [
+          ...(element.matches("svg, canvas, img, picture, video") ? [element] : []),
+          ...element.querySelectorAll("svg, canvas, img, picture, video"),
+        ];
+        if (media.some(visible)) return true;
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const parent = node.parentElement;
+          if (
+            node.nodeValue.trim() && parent &&
+            !parent.closest("script, style, template") && visible(parent)
+          ) return true;
+        }
+        return false;
+      };
       for (const disclosure of document.querySelectorAll("details")) disclosure.open = true;
       const figures = [...document.querySelectorAll("main figure")];
       const figureStates = figures.map((figure) => {
         const caption = figure.querySelector(":scope > figcaption");
+        const body = [...figure.children].filter(
+          (child) => !child.matches("figcaption, script, style, template"),
+        );
         return {
           visible: visible(figure),
           hasCaption: Boolean(caption),
-          readableCaption: Boolean(caption && visible(caption) && caption.textContent.trim()),
+          readableBody: body.some(hasVisibleMeaningfulContent),
+          readableCaption: Boolean(caption && hasVisibleMeaningfulContent(caption)),
         };
       });
       const disclosures = [...document.querySelectorAll("main details")];
       const readableDisclosure = (disclosure) => {
         const summary = disclosure.querySelector(":scope > summary");
-        const bodyText = [...disclosure.childNodes]
-          .filter((node) => node !== summary)
-          .map((node) => node.textContent ?? "")
-          .join("")
-          .trim();
+        const body = [...disclosure.children].filter(
+          (child) => child !== summary && !child.matches("script, style, template"),
+        );
         return Boolean(
           summary && visible(disclosure) && visible(summary) && summary.textContent.trim() &&
-          bodyText && disclosure.open &&
-          disclosure.getBoundingClientRect().height > summary.getBoundingClientRect().height
+          disclosure.open && body.some(hasVisibleMeaningfulContent)
         );
       };
       const secondaryDisclosures = disclosures.filter((disclosure) => !disclosure.matches(".sql-panel"));
@@ -966,6 +988,7 @@ async function main() {
         },
         figures: figures.length,
         visibleFigures: figureStates.filter((state) => state.visible).length,
+        visibleFigureBodies: figureStates.filter((state) => state.readableBody).length,
         captions: figureStates.filter((state) => state.hasCaption).length,
         readableCaptions: figureStates.filter((state) => state.readableCaption).length,
         secondaryDisclosures: secondaryDisclosures.length,
@@ -1010,6 +1033,7 @@ async function main() {
     if (
       noScript?.figures !== expectedFigures ||
       noScript?.visibleFigures !== expectedFigures ||
+      noScript?.visibleFigureBodies !== expectedFigures ||
       noScript?.captions !== expectedFigures ||
       noScript?.readableCaptions !== expectedFigures
     ) {
@@ -1017,6 +1041,7 @@ async function main() {
         `${route}: no-JavaScript native figure inventory is incomplete ` +
           `(expected=${expectedFigures}, DOM=${noScript?.figures ?? "unknown"}, ` +
           `visible=${noScript?.visibleFigures ?? "unknown"}, ` +
+          `bodies=${noScript?.visibleFigureBodies ?? "unknown"}, ` +
           `captions=${noScript?.captions ?? "unknown"}, ` +
           `readable=${noScript?.readableCaptions ?? "unknown"})`,
       );
