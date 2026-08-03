@@ -1,8 +1,8 @@
 /*
- * Chalky, dense, restrained. A Morandi palette.
+ * Chalky, dense, restrained. A muted, low-chroma interface palette.
  *
  * One decision still governs everything: colour encodes concentration, so
- * nothing else may use saturated colour. The INTERFACE stays in the Morandi
+ * nothing else may use saturated colour. The INTERFACE stays in a muted
  * band — chroma 0.003–0.010 on every surface, line and ink, which is the colour
  * of a document you read for twenty minutes rather than of a dashboard.
  *
@@ -18,15 +18,15 @@
  * survives the common colour blindnesses. Muting a scale is a change of
  * register; reordering it would be a change of meaning.
  *
- * **Where this palette stops being Morandi, and why.** Morandi's own logic is
- * close values — that is what makes those paintings calm. Applied to a data
+ * **Where this muted interface palette stops, and why.** Its near-value logic
+ * is what makes the interface calm. Applied to a data
  * encoding it is fatal, and it had been applied: every ramp hue was solved for
  * "the lightest lightness that still clears 4.5:1", a constraint with one
  * answer per hue, so all seven landed within 0.018 of each other in lightness.
  * Seven isoluminant hues cannot say "low to high" — hue reads as category,
  * lightness reads as quantity — and isoluminant neighbours give the eye no
  * value edge, which is what made the page tiring rather than calm. So the
- * interface is Morandi (muted, tinted greys, close values) and the ramp is not:
+ * interface is muted (tinted greys, close values) and the ramp is not:
  * across the data scale lightness moves monotonically, 0.279 of it in even
  * steps, and the ordering is carried twice.
  *
@@ -84,7 +84,7 @@
    * These were chroma 0 — mathematically neutral grey. That fixed a real
    * problem (a sage tint at readable chroma looked green, on a page whose one
    * rule is that hue means concentration) but it overshot: a surface at exactly
-   * zero chroma is the one grey the eye reads as dead. Morandi's greys are
+   * zero chroma is the one grey the eye reads as dead. Muted tinted greys are
    * never neutral; they are greys that remember a colour.
    *
    * So the neutrals carry C 0.004–0.010, an order of magnitude below the ramp
@@ -141,9 +141,9 @@
 
   /*
    * Concentration ramp, low to high — and the one place on this page where
-   * Morandi's own logic must NOT be followed.
+   * the muted interface's own near-value logic must NOT be followed.
    *
-   * Morandi palettes are close-valued: that is what makes them calm. A data
+   * Low-chroma interface palettes are close-valued: that makes them calm. A data
    * encoding that is close-valued simply stops encoding. The previous ramp
    * solved every hue for "the lightest lightness that still clears 4.5:1",
    * and that constraint has one solution per hue — so all seven converged onto
@@ -167,7 +167,9 @@
    * red-versus-green". That claim was wrong, and it is the reason these values
    * changed. The walk h84 → h56 → h30 IS the red-green axis, and with only
    * 0.035 of lightness between neighbours there was nothing else holding those
-   * steps apart. Simulated (Machado 2009) and measured in CIEDE2000:
+   * steps apart. Simulated with published 2009 severity-1.0
+   * colour-vision-deficiency matrices applied in linear RGB, then measured in
+   * CIEDE2000:
    *
    *     c3/c4 under deuteranopia   dE00  3.5     — the same colour
    *     c3/c4 under protanopia     dE00  2.7 (dark theme)
@@ -256,8 +258,9 @@
    * Solved instead against the opposite objective — maximise the minimum
    * distance between ANY two members, since there is no order to read — subject
    * to every member clearing 3:1 on all three surfaces, staying inside the
-   * ramp's own chroma range (0.055–0.135, so this is still Morandi and not
-   * neon), and keeping dE00 ≥ 12 from both neutral guides, because a
+   * ramp's own chroma range (0.055–0.135, so this stays within the shipped
+   * sequential-ramp register rather than neon), and keeping dE00 ≥ 12 from
+   * both neutral guides, because a
    * near-neutral series would read as a guideline. Worst pair: 33.9 for four,
    * 34.1 for three, 54.2 for two. Charts take a prefix, so every prefix was
    * scored, not just the full set.
@@ -633,7 +636,7 @@
  * on a near-black one — the light theme's #4e745b measures 4.5 against
  * #eaeee9 and about 1.9 against #0f130f. The hue ordering is preserved so both
  * themes encode the same thing; only the lightness moves, and here it moves the
- * other way, toward Morandi's dusty pastels.
+ * other way, toward muted, low-chroma pastels.
  *
  * The greys carry the same trace of hue at the same cool anchor, so the two
  * themes are recognisably one palette: same hue order, same faint direction.

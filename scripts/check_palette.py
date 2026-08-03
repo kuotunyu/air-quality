@@ -59,7 +59,7 @@ _XYZ_FROM_RGB = np.array(
 )
 _D65 = np.array([0.9504559271, 1.0, 1.0890577508])
 
-# Machado, Oliveira & Fernandes (2009), severity 1.0, applied in LINEAR rgb.
+# Published 2009 severity-1.0 colour-vision-deficiency matrices, applied in LINEAR RGB.
 _CVD = {
     "deuteranopia": np.array(
         [
@@ -291,10 +291,12 @@ def read_shipped(name: str, opener: str, note: str) -> Palette:
 
 
 SHIPPED_LIGHT = read_shipped(
-    "shipped light (Morandi)", ":root {", "read from web/src/styles/global.css"
+    "shipped light (muted low-chroma interface)",
+    ":root {",
+    "read from web/src/styles/global.css",
 )
 SHIPPED_DARK = read_shipped(
-    "shipped dark (Morandi)",
+    "shipped dark (muted low-chroma interface)",
     ':root[data-theme="dark"] {',
     "read from web/src/styles/global.css",
 )
