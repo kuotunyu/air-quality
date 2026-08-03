@@ -154,6 +154,203 @@ const opt = (name, fallback) => {
 };
 const DIST = opt("dist", join(process.cwd(), "web", "dist"));
 const PORT = Number(opt("port", "4399"));
+const SELF_TEST = args.includes("--self-test");
+const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
+const CDP_TIMEOUT_MS =
+  Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
+const CHROME_TEST_FLAGS = [
+  "--disable-back-forward-cache",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+];
+
+async function withDeadline(promise, timeoutMs, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} did not answer within ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForWebSocketOpen(socket, timeoutMs, label) {
+  let cleanup = () => {};
+  const opened = new Promise((resolve, reject) => {
+    const onOpen = () => resolve();
+    const onError = () => reject(new Error(`${label} failed`));
+    const onClose = () => reject(new Error(`${label} closed before opening`));
+    cleanup = () => {
+      socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("error", onError);
+      socket.removeEventListener("close", onClose);
+    };
+    socket.addEventListener("open", onOpen, { once: true });
+    socket.addEventListener("error", onError, { once: true });
+    socket.addEventListener("close", onClose, { once: true });
+  });
+  return withDeadline(opened, timeoutMs, label).finally(cleanup);
+}
+
+async function navigateWithoutPageScripts(sendCommand, waitForEvent, url, inspectReady) {
+  await sendCommand("Emulation.setScriptExecutionDisabled", { value: true });
+  try {
+    const loaded = waitForEvent("Page.loadEventFired", `${url} load event`);
+    await sendCommand("Page.navigate", { url });
+    await loaded;
+  } finally {
+    await sendCommand("Emulation.setScriptExecutionDisabled", { value: false });
+  }
+  return inspectReady();
+}
+
+async function replaceBrowser(current, openReplacement) {
+  if (current) await current.close();
+  return openReplacement();
+}
+
+async function closeServer(server) {
+  const closed = new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  return withDeadline(closed, CDP_TIMEOUT_MS, "static server close");
+}
+
+async function withRuntimeCleanup(resources, work) {
+  try {
+    return await work();
+  } finally {
+    try {
+      if (resources.browser) await resources.browser.close();
+    } finally {
+      await closeServer(resources.server);
+    }
+  }
+}
+
+async function lifecycleSelfTest() {
+  if (
+    CHROME_TEST_FLAGS.length !== 4 ||
+    !CHROME_TEST_FLAGS.includes("--disable-back-forward-cache") ||
+    CHROME_TEST_FLAGS.some((flag) => !flag.startsWith("--"))
+  ) {
+    throw new Error("the deterministic Chrome test flags are incomplete");
+  }
+  let bounded = false;
+  try {
+    await withDeadline(new Promise(() => {}), 10, "synthetic CDP request");
+  } catch (error) {
+    bounded = error instanceof Error && error.message.includes("synthetic CDP request");
+  }
+  if (!bounded) throw new Error("a non-responsive CDP request was not bounded");
+  console.log("site quality browser lifecycle self-test passed");
+
+  let endpointBounded = false;
+  let socketBounded = false;
+  try {
+    await connect(0, 10, () => new Promise(() => {}));
+  } catch (error) {
+    endpointBounded = error instanceof Error && error.message.includes("within 10ms");
+  }
+  try {
+    await waitForWebSocketOpen(new EventTarget(), 10, "synthetic WebSocket handshake");
+  } catch (error) {
+    socketBounded = error instanceof Error && error.message.includes("synthetic WebSocket handshake");
+  }
+  if (!endpointBounded || !socketBounded) {
+    throw new Error("a browser startup wait was not bounded");
+  }
+  console.log("site quality browser startup self-test passed");
+
+  const calls = [];
+  const ready = await navigateWithoutPageScripts(
+    async (method, params) => calls.push([method, params]),
+    async (method) => {
+      calls.push(["waitForEvent", method]);
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          calls.push(["event", method]);
+          resolve();
+        }, 0),
+      );
+    },
+    "http://127.0.0.1/no-script/",
+    async () => {
+      calls.push(["inspect"]);
+      return true;
+    },
+  );
+  const expected = [
+    ["Emulation.setScriptExecutionDisabled", { value: true }],
+    ["waitForEvent", "Page.loadEventFired"],
+    ["Page.navigate", { url: "http://127.0.0.1/no-script/" }],
+    ["event", "Page.loadEventFired"],
+    ["Emulation.setScriptExecutionDisabled", { value: false }],
+    ["inspect"],
+  ];
+  if (!ready || JSON.stringify(calls) !== JSON.stringify(expected)) {
+    throw new Error("the no-JavaScript navigation lifecycle is not inspectable");
+  }
+  console.log("site quality no-JavaScript navigation self-test passed");
+
+  let renderExpression = "";
+  const painted = await settlePaint(async (expression) => {
+    renderExpression = expression;
+    return true;
+  });
+  if (
+    !painted ||
+    !renderExpression.includes("requestAnimationFrame") ||
+    !renderExpression.includes("setTimeout")
+  ) {
+    throw new Error("the render wait has no timer fallback for a paused frame clock");
+  }
+  console.log("site quality render wait self-test passed");
+
+  const restartOrder = [];
+  const replacement = await replaceBrowser(
+    { close: async () => restartOrder.push("close") },
+    async () => {
+      restartOrder.push("open");
+      return { generation: 2 };
+    },
+  );
+  if (replacement.generation !== 2 || restartOrder.join(",") !== "close,open") {
+    throw new Error("the browser replacement opened before the old process closed");
+  }
+  console.log("site quality browser restart self-test passed");
+
+  const cleanupOrder = [];
+  let cleanupFailurePreserved = false;
+  try {
+    await withRuntimeCleanup(
+      {
+        browser: { close: async () => cleanupOrder.push("browser") },
+        server: { close: (callback) => { cleanupOrder.push("server"); callback(); } },
+      },
+      async () => {
+        cleanupOrder.push("work");
+        throw new Error("synthetic runtime failure");
+      },
+    );
+  } catch (error) {
+    cleanupFailurePreserved =
+      error instanceof Error && error.message === "synthetic runtime failure";
+  }
+  if (!cleanupFailurePreserved || cleanupOrder.join(",") !== "work,browser,server") {
+    throw new Error("a failed browser run did not close both resources in order");
+  }
+  console.log("site quality failure cleanup self-test passed");
+  return 0;
+}
 
 // ── a static server, because the built site is what ships ───────────────────
 
@@ -203,18 +400,130 @@ const CHROME_CANDIDATES = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function connect(port) {
-  for (let i = 0; i < 80; i += 1) {
+async function terminateProcess(proc) {
+  if (proc.exitCode !== null) return;
+  const exited = new Promise((resolve) => proc.once("exit", resolve));
+  proc.kill();
+  await Promise.race([exited, sleep(2000)]);
+  if (proc.exitCode === null) {
+    proc.kill("SIGKILL");
+    await Promise.race([exited, sleep(2000)]);
+  }
+}
+
+async function connect(port, timeoutMs = CDP_TIMEOUT_MS, request = fetch) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    const attemptMs = Math.min(1000, remaining);
     try {
-      const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+      const response = await withDeadline(
+        request(`http://127.0.0.1:${port}/json/list`, {
+          signal: AbortSignal.timeout(attemptMs),
+        }),
+        attemptMs,
+        "Chrome debugging endpoint",
+      );
+      const list = await withDeadline(
+        response.json(),
+        Math.max(1, deadline - Date.now()),
+        "Chrome debugging endpoint JSON",
+      );
       const page = list.find((t) => t.type === "page");
       if (page) return page.webSocketDebuggerUrl;
     } catch {
       /* not up yet */
     }
-    await sleep(250);
+    const pauseMs = Math.min(250, deadline - Date.now());
+    if (pauseMs > 0) await sleep(pauseMs);
   }
-  throw new Error("Chrome did not open a debugging port");
+  throw new Error(`Chrome did not open a debugging port within ${timeoutMs}ms`);
+}
+
+async function openBrowser(chrome, debugPort) {
+  const proc = spawn(
+    chrome,
+    [
+      "--headless=new",
+      "--disable-gpu",
+      "--hide-scrollbars",
+      "--no-sandbox",
+      ...CHROME_TEST_FLAGS,
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${join(process.env.TEMP ?? "/tmp", `twair-quality-profile-${debugPort}`)}`,
+      "about:blank",
+    ],
+    { stdio: "ignore" },
+  );
+
+  let ws;
+  try {
+    ws = new WebSocket(await connect(debugPort));
+    await waitForWebSocketOpen(ws, CDP_TIMEOUT_MS, "Chrome WebSocket handshake");
+  } catch (error) {
+    ws?.close();
+    await terminateProcess(proc);
+    throw error;
+  }
+
+  let id = 0;
+  const pending = new Map();
+  const eventWaiters = new Map();
+  ws.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.id && pending.has(message.id)) {
+      pending.get(message.id)(message);
+      pending.delete(message.id);
+    }
+    if (message.method && eventWaiters.has(message.method)) {
+      for (const resolve of eventWaiters.get(message.method)) resolve(message.params);
+      eventWaiters.delete(message.method);
+    }
+  });
+  const send = (method, params = {}, label = method) => {
+    let requestId;
+    const response = new Promise((resolve) => {
+      const i = (id += 1);
+      requestId = i;
+      pending.set(i, resolve);
+      ws.send(JSON.stringify({ id: i, method, params }));
+    });
+    return withDeadline(response, CDP_TIMEOUT_MS, label).finally(() => pending.delete(requestId));
+  };
+  const evaluate = async (expr, label = "Runtime.evaluate") =>
+    // `awaitPromise` so `settled()` can wait on a requestAnimationFrame pair
+    // instead of getting a Promise object back and treating it as truthy.
+    (await send(
+      "Runtime.evaluate",
+      { expression: expr, returnByValue: true, awaitPromise: true },
+      label,
+    ))
+      .result?.result
+      ?.value;
+  const waitForEvent = (method, label = method) => {
+    let resolveEvent;
+    const response = new Promise((resolve) => {
+      resolveEvent = resolve;
+      const waiters = eventWaiters.get(method) ?? new Set();
+      waiters.add(resolve);
+      eventWaiters.set(method, waiters);
+    });
+    return withDeadline(response, CDP_TIMEOUT_MS, label).finally(() => {
+      const waiters = eventWaiters.get(method);
+      waiters?.delete(resolveEvent);
+      if (!waiters?.size) eventWaiters.delete(method);
+    });
+  };
+
+  return {
+    send,
+    evaluate,
+    waitForEvent,
+    async close() {
+      ws.close();
+      await terminateProcess(proc);
+    },
+  };
 }
 
 /**
@@ -239,15 +548,31 @@ const READY = `(() => {
   if (!tick.trim()) return false;
   return !document.fonts || document.fonts.status === "loaded";
 })()`;
+const RENDER_SETTLED = `new Promise((resolve) => {
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    document.documentElement.getBoundingClientRect();
+    resolve(true);
+  };
+  const timer = setTimeout(finish, 250);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    clearTimeout(timer);
+    finish();
+  }));
+})`;
 
-async function settled(evaluate, budgetMs = 8000) {
+async function settlePaint(evaluate, label = "render wait") {
+  return evaluate(RENDER_SETTLED, label);
+}
+
+async function settled(evaluate, budgetMs = 8000, label = "page") {
   for (let waited = 0; waited < budgetMs; waited += 100) {
-    if (await evaluate(READY)) {
+    if (await evaluate(READY, `${label} readiness`)) {
       // One more frame, so a layout invalidated by the last stylesheet has been
       // flushed before anything reads a bounding box off it.
-      await evaluate(
-        `new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`,
-      );
+      await settlePaint(evaluate, `${label} render wait`);
       return true;
     }
     await sleep(100);
@@ -475,50 +800,27 @@ async function main() {
     return 0;
   }
 
-  const server = await serve(DIST, PORT);
-  const debugPort = PORT + 1;
-  const proc = spawn(
-    chrome,
-    [
-      "--headless=new",
-      "--disable-gpu",
-      "--hide-scrollbars",
-      "--no-sandbox",
-      `--remote-debugging-port=${debugPort}`,
-      `--user-data-dir=${join(process.env.TEMP ?? "/tmp", "twair-quality-profile")}`,
-      "about:blank",
-    ],
-    { stdio: "ignore" },
-  );
-
-  const ws = new WebSocket(await connect(debugPort));
-  await new Promise((r) => ws.addEventListener("open", r));
-  let id = 0;
-  const pending = new Map();
-  ws.addEventListener("message", (e) => {
-    const m = JSON.parse(e.data);
-    if (m.id && pending.has(m.id)) {
-      pending.get(m.id)(m);
-      pending.delete(m.id);
-    }
-  });
-  const send = (method, params = {}) =>
-    new Promise((res) => {
-      const i = (id += 1);
-      pending.set(i, res);
-      ws.send(JSON.stringify({ id: i, method, params }));
-    });
-  const evaluate = async (expr) =>
-    // `awaitPromise` so `settled()` can wait on a requestAnimationFrame pair
-    // instead of getting a Promise object back and treating it as truthy.
-    (await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }))
-      .result?.result
-      ?.value;
+  const resources = { server: await serve(DIST, PORT), browser: null };
+  return withRuntimeCleanup(resources, async () => {
+  let debugPort = PORT + 1;
+  let browser = await openBrowser(chrome, debugPort);
+  resources.browser = browser;
+  let send = browser.send;
+  let evaluate = browser.evaluate;
+  let waitForEvent = browser.waitForEvent;
+  const restartBrowser = async () => {
+    debugPort += 1;
+    browser = await replaceBrowser(browser, () => openBrowser(chrome, debugPort));
+    resources.browser = browser;
+    send = browser.send;
+    evaluate = browser.evaluate;
+    waitForEvent = browser.waitForEvent;
+  };
 
   const pressKey = async (key) => {
     await send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key });
     await send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key });
-    await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+    await settlePaint(evaluate);
   };
 
   const focusVisibleStates = async (selectors) => {
@@ -605,8 +907,26 @@ async function main() {
             : String(data.x[data.x.length - 1])
           : null,
         points: data?.x?.length ?? 0,
+        dockWidth: dock?.getBoundingClientRect().width ?? 0,
         dockHeight: dock?.getBoundingClientRect().height ?? 0,
         dockMinBlock: dock ? parseFloat(getComputedStyle(dock).minBlockSize) : 0,
+        panelHeight: panelBox?.height ?? 0,
+        rowHeights: panel
+          ? [...panel.querySelectorAll(".readout-row")].map(
+              (row) => +row.getBoundingClientRect().height.toFixed(3),
+            )
+          : [],
+        rowMetrics: panel
+          ? [...panel.querySelectorAll(".readout-row")].map((row) => {
+              const name = row.querySelector(".readout-name")?.getBoundingClientRect();
+              const value = row.querySelector(".readout-value")?.getBoundingClientRect();
+              return {
+                row: +row.getBoundingClientRect().width.toFixed(3),
+                name: name ? +name.width.toFixed(3) : 0,
+                value: value ? +value.width.toFixed(3) : 0,
+              };
+            })
+          : [],
         figureHeight: figure?.getBoundingClientRect().height ?? 0,
         overlapX: panelBox && areaBox
           ? Math.max(0, Math.min(panelBox.right, areaBox.right) - Math.max(panelBox.left, areaBox.left))
@@ -643,6 +963,7 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
+  console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
     width: 1440,
     height: 900,
@@ -905,10 +1226,13 @@ async function main() {
     deviceScaleFactor: 1,
     mobile: true,
   });
-  await send("Emulation.setScriptExecutionDisabled", { value: true });
+  console.log("site-quality stage: no-JavaScript routes");
   for (const route of ROUTES) {
-    await send("Page.navigate", { url: `${origin}${route}` });
-    if (!(await settled(evaluate))) {
+    if (
+      !(await navigateWithoutPageScripts(send, waitForEvent, `${origin}${route}`, () =>
+        settled(evaluate),
+      ))
+    ) {
       failures.push(`${route}: no-JavaScript page never finished styling`);
       continue;
     }
@@ -1101,9 +1425,8 @@ async function main() {
         `expected ${EXPECTED_SQL_DISCLOSURES}`,
     );
   }
-  await send("Emulation.setScriptExecutionDisabled", { value: false });
-
   await evaluate('localStorage.setItem("twair-theme", "dark")');
+  console.log("site-quality stage: print contract");
   await send("Emulation.setEmulatedMedia", { media: "print" });
   await send("Page.navigate", { url: `${origin}/` });
   if (!(await settled(evaluate))) {
@@ -1132,13 +1455,19 @@ async function main() {
     [768, 1024],
     [1440, 900],
   ]) {
-    await send("Emulation.setDeviceMetricsOverride", {
-      width,
-      height,
-      deviceScaleFactor: 1,
-      mobile: width < 500,
-    });
     for (const theme of ["light", "dark"]) {
+      await restartBrowser();
+      await send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: width < 500,
+      });
+      await send("Page.navigate", { url: `${origin}/` });
+      if (!(await settled(evaluate, 8000, `${width}px ${theme} browser restart`))) {
+        failures.push(`${width} ${theme}: replacement browser never finished styling`);
+      }
+      console.log(`site-quality stage: route matrix ${width}px ${theme}`);
       await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
       const osTheme = theme === "light" ? "dark" : "light";
       await send("Emulation.setEmulatedMedia", {
@@ -1146,11 +1475,13 @@ async function main() {
         features: [{ name: "prefers-color-scheme", value: osTheme }],
       });
       for (const route of ROUTES) {
+        console.log(`site-quality route: ${route} @${width}px ${theme}`);
         await send("Page.navigate", { url: `${origin}${route}` });
-        if (!(await settled(evaluate))) {
+        if (!(await settled(evaluate, 8000, `${route} @${width}px ${theme}`))) {
           failures.push(`${route} @${width} ${theme}: page never finished styling`);
           continue;
         }
+        console.log(`site-quality route styled: ${route} @${width}px ${theme}`);
         const hasReadout = await evaluate(
           `Boolean(document.querySelector(".plot[data-readout]"))`,
         );
@@ -1199,6 +1530,7 @@ async function main() {
           },
         ];
         const focusStates = await focusVisibleStates(requiredFocus);
+        console.log(`site-quality route focus: ${route} @${width}px ${theme}`);
         for (const focus of focusStates ?? []) {
           if (focus.required && focus.count === 0) {
             failures.push(`${route} @${width} ${theme}: no visible ${focus.name} was found`);
@@ -1235,10 +1567,10 @@ async function main() {
             failures.push(`${route} @${width} ${theme}: .readout-panel was never equipped`);
           } else {
             await evaluate(`document.activeElement?.blur()`);
-            await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+            await settlePaint(evaluate);
             const closed = await readoutState();
             await evaluate(`document.querySelector(".plot[data-readout]").focus()`);
-            await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
+            await settlePaint(evaluate);
             const focused = await readoutState();
             totals.readouts += 1;
             if (
@@ -1307,8 +1639,21 @@ async function main() {
                 Math.max(...dockHeights) - Math.min(...dockHeights) > 1 ||
                 Math.max(...figureHeights) - Math.min(...figureHeights) > 1
               ) {
+                const dockSpread = Math.max(...dockHeights) - Math.min(...dockHeights);
+                const figureSpread = Math.max(...figureHeights) - Math.min(...figureHeights);
+                const states = [closed, focused, opened, left, right, home, end].map((state) => ({
+                  when: state?.when,
+                  min: state?.dockMinBlock,
+                  width: state?.dockWidth,
+                  panel: state?.panelHeight,
+                  rows: state?.rowHeights,
+                  metrics: state?.rowMetrics,
+                }));
                 failures.push(
-                  `${route} @${width} ${theme}: closed and open readouts changed reserved geometry`,
+                  `${route} @${width} ${theme}: closed and open readouts changed reserved geometry ` +
+                    `(dock spread ${dockSpread.toFixed(3)}px ${JSON.stringify(dockHeights)}, ` +
+                    `figure spread ${figureSpread.toFixed(3)}px ${JSON.stringify(figureHeights)}, ` +
+                    `states ${JSON.stringify(states)})`,
                 );
               }
               if (
@@ -1328,6 +1673,7 @@ async function main() {
             }
           }
         }
+        console.log(`site-quality route readout: ${route} @${width}px ${theme}`);
         if (route === "/trend/" && width === 375 && theme === "light") {
           const trendMarks = await evaluate(`(() => {
             const plots = [...document.querySelectorAll(".plot[data-readout]")].slice(0, 3);
@@ -1408,6 +1754,7 @@ async function main() {
           failures.push(`${route} @${width} ${theme}: favicon did not follow the stored theme`);
         }
         const r = await evaluate(PROBE);
+        console.log(`site-quality route probe: ${route} @${width}px ${theme}`);
         if (!r) {
           failures.push(`${route} @${width} ${theme}: probe returned nothing`);
           continue;
@@ -1590,16 +1937,20 @@ async function main() {
   });
   await send("Emulation.setEmulatedMedia", { media: "", features: [] });
   await evaluate('localStorage.setItem("twair-theme", "light")');
+  console.log("site-quality stage: 200% text zoom");
   for (const route of TEXT_ZOOM_ROUTES) {
     await send("Page.navigate", { url: `${origin}${route}` });
     if (!(await settled(evaluate))) {
       failures.push(`${route} @200% text: page never finished styling`);
       continue;
     }
-    const zoomed = await evaluate(`(() => {
+    await evaluate(`(() => {
       const base = parseFloat(getComputedStyle(document.documentElement).fontSize);
       document.documentElement.style.setProperty("font-size", String(base * 2) + "px", "important");
-      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+      return true;
+    })()`);
+    await settlePaint(evaluate);
+    const zoomed = await evaluate(`(() => {
         const visible = (element) => {
           const style = getComputedStyle(element);
           const rect = element.getBoundingClientRect();
@@ -1614,11 +1965,10 @@ async function main() {
               element.scrollWidth - element.clientWidth > 1;
           })
           .map((element) => String(element.textContent || element.tagName).trim().slice(0, 24));
-        resolve({
+        return {
           overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           clippedLabels,
-        });
-      })));
+        };
     })()`);
     totals.zoomRoutes += 1;
     if (zoomed?.overflow > 0) {
@@ -1680,10 +2030,15 @@ async function main() {
   for (const line of failures.slice(0, 40)) console.log(`  FAIL: ${line}`);
   if (failures.length > 40) console.log(`  ... and ${failures.length - 40} more`);
 
-  ws.close();
-  proc.kill();
-  server.close();
   return failures.length ? 1 : 0;
+  });
 }
 
-process.exit(await main());
+try {
+  process.exit(await (SELF_TEST ? lifecycleSelfTest() : main()));
+} catch (error) {
+  console.error(
+    `site quality preflight failed: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(1);
+}

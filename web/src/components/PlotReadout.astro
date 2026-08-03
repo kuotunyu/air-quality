@@ -484,7 +484,13 @@
   /* 2026-08-03 — the dock now uses the chart container rather than the drawing
      box. The narrow swap remains because it preserves one readable value column
      when the full series names would compete with the numbers. */
-  @container (max-width: 420px) {
+  /* Chromium measured the health chart's 655.4375px dock growing by 25.703px
+     at its first year: four two-digit percentage values widened from 52.797px
+     to 66.031px and made two longer series names wrap. The key immediately
+     above already carries those names, so the compact indexed form is the
+     honest tablet layout too; clipping a name or reserving a blank third line
+     on every desktop chart would both be worse readings. */
+  @container (max-width: 36rem) {
     .readout-row {
       grid-template-columns: 1.35em auto;
     }
