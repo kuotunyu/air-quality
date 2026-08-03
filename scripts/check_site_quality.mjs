@@ -50,6 +50,65 @@ const ROUTES = [
 const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
 const TEXT_ZOOM_ROUTES = ["/trend/", "/stations/", "/methods/", "/explore/", "/data/"];
 
+/**
+ * 2026-08-03 — measured from the built route DOM, before these inventories
+ * became assertions. Native figures/captions total 14; secondary disclosures
+ * total 8 (Detection 2, Methods 6); Explorer contributes the one SQL
+ * disclosure. Keeping every zero is deliberate: a route cannot silently gain
+ * or lose an object while the site-wide sum happens to stay constant.
+ */
+const STATIC_NATIVE_FIGURES = new Map([
+  ["/", 0],
+  ["/trend/", 3],
+  ["/stations/", 0],
+  ["/space/", 2],
+  ["/sources/", 1],
+  ["/detection/", 1],
+  ["/forecast/", 3],
+  ["/health/", 2],
+  ["/methods/", 2],
+  ["/explore/", 0],
+  ["/data/", 0],
+]);
+const STATIC_SECONDARY_DISCLOSURES = new Map([
+  ["/", 0],
+  ["/trend/", 0],
+  ["/stations/", 0],
+  ["/space/", 0],
+  ["/sources/", 0],
+  ["/detection/", 2],
+  ["/forecast/", 0],
+  ["/health/", 0],
+  ["/methods/", 6],
+  ["/explore/", 0],
+  ["/data/", 0],
+]);
+const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, route === "/explore/" ? 1 : 0]));
+const EXPECTED_NATIVE_FIGURES = 14;
+const EXPECTED_SECONDARY_DISCLOSURES = 8;
+const EXPECTED_SQL_DISCLOSURES = 1;
+const STATIC_TABLE_WRAPS = new Map([
+  ["/", 0],
+  ["/trend/", 0],
+  ["/stations/", 0],
+  ["/space/", 2],
+  ["/sources/", 0],
+  ["/detection/", 4],
+  ["/forecast/", 2],
+  ["/health/", 0],
+  ["/methods/", 6],
+  ["/explore/", 0],
+  ["/data/", 1],
+]);
+/**
+ * 2026-08-03 — the normal 11-route × 3-width × 2-theme matrix measured 90
+ * visible wrappers (15 route-DOM wrappers repeated six times) and 22 cases
+ * where a table was genuinely wider than its local frame. These exact totals
+ * make an empty probe a failure rather than a vacuous success.
+ */
+const EXPECTED_TABLE_WRAPS = 90;
+const EXPECTED_TABLE_SCROLLERS = 22;
+
 /** APCA Lc 60 is the floor below which text stops carrying meaning reliably. */
 const MIN_LC = 60;
 /**
@@ -577,6 +636,9 @@ async function main() {
     focusChecks: 0,
     evidenceFocusChecks: 0,
     noScriptRoutes: 0,
+    noScriptNativeFigures: 0,
+    noScriptSecondaryDisclosures: 0,
+    noScriptSqlDisclosures: 0,
     zoomRoutes: 0,
   };
 
@@ -858,34 +920,58 @@ async function main() {
           rect.width > 0 && rect.height > 0;
       };
       for (const disclosure of document.querySelectorAll("details")) disclosure.open = true;
-      const figures = [...document.querySelectorAll("main figure")].filter(visible);
-      const captions = figures.filter((figure) => {
+      const figures = [...document.querySelectorAll("main figure")];
+      const figureStates = figures.map((figure) => {
         const caption = figure.querySelector(":scope > figcaption");
-        return caption && visible(caption) && caption.textContent.trim();
+        return {
+          visible: visible(figure),
+          hasCaption: Boolean(caption),
+          readableCaption: Boolean(caption && visible(caption) && caption.textContent.trim()),
+        };
       });
-      const disclosures = [...document.querySelectorAll("main details")].filter(visible);
-      const readableDisclosures = disclosures.filter((disclosure) => {
+      const disclosures = [...document.querySelectorAll("main details")];
+      const readableDisclosure = (disclosure) => {
         const summary = disclosure.querySelector(":scope > summary");
-        return summary && visible(summary) && summary.textContent.trim() &&
-          disclosure.open && disclosure.getBoundingClientRect().height > summary.getBoundingClientRect().height;
-      });
+        const bodyText = [...disclosure.childNodes]
+          .filter((node) => node !== summary)
+          .map((node) => node.textContent ?? "")
+          .join("")
+          .trim();
+        return Boolean(
+          summary && visible(disclosure) && visible(summary) && summary.textContent.trim() &&
+          bodyText && disclosure.open &&
+          disclosure.getBoundingClientRect().height > summary.getBoundingClientRect().height
+        );
+      };
+      const secondaryDisclosures = disclosures.filter((disclosure) => !disclosure.matches(".sql-panel"));
+      const sqlDisclosures = disclosures.filter((disclosure) => disclosure.matches(".sql-panel"));
       const explorerNotice = document.querySelector("#explore .explorer-nojs");
       const explorerRun = document.querySelector("#explore #run");
       const intro = document.querySelector("main .chapter-intro");
+      const introPart = (selector) => {
+        const element = intro?.querySelector(selector) ?? null;
+        return Boolean(element && visible(element) && element.textContent.trim());
+      };
       return {
         theme: document.documentElement.dataset.theme ?? null,
         hasJs: document.documentElement.classList.contains("has-js"),
         visibleToggles: [...document.querySelectorAll("[data-theme-toggle]")].filter(visible).length,
         startLinks: [...document.querySelectorAll("nav.start-here a")].filter(visible).length,
         chapterLinks: [...document.querySelectorAll("ol.toc a")].filter(visible).length,
-        introComplete: Boolean(
-          intro && visible(intro) && intro.querySelector("h1") &&
-          intro.querySelector(".chapter-question") && intro.querySelector(".chapter-finding")
-        ),
+        intro: {
+          container: Boolean(intro && visible(intro)),
+          heading: introPart("h1"),
+          question: introPart(".chapter-question"),
+          finding: introPart(".chapter-finding"),
+        },
         figures: figures.length,
-        captions: captions.length,
-        disclosures: disclosures.length,
-        readableDisclosures: readableDisclosures.length,
+        visibleFigures: figureStates.filter((state) => state.visible).length,
+        captions: figureStates.filter((state) => state.hasCaption).length,
+        readableCaptions: figureStates.filter((state) => state.readableCaption).length,
+        secondaryDisclosures: secondaryDisclosures.length,
+        readableSecondaryDisclosures: secondaryDisclosures.filter(readableDisclosure).length,
+        sqlDisclosures: sqlDisclosures.length,
+        readableSqlDisclosures: sqlDisclosures.filter(readableDisclosure).length,
         tables: [...document.querySelectorAll("main table")].filter(visible).length,
         downloads: [...document.querySelectorAll("main a[download]")].filter(visible).length,
         explorerInactive: Boolean(
@@ -908,19 +994,55 @@ async function main() {
             `(start=${noScript?.startLinks ?? "unknown"}, chapters=${noScript?.chapterLinks ?? "unknown"})`,
         );
       }
-    } else if (!noScript?.introComplete) {
-      failures.push(`${route}: no-JavaScript chapter intro is incomplete`);
+    } else {
+      const incompleteIntro = ["container", "heading", "question", "finding"].filter(
+        (part) => !noScript?.intro?.[part],
+      );
+      if (incompleteIntro.length) {
+        failures.push(
+          `${route}: no-JavaScript chapter intro has unreadable parts ` +
+            `(${incompleteIntro.join(", ") || "unknown"})`,
+        );
+      }
     }
-    if (noScript?.figures !== noScript?.captions) {
+    const expectedFigures = STATIC_NATIVE_FIGURES.get(route);
+    totals.noScriptNativeFigures += noScript?.figures ?? 0;
+    if (
+      noScript?.figures !== expectedFigures ||
+      noScript?.visibleFigures !== expectedFigures ||
+      noScript?.captions !== expectedFigures ||
+      noScript?.readableCaptions !== expectedFigures
+    ) {
       failures.push(
-        `${route}: no-JavaScript figures and readable captions disagree ` +
-          `(${noScript?.figures ?? "unknown"}/${noScript?.captions ?? "unknown"})`,
+        `${route}: no-JavaScript native figure inventory is incomplete ` +
+          `(expected=${expectedFigures}, DOM=${noScript?.figures ?? "unknown"}, ` +
+          `visible=${noScript?.visibleFigures ?? "unknown"}, ` +
+          `captions=${noScript?.captions ?? "unknown"}, ` +
+          `readable=${noScript?.readableCaptions ?? "unknown"})`,
       );
     }
-    if (noScript?.disclosures !== noScript?.readableDisclosures) {
+    const expectedSecondary = STATIC_SECONDARY_DISCLOSURES.get(route);
+    totals.noScriptSecondaryDisclosures += noScript?.secondaryDisclosures ?? 0;
+    if (
+      noScript?.secondaryDisclosures !== expectedSecondary ||
+      noScript?.readableSecondaryDisclosures !== expectedSecondary
+    ) {
       failures.push(
-        `${route}: no-JavaScript disclosures are not all readable when opened ` +
-          `(${noScript?.readableDisclosures ?? "unknown"}/${noScript?.disclosures ?? "unknown"})`,
+        `${route}: no-JavaScript secondary disclosure inventory is incomplete ` +
+          `(expected=${expectedSecondary}, DOM=${noScript?.secondaryDisclosures ?? "unknown"}, ` +
+          `readable=${noScript?.readableSecondaryDisclosures ?? "unknown"})`,
+      );
+    }
+    const expectedSql = STATIC_SQL_DISCLOSURES.get(route);
+    totals.noScriptSqlDisclosures += noScript?.sqlDisclosures ?? 0;
+    if (
+      noScript?.sqlDisclosures !== expectedSql ||
+      noScript?.readableSqlDisclosures !== expectedSql
+    ) {
+      failures.push(
+        `${route}: no-JavaScript SQL disclosure inventory is incomplete ` +
+          `(expected=${expectedSql}, DOM=${noScript?.sqlDisclosures ?? "unknown"}, ` +
+          `readable=${noScript?.readableSqlDisclosures ?? "unknown"})`,
       );
     }
     if (route === "/data/" && (!noScript?.tables || !noScript?.downloads)) {
@@ -929,6 +1051,30 @@ async function main() {
     if (route === "/explore/" && !noScript?.explorerInactive) {
       failures.push("/explore/: no-JavaScript Explorer does not identify itself as inactive");
     }
+  }
+  if (totals.noScriptNativeFigures !== EXPECTED_NATIVE_FIGURES) {
+    failures.push(
+      `no-JavaScript native figure inventory totals ${totals.noScriptNativeFigures}, ` +
+        `expected ${EXPECTED_NATIVE_FIGURES}`,
+    );
+  }
+  if (
+    totals.noScriptSecondaryDisclosures === 0 ||
+    totals.noScriptSecondaryDisclosures !== EXPECTED_SECONDARY_DISCLOSURES
+  ) {
+    failures.push(
+      `no-JavaScript secondary disclosure inventory totals ` +
+        `${totals.noScriptSecondaryDisclosures}, expected ${EXPECTED_SECONDARY_DISCLOSURES}`,
+    );
+  }
+  if (
+    totals.noScriptSqlDisclosures === 0 ||
+    totals.noScriptSqlDisclosures !== EXPECTED_SQL_DISCLOSURES
+  ) {
+    failures.push(
+      `no-JavaScript SQL disclosure inventory totals ${totals.noScriptSqlDisclosures}, ` +
+        `expected ${EXPECTED_SQL_DISCLOSURES}`,
+    );
   }
   await send("Emulation.setScriptExecutionDisabled", { value: false });
 
@@ -1244,6 +1390,13 @@ async function main() {
         totals.nodes += r.nodes;
         totals.tableWraps += r.tableWraps;
         totals.tableScrollers += r.tableScrollers;
+        const expectedTableWraps = STATIC_TABLE_WRAPS.get(route);
+        if (r.tableWraps !== expectedTableWraps) {
+          failures.push(
+            `${route} @${width} ${theme}: visible table wrapper inventory is ` +
+              `${r.tableWraps}, expected ${expectedTableWraps}`,
+          );
+        }
         // Only the two endpoint widths feed the reported extremes; 768 would
         // otherwise be folded into a figure labelled 1440.
         if (width === 375 || width === 1440) {
@@ -1474,6 +1627,17 @@ async function main() {
   }
   if (totals.evidenceFocusChecks === 0) {
     failures.push("focus-visible probe exercised no evidence disclosure");
+  }
+  if (totals.tableWraps === 0 || totals.tableWraps !== EXPECTED_TABLE_WRAPS) {
+    failures.push(
+      `table wrapper matrix totals ${totals.tableWraps}, expected ${EXPECTED_TABLE_WRAPS}`,
+    );
+  }
+  if (totals.tableScrollers === 0 || totals.tableScrollers !== EXPECTED_TABLE_SCROLLERS) {
+    failures.push(
+      `intentional table scroller matrix totals ${totals.tableScrollers}, ` +
+        `expected ${EXPECTED_TABLE_SCROLLERS}`,
+    );
   }
 
   console.log(`routes checked   : ${ROUTES.length} x 3 widths x 2 themes`);
