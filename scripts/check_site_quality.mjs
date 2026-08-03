@@ -48,6 +48,7 @@ const ROUTES = [
   "/data/",
 ];
 const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
+const TEXT_ZOOM_ROUTES = ["/trend/", "/stations/", "/methods/", "/explore/", "/data/"];
 
 /** APCA Lc 60 is the floor below which text stops carrying meaning reliably. */
 const MIN_LC = 60;
@@ -247,7 +248,8 @@ const PROBE = `(() => {
   };
 
   const out = { nodes: 0, lowContrast: [], smallestFont: Infinity, smallestAnnotation: Infinity,
-    smallTargets: [], collisions: [] };
+    smallTargets: [], collisions: [], tableWraps: 0, tableScrollers: 0,
+    invalidTableScrollers: [], invalidTableRules: [] };
 
   const MARKS = ".plot-x span, .plot-y span, .plot-keys span, .axis span";
 
@@ -325,8 +327,9 @@ const PROBE = `(() => {
     }
   }
 
-  // The two figure controls, which are the smallest deliberate targets here.
-  for (const el of document.querySelectorAll(".fig-tool, .rail-open, .rail-shut, button, select")) {
+  // Native controls and disclosures all need the same finger-sized floor. The
+  // rail labels are included because they act as the no-script drawer buttons.
+  for (const el of document.querySelectorAll(".rail-open, .rail-shut, button, select, summary")) {
     const cs = getComputedStyle(el);
     if (cs.display === "none" || cs.visibility === "hidden") continue;
     const r = el.getBoundingClientRect();
@@ -334,6 +337,53 @@ const PROBE = `(() => {
     if (r.height < ${MIN_TARGET_PX}) {
       out.smallTargets.push({ cls: String(el.className || el.tagName).slice(0, 28),
         w: +r.width.toFixed(1), h: +r.height.toFixed(1) });
+    }
+  }
+
+  // A wide table is allowed to be wider than its frame; the document is not.
+  // Record the two separately so a legitimate local scroller can never excuse
+  // page-level overflow, and so a clipped table cannot masquerade as contained.
+  for (const wrap of document.querySelectorAll(".table-wrap")) {
+    const cs = getComputedStyle(wrap);
+    const r = wrap.getBoundingClientRect();
+    if (cs.display === "none" || cs.visibility === "hidden" || !r.width || !r.height) continue;
+    out.tableWraps += 1;
+    if (!cs.scrollbarColor || cs.scrollbarColor === "auto") {
+      out.invalidTableRules.push("table wrapper has no persistent scrollbar affordance");
+    }
+    const overflow = wrap.scrollWidth - wrap.clientWidth;
+    if (overflow <= 1) continue;
+    out.tableScrollers += 1;
+    if (cs.overflowX !== "auto" && cs.overflowX !== "scroll") {
+      out.invalidTableScrollers.push({
+        overflow: +overflow.toFixed(1),
+        overflowX: cs.overflowX,
+      });
+    }
+  }
+
+  for (const table of document.querySelectorAll("table")) {
+    const header = table.querySelector("thead th");
+    const cell = table.querySelector("tbody td");
+    if (!header || !cell) continue;
+    const hs = getComputedStyle(header);
+    const cs = getComputedStyle(cell);
+    const padding = ["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"];
+    if (padding.some((name) => Math.abs(parseFloat(hs[name]) - parseFloat(cs[name])) > 0.1)) {
+      out.invalidTableRules.push("table header/body padding differs");
+    }
+    for (const numeric of table.querySelectorAll("th.num, td.num")) {
+      const ns = getComputedStyle(numeric);
+      if (ns.textAlign !== "right" || !ns.fontVariantNumeric.includes("tabular-nums")) {
+        out.invalidTableRules.push("numeric table cell is not right/tabular aligned");
+        break;
+      }
+    }
+    const rows = table.tBodies[0]?.rows ?? [];
+    if (rows.length > 1) {
+      const first = getComputedStyle(rows[0]).backgroundColor;
+      const second = getComputedStyle(rows[1]).backgroundColor;
+      if (first === second) out.invalidTableRules.push("table zebra rows have no contrast");
     }
   }
 
@@ -412,6 +462,46 @@ async function main() {
     await evaluate(`new Promise((resolve) => requestAnimationFrame(resolve))`);
   };
 
+  const focusVisibleStates = async (selectors) => {
+    // `:focus-visible` follows the input modality. Programmatic focus from an
+    // untouched CDP page is pointer-like, so establish keyboard modality first.
+    await pressKey("Tab");
+    return evaluate(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width > 0 && rect.height > 0;
+      };
+      const oldScrollBehavior = document.documentElement.style.scrollBehavior;
+      document.documentElement.style.scrollBehavior = "auto";
+      const result = ${JSON.stringify(selectors)}.map(({ name, selector, required }) => {
+        const elements = [...document.querySelectorAll(selector)].filter(visible);
+        const states = elements.map((element) => {
+          element.focus();
+          element.scrollIntoView({ block: "nearest", inline: "nearest" });
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          const state = {
+            label: String(element.id || element.className || element.textContent || element.tagName)
+              .trim().slice(0, 28),
+            active: document.activeElement === element,
+            focusVisible: element.matches(":focus-visible"),
+            outlineStyle: style.outlineStyle,
+            outlineWidth: parseFloat(style.outlineWidth),
+            inViewport: rect.left >= -1 && rect.right <= innerWidth + 1 &&
+              rect.top >= -1 && rect.bottom <= innerHeight + 1,
+          };
+          element.blur();
+          return state;
+        });
+        return { name, required, count: elements.length, states };
+      });
+      document.documentElement.style.scrollBehavior = oldScrollBehavior;
+      return result;
+    })()`);
+  };
+
   const readoutState = () =>
     evaluate(`(() => {
       const plot = document.querySelector(".plot[data-readout]");
@@ -482,6 +572,12 @@ async function main() {
     annotationAt375: Infinity,
     collisions: 0,
     readouts: 0,
+    tableWraps: 0,
+    tableScrollers: 0,
+    focusChecks: 0,
+    evidenceFocusChecks: 0,
+    noScriptRoutes: 0,
+    zoomRoutes: 0,
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
@@ -741,24 +837,97 @@ async function main() {
   });
 
   await send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage" });
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 375,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
   await send("Emulation.setScriptExecutionDisabled", { value: true });
-  await send("Page.navigate", { url: `${origin}/` });
-  if (!(await settled(evaluate))) {
-    failures.push("no-JavaScript theme preflight page never finished styling");
-  } else {
-    const noScript = await evaluate(`(() => ({
-      theme: document.documentElement.dataset.theme ?? null,
-      hasJs: document.documentElement.classList.contains("has-js"),
-      visibleToggles: [...document.querySelectorAll("[data-theme-toggle]")].filter((button) => {
-        const style = getComputedStyle(button);
-        return style.display !== "none" && style.visibility !== "hidden" && button.getClientRects().length;
-      }).length,
-    }))()`);
+  for (const route of ROUTES) {
+    await send("Page.navigate", { url: `${origin}${route}` });
+    if (!(await settled(evaluate))) {
+      failures.push(`${route}: no-JavaScript page never finished styling`);
+      continue;
+    }
+    const noScript = await evaluate(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width > 0 && rect.height > 0;
+      };
+      for (const disclosure of document.querySelectorAll("details")) disclosure.open = true;
+      const figures = [...document.querySelectorAll("main figure")].filter(visible);
+      const captions = figures.filter((figure) => {
+        const caption = figure.querySelector(":scope > figcaption");
+        return caption && visible(caption) && caption.textContent.trim();
+      });
+      const disclosures = [...document.querySelectorAll("main details")].filter(visible);
+      const readableDisclosures = disclosures.filter((disclosure) => {
+        const summary = disclosure.querySelector(":scope > summary");
+        return summary && visible(summary) && summary.textContent.trim() &&
+          disclosure.open && disclosure.getBoundingClientRect().height > summary.getBoundingClientRect().height;
+      });
+      const explorerNotice = document.querySelector("#explore .explorer-nojs");
+      const explorerRun = document.querySelector("#explore #run");
+      const intro = document.querySelector("main .chapter-intro");
+      return {
+        theme: document.documentElement.dataset.theme ?? null,
+        hasJs: document.documentElement.classList.contains("has-js"),
+        visibleToggles: [...document.querySelectorAll("[data-theme-toggle]")].filter(visible).length,
+        startLinks: [...document.querySelectorAll("nav.start-here a")].filter(visible).length,
+        chapterLinks: [...document.querySelectorAll("ol.toc a")].filter(visible).length,
+        introComplete: Boolean(
+          intro && visible(intro) && intro.querySelector("h1") &&
+          intro.querySelector(".chapter-question") && intro.querySelector(".chapter-finding")
+        ),
+        figures: figures.length,
+        captions: captions.length,
+        disclosures: disclosures.length,
+        readableDisclosures: readableDisclosures.length,
+        tables: [...document.querySelectorAll("main table")].filter(visible).length,
+        downloads: [...document.querySelectorAll("main a[download]")].filter(visible).length,
+        explorerInactive: Boolean(
+          explorerNotice && visible(explorerNotice) &&
+          (!explorerRun || !visible(explorerRun) || explorerRun.disabled)
+        ),
+      };
+    })()`);
+    totals.noScriptRoutes += 1;
     if (noScript?.theme !== "light" || noScript?.hasJs) {
-      failures.push("the no-JavaScript document did not retain its static light default");
+      failures.push(`${route}: no-JavaScript document did not retain its static light default`);
     }
     if (noScript?.visibleToggles) {
-      failures.push("theme toggle controls remain visible when JavaScript is unavailable");
+      failures.push(`${route}: theme toggle controls remain visible without JavaScript`);
+    }
+    if (route === "/") {
+      if (noScript?.startLinks !== 4 || noScript?.chapterLinks !== 10) {
+        failures.push(
+          `/: no-JavaScript homepage paths are incomplete ` +
+            `(start=${noScript?.startLinks ?? "unknown"}, chapters=${noScript?.chapterLinks ?? "unknown"})`,
+        );
+      }
+    } else if (!noScript?.introComplete) {
+      failures.push(`${route}: no-JavaScript chapter intro is incomplete`);
+    }
+    if (noScript?.figures !== noScript?.captions) {
+      failures.push(
+        `${route}: no-JavaScript figures and readable captions disagree ` +
+          `(${noScript?.figures ?? "unknown"}/${noScript?.captions ?? "unknown"})`,
+      );
+    }
+    if (noScript?.disclosures !== noScript?.readableDisclosures) {
+      failures.push(
+        `${route}: no-JavaScript disclosures are not all readable when opened ` +
+          `(${noScript?.readableDisclosures ?? "unknown"}/${noScript?.disclosures ?? "unknown"})`,
+      );
+    }
+    if (route === "/data/" && (!noScript?.tables || !noScript?.downloads)) {
+      failures.push("/data/: no-JavaScript download table or links are unavailable");
+    }
+    if (route === "/explore/" && !noScript?.explorerInactive) {
+      failures.push("/explore/: no-JavaScript Explorer does not identify itself as inactive");
     }
   }
   await send("Emulation.setScriptExecutionDisabled", { value: false });
@@ -814,6 +983,70 @@ async function main() {
         const hasReadout = await evaluate(
           `Boolean(document.querySelector(".plot[data-readout]"))`,
         );
+        if (width === 375 && (route === "/stations/" || route === "/explore/")) {
+          const controlOrder = await evaluate(`(() => {
+            const label = document.querySelector(${JSON.stringify(
+              route === "/stations/" ? "#station-select" : "#example-select",
+            )})?.closest("label");
+            const labelText = label?.querySelector(":scope > .control-label");
+            const select = label?.querySelector(":scope > select");
+            const action = document.querySelector(${JSON.stringify(
+              route === "/explore/" ? "#run" : ".selector-does-not-exist",
+            )});
+            const status = document.querySelector(${JSON.stringify(
+              route === "/explore/" ? "#status" : ".selector-does-not-exist",
+            )});
+            const box = (element) => element?.getBoundingClientRect() ?? null;
+            const labelBox = box(labelText);
+            const selectBox = box(select);
+            const actionBox = box(action);
+            const statusBox = box(status);
+            return {
+              labelledAbove: Boolean(labelBox && selectBox && labelBox.bottom <= selectBox.top + 1),
+              actionLast: ${route === "/explore/"}
+                ? Boolean(selectBox && actionBox && selectBox.bottom <= actionBox.top + 1)
+                : true,
+              statusAfter: ${route === "/explore/"}
+                ? Boolean(actionBox && statusBox && actionBox.bottom <= statusBox.top + 1)
+                : true,
+            };
+          })()`);
+          if (!controlOrder?.labelledAbove || !controlOrder?.actionLast || !controlOrder?.statusAfter) {
+            failures.push(
+              `${route} @375 ${theme}: controls do not follow label, control, primary action, status order`,
+            );
+          }
+        }
+        const requiredFocus = [
+          { name: "theme toggle", selector: "[data-theme-toggle]", required: true },
+          { name: "station control", selector: "#station-select", required: route === "/stations/" },
+          { name: "Explorer run button", selector: "#run", required: route === "/explore/" },
+          {
+            name: "evidence details",
+            selector: "main details:not(.sql-panel) > summary",
+            required: false,
+          },
+        ];
+        const focusStates = await focusVisibleStates(requiredFocus);
+        for (const focus of focusStates ?? []) {
+          if (focus.required && focus.count === 0) {
+            failures.push(`${route} @${width} ${theme}: no visible ${focus.name} was found`);
+          }
+          for (const state of focus.states) {
+            totals.focusChecks += 1;
+            if (focus.name === "evidence details") totals.evidenceFocusChecks += 1;
+            if (
+              !state.active ||
+              !state.focusVisible ||
+              state.outlineStyle === "none" ||
+              state.outlineWidth < 2
+            ) {
+              failures.push(
+                `${route} @${width} ${theme}: ${focus.name} has no focus-visible outline`,
+              );
+            }
+          }
+        }
         if (READOUT_ROUTES.has(route) && !hasReadout) {
           failures.push(`${route} @${width} ${theme}: expected a keyboard readout but found none`);
         }
@@ -1009,6 +1242,8 @@ async function main() {
           continue;
         }
         totals.nodes += r.nodes;
+        totals.tableWraps += r.tableWraps;
+        totals.tableScrollers += r.tableScrollers;
         // Only the two endpoint widths feed the reported extremes; 768 would
         // otherwise be folded into a figure labelled 1440.
         if (width === 375 || width === 1440) {
@@ -1039,7 +1274,19 @@ async function main() {
         }
 
         if (r.overflow > 0) {
-          failures.push(`${route} @${width} ${theme}: page scrolls sideways by ${r.overflow}px`);
+          failures.push(
+            `${route} @${width} ${theme}: document scrolls sideways by ${r.overflow}px ` +
+              `(${r.tableScrollers} intentional table scrollers)`,
+          );
+        }
+        for (const bad of r.invalidTableScrollers) {
+          failures.push(
+            `${route} @${width} ${theme}: .table-wrap clips ${bad.overflow}px ` +
+              `with overflow-x ${bad.overflowX}`,
+          );
+        }
+        for (const problem of new Set(r.invalidTableRules)) {
+          failures.push(`${route} @${width} ${theme}: ${problem}`);
         }
         if (width === 1440) {
           if (r.railWidth > 272) {
@@ -1157,11 +1404,76 @@ async function main() {
     }
   }
 
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Emulation.setEmulatedMedia", { media: "", features: [] });
+  await evaluate('localStorage.setItem("twair-theme", "light")');
+  for (const route of TEXT_ZOOM_ROUTES) {
+    await send("Page.navigate", { url: `${origin}${route}` });
+    if (!(await settled(evaluate))) {
+      failures.push(`${route} @200% text: page never finished styling`);
+      continue;
+    }
+    const zoomed = await evaluate(`(() => {
+      const base = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      document.documentElement.style.setProperty("font-size", String(base * 2) + "px", "important");
+      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+        const visible = (element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" &&
+            rect.width > 0 && rect.height > 0;
+        };
+        const clippedLabels = [...document.querySelectorAll("label, button, summary, .status")]
+          .filter(visible)
+          .filter((element) => {
+            const style = getComputedStyle(element);
+            return (style.overflowX === "hidden" || style.overflowX === "clip") &&
+              element.scrollWidth - element.clientWidth > 1;
+          })
+          .map((element) => String(element.textContent || element.tagName).trim().slice(0, 24));
+        resolve({
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          clippedLabels,
+        });
+      })));
+    })()`);
+    totals.zoomRoutes += 1;
+    if (zoomed?.overflow > 0) {
+      failures.push(`${route} @200% text: document scrolls sideways by ${zoomed.overflow}px`);
+    }
+    for (const label of zoomed?.clippedLabels ?? []) {
+      failures.push(`${route} @200% text: clipped label ${JSON.stringify(label)}`);
+    }
+    const zoomFocus = await focusVisibleStates([
+      { name: "zoomed control", selector: "button, select, summary", required: true },
+    ]);
+    for (const state of zoomFocus?.[0]?.states ?? []) {
+      if (!state.active || !state.focusVisible || state.outlineStyle === "none" || state.outlineWidth < 2) {
+        failures.push(
+          `${route} @200% text: ${JSON.stringify(state.label)} lost its focus outline`,
+        );
+      }
+      if (!state.inViewport) {
+        failures.push(
+          `${route} @200% text: focused ${JSON.stringify(state.label)} is clipped outside the viewport`,
+        );
+      }
+    }
+  }
+
   if (totals.smallestAt375 < MIN_FONT_PX) {
     failures.push(`smallest type at 375px is ${totals.smallestAt375}px (floor ${MIN_FONT_PX})`);
   }
   if (totals.readouts === 0) {
     failures.push("readout keyboard and overlap probe exercised no chart");
+  }
+  if (totals.evidenceFocusChecks === 0) {
+    failures.push("focus-visible probe exercised no evidence disclosure");
   }
 
   console.log(`routes checked   : ${ROUTES.length} x 3 widths x 2 themes`);
@@ -1170,6 +1482,10 @@ async function main() {
   console.log(`smallest in-figure annotation @375 : ${totals.annotationAt375}px`);
   console.log(`overlapping axis labels : ${totals.collisions}`);
   console.log(`readouts exercised : ${totals.readouts}`);
+  console.log(`table wraps       : ${totals.tableWraps} (${totals.tableScrollers} intentional scrollers)`);
+  console.log(`focus checks      : ${totals.focusChecks}`);
+  console.log(`no-JavaScript     : ${totals.noScriptRoutes} routes`);
+  console.log(`200% text zoom    : ${totals.zoomRoutes} routes`);
   console.log(`APCA floor       : Lc ${MIN_LC}`);
   console.log(`problems         : ${failures.length}`);
   for (const line of failures.slice(0, 40)) console.log(`  FAIL: ${line}`);

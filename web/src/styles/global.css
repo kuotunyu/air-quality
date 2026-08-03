@@ -2614,6 +2614,8 @@ details,
    */
   scrollbar-width: thin;
   scrollbar-color: var(--rule) transparent;
+  scrollbar-gutter: stable;
+  overscroll-behavior-inline: contain;
   width: fit-content;
   /* Shrink-to-fit needs its own ceiling. Without this a wrap that is NOT a
      direct child of `.page` — chapter 8 puts five of them inside `details` —
@@ -2641,9 +2643,12 @@ details,
 }
 
 table {
+  --cell-pad-block: 0.6rem;
+  --cell-pad-inline: 0.9rem;
   border-collapse: collapse;
   width: 100%;
   font-size: var(--text-sm);
+  line-height: 1.45;
 }
 
 th,
@@ -2654,7 +2659,7 @@ td {
      1,053px inside the 983px its column could give, so 「機率預期」 sat behind a
      horizontal scrollbar on a 1440 display. `--cell-pad` lets a wide table say
      so; everything else keeps the roomier default. */
-  padding: 0.6rem var(--cell-pad, 0.9rem);
+  padding: var(--cell-pad-block) var(--cell-pad, var(--cell-pad-inline));
   text-align: left;
   border-bottom: 1px solid var(--line-soft);
   /* Columns of numbers are only scannable if a row is one line, so this is the
@@ -2840,10 +2845,10 @@ button:hover {
 }
 
 .controls {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
-  align-items: center;
+  align-items: end;
   margin-bottom: var(--space-3);
 }
 
@@ -2854,9 +2859,14 @@ button:hover {
   max-width: 100%;
   font-size: var(--text-sm);
   color: var(--text-muted);
-  display: flex;
-  align-items: center;
+  display: grid;
+  align-items: start;
   gap: var(--space-1);
+}
+
+.control-label {
+  display: block;
+  line-height: 1.4;
 }
 
 /* A select's `max-width: 100%` resolves against its containing block, which
@@ -2864,7 +2874,7 @@ button:hover {
    Letting the control shrink inside the label is what actually bounds it. */
 .controls label > select {
   min-width: 0;
-  flex: 1 1 auto;
+  width: 100%;
 }
 
 /* ---------- callouts ---------- */

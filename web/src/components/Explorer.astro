@@ -118,14 +118,32 @@ const candidates = pollutantIndex.map((p) => ({
     <code>mean</code> 為 NULL 表示覆蓋率不足、平均值被扣住，<strong>不是零</strong>。
   </p>
 
-  <div class="controls">
-    <label>
-      範例
+  <noscript>
+    <style>
+      #explore .explorer-controls,
+      #explore .tables,
+      #explore .result {
+        display: none;
+      }
+      #explore .explorer-nojs {
+        display: block;
+      }
+    </style>
+  </noscript>
+
+  <p class="note explorer-nojs">
+    瀏覽器內查詢需要 JavaScript。SQL 範例仍可閱讀，但本頁不會下載查詢引擎或執行查詢；
+    公開資料與重建方式見第十章。
+  </p>
+
+  <div class="controls explorer-controls">
+    <label class="control-field">
+      <span class="control-label">範例</span>
       <select id="example-select">
         {EXAMPLES.map((example, i) => <option value={i}>{example.label}</option>)}
       </select>
     </label>
-    <button id="run" type="button">執行查詢</button>
+    <button id="run" class="primary-action" type="button">執行查詢</button>
     <span id="status" class="status" role="status" aria-live="polite"></span>
   </div>
 
@@ -725,6 +743,24 @@ const candidates = pollutantIndex.map((p) => ({
 </script>
 
 <style>
+  .explorer-nojs {
+    display: none;
+  }
+
+  .explorer-controls .status {
+    min-height: 1.7em;
+  }
+
+  @media (min-width: 40rem) {
+    .explorer-controls {
+      grid-template-columns: minmax(12rem, 1fr) auto;
+    }
+
+    .explorer-controls .status {
+      grid-column: 1 / -1;
+    }
+  }
+
   /*
    * The disclosure holding the query, opting OUT of the site's `details` chrome.
    *

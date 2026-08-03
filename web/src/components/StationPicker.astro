@@ -107,9 +107,9 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   */}
   <p id="station-say" class="visually-hidden" role="status" aria-live="polite"></p>
 
-  <div class="controls">
-    <label>
-      測站
+  <div class="controls station-controls">
+    <label class="control-field">
+      <span class="control-label">測站</span>
       <select id="station-select">
         {
           counties.map((group) => (
@@ -288,6 +288,10 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 <style>
   .picker {
     margin-top: 1.5rem;
+  }
+
+  .station-controls {
+    max-width: min(100%, 24rem);
   }
 
   /*
