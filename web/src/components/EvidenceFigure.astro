@@ -3,9 +3,10 @@ interface Props {
   number: string;
   title: string;
   hint?: string;
+  primary?: boolean;
 }
 
-const { number, title, hint } = Astro.props;
+const { number, title, hint, primary = false } = Astro.props;
 const titleId = `evidence-${number.replaceAll(".", "-")}-title`;
 
 if (!Astro.slots.has("caption")) {
@@ -13,7 +14,11 @@ if (!Astro.slots.has("caption")) {
 }
 ---
 
-<section class="evidence-figure" aria-labelledby={titleId}>
+<section
+  class="evidence-figure"
+  aria-labelledby={titleId}
+  data-primary-evidence={primary || undefined}
+>
   <header class="evidence-header">
     <p class="evidence-number">圖 {number}</p>
     <p class="evidence-title" id={titleId}>{title}</p>
