@@ -972,6 +972,28 @@ async function main() {
       };
     })()`);
 
+  const homepageFirstViewport = async () => {
+    const geometry = await evaluate(`(() => {
+      const box = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
+          width: rect.width, height: rect.height,
+        };
+      };
+      return {
+        map: box("[data-homepage-map]"),
+        legend: box("[data-homepage-map-legend]"),
+        viewport: { width: innerWidth, height: innerHeight },
+        scrollY,
+      };
+    })()`);
+    if (geometry?.scrollY !== 0) return ["homepage did not start at scroll position zero"];
+    return firstViewportProblems(geometry);
+  };
+
   const failures = [];
   if (18.99 + CSS_PX_SERIALIZATION_EPSILON >= 20 * 0.95) {
     failures.push("annotation ratio gate accepts 94.95% of body size");
@@ -1271,6 +1293,11 @@ async function main() {
       failures.push(`${route}: no-JavaScript page never finished styling`);
       continue;
     }
+    if (route === "/") {
+      for (const problem of await homepageFirstViewport()) {
+        failures.push(`${route} @375x800 no-JavaScript light: ${problem}`);
+      }
+    }
     const noScript = await evaluate(`(() => {
       const visible = (element) => {
         const style = getComputedStyle(element);
@@ -1460,6 +1487,39 @@ async function main() {
         `expected ${EXPECTED_SQL_DISCLOSURES}`,
     );
   }
+  console.log("site-quality stage: no-JavaScript homepage acceptance");
+  for (const [width, height] of [
+    [390, 844],
+    [768, 1024],
+    [1440, 900],
+    [1920, 1000],
+  ]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    await send("Page.navigate", { url: `${origin}/data/` });
+    if (!(await settled(evaluate, 8000, `/ @${width}px no-JavaScript preflight`))) {
+      failures.push(
+        `/ @${width}x${height} no-JavaScript light: preflight page never finished styling`,
+      );
+      continue;
+    }
+    await send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage" });
+    if (
+      !(await navigateWithoutPageScripts(send, waitForEvent, `${origin}/`, () =>
+        settled(evaluate, 8000, `/ @${width}px no-JavaScript`),
+      ))
+    ) {
+      failures.push(`/ @${width}x${height} no-JavaScript light: page never finished styling`);
+      continue;
+    }
+    for (const problem of await homepageFirstViewport()) {
+      failures.push(`/ @${width}x${height} no-JavaScript light: ${problem}`);
+    }
+  }
   await evaluate('localStorage.setItem("twair-theme", "dark")');
   console.log("site-quality stage: print contract");
   await send("Emulation.setEmulatedMedia", { media: "print" });
@@ -1517,6 +1577,11 @@ async function main() {
           continue;
         }
         console.log(`site-quality route styled: ${route} @${width}px ${theme}`);
+        if (route === "/" && (width === 768 || width === 1440)) {
+          for (const problem of await homepageFirstViewport()) {
+            failures.push(`${route} @${width}x${height} ${theme}: ${problem}`);
+          }
+        }
         const hasReadout = await evaluate(
           `Boolean(document.querySelector(".plot[data-readout]"))`,
         );
@@ -1960,6 +2025,39 @@ async function main() {
             );
           }
         }
+      }
+    }
+  }
+
+  for (const [width, height] of [
+    [390, 844],
+    [1920, 1000],
+  ]) {
+    for (const theme of ["light", "dark"]) {
+      await restartBrowser();
+      await send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: width < 500,
+      });
+      await send("Page.navigate", { url: `${origin}/` });
+      if (!(await settled(evaluate, 8000, `/ @${width}px ${theme} browser restart`))) {
+        failures.push(`/ @${width}x${height} ${theme}: replacement browser never finished styling`);
+      }
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      const osTheme = theme === "light" ? "dark" : "light";
+      await send("Emulation.setEmulatedMedia", {
+        media: "",
+        features: [{ name: "prefers-color-scheme", value: osTheme }],
+      });
+      await send("Page.navigate", { url: `${origin}/` });
+      if (!(await settled(evaluate, 8000, `/ @${width}px ${theme}`))) {
+        failures.push(`/ @${width}x${height} ${theme}: page never finished styling`);
+        continue;
+      }
+      for (const problem of await homepageFirstViewport()) {
+        failures.push(`/ @${width}x${height} ${theme}: ${problem}`);
       }
     }
   }

@@ -283,13 +283,14 @@ const dots = main.map((s) => {
 });
 ---
 
+<slot name="before-map" />
+
 <div
   class="map-wrap"
+  data-homepage-map-frame
   style={`--map-ratio:${width} / ${height};--map-wide:${(width / height).toFixed(4)}`}
 >
-  <div
-    class="map-box"
-  >
+  <div class="map-box" data-homepage-map>
     <svg
       viewBox={`0 0 ${width} ${height}`}
       role="img"
@@ -345,7 +346,7 @@ const dots = main.map((s) => {
     A bar with its breaks under it says that; a row of tiles does not. The unit
     goes beside the scale it belongs to instead of pretending to be a bin.
   */}
-  <div class="scale">
+  <div class="scale" data-homepage-map-legend>
     <p class="scale-title">
       PM2.5 年均 μg/m³
       {shownYears && <span class="scale-when">・{shownYears}</span>}
@@ -360,6 +361,8 @@ const dots = main.map((s) => {
     </div>
   </div>
 </div>
+
+<slot name="after-map" />
 
 {/*
   A sibling region rather than part of the figure.
@@ -417,6 +420,23 @@ const dots = main.map((s) => {
     flex-direction: column;
     width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
     margin-inline: auto;
+  }
+
+  /*
+   * 2026-08-03 — the opening-copy stack leaves less vertical room than the old
+   * map/figures row. Measured before: the 62vh budget put the legend bottom at
+   * 1122.12px in a 768x1024 viewport and 1078.06px in a 390x844 viewport.
+   */
+  @media (max-width: 900px) {
+    .map-wrap {
+      width: min(100%, 52vh * var(--map-wide));
+    }
+  }
+
+  @media (max-width: 420px) {
+    .map-wrap {
+      width: min(100%, 38vh * var(--map-wide));
+    }
   }
 
   /*
@@ -584,6 +604,12 @@ const dots = main.map((s) => {
       1px -1px 0 var(--bg-sunken),
       -1px 1px 0 var(--bg-sunken),
       0 0 4px var(--bg-sunken);
+  }
+
+  @media (max-width: 420px) {
+    .county-label {
+      display: none;
+    }
   }
 
   /*

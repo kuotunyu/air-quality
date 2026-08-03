@@ -66,20 +66,6 @@ const opening = [
   .join(" · ");
 ---
 <section id="hero" class="page enter">
-  <p class="eyebrow" style="--enter:0">{opening}</p>
-  <h1 style="--enter:1">台灣空氣品質的長期重新分析</h1>
-
-  <p class="lede" style="--enter:2">
-    {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
-    {" "}{n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。同一份資料也顯示，
-    {latestYear} 年有可比較資料的 {latest.length} 個測站中，
-    <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
-    {overTaiwan} 個超過台灣自身的標準（{TAIWAN_PM25_ANNUAL} μg/m³）。
-    趨勢與水準是兩個不同的量，這兩項結果並不衝突。
-  </p>
-
-  <StartHere />
-
   {/*
     The container is the WRAPPER, not the grid.
 
@@ -95,7 +81,17 @@ const opening = [
   */}
   <div class="hero-figure">
   <div class="hero-grid" style="--enter:3">
-    <StationMap stations={stations} cards={cards} unplaced={stationsWithoutCoordinates} />
+    <StationMap stations={stations} cards={cards} unplaced={stationsWithoutCoordinates}>
+      <div slot="before-map" class="hero-opening">
+        <p class="eyebrow" style="--enter:0">{opening}</p>
+        <h1 style="--enter:1">台灣空氣品質的長期重新分析</h1>
+        <p class="lede hero-finding" style="--enter:2">
+          {balancedSince} 年以來，全台 PM2.5 年均值從 {n(declineFrom)} 降到
+          {" "}{n(lastValue)} μg/m³，少了 {n(declinePct, 0)}%。
+        </p>
+      </div>
+
+      <div slot="after-map" class="hero-after">
 
     {/*
       Three figures, not three cards.
@@ -166,6 +162,17 @@ const opening = [
         包含上面那三個，它們是從同一份資料算出來的，不是寫進版面的。
       </p>
     </div>
+
+        <p class="lede hero-context">
+          同一份資料也顯示，{latestYear} 年有可比較資料的 {latest.length} 個測站中，
+          <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
+          {overTaiwan} 個超過台灣自身的標準（{TAIWAN_PM25_ANNUAL} μg/m³）。
+          趨勢與水準是兩個不同的量，這兩項結果並不衝突。
+        </p>
+
+        <StartHere />
+      </div>
+    </StationMap>
   </div>
   </div>
 </section>
@@ -377,6 +384,71 @@ const opening = [
   }
   .hero-grid > :global(.map-notes) {
     grid-area: 2 / 1 / auto / -1;
+  }
+}
+
+/*
+ * 2026-08-03 — supersedes the map/figures split above. The opening finding and
+ * complete map now share the first row; interpretation, routes and provenance
+ * follow the map in the same order in the rendered and no-JavaScript document.
+ */
+.hero-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+.hero-finding {
+  margin-bottom: 0;
+}
+.hero-grid > .hero-opening {
+  order: 1;
+}
+.hero-grid > :global(.map-wrap) {
+  order: 2;
+  grid-area: auto;
+  align-self: start;
+  display: flex;
+  align-content: normal;
+}
+.hero-grid > .hero-after {
+  order: 3;
+}
+.hero-grid > :global(.map-notes) {
+  order: 4;
+  grid-area: auto;
+}
+
+.hero-after {
+  display: grid;
+  gap: var(--space-4);
+}
+
+@container (max-width: 759px) {
+  .hero-grid {
+    gap: var(--space-1);
+  }
+  .hero-opening h1 {
+    margin-bottom: var(--space-1);
+  }
+}
+
+@container (min-width: 760px) {
+  .hero-grid {
+    grid-template-columns: minmax(0, 1fr) clamp(260px, 34%, 330px);
+    column-gap: var(--space-5);
+  }
+  .hero-grid > .hero-opening {
+    grid-area: 1 / 1;
+  }
+  .hero-grid > :global(.map-wrap) {
+    grid-area: 1 / 2;
+    align-self: start;
+  }
+  .hero-grid > .hero-after {
+    grid-area: 2 / 1 / auto / -1;
+  }
+  .hero-grid > :global(.map-notes) {
+    grid-area: 3 / 1 / auto / -1;
   }
 }
 /* The `grid` utility and its gap went with the cards; the column now holds a
