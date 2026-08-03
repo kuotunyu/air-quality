@@ -31,6 +31,7 @@ def test_the_site_quality_gate_self_tests_its_bounded_browser_protocol() -> None
         "site quality browser startup self-test passed",
         "site quality no-JavaScript navigation self-test passed",
         "site quality render wait self-test passed",
+        "site quality homepage first-viewport self-test passed",
         "site quality browser restart self-test passed",
         "site quality failure cleanup self-test passed",
     ]

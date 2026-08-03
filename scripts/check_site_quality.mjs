@@ -236,6 +236,25 @@ async function withRuntimeCleanup(resources, work) {
   }
 }
 
+function firstViewportProblems({ map, legend, viewport }) {
+  const problems = [];
+  const visible = (rect) =>
+    rect && Number.isFinite(rect.width) && Number.isFinite(rect.height) &&
+    rect.width > 0 && rect.height > 0;
+  if (!visible(map)) problems.push("homepage map is missing or has no rendered area");
+  if (!visible(legend)) problems.push("homepage map legend is missing or has no rendered area");
+  for (const [name, rect] of [["map", map], ["legend", legend]]) {
+    if (!visible(rect)) continue;
+    if (rect.left < -1 || rect.right > viewport.width + 1) {
+      problems.push(`homepage ${name} leaves the horizontal viewport`);
+    }
+    if (rect.top < -1 || rect.bottom > viewport.height + 1) {
+      problems.push(`homepage ${name} leaves the initial vertical viewport`);
+    }
+  }
+  return problems;
+}
+
 async function lifecycleSelfTest() {
   if (
     CHROME_TEST_FLAGS.length !== 4 ||
@@ -314,6 +333,22 @@ async function lifecycleSelfTest() {
     throw new Error("the render wait has no timer fallback for a paused frame clock");
   }
   console.log("site quality render wait self-test passed");
+
+  const viewport = { width: 390, height: 844 };
+  const complete = firstViewportProblems({
+    map: { top: 150, right: 320, bottom: 740, left: 70, width: 250, height: 590 },
+    legend: { top: 750, right: 320, bottom: 810, left: 70, width: 250, height: 60 },
+    viewport,
+  });
+  const cropped = firstViewportProblems({
+    map: { top: 300, right: 320, bottom: 890, left: 70, width: 250, height: 590 },
+    legend: { top: 900, right: 320, bottom: 960, left: 70, width: 250, height: 60 },
+    viewport,
+  });
+  if (complete.length || !cropped.some((item) => item.includes("vertical viewport"))) {
+    throw new Error("the homepage first-viewport predicate accepts cropped geometry");
+  }
+  console.log("site quality homepage first-viewport self-test passed");
 
   const restartOrder = [];
   const replacement = await replaceBrowser(
