@@ -97,9 +97,9 @@ or nonessential personal attribution.
 `scripts/check_repository_anonymity.py` audits protected identities using a
 digest-only inventory; it never stores or prints plaintext. It is separate from
 `scripts/check_history_identity.py`, which enforces the repository owner's Git
-author, committer, and trailer contract. The strict protected-identity audit
-currently exposes pre-existing reachable blobs recorded in `HANDOFF.md`; do
-not exempt them or rewrite published history without an explicit owner decision.
+author, committer, and trailer contract. Both audit every commit reachable from
+the proposed revision and both run in CI. Do not narrow either one to the
+current tree or add a baseline exemption.
 
 ---
 
@@ -113,6 +113,13 @@ uv run python scripts/check_history_identity.py
 
 This checks every commit reachable from `HEAD`: author, committer, and the
 commit body. A latest-commit check is not enough.
+
+```bash
+uv run python scripts/check_repository_anonymity.py
+```
+
+This checks current and historical paths, blobs, generated text surfaces, and
+commit bodies against the digest-only protected-identity inventory.
 
 ```bash
 uv run python scripts/check_test_count.py

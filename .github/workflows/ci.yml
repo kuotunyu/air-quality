@@ -45,6 +45,12 @@ jobs:
       - name: The published history keeps one identity
         run: uv run python scripts/check_history_identity.py "${{ github.event.pull_request.head.sha || github.sha }}"
 
+      # The current tree can be clean while an older reachable blob still
+      # discloses a protected identity. Full checkout history and the proposed
+      # head SHA make this the same strict audit used before publication.
+      - name: Protected identities stay out of every reachable text surface
+        run: uv run python scripts/check_repository_anonymity.py "${{ github.event.pull_request.head.sha || github.sha }}"
+
       - name: The test inventory matches its reviewed count
         run: uv run python scripts/check_test_count.py
 

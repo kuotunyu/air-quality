@@ -821,10 +821,11 @@ never anything that would let a reader identify the people involved.
 Before any publish step, run `uv run python scripts/check_repository_anonymity.py`.
 The checker reads only normalized digests and redacts every match. It is
 deliberately separate from `scripts/check_history_identity.py`, which proves the
-Git author/committer/trailer contract. The strict audit currently reports a
-pre-existing reachable-history blocker recorded in `HANDOFF.md`; do not add a
-baseline exemption or rewrite published history without an explicit owner
-decision. `docs/legal.md` records the underlying publication reasoning.
+Git author/committer/trailer contract. The 2026-08-03 production rewrite cleared
+the measured reachable-history blocker after an explicit owner decision; both
+checks now run in CI against the proposed head. Do not narrow either check or
+add a baseline exemption. `docs/legal.md` records the underlying publication
+reasoning.
 
 ## Settled decisions — do not reopen these
 

@@ -23,6 +23,8 @@ from scripts.check_repository_anonymity import (
     normalise_identity,
 )
 
+from twair.paths import REPO_ROOT
+
 SYNTHETIC_TOKEN = "GuardToken42"
 SYNTHETIC_ROLE = "project_author"
 
@@ -588,3 +590,24 @@ def test_the_commit_body_reader_is_a_mutation_sentinel(tmp_path: Path) -> None:
     violations, _counts = _surfaces(repo)
 
     assert any(item.surface == "commit-message" for item in violations)
+
+
+def test_ci_audits_the_candidate_revision_with_complete_history() -> None:
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["test"]["steps"]
+    checkout = next(step for step in steps if step.get("name") == "Checkout Code")
+    audit = next(
+        step
+        for step in steps
+        if step.get("name") == "Protected identities stay out of every reachable text surface"
+    )
+
+    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["with"] == {"fetch-depth": 0}
+    assert "ref" not in checkout["with"]
+    assert audit["run"] == (
+        'uv run python scripts/check_repository_anonymity.py "${{ '
+        'github.event.pull_request.head.sha || github.sha }}"'
+    )

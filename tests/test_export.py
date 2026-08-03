@@ -10,6 +10,7 @@ channel must not arrive at all.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -346,6 +347,61 @@ class TestShippedExportCheck:
         self._tree(tmp_path, files={"story/a.json": {"x": 1}}, measured=False)
 
         assert _run_check(tmp_path) == 1
+
+    def test_an_unreachable_commit_object_is_not_valid_provenance(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        def git(*args: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=repository-owner",
+                    "-c",
+                    "user.email=owner@example.invalid",
+                    *args,
+                ],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        git("init", "-b", "old-history")
+        (repo / "old.txt").write_text("old history\n", encoding="utf-8")
+        git("add", "old.txt")
+        git("commit", "-m", "old history")
+        stale_sha = git("rev-parse", "HEAD").stdout.strip()
+
+        git("switch", "--orphan", "rewritten-history")
+        (repo / "old.txt").unlink(missing_ok=True)
+        (repo / "current.txt").write_text("current history\n", encoding="utf-8")
+        git("add", "--all")
+        git("commit", "-m", "rewritten history")
+        git("branch", "-D", "old-history")
+
+        data = repo / "web" / "public" / "data"
+        self._tree(data, files={"story/a.json": {"x": 1}})
+        manifest_path = data / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["git_sha"] = stale_sha
+        export.write_json(manifest_path, manifest)
+
+        assert git("cat-file", "-e", f"{stale_sha}^{{commit}}").returncode == 0
+        assert (
+            subprocess.run(
+                ["git", "merge-base", "--is-ancestor", stale_sha, "HEAD"],
+                cwd=repo,
+                check=False,
+            ).returncode
+            == 1
+        )
+        monkeypatch.chdir(repo)
+
+        assert _run_check(data) == 1
 
 
 class TestSlugs:

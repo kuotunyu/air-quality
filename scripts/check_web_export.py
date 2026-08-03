@@ -134,6 +134,7 @@ def main() -> int:
         == "true"
     )
     sha_unknown = False
+    sha_unreachable = False
     if isinstance(sha, str) and sha and not shallow:
         sha_unknown = (
             subprocess.run(
@@ -143,6 +144,18 @@ def main() -> int:
             ).returncode
             != 0
         )
+        # A history rewrite can leave the old object in a local object database
+        # even though a fresh clone cannot reach it. Provenance must belong to
+        # the published history, not merely survive as local loose data.
+        if not sha_unknown:
+            sha_unreachable = (
+                subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+                    capture_output=True,
+                    check=False,
+                ).returncode
+                != 0
+            )
     no_dirty_flag = not isinstance(dirty, bool)
 
     # ASCII markers on purpose: this runs on a cp950 console as well as in CI,
@@ -153,6 +166,8 @@ def main() -> int:
         + (
             f"{sha}  FAIL: no such commit in this repository"
             if sha_unknown
+            else f"{sha}  FAIL: commit is not an ancestor of HEAD"
+            if sha_unreachable
             else f"{sha}  (shallow clone; cannot check it resolves)"
             if sha and shallow
             else f"{sha}  resolves"
@@ -188,7 +203,15 @@ def main() -> int:
     for line in unlisted + mismatched:
         print(f"  FAIL: {line}")
 
-    if unlisted or mismatched or wrong_total or unmeasured or sha_unknown or no_dirty_flag:
+    if (
+        unlisted
+        or mismatched
+        or wrong_total
+        or unmeasured
+        or sha_unknown
+        or sha_unreachable
+        or no_dirty_flag
+    ):
         print("\nre-run `uv run twair export web` and commit the result", file=sys.stderr)
         return 1
     return 0
