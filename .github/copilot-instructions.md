@@ -84,16 +84,25 @@ If you need a figure and cannot measure it, write `TODO: measure` and say so.
 
 ---
 
-## 🔒 Anonymity — non-negotiable
+## 🔒 Protected identities — non-negotiable
 
-**No person is named anywhere in this repository.** Not in prose, code,
-comments, alt text, YAML, commit messages, or JSON.
+The authors and supervisor of the 2018 undergraduate control project are
+protected identities. Their names must not appear in tracked paths or content,
+generated payloads, alt text, comments, docstrings, configuration,
+documentation, or commit messages. Refer to the work only as「一份 2018
+年的大學畢業專題」or "the 2018 method". Never reproduce its figures.
 
-The project uses a 2018 undergraduate project as a methodological control
-group. Refer to it only as「一份 2018 年的大學畢業專題」or "the 2018 method".
-Never name its authors or supervisor. Never reproduce its figures.
+Formal scholarly citations and conventional technical eponyms are allowed
+when they make a method, evidence source, limitation, or reproducible parameter
+traceable. Keep enough bibliographic context to verify them. Avoid decorative
+or nonessential personal attribution.
 
-If you are about to write a person's name, stop.
+`scripts/check_repository_anonymity.py` audits protected identities using a
+digest-only inventory; it never stores or prints plaintext. It is separate from
+`scripts/check_history_identity.py`, which enforces the repository owner's Git
+author, committer, and trailer contract. The strict protected-identity audit
+currently exposes pre-existing reachable blobs recorded in `HANDOFF.md`; do
+not exempt them or rewrite published history without an explicit owner decision.
 
 ---
 

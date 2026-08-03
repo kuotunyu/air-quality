@@ -792,14 +792,21 @@ instrument's detection limit. The instrument has one for concentration; the
 method has one for effects, and this chapter measures it. PLAN.md carries the
 full drafting note.
 
-## The anonymity rule — settled, and not negotiable
+## Protected identities — settled, and not negotiable
 
-**No person is named anywhere in this project.** Not the 2018 project's
-authors, not its supervisor, not in prose, code comments, alt text, commit
-messages, or exported JSON. **No figure, screenshot or layout from the original
-is reproduced** — every chart in chapter 5 is recomputed here from the raw data.
+The 2018 project's authors and supervisor are protected identities. Their names
+do not belong in tracked paths or content, prose, code comments, alt text,
+commit messages, configuration, or exported JSON. **No figure, screenshot or
+layout from the original is reproduced** — every chart in chapter 5 is
+recomputed here from the raw data.
 
-Only two kinds of material are used, and neither requires naming anyone:
+This is not a ban on scientific attribution. Formal citations and conventional
+technical eponyms remain when they identify a method, evidence source,
+limitation, or reproducible parameter, with enough bibliographic context to
+verify them. Decorative or nonessential personal attribution does not.
+
+The control-group comparison itself uses two kinds of material, neither of
+which requires identifying its authors or supervisor:
 
 * **method choices** (monthly means, PM10 as a predictor, linearised wind) —
   methodological facts, discussable on their own terms;
@@ -811,7 +818,13 @@ against a better person. The recurring phrasing is "一份 2018 年的大學畢�
 and "當年的做法" — never "我的專題" in a way that drags a co-author along, and
 never anything that would let a reader identify the people involved.
 
-Before any publish step, grep for names. `docs/legal.md` records the reasoning.
+Before any publish step, run `uv run python scripts/check_repository_anonymity.py`.
+The checker reads only normalized digests and redacts every match. It is
+deliberately separate from `scripts/check_history_identity.py`, which proves the
+Git author/committer/trailer contract. The strict audit currently reports a
+pre-existing reachable-history blocker recorded in `HANDOFF.md`; do not add a
+baseline exemption or rewrite published history without an explicit owner
+decision. `docs/legal.md` records the underlying publication reasoning.
 
 ## Settled decisions — do not reopen these
 
