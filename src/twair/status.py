@@ -1,16 +1,11 @@
-"""``twair status`` — the handoff report, measured instead of remembered.
+"""``twair status`` — the portable return path, measured instead of remembered.
 
-`PROGRESS.md` records what we meant to do and why, which is the part prose is
-good at and a program is not. But intent drifts. An analysis gets re-run and
-the export does not; a note saying the site is current stays true-*looking*
-forever, because nothing about reading a document reveals that it has gone out
-of date. Commit ``f6671c1`` shipped an entire module with no documentation
-change at all, and nothing complained.
-
-So the handoff is split in two. The prose keeps the reasoning — why monthly
-means, why the placebo spread matters, what the 888/999 measurement settled.
-This reports what is actually on disk: which stages exist, when each last ran,
-and which are older than the thing they derive from.
+Public technical documentation keeps durable reasoning and ``PLAN.md`` keeps
+the roadmap. Ignored local project memory may add context on one machine, but
+is never required by a fresh clone. Prose can drift: an analysis gets re-run
+and the export does not, while a note saying the site is current stays
+true-*looking* forever. This reports what is actually on disk: which stages
+exist, when each last ran, and which are older than the thing they derive from.
 
 The dependency chain is one line long:
 
@@ -362,7 +357,10 @@ def render(status: Status) -> list[str]:
     lines.append("")
     lines.append("NEXT")
     if not steps:
-        lines.append("  nothing the filesystem knows about — see PROGRESS.md for intent")
+        lines.append(
+            "  nothing the filesystem knows about — see PLAN.md for roadmap "
+            "and docs/working-rules.md for durable decisions"
+        )
     for step in steps:
         lines.append(f"  uv run {step}")
 

@@ -61,7 +61,7 @@ Two of those choices turn out to matter a great deal:
    OLS, sin/cos encoding gives **2.55×** the $R^2$ of the raw bearing.
 
 And two claimed defects were **overturned by the full data** and are documented
-as such — see [PROGRESS.md](PROGRESS.md).
+as such — see [docs/working-rules.md](docs/working-rules.md).
 
 ---
 
@@ -173,7 +173,9 @@ Since governmental server links change periodically, this crawl step ensures we 
 
 ## Project Status
 
-Current developmental milestones are tracked in **[PROGRESS.md](PROGRESS.md)**.
+For the measured state of the store and outputs, run `uv run twair status`.
+The roadmap is in [PLAN.md](PLAN.md); durable evidence and decisions live in
+the relevant public [technical docs](docs/).
 
 | Phase | Content | Status |
 |---|---|---|

@@ -53,7 +53,7 @@
    在 OLS 之下，sin/cos 編碼的 R² 是原始方位角的 **2.55 倍**。
 
 另外有**兩項我原先列為缺陷、卻被全量資料否證**的說法，一樣照實記錄——見
-[PROGRESS.md](PROGRESS.md)。
+[docs/working-rules.md](docs/working-rules.md)。
 
 ## 五項產出
 
@@ -110,7 +110,8 @@ uv run twair probe sources
 
 ## 專案狀態
 
-目前進度見 **[PROGRESS.md](PROGRESS.md)**。
+目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。後續方向見
+[PLAN.md](PLAN.md)；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
 
 | 階段 | 內容 | 狀態 |
 |---|---|---|

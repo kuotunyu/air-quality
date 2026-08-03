@@ -5,11 +5,13 @@
 
 ---
 
-**這份文件是規劃，不是進度。** 目前做到哪裡請看 **[PROGRESS.md](PROGRESS.md)**。
+**這份文件是 roadmap，不是可量測現況。** 磁碟上的 store、分析產物、網站匯出與
+可由它們推導的下一步，請執行 `uv run twair status`；已完成階段與後續方向則以本文件為準。
 
-執行過程中發現的事實若與本規劃牴觸，以 `docs/` 下的實測文件為準
-（特別是 [docs/archive-formats.md](docs/archive-formats.md)），
-並在 PROGRESS.md 的「已更正的說法」一節記錄差異。
+執行過程中發現的事實若與本規劃牴觸，以 `docs/` 下的相關實測文件為準
+（特別是 [docs/archive-formats.md](docs/archive-formats.md)）。更正讀者會看到的說法時，
+直接更新對應的公開技術文件；可重用且容易重蹈的教訓則收進
+[docs/working-rules.md](docs/working-rules.md)。
 
 ---
 

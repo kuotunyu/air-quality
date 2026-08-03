@@ -212,6 +212,19 @@ class TestNextSteps:
 
 
 class TestRendering:
+    def test_a_current_project_points_to_the_portable_public_return_path(self) -> None:
+        exported = datetime(2026, 7, 28, tzinfo=UTC)
+        status = _status(
+            _artefact("m4_deweather", modified=exported - timedelta(days=1)), export_at=exported
+        )
+
+        text = "\n".join(render(status))
+
+        assert "PLAN.md" in text
+        assert "docs/working-rules.md" in text
+        assert "PROGRESS.md" not in text
+        assert "HANDOFF.md" not in text
+
     def test_an_empty_checkout_says_what_to_run_first(self) -> None:
         """The first thing a reader with no data sees must be actionable."""
         status = Status(

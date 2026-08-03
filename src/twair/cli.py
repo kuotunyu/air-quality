@@ -1148,9 +1148,9 @@ def status(
 ) -> None:
     """Where the project stands on disk: what has run, what is stale, what next.
 
-    The measured half of the handoff. PROGRESS.md carries the reasoning; this
-    carries the timestamps, because a note that has gone out of date reads
-    exactly like one that has not.
+    The measured half of the portable return path. ``PLAN.md`` carries the
+    roadmap and public technical docs carry durable reasoning; this command
+    carries timestamps because stale prose still looks current.
     """
     from twair.status import collect_status, render
 
