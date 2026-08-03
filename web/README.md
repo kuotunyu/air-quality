@@ -29,7 +29,7 @@ That writes four things:
 L0 and the story payloads are committed because the site cannot render without
 them and they are small. L1 is the exception that needs stating: `.gitignore`
 excludes the directory and then force-includes `l1/pm25.parquet` and
-`l1/pm10.parquet`, so the explorer in chapter 8 has real tables to query on the
+`l1/pm10.parquet`, so the explorer in chapter 9 has real tables to query on the
 deployed site while the other nineteen measurands stay local. That is why the
 explorer HEAD-probes each file before offering it — the set that is served is
 not the set that exists on the machine that built the page.
@@ -53,6 +53,19 @@ different things and `n_days` is what separates them:
 Both must render as a break in the line. Nothing on this site interpolates
 across a gap; the gaps are findings.
 
+The aggregate payload does not provide enough point-level coverage evidence to
+distinguish those two causes everywhere. Where that evidence is absent, the
+interactive readout says `無資料` and does not guess why the value is null.
+
+## Reading the theme
+
+The first visit is light even when the operating system prefers dark. The
+visible theme button is the only selector; it stores the explicit choice in
+`twair-theme`, and an inline head script restores that choice before first
+paint on later pages. `data-theme`, `color-scheme`, browser chrome, and the
+button icon stay in sync. Without JavaScript the site remains a complete static
+light document and the inactive theme control is absent.
+
 ## Charts
 
 There is no charting library. Charts are SVG built in Astro frontmatter, so
@@ -60,6 +73,14 @@ they are in the HTML on first paint, work without JavaScript, and print. The
 one behaviour worth having a library for — breaking a line at a null instead of
 bridging it — is the one most libraries get wrong by default, so `lib/chart.ts`
 does it explicitly.
+
+Published charts use the same evidence shell: figure number, research question,
+static figure, caption, and an optional `方法與來源` disclosure. `FigureTools`
+adds JavaScript-only enlargement without replacing that static reading path.
+Cartesian charts expose one keyboard focus group: Left/Right move between
+samples, Home/End jump to the first/last sample, and Escape closes the readout.
+The readout occupies reserved space instead of covering the plot, never
+interpolates, and reports a null as `無資料`.
 
 ## Deployment
 
