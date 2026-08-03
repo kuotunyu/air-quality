@@ -1999,6 +1999,7 @@ async function main() {
   for (const [width, height] of [
     [390, 844],
     [768, 1024],
+    [1280, 720],
     [1440, 900],
     [1920, 1000],
   ]) {
@@ -2544,6 +2545,7 @@ async function main() {
 
   for (const [width, height] of [
     [390, 844],
+    [1280, 720],
     [1920, 1000],
   ]) {
     for (const theme of ["light", "dark"]) {

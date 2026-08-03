@@ -442,6 +442,17 @@ const dots = main.map((s) => {
     margin-inline: auto;
   }
 
+  /* A short desktop still has the rail beside the figure, so width alone does
+   * not activate the stacked map budget. At 1280×720 the 26rem floor kept the
+   * island visible but put its complete scale below the initial viewport; the
+   * height-relative budget preserves the whole graphic in that use case.
+   */
+  @media (min-width: 901px) and (max-height: 799px) {
+    .map-wrap {
+      width: min(100%, 50vh * var(--map-wide));
+    }
+  }
+
   /*
    * 2026-08-03 — the opening-copy stack leaves less vertical room than the old
    * map/figures row. Measured before: the 62vh budget put the legend bottom at
