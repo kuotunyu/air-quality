@@ -418,7 +418,12 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
        * that a chapter title wraps to three lines, never so wide that it
        * competes with the column it serves.
        */
-      @media (min-width: 72rem) {
+      /* 2026-08-04 — supersedes every active 72rem shell boundary below.
+         The rail now becomes persistent only at 100rem (1600 CSS pixels at
+         the browser's initial 16px basis); below it, the sticky handle keeps
+         the same one-step route into the CSS-only drawer without taking width
+         from the evidence column. */
+      @media (min-width: 100rem) {
         .shell {
           /*
            * The floor is what decides whether a chapter title wraps, and a
@@ -448,7 +453,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         border-right: 1px solid var(--line-soft);
       }
 
-      @media (min-width: 72rem) {
+      @media (min-width: 100rem) {
         .rail {
           /* Sticky, and its own scroller: ten chapters fit, but an eleventh
              should scroll the rail rather than the page. */
@@ -567,7 +572,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       /* Below the rail breakpoint the rail is a drawer, so a bar down its edge
          would be reporting progress on something that is not on screen. */
-      @media (max-width: 71.999rem) {
+      @media (max-width: 99.999rem) {
         .progress {
           display: none;
         }
@@ -690,7 +695,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         display: none;
       }
 
-      @media (max-width: 71.999rem) {
+      @media (max-width: 99.999rem) {
         .shell {
           grid-template-columns: minmax(0, 1fr);
         }
@@ -713,7 +718,7 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
           position: fixed;
           inset: 0 auto 0 0;
           z-index: var(--z-overlay);
-          width: min(19rem, 84vw);
+          width: min(12rem, 84vw);
           border-right: 1px solid var(--line);
           transform: translateX(-100%);
           overflow-y: auto;
@@ -765,13 +770,13 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       /* 2026-08-03 — `ThemeToggle.astro` still carries the former 80rem hiding
          rule. This bridge keeps the rail utility available across the newly
          admitted desktop band without changing that component outside Task 2. */
-      @media (min-width: 72rem) and (max-width: 79.999rem) {
+      @media (min-width: 100rem) {
         :global(.has-js) .rail :global(.theme-toggle) {
           display: inline-flex;
         }
       }
 
-      @media (min-width: 72rem) {
+      @media (min-width: 100rem) {
         .handle {
           display: none;
         }

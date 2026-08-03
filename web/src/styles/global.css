@@ -629,6 +629,26 @@
 }
 
 /*
+ * 2026-08-04 — supersedes the 2026-08-03 reading scale above. The document
+ * now starts at a comfortable 20px-equivalent root and reaches 22px on wider
+ * reading surfaces, while its smallest semantic apparatus remains at the
+ * measured 18px floor. Relative units keep the whole scale responsive to the
+ * reader's browser font-size preference.
+ */
+:root {
+  font-size: clamp(1.25rem, 1.2rem + 0.25vw, 1.375rem);
+  --text-xs: 0.91rem;
+  --text-sm: 0.95rem;
+  --text-base: 1rem;
+  --text-lg: 1.2rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --chart-tick: 0.95rem;
+  --chart-label: 0.95rem;
+  --chart-micro: 0.95rem;
+}
+
+/*
  * Dark theme.
  *
  * Not a filter over the light one. The ramp is redefined rather than inverted,
@@ -1371,7 +1391,7 @@ textarea:focus-visible,
 code,
 .mono {
   font-family: var(--font-mono);
-  font-size: 0.94em;
+  font-size: max(0.94em, var(--text-xs));
   font-variant-numeric: tabular-nums;
   /* An identifier with no spaces in it is not a reason for the page to grow a
      horizontal scrollbar on a phone. */
@@ -2585,6 +2605,17 @@ details,
   --bleed: clamp(0px, calc(var(--room) - 1.5rem), 8rem);
   max-width: calc(100% + 2 * var(--bleed));
   margin-inline: calc(-1 * var(--bleed));
+}
+
+/* 2026-08-04 — the larger reading scale made the four-column publication
+   register scroll at the tablet width even though the page margin could hold
+   it. Spend that margin on the evidence surface instead of shrinking its type
+   or tightening every table in the report. */
+@media (min-width: 40rem) and (max-width: 49.999rem) {
+  #data > .table-wrap {
+    --bleed: calc(var(--page-pad) - 0.2rem);
+    width: calc(100% + 2 * var(--bleed));
+  }
 }
 
 /*
