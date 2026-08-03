@@ -198,80 +198,19 @@ const shortName = (name: string) =>
 <section id="detection" class="page">
   <ChapterIntro slug="detection">
   <p class="lede">
-    這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」——
-    測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
     <strong>分析方法也有偵測極限。</strong>這一章量的就是它。
   </p>
   </ChapterIntro>
 
-  <p>
-    測了三個事件：2018 年空氣污染防制法修正、台中電廠 2、3 號機的生煤許可爭議、
-    以及 2021 年的 COVID-19 三級警戒。做法是<strong>反事實</strong>——
-    用事件視窗以外的日子訓練模型，再用視窗當時的<strong>實際天氣</strong>去預測，
-    觀測值與預測值的差額就是天氣與季節解釋不掉的部分。
-  </p>
-
-  <div class="note">
-    <strong>然後，同一套程序再跑一次沒有事件的年份。</strong>
-    同樣的日曆窗口、同樣的模型、同樣的計算——只是那些年什麼都沒發生。
-    這叫安慰劑檢定，它問的是：這個方法在應該找不到東西的時候，會找到多少？
-  </div>
-
-  <h2>結果</h2>
-
-  <div class="table-wrap">
-    <table class="dense">
-      <thead>
-        <tr>
-          <th>事件</th>
-          <th class="num">測站</th>
-          <th class="num">效應中位數</th>
-          <th class="num">安慰劑均值</th>
-          <th class="num">安慰劑 SD</th>
-          <th class="num">通過門檻</th>
-          <th class="num">機率預期</th>
-        </tr>
-      </thead>
-      <tbody>
-        {
-          events.map((e) => (
-            <tr>
-              <td>{shortName(e.event)}</td>
-              <td class="num">{e.n_stations}</td>
-              <td class="num">{n(e.median_effect, 2)}</td>
-              <td class="num dim">{n(e.median_placebo_mean, 2)}</td>
-              <td class="num dim">{n(e.median_placebo_sd, 2)}</td>
-              <td class="num strong">{e.n_credible}</td>
-              <td class="num dim">~{n(e.n_expected_by_chance, 1)}</td>
-            </tr>
-          ))
-        }
-      </tbody>
-    </table>
-  </div>
-
-  <p class="small">
-    「通過門檻」是效應距離該站自己的安慰劑均值 2 個標準差以上的測站數。
-    「機率預期」是純粹靠運氣就會通過的站數（2 個標準差在常態分布下約留 4.55% 在雙尾）。
-    <strong>三個事件的實際通過數都低於機率預期。</strong>
-  </p>
-
-  <h2>估計值與其安慰劑分布的對照</h2>
-
-  <p>
-    下面每一條帶狀圖是一個<strong>日曆窗口</strong>事件，所以是兩張，不是三張：
-    空污法修正是制度轉變而不是有前後的視窗，它的檢定在本章最後一節，用的是分段迴歸。
-    <span class="k-pl">淡色的短線</span>是安慰劑——
-    同一個方法在沒有事件的年份算出來的「效應」。
-    <span class="k-real">亮色的點</span>是各測站的實際估計值。
-    兩張圖共用同一個刻度，零在正中間，所以雲的寬度可以直接比。
-  </p>
-
-  <EvidenceFigure number="5.1" title="三個事件各自需要多大的效應才看得見？">
+  <EvidenceFigure number="5.1" title="三個事件各自需要多大的效應才看得見？" primary>
   {
     windowed.map((e) => {
       const s = strip(e);
       const zero = s.x(0);
+      // The opening strip is the chapter's primary data rectangle, so it keeps
+      // the specified 180px of inspectable marks; later strips retain the
+      // denser height that lets their repeated comparison stay scannable.
+      const primaryStrip = e === windowed[0];
       return (
         <>
         <div class="event-strip-panel">
@@ -304,9 +243,9 @@ const shortName = (name: string) =>
               class="plot strip"
               role="img"
               aria-label={`${shortName(e.event)}：${e.n_stations} 個測站的估計值，落在 ${s.pool.length} 個安慰劑估計值構成的散布中。逐站數值列在圖下方的表格。`}
-              style={`--plot-h:${Math.max(96, 46 + s.tallest * DOT)}px`}
+              style={`--plot-h:${Math.max(primaryStrip ? 180 : 96, 46 + s.tallest * DOT)}px`}
             >
-              <div class="plot-area">
+              <div class="plot-area" data-primary-plot={primaryStrip || undefined}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   {/*
                     One `<path>` per placebo estimate, and the reason it is not
@@ -411,6 +350,74 @@ const shortName = (name: string) =>
     }
   </Fragment>
   </EvidenceFigure>
+
+  <p>
+    這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」——
+    測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
+  </p>
+
+  <p>
+    測了三個事件：2018 年空氣污染防制法修正、台中電廠 2、3 號機的生煤許可爭議、
+    以及 2021 年的 COVID-19 三級警戒。做法是<strong>反事實</strong>——
+    用事件視窗以外的日子訓練模型，再用視窗當時的<strong>實際天氣</strong>去預測，
+    觀測值與預測值的差額就是天氣與季節解釋不掉的部分。
+  </p>
+
+  <div class="note">
+    <strong>然後，同一套程序再跑一次沒有事件的年份。</strong>
+    同樣的日曆窗口、同樣的模型、同樣的計算——只是那些年什麼都沒發生。
+    這叫安慰劑檢定，它問的是：這個方法在應該找不到東西的時候，會找到多少？
+  </div>
+
+  <h2>結果</h2>
+
+  <div class="table-wrap">
+    <table class="dense">
+      <thead>
+        <tr>
+          <th>事件</th>
+          <th class="num">測站</th>
+          <th class="num">效應中位數</th>
+          <th class="num">安慰劑均值</th>
+          <th class="num">安慰劑 SD</th>
+          <th class="num">通過門檻</th>
+          <th class="num">機率預期</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          events.map((e) => (
+            <tr>
+              <td>{shortName(e.event)}</td>
+              <td class="num">{e.n_stations}</td>
+              <td class="num">{n(e.median_effect, 2)}</td>
+              <td class="num dim">{n(e.median_placebo_mean, 2)}</td>
+              <td class="num dim">{n(e.median_placebo_sd, 2)}</td>
+              <td class="num strong">{e.n_credible}</td>
+              <td class="num dim">~{n(e.n_expected_by_chance, 1)}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="small">
+    「通過門檻」是效應距離該站自己的安慰劑均值 2 個標準差以上的測站數。
+    「機率預期」是純粹靠運氣就會通過的站數（2 個標準差在常態分布下約留 4.55% 在雙尾）。
+    <strong>三個事件的實際通過數都低於機率預期。</strong>
+  </p>
+
+  <h2>估計值與其安慰劑分布的對照</h2>
+
+  <p>
+    下面每一條帶狀圖是一個<strong>日曆窗口</strong>事件，所以是兩張，不是三張：
+    空污法修正是制度轉變而不是有前後的視窗，它的檢定在本章最後一節，用的是分段迴歸。
+    <span class="k-pl">淡色的短線</span>是安慰劑——
+    同一個方法在沒有事件的年份算出來的「效應」。
+    <span class="k-real">亮色的點</span>是各測站的實際估計值。
+    兩張圖共用同一個刻度，零在正中間，所以雲的寬度可以直接比。
+  </p>
 
   {
     windowed.map((e) => (

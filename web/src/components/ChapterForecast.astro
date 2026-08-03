@@ -229,23 +229,11 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 <section id="forecast" class="page">
   <ChapterIntro slug="forecast">
   <p class="lede">
-    上一章量的是<strong>回頭看</strong>能分辨多小的效應。這一章量的是
-    <strong>往前看</strong>能走多遠還算有用。兩章問的是同一種問題：
-    這個方法在什麼地方停止提供資訊？
+    這一章量的是<strong>往前看</strong>能走多遠還算有用。
   </p>
   </ChapterIntro>
 
-  <p>
-    做法是給模型 PM2.5 自己的歷史——落後 1、2、3、6、12、24、48、168 小時的值，
-    滾動平均與最大值，還有變化率——然後問它 h 小時之後會是多少。
-    驗證用 rolling-origin：<strong>過去訓練、未來測試，切點往前走</strong>。
-    隨機切分會讓模型用星期二預測星期一，那是沒有預報員做得到的事。
-    {n(totalRows / 1e6, 2)} 百萬列測試資料，{totalStations} 站，2015–2025。
-  </p>
-
-  <h2>均方根誤差（μg/m³）</h2>
-
-  <EvidenceFigure number="6.1" title="各預測期距的誤差如何變化？">
+  <EvidenceFigure number="6.1" title="各預測期距的誤差如何變化？" primary>
     <div class="chart">
       {/*
         Named above the plot rather than at the ends of the lines. The gutter was
@@ -292,7 +280,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
           {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{n(t, 0)}</span>)}
         </div>
 
-        <div class="plot-area">
+        <div class="plot-area" data-primary-plot>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {
               rmseTicks.map((t) => (
@@ -344,6 +332,21 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
       因此它是這張圖裡唯一固定不動的參考線。
     </Fragment>
   </EvidenceFigure>
+
+  <p>
+    上一章量的是<strong>回頭看</strong>能分辨多小的效應。兩章問的是同一種問題：
+    這個方法在什麼地方停止提供資訊？
+  </p>
+
+  <p>
+    做法是給模型 PM2.5 自己的歷史——落後 1、2、3、6、12、24、48、168 小時的值，
+    滾動平均與最大值，還有變化率——然後問它 h 小時之後會是多少。
+    驗證用 rolling-origin：<strong>過去訓練、未來測試，切點往前走</strong>。
+    隨機切分會讓模型用星期二預測星期一，那是沒有預報員做得到的事。
+    {n(totalRows / 1e6, 2)} 百萬列測試資料，{totalStations} 站，2015–2025。
+  </p>
+
+  <h2>均方根誤差（μg/m³）</h2>
 
   <div class="note">
     <strong>關鍵是那個交叉點。</strong>

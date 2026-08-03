@@ -32,8 +32,6 @@ import ChapterIntro from "./ChapterIntro.astro";
   </p>
   </ChapterIntro>
 
-  <h2>三層資料</h2>
-
   {/*
     A list, not three cards.
 
@@ -44,20 +42,24 @@ import ChapterIntro from "./ChapterIntro.astro";
     coarsening resolution. A term-and-description list says that, and gives the
     prose a width it can be read at.
   */}
-  <dl class="layers">
-    <dt>L0 站-月</dt>
-    <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
+  <div class="primary-register" data-primary-evidence>
+    <h2>三層資料</h2>
 
-    <dt>L1 站-日</dt>
-    <dd>每個測項一個 Parquet，共 {mb(layerBytes.l1)}。供 DuckDB-WASM 或桌面工具使用。</dd>
+    <dl class="layers">
+      <dt>L0 站-月</dt>
+      <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
 
-    <dt>L2 站-時</dt>
-    <dd>
-      {hourlyObservationsShort}筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
-      只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加{" "}
-      <code>twair build</code> 即可獨立重建。
-    </dd>
-  </dl>
+      <dt>L1 站-日</dt>
+      <dd>每個測項一個 Parquet，共 {mb(layerBytes.l1)}。供 DuckDB-WASM 或桌面工具使用。</dd>
+
+      <dt>L2 站-時</dt>
+      <dd>
+        {hourlyObservationsShort}筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
+        只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加{" "}
+        <code>twair build</code> 即可獨立重建。
+      </dd>
+    </dl>
+  </div>
 
   <h2>下載</h2>
 

@@ -154,36 +154,11 @@ const cellFor = (method: string, buffer: number) =>
 <section id="space" class="page">
   <ChapterIntro slug="space">
   <p class="lede">
-    原始清單把這個缺陷記成「78 個測站的空間維度沒用」。動手量了之後，這句話需要修正：
-    當年的做法是按空品區分層、每區各跑一次——所以誠實的問題不是「有沒有用空間」，
-    而是<strong>那個分層是不是足夠的空間控制</strong>。這個問題有數字可答，
-    而且答案對原文比清單上的指控公平。
+    原始清單把這個缺陷記成「78 個測站的空間維度沒用」。
   </p>
   </ChapterIntro>
 
-  <p>
-    量測對象是第八章那個復刻模型的<strong>殘差</strong>，不是 PM2.5 本身——
-    濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
-    還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
-    千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，
-    {network.placed} 站有座標、{network.complete} 站每月都有值；
-    {network.unplaced.length > 0 && (
-      <>
-        {network.unplaced.join("、")}因座標缺失而被排除並列名；
-      </>
-    )}
-    虛無分布一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
-    不可交換，所以不能用排列檢定），權重 {network.weights}。
-  </p>
-
-  <h2>先看距離，再看任何單一數字</h2>
-
-  <p>
-    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變——
-    這就是為什麼本章不發表單一的「空間自相關係數」：
-  </p>
-
-  <EvidenceFigure number="3.1" title="官方分區移除了多少空間相依？">
+  <EvidenceFigure number="3.1" title="官方分區移除了多少空間相依？" primary>
     {/*
       No `role="img"`.
 
@@ -199,6 +174,7 @@ const cellFor = (method: string, buffer: number) =>
     */}
     <div
       class="correlogram"
+      data-primary-plot
       style={`grid-template-rows: repeat(${correlogram.length}, var(--row-h)) auto`}
     >
       {/* Rules and zero, once, spanning every row — so the reference a reader
@@ -260,6 +236,35 @@ const cellFor = (method: string, buffer: number) =>
       北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
     </Fragment>
   </EvidenceFigure>
+
+  <p>
+    動手量了之後，這句話需要修正：
+    當年的做法是按空品區分層、每區各跑一次——所以誠實的問題不是「有沒有用空間」，
+    而是<strong>那個分層是不是足夠的空間控制</strong>。這個問題有數字可答，
+    而且答案對原文比清單上的指控公平。
+  </p>
+
+  <p>
+    量測對象是第八章那個復刻模型的<strong>殘差</strong>，不是 PM2.5 本身——
+    濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
+    還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
+    千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，
+    {network.placed} 站有座標、{network.complete} 站每月都有值；
+    {network.unplaced.length > 0 && (
+      <>
+        {network.unplaced.join("、")}因座標缺失而被排除並列名；
+      </>
+    )}
+    虛無分布一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
+    不可交換，所以不能用排列檢定），權重 {network.weights}。
+  </p>
+
+  <h2>先看距離，再看任何單一數字</h2>
+
+  <p>
+    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變——
+    這就是為什麼本章不發表單一的「空間自相關係數」：
+  </p>
 
   <h2>五種空間控制，各買到多少</h2>
 

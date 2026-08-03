@@ -108,44 +108,48 @@ const candidates = pollutantIndex.map((p) => ({
   </p>
   </ChapterIntro>
 
-  <h2>公開站日資料的瀏覽器內查詢</h2>
+  <div class="primary-tool" data-primary-evidence>
+    <h2>公開站日資料的瀏覽器內查詢</h2>
+
+    <p>資料是站-日層級。</p>
+
+    <noscript>
+      <style>
+        #explore .explorer-controls,
+        #explore .tables,
+        #explore .result {
+          display: none;
+        }
+        #explore .explorer-nojs {
+          display: block;
+        }
+      </style>
+    </noscript>
+
+    <p class="note explorer-nojs">
+      瀏覽器內查詢需要 JavaScript。SQL 範例仍可閱讀，但本頁不會下載查詢引擎或執行查詢；
+      公開資料與重建方式見第十章。
+    </p>
+
+    <div class="controls explorer-controls">
+      <label class="control-field">
+        <span class="control-label">範例</span>
+        <select id="example-select">
+          {EXAMPLES.map((example, i) => <option value={i}>{example.label}</option>)}
+        </select>
+      </label>
+      <button id="run" class="primary-action" type="button">執行查詢</button>
+      <span id="status" class="status" role="status" aria-live="polite"></span>
+    </div>
+  </div>
 
   <p>
-    資料是站-日層級。每個測項一張表，表名就是測項代碼；
+    每個測項一張表，表名就是測項代碼；
     另有一張 <code>daily</code> 把全部測項疊成長表。欄位是{" "}
     <code>station_name</code>、<code>date</code>、<code>mean</code>、
     <code>n_valid</code>——最後一欄是這個日均值由幾個有效小時算出來的。
     <code>mean</code> 為 NULL 表示覆蓋率不足、平均值被扣住，<strong>不是零</strong>。
   </p>
-
-  <noscript>
-    <style>
-      #explore .explorer-controls,
-      #explore .tables,
-      #explore .result {
-        display: none;
-      }
-      #explore .explorer-nojs {
-        display: block;
-      }
-    </style>
-  </noscript>
-
-  <p class="note explorer-nojs">
-    瀏覽器內查詢需要 JavaScript。SQL 範例仍可閱讀，但本頁不會下載查詢引擎或執行查詢；
-    公開資料與重建方式見第十章。
-  </p>
-
-  <div class="controls explorer-controls">
-    <label class="control-field">
-      <span class="control-label">範例</span>
-      <select id="example-select">
-        {EXAMPLES.map((example, i) => <option value={i}>{example.label}</option>)}
-      </select>
-    </label>
-    <button id="run" class="primary-action" type="button">執行查詢</button>
-    <span id="status" class="status" role="status" aria-live="polite"></span>
-  </div>
 
   {/*
     The query itself is behind a disclosure, closed by default.

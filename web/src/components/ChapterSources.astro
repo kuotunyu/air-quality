@@ -118,6 +118,9 @@ const cells = data.sectors.flatMap((sector, si) =>
 
 const start = data.stations[initial];
 const counts = data.signature_counts;
+const explainsAt = data.explains.indexOf("。") + 1;
+const cbpfOrientation = data.explains.slice(0, explainsAt);
+const transportThesis = data.explains.slice(explainsAt);
 
 const legend = BREAKS.map((b, i) => ({
   colour: `var(${RAMP[i]})`,
@@ -127,14 +130,8 @@ const legend = BREAKS.map((b, i) => ({
 
 <section id="sources" class="page">
   <ChapterIntro slug="sources">
-  <p class="lede">{data.explains}</p>
+  <p class="lede">{transportThesis}</p>
   </ChapterIntro>
-
-  <p>
-    這張圖叫 CBPF。角度是<strong>風吹來的方位</strong>，半徑是<strong>風速</strong>——
-    圓心附近是微風，外圈是強風。每一格的顏色是：風從這個方位、以這個速度吹來時，
-    該小時的 PM2.5 落在最高四分之一的機率。
-  </p>
 
   {/*
     Without a script this figure is one station, so the menu is withdrawn and
@@ -223,10 +220,10 @@ const legend = BREAKS.map((b, i) => ({
     stays outside: it is a control on the figure, not part of it, and a
     `<select>` has no business inside an exported image.
   */}
-  <EvidenceFigure number="4.1" title="高濃度空氣在什麼風向與風速條件下出現？">
+  <EvidenceFigure number="4.1" title="高濃度空氣在什麼風向與風速條件下出現？" primary>
     <div class="plot-row">
       <div class="chart polar">
-        <div class="polar-box">
+        <div class="polar-box" data-primary-plot>
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-labelledby="cbpf-caption">
           <defs>
             <pattern id="cbpf-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -415,6 +412,14 @@ const legend = BREAKS.map((b, i) => ({
     </span></Fragment>
   </EvidenceFigure>
 
+  <p>{cbpfOrientation}</p>
+
+  <p>
+    這張圖叫 CBPF。角度是<strong>風吹來的方位</strong>，半徑是<strong>風速</strong>——
+    圓心附近是微風，外圈是強風。每一格的顏色是：風從這個方位、以這個速度吹來時，
+    該小時的 PM2.5 落在最高四分之一的機率。
+  </p>
+
   <h2>近源與遠源的風速特徵</h2>
 
   <p>
@@ -579,7 +584,7 @@ const legend = BREAKS.map((b, i) => ({
     align-items: center;
     gap: 0.9rem;
     flex-wrap: wrap;
-    margin: 1.4rem 0 0.6rem;
+    margin: 0;
   }
   .picker-row label {
     display: flex;

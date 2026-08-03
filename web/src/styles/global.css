@@ -1461,6 +1461,65 @@ main > section:first-child {
   padding-top: var(--space-3);
 }
 
+/* A short landscape viewport needs the chapter handle, but it does not need
+   the handle's desktop-sized vertical insets on top of two controls that are
+   already at least 44px tall. This keeps the same navigation and theme targets
+   while returning that duplicated padding to the opening argument below. */
+@media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+  body .shell .column .handle {
+    padding-block: 0.06rem;
+  }
+
+  /* At this height the same opening argument was separated six times before
+     its first mark appeared. A compact document rhythm keeps each separation
+     visible while reserving the lower half of the viewport for evidence. */
+  main > section:first-child {
+    padding-top: 0.3rem;
+  }
+
+  body .chapter-intro {
+    margin-bottom: 0.3rem;
+  }
+
+  body .chapter-intro h1 {
+    margin-bottom: 0.3rem;
+  }
+
+  body .evidence-figure[data-primary-evidence] {
+    margin-block-start: 0.3rem;
+    padding-block-start: 0.3rem;
+  }
+
+  body .evidence-figure[data-primary-evidence] > figure {
+    margin-block-start: 0.3rem;
+  }
+
+  /* The first methods comparison belongs to the chapter opening; later
+     mistakes keep the full section rhythm because they really are new
+     sections. The sentence, heading and plot keep their original sizes. */
+  body .chapter-intro + .mistake:first-of-type > h2 {
+    margin-block: 0.35rem;
+  }
+
+  body .chapter-intro + .mistake:first-of-type > h2 + p {
+    margin-bottom: 0.35rem;
+  }
+
+  body .chapter-intro + .mistake:first-of-type [data-primary-evidence] .chart {
+    padding-top: 0.45rem;
+  }
+
+  /* 2026-08-04 review follow-up — supersedes the 0.4rem measurement below:
+     the natural 22px root stays intact while repeated opening gaps now resolve
+     from 0.4rem to 0.3rem in this bounded short-landscape mode. */
+  /* The source selector already keeps both 0.4rem semantic gaps. Its figure
+     frame needs less empty inset above the polar marks in this one shallow
+     landscape case; the control and the plot retain their measured sizes. */
+  body #sources [data-primary-evidence] .chart {
+    padding-top: 0.5rem;
+  }
+}
+
 /* Whatever a chapter happens to end on — a hero grid, a picker, a disclosure —
  * brings its own bottom margin, so the measured gap before the next chapter's
  * rule ranged from 78px to 130px depending on which. The padding is supposed to
@@ -1517,7 +1576,7 @@ section > :last-child > :last-child:last-child {
 }
 
 .chapter-intro {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-2);
 }
 
 .chapter-intro h1,
@@ -1526,7 +1585,7 @@ section > :last-child > :last-child:last-child {
 }
 
 .chapter-intro h1 {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .chapter-thesis > :last-child {
@@ -1814,6 +1873,20 @@ figure {
 
 .evidence-figure > figure {
   margin-block: var(--space-3) 0;
+}
+
+/* The primary figure is the fourth and final part of one opening argument,
+   not a new section after it. Keeping the ordinary chapter spacing here made
+   the intro's bottom margin, the figure's outer margin, its rule padding and
+   the inner figure margin repeat the same separation four times before a
+   reader reached any data. Later evidence still keeps the roomier rhythm. */
+.evidence-figure[data-primary-evidence] {
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-2);
+}
+
+.evidence-figure[data-primary-evidence] > figure {
+  margin-block-start: var(--space-2);
 }
 
 .evidence-meta {

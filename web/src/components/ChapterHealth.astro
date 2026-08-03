@@ -153,25 +153,10 @@ const langOf = (s: string | null | undefined) =>
   <p class="lede">
     「空污每年造成 N 人死亡」這種句子裡藏著三個選擇：用哪條暴露反應函數、
     以什麼濃度作為比較基準、以及誰暴露在裡面。
-    第三個這個專案沒有資料回答，前兩個有——這一章量的是<strong>這兩個選擇把答案推動多少</strong>。
   </p>
   </ChapterIntro>
 
-  <p>
-    報的是<strong>可歸因比例</strong>（attributable fraction），不是人數。
-    比例只需要濃度和一條反應函數；人數還要乘上人口與基礎死亡率，
-    而這個專案只有測站觀測，沒有人口資料。
-    那一項會是誤差最大的來源，卻剛好看起來像整句話裡最紮實的部分。
-  </p>
-
-  <div class="note">
-    <p><code>{health.formula}</code></p>
-    <p>反事實濃度就是「以什麼濃度作為比較基準」。它幾乎從來不會跟著結論一起被說明。</p>
-  </div>
-
-  <h2>四種反事實濃度下的可歸因比例</h2>
-
-  <EvidenceFigure number="7.1" title="比較基準如何改變可歸因比例？">
+  <EvidenceFigure number="7.1" title="比較基準如何改變可歸因比例？" primary>
     <div class="chart">
       {/*
         The four counterfactuals, named above the plot rather than at the ends
@@ -224,7 +209,7 @@ const langOf = (s: string | null | undefined) =>
           {pafTicks.map((t) => <span style={`top:${n(yPaf(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
         </div>
 
-        <div class="plot-area">
+        <div class="plot-area" data-primary-plot>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             {
               pafTicks.map((t) => (
@@ -265,6 +250,24 @@ const langOf = (s: string | null | undefined) =>
       標籤上的數字就是那個基準。
     </Fragment>
   </EvidenceFigure>
+
+  <p>
+    第三個這個專案沒有資料回答，前兩個有——這一章量的是<strong>這兩個選擇把答案推動多少</strong>。
+  </p>
+
+  <p>
+    報的是<strong>可歸因比例</strong>（attributable fraction），不是人數。
+    比例只需要濃度和一條反應函數；人數還要乘上人口與基礎死亡率，
+    而這個專案只有測站觀測，沒有人口資料。
+    那一項會是誤差最大的來源，卻剛好看起來像整句話裡最紮實的部分。
+  </p>
+
+  <div class="note">
+    <p><code>{health.formula}</code></p>
+    <p>反事實濃度就是「以什麼濃度作為比較基準」。它幾乎從來不會跟著結論一起被說明。</p>
+  </div>
+
+  <h2>四種反事實濃度下的可歸因比例</h2>
 
   <div class="grid grid-2">
     <div class="card">

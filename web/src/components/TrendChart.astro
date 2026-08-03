@@ -26,6 +26,7 @@ type Series = {
 interface Props {
   years: number[];
   series: Series[];
+  primaryPlot?: boolean;
   /*
    * A reference line. `value` draws it flat; `values` draws it per year, for a
    * limit that has a history — see the Taiwan PM2.5 standard in chapter 1,
@@ -81,6 +82,7 @@ const {
   maxH = 430,
   legend = true,
   notesAt = "right",
+  primaryPlot = false,
 } = Astro.props;
 
 // Everything below is in percent of the plot box, not pixels. The box has no
@@ -319,7 +321,7 @@ const keyed = series.map((s) => {
       {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
     </div>
 
-    <div class="plot-area">
+    <div class="plot-area" data-primary-plot={primaryPlot || undefined}>
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         {
           yTicks.map((tick) => (

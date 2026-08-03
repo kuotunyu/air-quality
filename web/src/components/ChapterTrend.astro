@@ -208,25 +208,11 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
   <ChapterIntro slug="trend">
   <p class="lede">
     {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
-    {" "}{n(lastValue)} μg/m³。這個數字要能成立，必須先排除一個混淆來源：
-    <strong>監測網的測站數在同期間持續增加</strong>。
+    {" "}{n(lastValue)} μg/m³。
   </p>
   </ChapterIntro>
 
-  <p>
-    1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，
-    1998 年只有 5 個實驗性測點，2005 年才成為全國網絡。
-    拿「當年有回報的所有測站」平均，比較的是不同年份的不同地方，
-    趨勢裡有一部分來自測站網的組成改變，而非濃度改變。
-  </p>
-
-  <p>
-    所以這裡畫兩條線。<strong>全部測站</strong>是多數報導引用的數字；
-    <strong>固定樣本</strong>只保留 {balancedSince} 年以來每一年都有可比較資料的
-    {" "}{balancedCount} 個測站，前後比的是同一批地方。
-  </p>
-
-  <EvidenceFigure number="1.1" title="固定測站後，全台 PM2.5 的下降仍然成立嗎？">
+  <EvidenceFigure number="1.1" title="固定測站後，全台 PM2.5 的下降仍然成立嗎？" primary>
     <TrendChart
       years={trend.years}
       series={[
@@ -250,12 +236,31 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
       ]}
       unit="μg/m³"
       notesAt="left"
+      primaryPlot
     />
     <Fragment slot="caption">
       全台 PM2.5 年均值。線在中斷處是真的斷開——那一年沒有足以計算的資料，
       而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
     </Fragment>
   </EvidenceFigure>
+
+  <p>
+    這個數字要能成立，必須先排除一個混淆來源：
+    <strong>監測網的測站數在同期間持續增加</strong>。
+  </p>
+
+  <p>
+    1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，
+    1998 年只有 5 個實驗性測點，2005 年才成為全國網絡。
+    拿「當年有回報的所有測站」平均，比較的是不同年份的不同地方，
+    趨勢裡有一部分來自測站網的組成改變，而非濃度改變。
+  </p>
+
+  <p>
+    所以這裡畫兩條線。<strong>全部測站</strong>是多數報導引用的數字；
+    <strong>固定樣本</strong>只保留 {balancedSince} 年以來每一年都有可比較資料的
+    {" "}{balancedCount} 個測站，前後比的是同一批地方。
+  </p>
 
   <div class="note">
     <strong>此項校正未改變結論，而陰性結果同樣需要報告。</strong>
