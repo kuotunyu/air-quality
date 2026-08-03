@@ -331,13 +331,14 @@ def _decode_candidate_text(data: bytes) -> tuple[str, ...] | None:
         else:
             candidates.append(text)
 
+    if utf8_control_error is not None:
+        raise utf8_control_error
+
     # Printable ASCII byte pairs can also be meaningful UTF-16 code points, so
     # byte-range and NUL-pattern heuristics cannot safely discard either endian.
     candidates.extend(_decode_bomless_utf16(data))
     if candidates:
         return tuple(dict.fromkeys(candidates))
-    if utf8_control_error is not None:
-        raise utf8_control_error
     raise RepositoryAuditError("encountered an undecodable non-binary blob")
 
 

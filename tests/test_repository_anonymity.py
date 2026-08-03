@@ -372,7 +372,8 @@ def test_utf16_text_is_scanned_with_or_without_a_byte_order_mark(
     tmp_path: Path, encoding: str, byte_order_mark: bytes
 ) -> None:
     repo = _new_repo(tmp_path)
-    (repo / "utf16.txt").write_bytes(byte_order_mark + SYNTHETIC_TOKEN.encode(encoding))
+    payload = SYNTHETIC_TOKEN if byte_order_mark else f"{SYNTHETIC_TOKEN}\u6587"
+    (repo / "utf16.txt").write_bytes(byte_order_mark + payload.encode(encoding))
     _commit(repo)
 
     violations, _counts = _surfaces(repo)
@@ -425,15 +426,19 @@ def test_distinct_decode_candidates_cannot_form_a_match_across_their_boundary(
     assert violations == []
 
 
-def test_an_unknown_control_byte_fails_closed_instead_of_being_called_binary(
-    tmp_path: Path,
-) -> None:
-    repo = _new_repo(tmp_path)
-    (repo / "unknown-control.txt").write_bytes(b"safe\x01text")
-    _commit(repo)
-
+def test_even_length_valid_utf8_with_an_unknown_control_fails_closed() -> None:
     with pytest.raises(RepositoryAuditError, match="control"):
-        _surfaces(repo)
+        anonymity._decode_candidate_text(b"abc\x01")
+
+
+def test_a_utf8_protected_token_cannot_be_discarded_for_a_utf16_candidate() -> None:
+    controlled = f"x{SYNTHETIC_TOKEN}\x01".encode()
+    assert len(controlled) % 2 == 0
+
+    with pytest.raises(RepositoryAuditError, match="control") as error:
+        anonymity._decode_candidate_text(controlled)
+
+    assert SYNTHETIC_TOKEN not in str(error.value)
 
 
 def test_the_measured_bell_delimiter_remains_scannable_text(tmp_path: Path) -> None:
