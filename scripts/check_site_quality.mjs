@@ -1383,6 +1383,7 @@ async function main() {
           anchored: anchored(element, container, axes),
         }));
       const map = document.querySelector("[data-homepage-map]");
+      const atlas = document.querySelector("[data-homepage-atlas]");
       const legend = document.querySelector("[data-homepage-map-legend]");
       const scaleBar = legend?.querySelector(".scale-bar") ?? null;
       const scaleTicks = legend?.querySelector(".scale-ticks") ?? null;
@@ -1406,6 +1407,16 @@ async function main() {
           scaleTicks,
           "inline",
         ).filter((tick) => tick.visible),
+        atlasLayout: {
+          mode: atlas && getComputedStyle(atlas).getPropertyValue("--atlas-columns").trim() === "3"
+            ? "wide" : "stacked",
+          atlas: inspect(atlas),
+          opening: inspect(document.querySelector("[data-homepage-opening]")),
+          map: inspect(document.querySelector("[data-homepage-map-frame]")),
+          left: inspect(document.querySelector("[data-homepage-atlas-left]")),
+          right: inspect(document.querySelector("[data-homepage-atlas-right]")),
+          routes: inspect(document.querySelector("[data-homepage-routes]")),
+        },
         viewport: { width: innerWidth, height: innerHeight },
         scrollY,
       };
@@ -1418,7 +1429,10 @@ async function main() {
     if (requireScrollZero && geometry?.scrollY !== 0) {
       return ["homepage did not start at scroll position zero"];
     }
-    return firstViewportProblems({ ...geometry, requireVerticalViewport });
+    return [
+      ...firstViewportProblems({ ...geometry, requireVerticalViewport }),
+      ...atlasLayoutProblems(geometry.atlasLayout),
+    ];
   };
 
   const homepageStructureProblems = async ({ enhanced }) => {

@@ -80,9 +80,9 @@ const opening = [
     983px figure.
   */}
   <div class="hero-figure">
-  <div class="hero-grid" style="--enter:3">
+  <div class="hero-grid" data-homepage-atlas style="--enter:3">
     <StationMap stations={stations} cards={cards} unplaced={stationsWithoutCoordinates}>
-      <div slot="before-map" class="hero-opening">
+      <div slot="before-map" class="hero-opening" data-homepage-opening>
         <p class="eyebrow" style="--enter:0">{opening}</p>
         <h1 style="--enter:1">台灣空氣品質的長期重新分析</h1>
         <p class="lede hero-finding" style="--enter:2">
@@ -108,7 +108,7 @@ const opening = [
       station names run at a readable width, and removes three frames from a fold
       that already has a map in it.
     */}
-    <div class="hero-stats">
+    <div class="hero-stats" data-homepage-atlas-left>
       <dl class="figures">
         <div class="figure">
           <dt style={`color:${concentrationInk(dirtiest.annual_mean)}`}>{n(dirtiest.annual_mean)}</dt>
@@ -168,14 +168,16 @@ const opening = [
       </p>
     </div>
 
-        <p class="lede hero-context">
+        <p class="lede hero-context" data-homepage-atlas-right>
           同一份資料也顯示，{latestYear} 年有可比較資料的 {latest.length} 個測站中，
           <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
           {overTaiwan} 個超過台灣自身的標準（{TAIWAN_PM25_ANNUAL} μg/m³）。
           趨勢與水準是兩個不同的量，這兩項結果並不衝突。
         </p>
 
-        <StartHere />
+        <div class="hero-routes" data-homepage-routes>
+          <StartHere />
+        </div>
       </div>
     </StationMap>
   </div>
@@ -428,7 +430,7 @@ const opening = [
   gap: var(--space-4);
 }
 
-@container (max-width: 759px) {
+@container (max-width: 39.999rem) {
   .hero-grid {
     gap: var(--space-1);
   }
@@ -437,7 +439,7 @@ const opening = [
   }
 }
 
-@container (min-width: 760px) {
+@container (min-width: 40rem) {
   .hero-grid {
     grid-template-columns: minmax(0, 1fr) clamp(260px, 34%, 330px);
     column-gap: var(--space-5);
@@ -462,5 +464,57 @@ const opening = [
   display: grid;
   align-content: start;
   gap: var(--space-4);
+}
+
+/*
+ * The approved atlas keeps one graphic and spends its side tracks on reading.
+ * Equal flexible tracks put the island on the hero's actual centre axis; the
+ * fixed middle range protects county labels without letting the map consume
+ * the opening. `display: contents` changes visual placement only, so the map
+ * remains before its interpretation in the document and without JavaScript.
+ */
+.hero-grid {
+  --atlas-columns: 1;
+}
+
+/* This is a reading breakpoint, so it deliberately follows the root type
+ * scale. At 200% text a fixed 760px threshold kept three columns inside an
+ * 845px atlas; `rem` lets the same document return to its linear source order.
+ */
+@container (min-width: 40rem) {
+  .hero-grid {
+    --atlas-columns: 3;
+    grid-template-columns: minmax(0, 1fr) clamp(260px, 28%, 330px) minmax(0, 1fr);
+    column-gap: clamp(var(--space-3), 3cqi, var(--space-5));
+    align-items: start;
+  }
+  .hero-grid > .hero-opening {
+    grid-area: 1 / 1 / auto / -1;
+  }
+  .hero-grid > :global(.map-wrap) {
+    grid-area: 2 / 2;
+    justify-self: center;
+  }
+  .hero-grid > .hero-after {
+    display: contents;
+  }
+  .hero-after > .hero-stats {
+    grid-area: 2 / 1;
+    align-self: center;
+  }
+  .hero-after > .hero-context {
+    grid-area: 2 / 3;
+    align-self: center;
+    margin: 0;
+  }
+  .hero-after > .hero-routes {
+    grid-area: 3 / 1 / auto / -1;
+  }
+  .hero-grid > :global(.map-notes) {
+    grid-area: 4 / 1 / auto / -1;
+  }
+  .hero-grid > :global(.map-tools) {
+    grid-area: 5 / 1 / auto / -1;
+  }
 }
 </style>
