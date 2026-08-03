@@ -47,6 +47,15 @@ const ROUTES = [
   "/explore/",
   "/data/",
 ];
+const CHAPTER_ROUTES = ROUTES.filter((route) => route !== "/");
+const CHAPTER_OPENING_VIEWPORTS = [
+  { width: 375, height: 812 },
+  { width: 768, height: 1024 },
+  { width: 1280, height: 720 },
+  { width: 1440, height: 900 },
+  { width: 1600, height: 900 },
+  { width: 1920, height: 1080 },
+];
 const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
 const TEXT_ZOOM_ROUTES = ["/", "/trend/", "/stations/", "/methods/", "/explore/", "/data/"];
 
@@ -70,6 +79,9 @@ const STATIC_NATIVE_FIGURES = new Map([
   ["/explore/", 0],
   ["/data/", 0],
 ]);
+const CHART_ROUTES = new Set(
+  [...STATIC_NATIVE_FIGURES].filter(([, count]) => count > 0).map(([route]) => route),
+);
 const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/", 0],
   ["/trend/", 0],
@@ -141,7 +153,7 @@ const MIN_LC = 60;
  * chart tokens are rem-based, and their live contract is that every in-figure
  * annotation retains at least 95% of the body size at the same viewport.
  */
-const MIN_FONT_PX = 17;
+const MIN_FONT_PX = 18;
 /** WCAG 2.5.5's comfortable target. The figure controls are the ones at risk. */
 const MIN_TARGET_PX = 44;
 // 2026-08-03 — Linux Chrome quantised a declared 44px figure control one
@@ -315,6 +327,97 @@ function firstViewportProblems({
   checkPart("scale ticks", scaleTicks, true);
   checkParts("scale segments", "scale segment", scaleSegments);
   checkParts("tick marks", "tick mark", tickMarks);
+  return problems;
+}
+
+function chapterOpeningProblems(state) {
+  const problems = [];
+  const viewport = state?.viewport;
+  if (
+    !Number.isFinite(viewport?.width) || !Number.isFinite(viewport?.height) ||
+    viewport.width <= 0 || viewport.height <= 0
+  ) {
+    return ["chapter viewport has invalid geometry"];
+  }
+
+  if (!Number.isFinite(state?.smallestVisibleText) || state.smallestVisibleText <= 0) {
+    problems.push("chapter smallest visible text has invalid geometry");
+  } else if (state.smallestVisibleText < MIN_FONT_PX) {
+    problems.push(
+      `chapter smallest visible text is ${state.smallestVisibleText}px (18px floor)`,
+    );
+  }
+
+  const shellPart = (name, part, dimension) => {
+    if (!part || typeof part.visible !== "boolean" || !Number.isFinite(part[dimension])) {
+      problems.push(`chapter ${name} has invalid geometry`);
+      return false;
+    }
+    if (part[dimension] < 0 || (part.visible && part[dimension] <= 0)) {
+      problems.push(`chapter ${name} has invalid geometry`);
+      return false;
+    }
+    return true;
+  };
+  const railValid = shellPart("rail", state?.rail, "width");
+  const handleValid = shellPart("handle", state?.handle, "height");
+  if (viewport.width < 1600) {
+    if (railValid && state.rail.visible) {
+      problems.push("chapter persistent rail is visible below 1600px");
+    }
+    if (handleValid && !state.handle.visible) {
+      problems.push("chapter handle is hidden below 1600px");
+    }
+  } else {
+    if (railValid && !state.rail.visible) {
+      problems.push("chapter persistent rail is hidden at or above 1600px");
+    }
+    if (handleValid && state.handle.visible) {
+      problems.push("chapter handle remains visible at or above 1600px");
+    }
+  }
+
+  const geometryPart = (name, part) => {
+    if (!part) {
+      problems.push(`chapter ${name} is missing`);
+      return false;
+    }
+    if (
+      typeof part.visible !== "boolean" || !Number.isFinite(part.top) ||
+      !Number.isFinite(part.bottom) || part.bottom <= part.top
+    ) {
+      problems.push(`chapter ${name} has invalid geometry`);
+      return false;
+    }
+    if (!part.visible) {
+      problems.push(`chapter ${name} is not visibly rendered`);
+      return false;
+    }
+    return true;
+  };
+  if (geometryPart("primary evidence", state?.primary)) {
+    if (state.primary.top >= viewport.height || state.primary.bottom <= 0) {
+      problems.push("chapter primary evidence is outside the initial viewport");
+    }
+  }
+
+  if (typeof state?.chartRoute !== "boolean") {
+    problems.push("chapter chart-route state is missing");
+  } else if (state.chartRoute) {
+    if (geometryPart("primary plot", state.primaryPlot)) {
+      if (!Number.isFinite(state.primaryPlot.dataAreaVisible) || state.primaryPlot.dataAreaVisible < 0) {
+        problems.push("chapter primary plot has invalid visible-data geometry");
+      } else if (viewport.width === 1280 && viewport.height === 720) {
+        if (state.primaryPlot.top >= viewport.height * 55 / 100) {
+          problems.push("chapter primary plot starts at or below 55vh");
+        }
+        if (state.primaryPlot.dataAreaVisible < 180) {
+          problems.push("chapter less than 180px of plot data is visible");
+        }
+      }
+    }
+  }
+
   return problems;
 }
 
@@ -656,6 +759,96 @@ async function lifecycleSelfTest() {
     throw new Error(`the homepage atlas predicate accepts ${missedAtlasProblems.join(", ")}`);
   }
   console.log("site quality homepage atlas self-test passed");
+
+  const completeChapterOpening = {
+    viewport: { width: 1280, height: 720 },
+    smallestVisibleText: 18,
+    rail: { visible: false, width: 272 },
+    handle: { visible: true, height: 48 },
+    primary: { visible: true, top: 250, bottom: 650 },
+    primaryPlot: { visible: true, top: 300, bottom: 520, dataAreaVisible: 180 },
+    chartRoute: true,
+  };
+  const missedChapterOpeningProblems = [];
+  const expectChapterOpeningProblem = (name, state, expected) => {
+    const problems = chapterOpeningProblems(state);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedChapterOpeningProblems.push(name);
+    }
+  };
+  if (chapterOpeningProblems(completeChapterOpening).length) {
+    throw new Error("the chapter-opening predicate rejects complete geometry");
+  }
+  expectChapterOpeningProblem(
+    "17.99px visible text",
+    { ...completeChapterOpening, smallestVisibleText: 17.99 },
+    "18px floor",
+  );
+  expectChapterOpeningProblem(
+    "persistent rail at 1599px",
+    {
+      ...completeChapterOpening,
+      viewport: { width: 1599, height: 900 },
+      rail: { visible: true, width: 272 },
+    },
+    "persistent rail is visible below 1600px",
+  );
+  expectChapterOpeningProblem(
+    "visible handle at 1600px",
+    {
+      ...completeChapterOpening,
+      viewport: { width: 1600, height: 900 },
+      rail: { visible: true, width: 272 },
+      handle: { visible: true, height: 48 },
+    },
+    "handle remains visible at or above 1600px",
+  );
+  expectChapterOpeningProblem(
+    "missing primary evidence",
+    { ...completeChapterOpening, primary: null },
+    "primary evidence is missing",
+  );
+  expectChapterOpeningProblem(
+    "plot starting at 55vh",
+    {
+      ...completeChapterOpening,
+      primaryPlot: { visible: true, top: 396, bottom: 600, dataAreaVisible: 180 },
+    },
+    "plot starts at or below 55vh",
+  );
+  expectChapterOpeningProblem(
+    "less than 180px of visible plot data",
+    {
+      ...completeChapterOpening,
+      primaryPlot: { visible: true, top: 300, bottom: 520, dataAreaVisible: 179.99 },
+    },
+    "less than 180px of plot data is visible",
+  );
+  expectChapterOpeningProblem(
+    "non-finite primary geometry",
+    {
+      ...completeChapterOpening,
+      primary: { visible: true, top: Number.NaN, bottom: 650 },
+    },
+    "primary evidence has invalid geometry",
+  );
+  expectGeometryProblem(
+    "homepage map or legend below the first viewport",
+    {
+      ...completeGeometry,
+      legend: part({ top: 820, right: 320, bottom: 880, left: 70, width: 250, height: 60 }),
+    },
+    "map legend leaves the initial vertical viewport",
+  );
+  if (missedChapterOpeningProblems.length || missedGeometryProblems.length) {
+    throw new Error(
+      `the chapter-opening predicate accepts ${[
+        ...missedChapterOpeningProblems,
+        ...missedGeometryProblems,
+      ].join(", ")}`,
+    );
+  }
+  console.log("site quality chapter opening self-test passed");
 
   const restartOrder = [];
   const replacement = await replaceBrowser(
@@ -1121,8 +1314,15 @@ const PROBE = `(() => {
   const rail = document.querySelector(".rail");
   const main = document.querySelector("main");
   const handle = document.querySelector(".handle");
+  const railStyle = rail ? getComputedStyle(rail) : null;
   const handleStyle = handle ? getComputedStyle(handle) : null;
-  out.railWidth = rail ? +rail.getBoundingClientRect().width.toFixed(1) : 0;
+  const railRect = rail?.getBoundingClientRect() ?? null;
+  out.railWidth = railRect ? +railRect.width.toFixed(1) : 0;
+  out.railVisible = Boolean(
+    railRect && railStyle?.display !== "none" && railStyle?.visibility !== "hidden" &&
+      railRect.width > 0 && railRect.height > 0 && railRect.right > 1 &&
+      railRect.left < innerWidth - 1 && railRect.bottom > 1 && railRect.top < innerHeight - 1,
+  );
   out.mainWidth = main ? +main.getBoundingClientRect().width.toFixed(1) : 0;
   out.handleVisible = Boolean(
     handle && handleStyle?.display !== "none" && handleStyle?.visibility !== "hidden" &&
@@ -1435,6 +1635,104 @@ async function main() {
     ];
   };
 
+  const chapterOpeningSnapshot = async (chartRoute) => evaluate(`(() => {
+    const rendered = (element) => {
+      if (!element) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse" || Number(style.opacity) === 0
+        ) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const inViewport = (element) => {
+      if (!rendered(element)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.right > 1 && rect.left < innerWidth - 1 &&
+        rect.bottom > 1 && rect.top < innerHeight - 1;
+    };
+    const inspect = (element) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        visible: rendered(element),
+        top: rect.top,
+        bottom: rect.bottom,
+      };
+    };
+    const visibleDataArea = (element) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      let top = Math.max(0, rect.top);
+      let bottom = Math.min(innerHeight, rect.bottom);
+      for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor);
+        if (["auto", "clip", "hidden", "scroll"].includes(style.overflowY)) {
+          const bounds = ancestor.getBoundingClientRect();
+          top = Math.max(top, bounds.top);
+          bottom = Math.min(bottom, bounds.bottom);
+        }
+      }
+      return Math.max(0, bottom - top);
+    };
+    const intro = document.querySelector("main .chapter-intro");
+    const directHeadings = intro
+      ? [...intro.querySelectorAll(":scope > h1")].filter(rendered) : [];
+    const directTheses = intro
+      ? [...intro.querySelectorAll(":scope > .chapter-thesis")].filter(rendered) : [];
+    const h1 = directHeadings[0] ?? null;
+    const thesis = directTheses[0] ?? null;
+    const primaryElements = [...document.querySelectorAll("main [data-primary-evidence]")];
+    const primary = primaryElements[0] ?? null;
+    const primaryPlots = [...document.querySelectorAll("main [data-primary-plot]")];
+    const plotsInsidePrimary = primary
+      ? primaryPlots.filter((plot) => primary.contains(plot)) : [];
+    const primaryPlot = plotsInsidePrimary[0] ?? null;
+    let smallestVisibleText = Infinity;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (
+        !node.nodeValue.trim() || !parent || parent.closest("script, style, template") ||
+        !rendered(parent)
+      ) continue;
+      const size = parseFloat(getComputedStyle(parent).fontSize);
+      if (Number.isFinite(size)) smallestVisibleText = Math.min(smallestVisibleText, size);
+    }
+    const rail = document.querySelector(".rail");
+    const handle = document.querySelector(".handle");
+    const railRect = rail?.getBoundingClientRect() ?? null;
+    const handleRect = handle?.getBoundingClientRect() ?? null;
+    return {
+      state: {
+        viewport: { width: innerWidth, height: innerHeight },
+        smallestVisibleText: Number.isFinite(smallestVisibleText) ? smallestVisibleText : null,
+        rail: railRect ? { visible: inViewport(rail), width: railRect.width } : null,
+        handle: handleRect ? { visible: inViewport(handle), height: handleRect.height } : null,
+        primary: inspect(primary),
+        primaryPlot: primaryPlot
+          ? { ...inspect(primaryPlot), dataAreaVisible: visibleDataArea(primaryPlot) }
+          : null,
+        chartRoute: ${JSON.stringify(chartRoute)},
+      },
+      intro: {
+        visible: rendered(intro),
+        headingCount: directHeadings.length,
+        thesisCount: directTheses.length,
+        thesisText: thesis?.textContent.trim() ?? "",
+        thesisAfterHeading: Boolean(
+          h1 && thesis && (h1.compareDocumentPosition(thesis) & Node.DOCUMENT_POSITION_FOLLOWING)
+        ),
+      },
+      primaryCount: primaryElements.length,
+      primaryPlotCount: primaryPlots.length,
+      primaryPlotsInside: plotsInsidePrimary.length,
+    };
+  })()`);
+
   const homepageStructureProblems = async ({ enhanced }) => {
     const structure = await evaluate(`(() => {
       const map = document.querySelector("[data-homepage-map-frame]");
@@ -1524,6 +1822,7 @@ async function main() {
     noScriptNativeFigures: 0,
     noScriptSecondaryDisclosures: 0,
     noScriptSqlDisclosures: 0,
+    chapterOpeningChecks: 0,
     zoomRoutes: 0,
   };
 
@@ -1864,10 +2163,12 @@ async function main() {
       const explorerNotice = document.querySelector("#explore .explorer-nojs");
       const explorerRun = document.querySelector("#explore #run");
       const intro = document.querySelector("main .chapter-intro");
-      const introPart = (selector) => {
-        const element = intro?.querySelector(selector) ?? null;
-        return Boolean(element && visible(element) && element.textContent.trim());
-      };
+      const introHeadings = intro
+        ? [...intro.querySelectorAll(":scope > h1")].filter(visible) : [];
+      const introTheses = intro
+        ? [...intro.querySelectorAll(":scope > .chapter-thesis")].filter(visible) : [];
+      const introHeading = introHeadings[0] ?? null;
+      const introThesis = introTheses[0] ?? null;
       return {
         theme: document.documentElement.dataset.theme ?? null,
         hasJs: document.documentElement.classList.contains("has-js"),
@@ -1876,9 +2177,12 @@ async function main() {
         chapterLinks: [...document.querySelectorAll("ol.toc a")].filter(visible).length,
         intro: {
           container: Boolean(intro && visible(intro)),
-          heading: introPart("h1"),
-          question: introPart(".chapter-question"),
-          finding: introPart(".chapter-finding"),
+          heading: Boolean(introHeadings.length === 1 && introHeading.textContent.trim()),
+          thesis: Boolean(
+            introTheses.length === 1 && introThesis.textContent.trim() && introHeading &&
+            (introHeading.compareDocumentPosition(introThesis) &
+              Node.DOCUMENT_POSITION_FOLLOWING)
+          ),
         },
         figures: figures.length,
         visibleFigures: figureStates.filter((state) => state.visible).length,
@@ -1912,7 +2216,7 @@ async function main() {
         );
       }
     } else {
-      const incompleteIntro = ["container", "heading", "question", "finding"].filter(
+      const incompleteIntro = ["container", "heading", "thesis"].filter(
         (part) => !noScript?.intro?.[part],
       );
       if (incompleteIntro.length) {
@@ -2032,6 +2336,87 @@ async function main() {
       for (const problem of await homepageStructureProblems({ enhanced: false })) {
         failures.push(`/ @${width}x${height} no-JavaScript light: ${problem}`);
       }
+    }
+  }
+  console.log("site-quality stage: chapter opening matrix");
+  await send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage" });
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  for (const { width, height } of CHAPTER_OPENING_VIEWPORTS) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    for (const route of CHAPTER_ROUTES) {
+      await send("Page.navigate", { url: `${origin}${route}` });
+      if (!(await settled(evaluate, 8000, `${route} @${width}x${height} opening`))) {
+        failures.push(`${route} @${width}x${height} light: opening never finished styling`);
+        continue;
+      }
+      const chartRoute = CHART_ROUTES.has(route);
+      const snapshot = await chapterOpeningSnapshot(chartRoute);
+      totals.chapterOpeningChecks += 1;
+      if (!snapshot?.state) {
+        failures.push(`${route} @${width}x${height} light: opening probe returned nothing`);
+        continue;
+      }
+      if (
+        !snapshot.intro?.visible || snapshot.intro?.headingCount !== 1 ||
+        snapshot.intro?.thesisCount !== 1 || !snapshot.intro?.thesisText ||
+        !snapshot.intro?.thesisAfterHeading
+      ) {
+        failures.push(
+          `${route} @${width}x${height} light: chapter intro lacks one visible direct-child ` +
+            `thesis after h1 (${JSON.stringify(snapshot.intro)})`,
+        );
+      }
+      if (snapshot.primaryCount > 1) {
+        failures.push(
+          `${route} @${width}x${height} light: found ${snapshot.primaryCount} primary evidence surfaces`,
+        );
+      }
+      if (
+        chartRoute &&
+        (
+          snapshot.primaryPlotCount > 1 || snapshot.primaryPlotsInside > 1 ||
+          (snapshot.primaryPlotCount === 1 && snapshot.primaryPlotsInside !== 1)
+        )
+      ) {
+        failures.push(
+          `${route} @${width}x${height} light: primary plot hook is not unique inside primary evidence`,
+        );
+      }
+      if (!chartRoute && snapshot.primaryPlotCount !== 0) {
+        failures.push(`${route} @${width}x${height} light: non-chart primary uses a plot hook`);
+      }
+      for (const problem of chapterOpeningProblems(snapshot.state)) {
+        failures.push(`${route} @${width}x${height} light: ${problem}`);
+      }
+    }
+  }
+  for (const width of [1599, 1600]) {
+    const height = 900;
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Page.navigate", { url: `${origin}/trend/` });
+    if (!(await settled(evaluate, 8000, `/trend/ @${width}x${height} shell boundary`))) {
+      failures.push(`/trend/ @${width}x${height} light: shell boundary never finished styling`);
+      continue;
+    }
+    const snapshot = await chapterOpeningSnapshot(true);
+    const shellProblems = chapterOpeningProblems(snapshot?.state).filter(
+      (problem) => problem.includes("rail") || problem.includes("handle"),
+    );
+    for (const problem of shellProblems) {
+      failures.push(`/trend/ @${width}x${height} light shell boundary: ${problem}`);
     }
   }
   await evaluate('localStorage.setItem("twair-theme", "dark")');
@@ -2434,12 +2819,18 @@ async function main() {
           if (r.mainWidth < 720) {
             failures.push(`${route} @${width} ${theme}: main content is narrower than 720px`);
           }
-          if (r.handleVisible) {
-            failures.push(`${route} @${width} ${theme}: handle remains visible on desktop`);
+          if (!r.handleVisible) {
+            failures.push(`${route} @${width} ${theme}: handle is hidden below 1600px`);
+          }
+          if (r.railVisible) {
+            failures.push(`${route} @${width} ${theme}: persistent rail is visible below 1600px`);
           }
         }
         if (width === 375 && !r.handleVisible) {
           failures.push(`${route} @${width} ${theme}: handle is hidden on mobile`);
+        }
+        if (width === 375 && r.railVisible) {
+          failures.push(`${route} @${width} ${theme}: persistent rail is visible on mobile`);
         }
         for (const bad of r.lowContrast) {
           failures.push(
@@ -2759,6 +3150,11 @@ async function main() {
   }
   await checkTextZoom("/", 900, 500, " short reflow");
 
+  if (totals.chapterOpeningChecks !== 60) {
+    failures.push(
+      `chapter opening matrix exercised ${totals.chapterOpeningChecks} route-viewports, expected 60`,
+    );
+  }
   if (totals.smallestAt375 < MIN_FONT_PX) {
     failures.push(`smallest type at 375px is ${totals.smallestAt375}px (floor ${MIN_FONT_PX})`);
   }
@@ -2789,6 +3185,7 @@ async function main() {
   console.log(`table wraps       : ${totals.tableWraps} (${totals.tableScrollers} intentional scrollers)`);
   console.log(`focus checks      : ${totals.focusChecks}`);
   console.log(`no-JavaScript     : ${totals.noScriptRoutes} routes`);
+  console.log(`chapter openings : ${totals.chapterOpeningChecks} route-viewports`);
   console.log(`200% text zoom    : ${totals.zoomRoutes} routes`);
   console.log(`APCA floor       : Lc ${MIN_LC}`);
   console.log(`problems         : ${failures.length}`);

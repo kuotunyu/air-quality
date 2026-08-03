@@ -474,33 +474,24 @@ def failures_for_text(html: str) -> list[str]:
         elif intro is not None and h1.parent is not intro:
             failures.append("visible <h1> is not a direct child of header.chapter-intro")
 
-    contract: dict[str, Element] = {}
-    for class_name in ("chapter-question", "chapter-finding"):
-        candidates = [element for element in visible if class_name in element.classes]
-        if not candidates:
-            failures.append(f"missing visible .{class_name}")
-            continue
-        if len(candidates) != 1:
-            failures.append(f"expected exactly one visible .{class_name}, found {len(candidates)}")
-            continue
-        candidate = candidates[0]
-        contract[class_name] = candidate
-        if intro is not None and not candidate.is_inside(intro):
-            failures.append(f"visible .{class_name} is not inside header.chapter-intro")
-        elif intro is not None and candidate.parent is not intro:
-            failures.append(f"visible .{class_name} is not a direct child of header.chapter-intro")
-        if not candidate.rendered_text(without_labels=True):
-            failures.append(f"visible .{class_name} has no rendered text")
-
-    question = contract.get("chapter-question")
-    finding = contract.get("chapter-finding")
-    if question is not None and finding is not None:
-        if question is finding or question.is_inside(finding) or finding.is_inside(question):
-            failures.append("chapter question and finding must be independent descendants")
-        if question.start_order >= finding.start_order:
-            failures.append("chapter question must precede chapter finding")
-        if h1 is not None and (h1.end_order is None or h1.end_order >= question.start_order):
-            failures.append("chapter <h1> must close before question and finding")
+    thesis_candidates = [element for element in visible if "chapter-thesis" in element.classes]
+    thesis: Element | None = None
+    if not thesis_candidates:
+        failures.append("missing visible .chapter-thesis")
+    elif len(thesis_candidates) != 1:
+        failures.append(
+            f"expected exactly one visible .chapter-thesis, found {len(thesis_candidates)}"
+        )
+    else:
+        thesis = thesis_candidates[0]
+        if intro is not None and not thesis.is_inside(intro):
+            failures.append("visible .chapter-thesis is not inside header.chapter-intro")
+        elif intro is not None and thesis.parent is not intro:
+            failures.append("visible .chapter-thesis is not a direct child of header.chapter-intro")
+        if not thesis.rendered_text():
+            failures.append("visible .chapter-thesis has no rendered text")
+        if h1 is not None and (h1.end_order is None or h1.end_order >= thesis.start_order):
+            failures.append("chapter thesis must follow chapter <h1>")
 
     visible_h2 = [element for element in visible if element.tag == "h2"]
     if not visible_h2:
@@ -908,66 +899,56 @@ def _run_preflight() -> None:
 
     valid_html = (
         '<header class="chapter-intro"><h1><span>Title</span></h1>'
-        '<div class="chapter-question"><i class="chapter-intro-label">Label</i>Question</div>'
-        '<div class="chapter-finding"><i class="chapter-intro-label">Label</i>'
-        "<strong>Finding</strong></div></header><h2>Evidence</h2>"
+        '<div class="chapter-thesis"><strong>Thesis</strong></div>'
+        "</header><h2>Evidence</h2>"
     )
     valid_failures = failures_for_text(valid_html)
     if valid_failures:
         raise RuntimeError(f"HTML preflight rejected the valid control: {valid_failures}")
 
     mutations = {
-        "three classes on one element": (
-            "chapter question and finding must be independent descendants",
-            '<header class="chapter-intro chapter-question chapter-finding">'
+        "missing thesis": (
+            "missing visible .chapter-thesis",
+            '<header class="chapter-intro"><h1>Title</h1></header><h2>Evidence</h2>',
+        ),
+        "empty thesis": (
+            "visible .chapter-thesis has no rendered text",
+            '<header class="chapter-intro"><h1>Title</h1>'
+            '<div class="chapter-thesis"><span hidden>Hidden</span></div>'
+            "</header><h2>Evidence</h2>",
+        ),
+        "duplicated thesis": (
+            "expected exactly one visible .chapter-thesis, found 2",
+            '<header class="chapter-intro"><h1>Title</h1>'
+            '<div class="chapter-thesis">Thesis</div>'
+            '<div class="chapter-thesis">Copy</div></header><h2>Evidence</h2>',
+        ),
+        "nested thesis": (
+            "visible .chapter-thesis is not a direct child of header.chapter-intro",
+            '<header class="chapter-intro"><h1>Title</h1>'
+            '<div><div class="chapter-thesis">Thesis</div></div>'
+            "</header><h2>Evidence</h2>",
+        ),
+        "thesis before h1": (
+            "chapter thesis must follow chapter <h1>",
+            '<header class="chapter-intro"><div class="chapter-thesis">Thesis</div>'
             "<h1>Title</h1></header><h2>Evidence</h2>",
         ),
         "nested headings": (
             "nested heading <h2> inside <h1>",
             '<header class="chapter-intro"><h1>Title<h2>Nested</h2></h1>'
-            '<div class="chapter-question">Question</div>'
-            '<div class="chapter-finding">Finding</div></header><h2>Evidence</h2>',
+            '<div class="chapter-thesis">Thesis</div></header><h2>Evidence</h2>',
         ),
         "mismatched headings": (
             "mismatched closing </h2> while <h1> is open",
             valid_html.replace("</h1>", "</h2>", 1),
         ),
-        "empty finding": (
-            "visible .chapter-finding has no rendered text",
-            '<header class="chapter-intro"><h1>Title</h1>'
-            '<div class="chapter-question">Question</div><div class="chapter-finding">'
-            '<i class="chapter-intro-label">Label</i></div></header><h2>Evidence</h2>',
-        ),
-        "contracts nested inside h1": (
-            "chapter <h1> must close before question and finding",
-            '<header class="chapter-intro"><h1>Title'
-            '<span class="chapter-question">Question</span>'
-            '<span class="chapter-finding">Finding</span></h1></header><h2>Evidence</h2>',
-        ),
-        "self-labeled question": (
-            "visible .chapter-question has no rendered text",
-            '<header class="chapter-intro"><h1>Title</h1>'
-            '<div class="chapter-question chapter-intro-label">Label</div>'
-            '<div class="chapter-finding">Finding</div></header><h2>Evidence</h2>',
-        ),
-        "self-labeled finding": (
-            "visible .chapter-finding has no rendered text",
-            '<header class="chapter-intro"><h1>Title</h1>'
-            '<div class="chapter-question">Question</div>'
-            '<div class="chapter-finding chapter-intro-label">Label</div>'
-            "</header><h2>Evidence</h2>",
-        ),
     }
     wrapped_contracts = {
-        "h1": '<div><h1>Title</h1></div><div class="chapter-question">Question</div>'
-        '<div class="chapter-finding">Finding</div>',
-        "chapter-question": '<h1>Title</h1><div><div class="chapter-question">Question</div></div>'
-        '<div class="chapter-finding">Finding</div>',
-        "chapter-finding": '<h1>Title</h1><div class="chapter-question">Question</div>'
-        '<div><div class="chapter-finding">Finding</div></div>',
+        "h1": '<div><h1>Title</h1></div><div class="chapter-thesis">Thesis</div>',
     }
     for class_name, markup in wrapped_contracts.items():
-        selector = f"<{class_name}>" if class_name == "h1" else f".{class_name}"
+        selector = f"<{class_name}>"
         mutations[f"wrapped {class_name}"] = (
             f"visible {selector} is not a direct child of header.chapter-intro",
             f'<header class="chapter-intro">{markup}</header><h2>Evidence</h2>',
