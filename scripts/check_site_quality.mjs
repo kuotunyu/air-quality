@@ -144,6 +144,11 @@ const MIN_LC = 60;
 const MIN_FONT_PX = 17;
 /** WCAG 2.5.5's comfortable target. The figure controls are the ones at risk. */
 const MIN_TARGET_PX = 44;
+// 2026-08-03 — Linux Chrome quantised a declared 44px figure control one
+// layout unit below the interaction floor while Windows Chrome kept it at 44.
+// Require one 1/64px layout unit of reserve so an exact CSS boundary cannot
+// pass locally and fail after deployment on another rasterisation path.
+const TARGET_LAYOUT_RESERVE_PX = 1 / 64;
 const CSS_PX_SERIALIZATION_EPSILON = 0.0001;
 const READOUT_OVERLAP_TOLERANCE_PX = 1;
 
@@ -924,9 +929,12 @@ const PROBE = `(() => {
     if (cs.display === "none" || cs.visibility === "hidden") continue;
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height) continue;
-    if (r.height < ${MIN_TARGET_PX}) {
+    const floor = el.classList.contains("fig-tool")
+      ? ${MIN_TARGET_PX + TARGET_LAYOUT_RESERVE_PX}
+      : ${MIN_TARGET_PX};
+    if (r.height < floor) {
       out.smallTargets.push({ cls: String(el.className || el.tagName).slice(0, 28),
-        w: +r.width.toFixed(1), h: +r.height.toFixed(1) });
+        w: +r.width.toFixed(1), h: +r.height.toFixed(1), floor });
     }
   }
 
@@ -2296,7 +2304,7 @@ async function main() {
         for (const bad of r.smallTargets) {
           failures.push(
             `${route} @${width} ${theme}: target ${bad.w}x${bad.h} on .${bad.cls} ` +
-              `(floor ${MIN_TARGET_PX})`,
+              `(floor ${bad.floor})`,
           );
         }
         for (const bad of r.collisions) {

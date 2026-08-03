@@ -3058,6 +3058,10 @@ button:hover {
 }
 
 .fig-tool {
+  /* 2026-08-03 — an exact 44px minimum quantised one 1/64px layout unit
+     below the interaction floor in Linux Chrome while remaining 44px on
+     Windows Chrome. One CSS pixel of reserve keeps both renderers above it. */
+  min-height: 45px;
   padding: 0.2rem 0.5rem;
   color: var(--text-faint);
   background: transparent;
