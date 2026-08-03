@@ -85,3 +85,5 @@ web/_*.js
 # resuming work on this machine, but they are not part of the public project.
 /.superpowers/
 /docs/superpowers/
+/HANDOFF.md
+/PROGRESS.md

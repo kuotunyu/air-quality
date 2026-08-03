@@ -51,6 +51,9 @@ jobs:
       - name: Protected identities stay out of every reachable text surface
         run: uv run python scripts/check_repository_anonymity.py "${{ github.event.pull_request.head.sha || github.sha }}"
 
+      - name: Internal project memory stays out of published history
+        run: uv run python scripts/check_internal_paths.py "${{ github.event.pull_request.head.sha || github.sha }}"
+
       - name: The test inventory matches its reviewed count
         run: uv run python scripts/check_test_count.py
 

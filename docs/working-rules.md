@@ -4,13 +4,14 @@
 > pipeline, QC, the Parquet store, the analysis modules, forecasting, or
 > the web front end. It covers the architecture, the data gotchas that cost
 > real time to find, the commands, the testing conventions, and the
-> per-commit routine that keeps `PROGRESS.md` and the docs from drifting.
+> portable return path that keeps measured state and public docs in sync.
 >
 > `AGENTS.md` is the short version. This is the long one.
 >
 > When returning: read `AGENTS.md`, read this file, run `uv run twair status`,
-> then read `HANDOFF.md`. Search `PROGRESS.md` only when a decision needs its
-> evidence or history.
+> and consult the relevant public technical docs. Ignored
+> `.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md` may add local
+> context when present; their absence in a fresh clone is expected.
 
 ## What this project is
 
@@ -872,36 +873,36 @@ grep for `fill_null`, `drop_nulls` and `interpolate` before accepting it.
 
 ## Internal agent work stays local
 
-Design specs, implementation plans, mockups, SDD reports and other agent
-working artefacts are useful for resuming work on this machine, but they are
-not public project documentation. Keep them under gitignored
-`docs/superpowers/` or `.superpowers/` and never stage either path.
+Design specs, implementation plans, mockups, reviews, progress diaries and
+other agent working artefacts are useful for resuming work on this machine,
+but they are not public project documentation and never enter Git history.
+Keep them under gitignored `docs/superpowers/` or `.superpowers/` and never
+stage either path.
 
-Tracked documentation records the durable result instead: what was decided,
-what was measured, what remains blocked and which public behaviour changed.
-This keeps GitHub focused on the project rather than the private mechanics used
-to develop it, without sacrificing continuity between sessions.
+Stable reusable decisions and measured evidence belong in the relevant public
+technical documentation. Transient progress may stay in ignored
+`.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md`; these files are
+optional local context, not part of the portable return path. This keeps GitHub
+focused on the project rather than the private mechanics used to develop it.
 
-## Handoff — the docs ship *with* the commit, not at the end of the session
+## Return path — public facts ship with the commit
 
-This used to say "run this before ending a work session" and it failed, for a
-reason worth keeping: **sessions do not end, they get interrupted.** A quota
-expires, a context window compacts, a background job is still running. Commit
-`f6671c1` shipped M9 — a module, a feature builder and 25 tests — with zero doc
-changes, because the ritual was scheduled for a moment that never arrived.
-
-So the trigger is the **commit**, not the session. A commit that changes
-behaviour and touches no `.md` is the smell.
+`uv run twair status` and the public technical documentation are the portable
+return path because both survive a fresh clone. A commit that changes a durable
+result or public behaviour and leaves the relevant public docs stale is the
+smell.
 
 Each commit that adds or changes a result:
 
 1. Run every completion gate in `AGENTS.md`; partial test or lint paths are not
    substitutes for the repository gates.
-2. Update **`PROGRESS.md`**: what moved, what is running, what is next.
-3. Update the affected **`docs/*.md`**. If a measurement contradicts something
+2. Update the affected **`docs/*.md`**. If a measurement contradicts something
    already written, correct it in place — never leave both versions standing.
-4. Tick the phase boxes in **`README.md`** / `PLAN.md` if a phase moved.
-5. Add any new gotcha to **this document** — see below for what qualifies.
+3. Tick the phase boxes in **`README.md`** / `PLAN.md` if a phase moved.
+4. Add any new reusable gotcha to **this document** — see below for what
+   qualifies.
+5. Keep transient progress in ignored `.superpowers/project-memory/HANDOFF.md`
+   or `PROGRESS.md` when local continuity needs it; never stage either file.
 6. Commit.
 
 ### `uv run twair status` — the half that cannot go stale
@@ -943,6 +944,8 @@ format that does not behave as documented. Not a summary of what the code does
 — the code is right there, and a paraphrase of it here is one more thing to
 keep in sync.
 
-The test of a good handoff: someone returning in two weeks runs `twair status`
-to see what is on disk, reads `HANDOFF.md` to see what is decided and next, and
-searches `PROGRESS.md` only when they need the evidence behind it.
+The test of a good return path: someone returning in a fresh clone can run
+`twair status` and read the relevant public technical docs to recover the
+portable state and stable decisions. On the working machine, ignored
+`.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md` may add transient
+context, but the published project never depends on their presence.

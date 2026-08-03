@@ -10,8 +10,9 @@
 Read this before changing anything. It is short on purpose.
 
 When returning to the project: read this file, read `docs/working-rules.md`,
-run `uv run twair status`, then read `HANDOFF.md`. Search `PROGRESS.md` only
-when the reason or evidence behind a decision is needed.
+then run `uv run twair status` and consult the relevant public technical docs.
+Ignored `.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md` may add local
+context when present; their absence in a fresh clone is expected.
 
 ---
 
@@ -209,9 +210,11 @@ real defect. "To make mypy pass" is not a reason.
 
 Design specs, implementation plans, mockups, review reports and agent scratch
 belong under `docs/superpowers/` or `.superpowers/`. Both paths are gitignored.
-**Never stage or commit anything under either path.** Durable decisions and
-measured evidence go into the tracked `HANDOFF.md`, `PROGRESS.md` and relevant
-public documentation; internal process artefacts do not go to GitHub.
+**Never stage or commit anything under either path.** Internal specs, plans,
+mockups, reviews and progress diaries never enter Git history. Stable reusable
+decisions belong in the relevant public technical documentation; transient
+progress may stay in ignored `.superpowers/project-memory/HANDOFF.md` and
+`PROGRESS.md` on this machine.
 
 ---
 
@@ -272,8 +275,8 @@ Windows; PowerShell here-strings break, and apostrophes in `-m` truncate).
 | What must I read before changing anything? | `AGENTS.md` |
 | What are the stable, hard-won rules? | `docs/working-rules.md` |
 | What is actually on disk now? | `uv run twair status` |
-| What is decided, blocked, or next? | `HANDOFF.md` |
-| Why was a decision made? | `PROGRESS.md` |
+| What stable decisions are portable? | The relevant public technical docs |
+| What local handoff or progress context exists? | `.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md`, when present |
 | What identity may appear in history? | `conf/project.yaml` |
 | What is the overall plan? | `PLAN.md` |
 | Why is the archive parsing so complicated? | `docs/archive-formats.md` |
