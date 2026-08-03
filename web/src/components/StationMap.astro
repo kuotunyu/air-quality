@@ -288,13 +288,29 @@ const dots = main.map((s) => {
 <div
   class="map-wrap"
   data-homepage-map-frame
+  data-figure-tools-mount="homepage-map-tools"
   style={`--map-ratio:${width} / ${height};--map-wide:${(width / height).toFixed(4)}`}
 >
   <div class="map-box" data-homepage-map>
+    <p
+      id="homepage-map-county-description"
+      class="visually-hidden"
+      data-homepage-map-county-description
+    >
+      圖中的縣市包括：{
+        counties.map((county, index) => (
+          <>
+            <span data-homepage-map-county>{county.name}</span>
+            {index < counties.length - 1 ? "、" : "。"}
+          </>
+        ))
+      }
+    </p>
     <svg
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label={`台灣本島 ${counties.length} 個縣市的界線；${dots.length} 個測站的 PM2.5 年均值以色點標示，逐站數字見第二章的測站統計`}
+      aria-describedby="homepage-map-county-description"
     >
       {
         counties.map((county) => (
@@ -314,6 +330,7 @@ const dots = main.map((s) => {
       labelled.map((label) => (
         <span
           class="county-label"
+          aria-hidden="true"
           style={`left:${((label.x / width) * 100).toFixed(2)}%;top:${((label.y / height) * 100).toFixed(2)}%`}
         >
           {label.name}
@@ -403,6 +420,8 @@ const dots = main.map((s) => {
   }
 </div>
 
+<div id="homepage-map-tools" class="map-tools"></div>
+
 <style>
   /*
    * The wrapper is sized to the map, so everything under it is too.
@@ -418,6 +437,7 @@ const dots = main.map((s) => {
   .map-wrap {
     display: flex;
     flex-direction: column;
+    container-type: inline-size;
     width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
     margin-inline: auto;
   }
@@ -429,7 +449,10 @@ const dots = main.map((s) => {
    */
   @media (max-width: 900px) {
     .map-wrap {
-      width: min(100%, 52vh * var(--map-wide));
+      /* 2026-08-03 — at 900×500 with text at 200%, the viewport-only
+         budget let the fixed 9px 富貴角 mark leave the frame by 1.281px.
+         This rem floor grows with text, but stays below the normal-size map. */
+      width: min(100%, max(52vh * var(--map-wide), 5.5rem));
     }
   }
 
@@ -437,6 +460,11 @@ const dots = main.map((s) => {
     .map-wrap {
       width: min(100%, 38vh * var(--map-wide));
     }
+  }
+
+  .map-tools {
+    order: 5;
+    grid-column: 1 / -1;
   }
 
   /*
@@ -567,6 +595,7 @@ const dots = main.map((s) => {
   .scale-ticks span {
     position: absolute;
     top: 0.15em;
+    line-height: 1.2;
     transform: translateX(-50%);
   }
 
@@ -606,8 +635,16 @@ const dots = main.map((s) => {
       0 0 4px var(--bg-sunken);
   }
 
-  @media (max-width: 420px) {
+  @container (max-width: 14em) {
     .county-label {
+      display: none;
+    }
+  }
+
+  @container (max-width: 8em) {
+    .scale-ticks span:nth-child(2),
+    .scale-ticks span:nth-child(4),
+    .scale-ticks span:nth-child(5) {
       display: none;
     }
   }

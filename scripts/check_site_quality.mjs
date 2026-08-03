@@ -48,7 +48,7 @@ const ROUTES = [
   "/data/",
 ];
 const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
-const TEXT_ZOOM_ROUTES = ["/trend/", "/stations/", "/methods/", "/explore/", "/data/"];
+const TEXT_ZOOM_ROUTES = ["/", "/trend/", "/stations/", "/methods/", "/explore/", "/data/"];
 
 /**
  * 2026-08-03 — measured from the built route DOM, before these inventories
@@ -236,22 +236,80 @@ async function withRuntimeCleanup(resources, work) {
   }
 }
 
-function firstViewportProblems({ map, legend, viewport }) {
+function firstViewportProblems({
+  map,
+  mapSvg,
+  stationMarks,
+  legend,
+  scaleBar,
+  scaleTicks,
+  scaleSegments,
+  tickMarks,
+  viewport,
+  requireVerticalViewport = true,
+}) {
   const problems = [];
-  const visible = (rect) =>
-    rect && Number.isFinite(rect.width) && Number.isFinite(rect.height) &&
-    rect.width > 0 && rect.height > 0;
-  if (!visible(map)) problems.push("homepage map is missing or has no rendered area");
-  if (!visible(legend)) problems.push("homepage map legend is missing or has no rendered area");
-  for (const [name, rect] of [["map", map], ["legend", legend]]) {
-    if (!visible(rect)) continue;
-    if (rect.left < -1 || rect.right > viewport.width + 1) {
+  const finiteRect = (rect) =>
+    rect && ["top", "right", "bottom", "left", "width", "height"]
+      .every((edge) => Number.isFinite(rect[edge]));
+  const checkPart = (name, part, plural = false) => {
+    const be = plural ? "are" : "is";
+    const have = plural ? "have" : "has";
+    if (!part) {
+      problems.push(`homepage ${name} ${be} missing`);
+      return;
+    }
+    if (!finiteRect(part)) {
+      problems.push(`homepage ${name} ${have} non-finite geometry`);
+      return;
+    }
+    if (part.width <= 0 || part.height <= 0) {
+      problems.push(`homepage ${name} ${have} no rendered area`);
+      return;
+    }
+    if (part.visible === false) {
+      problems.push(`homepage ${name} ${be} not visibly rendered`);
+    }
+    if (part.clipped) {
+      problems.push(`homepage ${name} ${be} clipped by an ancestor`);
+    }
+    if (part.contained === false) {
+      const identifier = part.identifier ? ` (${JSON.stringify(part.identifier)})` : "";
+      const overflow = Number.isFinite(part.containerOverflow)
+        ? ` by ${part.containerOverflow.toFixed(3)}px` : "";
+      problems.push(`homepage ${name} leaves its container${identifier}${overflow}`);
+    }
+    if (part.fillsContainer === false) {
+      problems.push(`homepage ${name} no longer fills its container`);
+    }
+    if (part.anchored === false) {
+      problems.push(`homepage ${name} is displaced from its anchor`);
+    }
+    if (part.left < -1 || part.right > viewport.width + 1) {
       problems.push(`homepage ${name} leaves the horizontal viewport`);
     }
-    if (rect.top < -1 || rect.bottom > viewport.height + 1) {
+    if (requireVerticalViewport && (part.top < -1 || part.bottom > viewport.height + 1)) {
       problems.push(`homepage ${name} leaves the initial vertical viewport`);
     }
+  };
+  const checkParts = (plural, singular, parts) => {
+    if (!Array.isArray(parts) || parts.length === 0) {
+      problems.push(`homepage ${plural} are missing`);
+      return;
+    }
+    for (const part of parts) checkPart(singular, part);
+  };
+  if (!Number.isFinite(viewport?.width) || !Number.isFinite(viewport?.height)) {
+    return ["homepage viewport has non-finite geometry"];
   }
+  checkPart("map", map);
+  checkPart("map SVG", mapSvg);
+  checkParts("station marks", "station mark", stationMarks);
+  checkPart("map legend", legend);
+  checkPart("scale bar", scaleBar);
+  checkPart("scale ticks", scaleTicks, true);
+  checkParts("scale segments", "scale segment", scaleSegments);
+  checkParts("tick marks", "tick mark", tickMarks);
   return problems;
 }
 
@@ -335,18 +393,131 @@ async function lifecycleSelfTest() {
   console.log("site quality render wait self-test passed");
 
   const viewport = { width: 390, height: 844 };
-  const complete = firstViewportProblems({
-    map: { top: 150, right: 320, bottom: 740, left: 70, width: 250, height: 590 },
-    legend: { top: 750, right: 320, bottom: 810, left: 70, width: 250, height: 60 },
-    viewport,
+  const part = (rect, extra = {}) => ({
+    ...rect,
+    visible: true,
+    clipped: false,
+    contained: true,
+    fillsContainer: true,
+    anchored: true,
+    ...extra,
   });
-  const cropped = firstViewportProblems({
-    map: { top: 300, right: 320, bottom: 890, left: 70, width: 250, height: 590 },
-    legend: { top: 900, right: 320, bottom: 960, left: 70, width: 250, height: 60 },
+  const mapRect = { top: 150, right: 320, bottom: 740, left: 70, width: 250, height: 590 };
+  const legendRect = { top: 750, right: 320, bottom: 810, left: 70, width: 250, height: 60 };
+  const completeGeometry = {
+    map: part(mapRect),
+    mapSvg: part(mapRect),
+    stationMarks: [
+      part({ top: 300, right: 205, bottom: 309, left: 196, width: 9, height: 9 }),
+    ],
+    legend: part(legendRect),
+    scaleBar: part({ top: 770, right: 320, bottom: 780, left: 70, width: 250, height: 10 }),
+    scaleTicks: part({ top: 780, right: 320, bottom: 806, left: 70, width: 250, height: 26 }),
+    scaleSegments: [
+      part({ top: 770, right: 106, bottom: 780, left: 70, width: 36, height: 10 }),
+    ],
+    tickMarks: [
+      part({ top: 782, right: 115, bottom: 802, left: 90, width: 25, height: 20 }),
+    ],
     viewport,
-  });
-  if (complete.length || !cropped.some((item) => item.includes("vertical viewport"))) {
-    throw new Error("the homepage first-viewport predicate accepts cropped geometry");
+  };
+  const missedGeometryProblems = [];
+  const expectGeometryProblem = (name, geometry, expected) => {
+    const problems = firstViewportProblems(geometry);
+    if (!problems.some((item) => item.includes(expected))) {
+      missedGeometryProblems.push(name);
+    }
+  };
+  if (firstViewportProblems(completeGeometry).length) {
+    throw new Error("the homepage first-viewport predicate rejects complete geometry");
+  }
+  expectGeometryProblem(
+    "missing inner content",
+    { ...completeGeometry, mapSvg: null },
+    "map SVG is missing",
+  );
+  expectGeometryProblem(
+    "zero-area inner content",
+    {
+      ...completeGeometry,
+      scaleBar: part({ top: 770, right: 70, bottom: 780, left: 70, width: 0, height: 10 }),
+    },
+    "scale bar has no rendered area",
+  );
+  expectGeometryProblem(
+    "hidden inner content",
+    { ...completeGeometry, scaleTicks: part(completeGeometry.scaleTicks, { visible: false }) },
+    "scale ticks are not visibly rendered",
+  );
+  expectGeometryProblem(
+    "horizontal inner overflow",
+    {
+      ...completeGeometry,
+      stationMarks: [
+        part({ top: 300, right: 399, bottom: 309, left: 390, width: 9, height: 9 }),
+      ],
+    },
+    "station mark leaves the horizontal viewport",
+  );
+  expectGeometryProblem(
+    "malformed edge coordinates",
+    {
+      ...completeGeometry,
+      map: part({ ...mapRect, right: Number.NaN }),
+    },
+    "map has non-finite geometry",
+  );
+  expectGeometryProblem(
+    "internally clipped content",
+    { ...completeGeometry, mapSvg: part(mapRect, { clipped: true }) },
+    "map SVG is clipped by an ancestor",
+  );
+  expectGeometryProblem(
+    "transformed content outside its container",
+    { ...completeGeometry, scaleBar: part(completeGeometry.scaleBar, { contained: false }) },
+    "scale bar leaves its container",
+  );
+  expectGeometryProblem(
+    "transformed content shrunk inside its container",
+    { ...completeGeometry, scaleBar: part(completeGeometry.scaleBar, { fillsContainer: false }) },
+    "scale bar no longer fills its container",
+  );
+  expectGeometryProblem(
+    "station content displaced from its anchor",
+    {
+      ...completeGeometry,
+      stationMarks: [part(completeGeometry.stationMarks[0], { anchored: false })],
+    },
+    "station mark is displaced from its anchor",
+  );
+  expectGeometryProblem(
+    "transformed station content outside its container",
+    {
+      ...completeGeometry,
+      stationMarks: [part(completeGeometry.stationMarks[0], { contained: false })],
+    },
+    "station mark leaves its container",
+  );
+  expectGeometryProblem(
+    "transformed tick content outside its container",
+    {
+      ...completeGeometry,
+      tickMarks: [part(completeGeometry.tickMarks[0], { contained: false })],
+    },
+    "tick mark leaves its container",
+  );
+  expectGeometryProblem(
+    "vertical cropping",
+    {
+      ...completeGeometry,
+      map: part({ top: 300, right: 320, bottom: 890, left: 70, width: 250, height: 590 }),
+    },
+    "vertical viewport",
+  );
+  if (missedGeometryProblems.length) {
+    throw new Error(
+      `the homepage first-viewport predicate accepts ${missedGeometryProblems.join(", ")}`,
+    );
   }
   console.log("site quality homepage first-viewport self-test passed");
 
@@ -972,26 +1143,210 @@ async function main() {
       };
     })()`);
 
-  const homepageFirstViewport = async () => {
+  const homepageFirstViewport = async ({
+    requireVerticalViewport = true,
+    requireScrollZero = true,
+    geometryMutation = null,
+  } = {}) => {
     const geometry = await evaluate(`(() => {
-      const box = (selector) => {
-        const element = document.querySelector(selector);
-        if (!element) return null;
+      const rectOf = (element) => {
         const rect = element.getBoundingClientRect();
         return {
           top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
           width: rect.width, height: rect.height,
         };
       };
-      return {
-        map: box("[data-homepage-map]"),
-        legend: box("[data-homepage-map-legend]"),
+      const visiblyRendered = (element) => {
+        for (let node = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (
+            style.display === "none" || style.visibility === "hidden" ||
+            style.visibility === "collapse" || Number(style.opacity) === 0
+          ) return false;
+        }
+        return true;
+      };
+      const clippedByAncestor = (element) => {
+        const rect = element.getBoundingClientRect();
+        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          const style = getComputedStyle(ancestor);
+          const bounds = ancestor.getBoundingClientRect();
+          const clipsX = ["auto", "clip", "hidden", "scroll"].includes(style.overflowX);
+          const clipsY = ["auto", "clip", "hidden", "scroll"].includes(style.overflowY);
+          if (clipsX && (rect.left < bounds.left - 1 || rect.right > bounds.right + 1)) return true;
+          if (clipsY && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1)) return true;
+        }
+        return false;
+      };
+      const inside = (element, container, centreOnly = false) => {
+        if (!container) return true;
+        const rect = element.getBoundingClientRect();
+        const bounds = container.getBoundingClientRect();
+        if (centreOnly) {
+          const x = (rect.left + rect.right) / 2;
+          const y = (rect.top + rect.bottom) / 2;
+          return x >= bounds.left - 1 && x <= bounds.right + 1 &&
+            y >= bounds.top - 1 && y <= bounds.bottom + 1;
+        }
+        return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1 &&
+          rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1;
+      };
+      const containerOverflow = (element, container) => {
+        if (!container) return 0;
+        const rect = element.getBoundingClientRect();
+        const bounds = container.getBoundingClientRect();
+        return Math.max(
+          bounds.left - rect.left,
+          rect.right - bounds.right,
+          bounds.top - rect.top,
+          rect.bottom - bounds.bottom,
+          0,
+        );
+      };
+      const fills = (element, container, axis) => {
+        if (!container || !axis) return true;
+        const rect = element.getBoundingClientRect();
+        const bounds = container.getBoundingClientRect();
+        const inline = Math.abs(rect.left - bounds.left) <= 1 &&
+          Math.abs(rect.right - bounds.right) <= 1;
+        const block = Math.abs(rect.top - bounds.top) <= 1 &&
+          Math.abs(rect.bottom - bounds.bottom) <= 1;
+        return inline && (axis === "inline" || block);
+      };
+      const inspect = (element, container = null, centreOnly = false, fillAxis = null) => element ? {
+        ...rectOf(element),
+        identifier: element.getAttribute("data-station") ?? element.textContent.trim() ?? null,
+        visible: visiblyRendered(element),
+        clipped: clippedByAncestor(element),
+        contained: inside(element, container, centreOnly),
+        containerOverflow: containerOverflow(element, container),
+        fillsContainer: fills(element, container, fillAxis),
+      } : null;
+      const inspectAll = (selector, container = null, centreOnly = false) =>
+        [...document.querySelectorAll(selector)].map((element) =>
+          inspect(element, container, centreOnly));
+      const offset = (value, size) => value.endsWith("%")
+        ? parseFloat(value) / 100 * size : parseFloat(value);
+      const anchored = (element, container, axes) => {
+        const rect = element.getBoundingClientRect();
+        const bounds = container.getBoundingClientRect();
+        const expectedX = bounds.left + offset(element.style.left || getComputedStyle(element).left, bounds.width);
+        const expectedY = bounds.top + offset(element.style.top || getComputedStyle(element).top, bounds.height);
+        const actualX = (rect.left + rect.right) / 2;
+        const actualY = (rect.top + rect.bottom) / 2;
+        return Number.isFinite(expectedX) && Number.isFinite(expectedY) &&
+          Math.abs(actualX - expectedX) <= 1 &&
+          (axes === "inline" || Math.abs(actualY - expectedY) <= 1);
+      };
+      const inspectAnchoredAll = (selector, container, axes, centreOnly = false) =>
+        [...document.querySelectorAll(selector)].map((element) => ({
+          ...inspect(element, container, centreOnly),
+          anchored: anchored(element, container, axes),
+        }));
+      const map = document.querySelector("[data-homepage-map]");
+      const legend = document.querySelector("[data-homepage-map-legend]");
+      const scaleBar = legend?.querySelector(".scale-bar") ?? null;
+      const scaleTicks = legend?.querySelector(".scale-ticks") ?? null;
+      const geometryMutation = ${JSON.stringify(geometryMutation)};
+      const mutated = geometryMutation
+        ? document.querySelector(geometryMutation.selector) : null;
+      const originalStyle = mutated?.getAttribute("style") ?? null;
+      if (mutated) {
+        mutated.style.setProperty(geometryMutation.property, geometryMutation.value);
+      }
+      const result = {
+        map: inspect(map),
+        mapSvg: inspect(map?.querySelector(":scope > svg") ?? null, map, false, "both"),
+        stationMarks: inspectAnchoredAll("[data-homepage-map] .dot", map, "both"),
+        legend: inspect(legend),
+        scaleBar: inspect(scaleBar, legend, false, "inline"),
+        scaleTicks: inspect(scaleTicks, legend, false, "inline"),
+        scaleSegments: inspectAll("[data-homepage-map-legend] .scale-bar > span", scaleBar),
+        tickMarks: inspectAnchoredAll(
+          "[data-homepage-map-legend] .scale-ticks > span",
+          scaleTicks,
+          "inline",
+        ).filter((tick) => tick.visible),
         viewport: { width: innerWidth, height: innerHeight },
         scrollY,
       };
+      if (mutated) {
+        if (originalStyle === null) mutated.removeAttribute("style");
+        else mutated.setAttribute("style", originalStyle);
+      }
+      return result;
     })()`);
-    if (geometry?.scrollY !== 0) return ["homepage did not start at scroll position zero"];
-    return firstViewportProblems(geometry);
+    if (requireScrollZero && geometry?.scrollY !== 0) {
+      return ["homepage did not start at scroll position zero"];
+    }
+    return firstViewportProblems({ ...geometry, requireVerticalViewport });
+  };
+
+  const homepageStructureProblems = async ({ enhanced }) => {
+    const structure = await evaluate(`(() => {
+      const map = document.querySelector("[data-homepage-map-frame]");
+      const svg = map?.querySelector("svg[role='img']") ?? null;
+      const descriptionIds = (svg?.getAttribute("aria-describedby") ?? "")
+        .split(/\\s+/).filter(Boolean);
+      const description = descriptionIds.length === 1
+        ? document.getElementById(descriptionIds[0]) : null;
+      const descriptionStyle = description ? getComputedStyle(description) : null;
+      const titles = [...(svg?.querySelectorAll(".county > title") ?? [])]
+        .map((title) => title.textContent.trim()).filter(Boolean).sort();
+      const describedNames = [...(description?.querySelectorAll("[data-homepage-map-county]") ?? [])]
+        .map((name) => name.textContent.trim()).filter(Boolean).sort();
+      const overlays = [...(map?.querySelectorAll(".county-label") ?? [])];
+      const after = document.querySelector(".hero-after");
+      const notes = document.querySelector(".map-notes");
+      const mountId = map?.getAttribute("data-figure-tools-mount") ?? "";
+      const mounts = mountId ? [...document.querySelectorAll("#" + CSS.escape(mountId))] : [];
+      const mount = mounts[0] ?? null;
+      const tools = mount?.querySelector(":scope > .fig-tools") ?? null;
+      const follows = (before, after) => Boolean(
+        before && after && (before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+      return {
+        titleNames: titles,
+        describedNames,
+        descriptionIds,
+        descriptionExposed: Boolean(
+          description && descriptionStyle && descriptionStyle.display !== "none" &&
+          descriptionStyle.visibility !== "hidden" && description.getAttribute("aria-hidden") !== "true"
+        ),
+        visualLabelsHiddenFromAccessibility: Boolean(
+          overlays.length && overlays.every((label) => label.getAttribute("aria-hidden") === "true")
+        ),
+        mountCount: mounts.length,
+        toolCount: tools?.querySelectorAll(":scope > button").length ?? 0,
+        toolsOutsideMap: Boolean(tools && map && !map.contains(tools)),
+        enhancedOrder: Boolean(
+          follows(map, after) && follows(after, notes) && follows(notes, tools)
+        ),
+      };
+    })()`);
+    const problems = [];
+    if (!structure?.titleNames?.length) {
+      problems.push("homepage county source names are missing");
+    }
+    if (
+      structure?.descriptionIds?.length !== 1 || !structure?.descriptionExposed ||
+      JSON.stringify(structure?.describedNames) !== JSON.stringify(structure?.titleNames)
+    ) {
+      problems.push("homepage county names are absent from the accessible map description");
+    }
+    if (!structure?.visualLabelsHiddenFromAccessibility) {
+      problems.push("homepage visual county labels are exposed as duplicate accessible names");
+    }
+    if (
+      enhanced &&
+      (
+        structure?.mountCount !== 1 || structure?.toolCount !== 2 ||
+        !structure?.toolsOutsideMap || !structure?.enhancedOrder
+      )
+    ) {
+      problems.push("homepage enhanced figure tools precede the intended post-map content");
+    }
+    return problems;
   };
 
   const failures = [];
@@ -1518,6 +1873,11 @@ async function main() {
     }
     for (const problem of await homepageFirstViewport()) {
       failures.push(`/ @${width}x${height} no-JavaScript light: ${problem}`);
+    }
+    if (width === 390) {
+      for (const problem of await homepageStructureProblems({ enhanced: false })) {
+        failures.push(`/ @${width}x${height} no-JavaScript light: ${problem}`);
+      }
     }
   }
   await evaluate('localStorage.setItem("twair-theme", "dark")');
@@ -2059,23 +2419,57 @@ async function main() {
       for (const problem of await homepageFirstViewport()) {
         failures.push(`/ @${width}x${height} ${theme}: ${problem}`);
       }
+      if (width === 390 && theme === "light") {
+        for (const problem of await homepageStructureProblems({ enhanced: true })) {
+          failures.push(`/ @${width}x${height} ${theme}: ${problem}`);
+        }
+        const geometryMutations = [
+          {
+            name: "scaled station mark",
+            selector: "[data-homepage-map] .dot",
+            property: "scale",
+            value: "50",
+            expected: "station mark leaves its container",
+          },
+          {
+            name: "vertically translated tick mark",
+            selector: "[data-homepage-map-legend] .scale-ticks > span",
+            property: "transform",
+            value: "translate(-50%, 1000px)",
+            expected: "tick mark leaves its container",
+          },
+        ];
+        for (const mutation of geometryMutations) {
+          const problems = await homepageFirstViewport({
+            requireVerticalViewport: false,
+            requireScrollZero: false,
+            geometryMutation: mutation,
+          });
+          if (!problems.some((problem) => problem.includes(mutation.expected))) {
+            failures.push(
+              `/ @${width}x${height} ${theme}: homepage geometry accepts ${mutation.name}`,
+            );
+          }
+        }
+      }
     }
   }
 
-  await send("Emulation.setDeviceMetricsOverride", {
-    width: 1440,
-    height: 900,
-    deviceScaleFactor: 1,
-    mobile: false,
-  });
   await send("Emulation.setEmulatedMedia", { media: "", features: [] });
   await evaluate('localStorage.setItem("twair-theme", "light")');
   console.log("site-quality stage: 200% text zoom");
-  for (const route of TEXT_ZOOM_ROUTES) {
+  const checkTextZoom = async (route, width, height, suffix = "") => {
+    const state = `${route} @${width}x${height} 200% text${suffix}`;
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
     await send("Page.navigate", { url: `${origin}${route}` });
     if (!(await settled(evaluate))) {
-      failures.push(`${route} @200% text: page never finished styling`);
-      continue;
+      failures.push(`${state}: page never finished styling`);
+      return;
     }
     await evaluate(`(() => {
       const base = parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -2101,14 +2495,91 @@ async function main() {
         return {
           overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           clippedLabels,
+          homepage: ${JSON.stringify(route === "/")} ? (() => {
+            const map = document.querySelector("[data-homepage-map]");
+            const frame = document.querySelector("[data-homepage-map-frame]");
+            const labels = [...document.querySelectorAll(".county-label")];
+            const visibleLabels = labels.filter(visible);
+            const labelFont = labels.length ? parseFloat(getComputedStyle(labels[0]).fontSize) : 0;
+            const safeLabelWidth = 260 * (labelFont / 18);
+            const boundaryProbe = frame?.cloneNode(true) ?? null;
+            let labelsHiddenAtSafeBoundary = false;
+            let labelsVisibleAboveSafeBoundary = false;
+            if (boundaryProbe && safeLabelWidth > 0) {
+              boundaryProbe.style.position = "fixed";
+              boundaryProbe.style.left = "-10000px";
+              boundaryProbe.style.top = "0";
+              boundaryProbe.style.width = (safeLabelWidth - 1) + "px";
+              document.body.append(boundaryProbe);
+              const probeLabels = [...boundaryProbe.querySelectorAll(".county-label")];
+              labelsHiddenAtSafeBoundary = Boolean(
+                probeLabels.length &&
+                probeLabels.every((label) => getComputedStyle(label).display === "none")
+              );
+              boundaryProbe.style.width = (safeLabelWidth * 1.2) + "px";
+              labelsVisibleAboveSafeBoundary = probeLabels.some(
+                (label) => getComputedStyle(label).display !== "none"
+              );
+              boundaryProbe.remove();
+            }
+            const tickRects = [...document.querySelectorAll("[data-homepage-map-legend] .scale-ticks > span")]
+              .filter(visible)
+              .map((tick) => tick.getBoundingClientRect())
+              .sort((a, b) => a.left - b.left);
+            const tickOverlaps = tickRects.slice(1).filter((rect, index) => {
+              const previous = tickRects[index];
+              const overlapX = Math.min(previous.right, rect.right) - Math.max(previous.left, rect.left);
+              const overlapY = Math.min(previous.bottom, rect.bottom) - Math.max(previous.top, rect.top);
+              return overlapX > 1 && overlapY > 1;
+            }).length;
+            return {
+              mapWidth: map?.getBoundingClientRect().width ?? 0,
+              labelFont,
+              visibleLabels: visibleLabels.length,
+              tickOverlaps,
+              labelsHiddenAtSafeBoundary,
+              labelsVisibleAboveSafeBoundary,
+            };
+          })() : null,
         };
     })()`);
     totals.zoomRoutes += 1;
     if (zoomed?.overflow > 0) {
-      failures.push(`${route} @200% text: document scrolls sideways by ${zoomed.overflow}px`);
+      failures.push(`${state}: document scrolls sideways by ${zoomed.overflow}px`);
     }
     for (const label of zoomed?.clippedLabels ?? []) {
-      failures.push(`${route} @200% text: clipped label ${JSON.stringify(label)}`);
+      failures.push(`${state}: clipped label ${JSON.stringify(label)}`);
+    }
+    if (route === "/") {
+      for (const problem of await homepageFirstViewport({
+        requireVerticalViewport: false,
+        requireScrollZero: false,
+      })) {
+        failures.push(`${state}: ${problem}`);
+      }
+      for (const problem of await homepageStructureProblems({ enhanced: true })) {
+        failures.push(`${state}: ${problem}`);
+      }
+      const safeLabelWidth = 260 * ((zoomed?.homepage?.labelFont ?? 0) / 18);
+      if (
+        zoomed?.homepage?.visibleLabels > 0 &&
+        zoomed?.homepage?.mapWidth + 1 < safeLabelWidth
+      ) {
+        failures.push(
+          `${state}: county labels remain visible below their effective safe map width`,
+        );
+      }
+      if (zoomed?.homepage?.tickOverlaps > 0) {
+        failures.push(
+          `${state}: ${zoomed.homepage.tickOverlaps} adjacent legend tick pairs overlap`,
+        );
+      }
+      if (!zoomed?.homepage?.labelsHiddenAtSafeBoundary) {
+        failures.push(`${state}: county labels remain visible at their measured safe boundary`);
+      }
+      if (!zoomed?.homepage?.labelsVisibleAboveSafeBoundary) {
+        failures.push(`${state}: county labels remain hidden well above their measured safe boundary`);
+      }
     }
     const zoomFocus = await focusVisibleStates([
       { name: "zoomed control", selector: "button, select, summary", required: true },
@@ -2116,16 +2587,22 @@ async function main() {
     for (const state of zoomFocus?.[0]?.states ?? []) {
       if (!state.active || !state.focusVisible || state.outlineStyle === "none" || state.outlineWidth < 2) {
         failures.push(
-          `${route} @200% text: ${JSON.stringify(state.label)} lost its focus outline`,
+          `${route} @${width}x${height} 200% text${suffix}: ` +
+            `${JSON.stringify(state.label)} lost its focus outline`,
         );
       }
       if (!state.inViewport) {
         failures.push(
-          `${route} @200% text: focused ${JSON.stringify(state.label)} is clipped outside the viewport`,
+          `${route} @${width}x${height} 200% text${suffix}: focused ` +
+            `${JSON.stringify(state.label)} is clipped outside the viewport`,
         );
       }
     }
+  };
+  for (const route of TEXT_ZOOM_ROUTES) {
+    await checkTextZoom(route, 1440, 900);
   }
+  await checkTextZoom("/", 900, 500, " short reflow");
 
   if (totals.smallestAt375 < MIN_FONT_PX) {
     failures.push(`smallest type at 375px is ${totals.smallestAt375}px (floor ${MIN_FONT_PX})`);

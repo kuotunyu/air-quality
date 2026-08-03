@@ -91,7 +91,15 @@
       png.addEventListener("click", () => save(root, png, index));
 
       tools.append(bigger, png);
-      root.append(tools);
+      /*
+       * 2026-08-03 — the entry map's interpretation and provenance now precede
+       * its enhanced controls in the same order as the static page. The map
+       * names one external mount; ordinary figures still append their toolbar.
+       */
+      const mount = root.dataset.figureToolsMount
+        ? document.getElementById(root.dataset.figureToolsMount)
+        : root;
+      (mount ?? root).append(tools);
     }
 
     function control(label: string, name: string): HTMLButtonElement {
@@ -304,6 +312,8 @@
        * no other element's position, so the copy lays out identically to what
        * is on the screen.
        */
+      /* 2026-08-03 — the entry map's toolbar has an external reading-order
+         mount, so its root frame already excludes that toolbar from the image. */
       const tools = root.querySelector<HTMLElement>(".fig-tools");
       /* 2026-08-03 — the reserved readout dock is transient too. Its outer
          block size must leave the export frame with the same tight ending as
