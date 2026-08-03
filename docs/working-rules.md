@@ -870,6 +870,18 @@ method choice, existing comments and docstrings, or prose that makes a claim.
 **Always verify delegated work yourself** — run the checks, read the diff, and
 grep for `fill_null`, `drop_nulls` and `interpolate` before accepting it.
 
+## Internal agent work stays local
+
+Design specs, implementation plans, mockups, SDD reports and other agent
+working artefacts are useful for resuming work on this machine, but they are
+not public project documentation. Keep them under gitignored
+`docs/superpowers/` or `.superpowers/` and never stage either path.
+
+Tracked documentation records the durable result instead: what was decided,
+what was measured, what remains blocked and which public behaviour changed.
+This keeps GitHub focused on the project rather than the private mechanics used
+to develop it, without sacrificing continuity between sessions.
+
 ## Handoff — the docs ship *with* the commit, not at the end of the session
 
 This used to say "run this before ending a work session" and it failed, for a

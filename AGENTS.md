@@ -202,6 +202,16 @@ real defect. "To make mypy pass" is not a reason.
 
 ---
 
+## Internal working artifacts stay local
+
+Design specs, implementation plans, mockups, review reports and agent scratch
+belong under `docs/superpowers/` or `.superpowers/`. Both paths are gitignored.
+**Never stage or commit anything under either path.** Durable decisions and
+measured evidence go into the tracked `HANDOFF.md`, `PROGRESS.md` and relevant
+public documentation; internal process artefacts do not go to GitHub.
+
+---
+
 ## Conventions
 
 **Python 3.12, managed by `uv`.** Run things with `uv run <cmd>`, never bare

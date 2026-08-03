@@ -79,3 +79,9 @@ logs/
 # `astro check`, which was counting them as source files (57 rather than 46).
 web/_*.mjs
 web/_*.js
+
+# --- internal agent working files (local only, never published) ---
+# Design specs, implementation plans, mockups and review scratch are useful for
+# resuming work on this machine, but they are not part of the public project.
+/.superpowers/
+/docs/superpowers/
