@@ -1,0 +1,12 @@
+"version": 1
+"normalization": "NFKC-casefold-alphanumeric-v1"
+"protected_identities":
+  - "role": "project_supervisor"
+    "normalized_length": 3
+    "sha256": "98ad6df4aeed4837ce6a3e5a52d18989b7dde892e84bfe0a569c0c90578ba5c0"
+  - "role": "project_author"
+    "normalized_length": 3
+    "sha256": "9bda4792a30fe05727daf3da483d7c03ce5286e47bc192788422f59f010228ed"
+  - "role": "project_author"
+    "normalized_length": 3
+    "sha256": "a8e3e5ead3639a73b641ce6bcd90bba9c9c939bf57339f97dce863c3094227b8"
