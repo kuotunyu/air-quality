@@ -318,6 +318,55 @@ function firstViewportProblems({
   return problems;
 }
 
+function atlasLayoutProblems({ mode, atlas, opening, map, left, right, routes }) {
+  const problems = [];
+  const regions = { atlas, opening, map, left, right, routes };
+  const finiteRect = (rect) =>
+    rect && ["top", "right", "bottom", "left", "width", "height"]
+      .every((edge) => Number.isFinite(rect[edge]));
+  for (const [name, rect] of Object.entries(regions)) {
+    if (!rect) problems.push(`homepage atlas ${name} is missing`);
+    else if (!finiteRect(rect)) problems.push(`homepage atlas ${name} has non-finite geometry`);
+    else if (rect.width <= 0 || rect.height <= 0) {
+      problems.push(`homepage atlas ${name} has no rendered area`);
+    }
+  }
+  if (problems.length) return problems;
+  if (mode !== "wide" && mode !== "stacked") {
+    return ["homepage atlas mode is missing"];
+  }
+
+  const overlapY = (a, b) => Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  if (opening.bottom > Math.min(left.top, map.top, right.top) + 1) {
+    problems.push("homepage atlas opening does not precede the atlas row");
+  }
+
+  if (mode === "wide") {
+    const atlasCentre = (atlas.left + atlas.right) / 2;
+    const mapCentre = (map.left + map.right) / 2;
+    if (Math.abs(atlasCentre - mapCentre) > 2) {
+      problems.push("homepage atlas map is not horizontally centred");
+    }
+    if (left.right > map.left + 1 || map.right > right.left + 1) {
+      problems.push("homepage atlas annotations overlap the map");
+    }
+    if (overlapY(left, map) < Math.min(left.height, map.height) / 2) {
+      problems.push("homepage atlas left annotation leaves the map band");
+    }
+    if (overlapY(right, map) < Math.min(right.height, map.height) / 2) {
+      problems.push("homepage atlas right annotation leaves the map band");
+    }
+    if (routes.top < Math.max(left.bottom, map.bottom, right.bottom) - 1) {
+      problems.push("homepage atlas routes interrupt the atlas row");
+    }
+  } else if (
+    map.bottom > left.top + 1 || left.bottom > right.top + 1 || right.bottom > routes.top + 1
+  ) {
+    problems.push("homepage atlas stacked reading order is broken");
+  }
+  return problems;
+}
+
 async function lifecycleSelfTest() {
   if (
     CHROME_TEST_FLAGS.length !== 4 ||
@@ -525,6 +574,88 @@ async function lifecycleSelfTest() {
     );
   }
   console.log("site quality homepage first-viewport self-test passed");
+
+  const atlasPart = ({ top, right, bottom, left }) => ({
+    top,
+    right,
+    bottom,
+    left,
+    width: right - left,
+    height: bottom - top,
+  });
+  const completeWideAtlas = {
+    mode: "wide",
+    atlas: atlasPart({ top: 20, right: 1160, bottom: 900, left: 40 }),
+    opening: atlasPart({ top: 20, right: 1160, bottom: 140, left: 40 }),
+    map: atlasPart({ top: 180, right: 740, bottom: 720, left: 460 }),
+    left: atlasPart({ top: 220, right: 420, bottom: 650, left: 40 }),
+    right: atlasPart({ top: 220, right: 1160, bottom: 600, left: 780 }),
+    routes: atlasPart({ top: 760, right: 1160, bottom: 880, left: 40 }),
+  };
+  const completeStackedAtlas = {
+    mode: "stacked",
+    atlas: atlasPart({ top: 20, right: 360, bottom: 900, left: 20 }),
+    opening: atlasPart({ top: 20, right: 360, bottom: 100, left: 20 }),
+    map: atlasPart({ top: 120, right: 320, bottom: 450, left: 60 }),
+    left: atlasPart({ top: 470, right: 360, bottom: 600, left: 20 }),
+    right: atlasPart({ top: 620, right: 360, bottom: 720, left: 20 }),
+    routes: atlasPart({ top: 740, right: 360, bottom: 880, left: 20 }),
+  };
+  if (
+    atlasLayoutProblems(completeWideAtlas).length ||
+    atlasLayoutProblems(completeStackedAtlas).length
+  ) {
+    throw new Error("the homepage atlas predicate rejects complete geometry");
+  }
+  const missedAtlasProblems = [];
+  const expectAtlasProblem = (name, geometry, expected) => {
+    const problems = atlasLayoutProblems(geometry);
+    if (!problems.some((item) => item.includes(expected))) missedAtlasProblems.push(name);
+  };
+  expectAtlasProblem(
+    "off-centre map",
+    {
+      ...completeWideAtlas,
+      map: atlasPart({ top: 180, right: 780, bottom: 720, left: 500 }),
+    },
+    "map is not horizontally centred",
+  );
+  expectAtlasProblem(
+    "left annotation below the map",
+    {
+      ...completeWideAtlas,
+      left: atlasPart({ top: 730, right: 420, bottom: 850, left: 40 }),
+    },
+    "left annotation leaves the map band",
+  );
+  expectAtlasProblem(
+    "right annotation overlapping the map",
+    {
+      ...completeWideAtlas,
+      right: atlasPart({ top: 220, right: 1160, bottom: 600, left: 700 }),
+    },
+    "annotations overlap the map",
+  );
+  expectAtlasProblem(
+    "routes interrupting the atlas row",
+    {
+      ...completeWideAtlas,
+      routes: atlasPart({ top: 600, right: 1160, bottom: 720, left: 40 }),
+    },
+    "routes interrupt the atlas row",
+  );
+  expectAtlasProblem(
+    "stacked figures preceding the map",
+    {
+      ...completeStackedAtlas,
+      left: atlasPart({ top: 400, right: 360, bottom: 520, left: 20 }),
+    },
+    "stacked reading order is broken",
+  );
+  if (missedAtlasProblems.length) {
+    throw new Error(`the homepage atlas predicate accepts ${missedAtlasProblems.join(", ")}`);
+  }
+  console.log("site quality homepage atlas self-test passed");
 
   const restartOrder = [];
   const replacement = await replaceBrowser(
