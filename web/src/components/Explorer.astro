@@ -210,8 +210,7 @@ const candidates = pollutantIndex.map((p) => ({
 />
 
 <script>
-  import { columnKind } from "../lib/duck";
-  import type { Candidate } from "../lib/duck";
+  import type { Candidate, ColumnKind } from "../lib/duck";
 
   const runButton = document.getElementById("run") as HTMLButtonElement;
   const sqlBox = document.getElementById("sql") as HTMLTextAreaElement;
@@ -288,7 +287,8 @@ const candidates = pollutantIndex.map((p) => ({
   // who never presses the button never downloads any of it.
   const duck = () => import("../lib/duck");
 
-  type Prepared = { db: Awaited<ReturnType<Awaited<ReturnType<typeof duck>>["getDb"]>> };
+  type DuckModule = Awaited<ReturnType<typeof duck>>;
+  type Prepared = { db: Awaited<ReturnType<DuckModule["getDb"]>> };
   let attached: Promise<Prepared> | null = null;
 
   function prepare(): Promise<Prepared> {
@@ -347,7 +347,8 @@ const candidates = pollutantIndex.map((p) => ({
     resultEl.innerHTML = "";
     try {
       const { db } = await prepare();
-      const { runQuery } = await duck();
+      const duckModule = await duck();
+      const { runQuery } = duckModule;
       setStatus("查詢中", true);
       const { columns, kinds, rows, total, truncated, ms } = await runQuery(db, sqlBox.value);
       // Say the real count. A cap that reports the capped number as if it were
@@ -357,7 +358,7 @@ const candidates = pollutantIndex.map((p) => ({
           ? `顯示前 ${rows.length} 列，共 ${total.toLocaleString("en-US")} 列 · ${ms.toFixed(0)} ms`
           : `${rows.length} 列 · ${ms.toFixed(0)} ms`,
       );
-      shown = { columns, kinds, rows, total, truncated };
+      shown = { columns, kinds, rows, total, truncated, columnKind: duckModule.columnKind };
       paint();
       reveal();
     } catch (error) {
@@ -400,6 +401,7 @@ const candidates = pollutantIndex.map((p) => ({
     rows: unknown[][];
     total: number;
     truncated: boolean;
+    columnKind: DuckModule["columnKind"];
   } | null = null;
   let laidOutAt = { width: 0, chunks: 0 };
 
@@ -452,7 +454,7 @@ const candidates = pollutantIndex.map((p) => ({
 
   function paint() {
     if (!shown) return;
-    const { columns, kinds, rows, total, truncated } = shown;
+    const { columns, kinds, rows, total, truncated, columnKind } = shown;
     resultEl.replaceChildren();
 
     if (rows.length === 0) {
@@ -469,7 +471,7 @@ const candidates = pollutantIndex.map((p) => ({
       return;
     }
 
-    const shape = shapeOf(columns, kinds, rows);
+    const shape = shapeOf(columns, kinds, rows, columnKind);
 
     // Lay the whole thing out once, unchunked. That settles two numbers that
     // cannot be guessed: how wide the table wants to be, and how wide each
@@ -602,7 +604,7 @@ const candidates = pollutantIndex.map((p) => ({
 
   /** Everything about a column that is decided by looking at the whole of it. */
   interface Shape {
-    kind: ReturnType<typeof columnKind>[];
+    kind: ColumnKind[];
     cls: string[];
     decimals: number[];
     group: boolean[];
@@ -617,12 +619,17 @@ const candidates = pollutantIndex.map((p) => ({
    * would stop lining up with each other. A column's shape belongs to the
    * column, not to whichever piece of it is being drawn.
    */
-  function shapeOf(columns: string[], kinds: string[], rows: unknown[][]): Shape {
+  function shapeOf(
+    columns: string[],
+    kinds: string[],
+    rows: unknown[][],
+    classify: DuckModule["columnKind"],
+  ): Shape {
     // Alignment comes from the column's declared type, not from sniffing the
     // first value. Sniffing is what left the header of every numeric column at
     // the left edge while its values sat at the right — measured at 106, 272 and
     // 125px of divergence on a three-column result.
-    const kind = columns.map((_, i) => columnKind(kinds[i] ?? ""));
+    const kind = columns.map((_, i) => classify(kinds[i] ?? ""));
     const cls = kind.map((k) => (k === "number" ? "num" : k === "date" ? "iso" : ""));
 
     /*
