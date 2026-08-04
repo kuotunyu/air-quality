@@ -24,6 +24,9 @@ TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "ty
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
 START_HERE_DATA_DESTINATIONS = {"/explore/", "/data/"}
+EXPECTED_THESIS_FRAGMENTS = {
+    "space": ("那個分層是不是足夠的空間控制",),
+}
 EXPECTED_ANALYTICAL_FIGURES = {
     "trend": (
         ("1.1", "固定測站後，全台 PM2.5 的下降仍然成立嗎？"),
@@ -438,7 +441,7 @@ class StructureParser(HTMLParser):
             self.errors.append(f"unclosed elements: {unclosed}")
 
 
-def failures_for_text(html: str) -> list[str]:
+def failures_for_text(html: str, required_thesis_fragments: tuple[str, ...] = ()) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
     parser.close()
@@ -488,8 +491,12 @@ def failures_for_text(html: str) -> list[str]:
             failures.append("visible .chapter-thesis is not inside header.chapter-intro")
         elif intro is not None and thesis.parent is not intro:
             failures.append("visible .chapter-thesis is not a direct child of header.chapter-intro")
-        if not thesis.rendered_text():
+        thesis_text = thesis.rendered_text()
+        if not thesis_text:
             failures.append("visible .chapter-thesis has no rendered text")
+        for fragment in required_thesis_fragments:
+            if fragment not in thesis_text:
+                failures.append(f"chapter thesis is missing required finding fragment: {fragment}")
         if h1 is not None and (h1.end_order is None or h1.end_order >= thesis.start_order):
             failures.append("chapter thesis must follow chapter <h1>")
 
@@ -518,8 +525,8 @@ def failures_for_text(html: str) -> list[str]:
     return failures
 
 
-def failures_for(page: pathlib.Path) -> list[str]:
-    return failures_for_text(page.read_text(encoding="utf-8"))
+def failures_for(page: pathlib.Path, required_thesis_fragments: tuple[str, ...] = ()) -> list[str]:
+    return failures_for_text(page.read_text(encoding="utf-8"), required_thesis_fragments)
 
 
 def _nearest_ancestor_with_class(element: Element, class_name: str) -> Element | None:
@@ -905,6 +912,14 @@ def _run_preflight() -> None:
     valid_failures = failures_for_text(valid_html)
     if valid_failures:
         raise RuntimeError(f"HTML preflight rejected the valid control: {valid_failures}")
+    required_fragment_failures = failures_for_text(valid_html, ("Correction",))
+    if required_fragment_failures != [
+        "chapter thesis is missing required finding fragment: Correction"
+    ]:
+        raise RuntimeError(
+            "HTML preflight did not isolate a missing required thesis finding: "
+            f"{required_fragment_failures}"
+        )
 
     mutations = {
         "missing thesis": (
@@ -1482,7 +1497,7 @@ def main(argv: list[str]) -> int:
         if not page.exists():
             failures = [f"missing {page.relative_to(ROOT).as_posix()}"]
         else:
-            failures = failures_for(page)
+            failures = failures_for(page, EXPECTED_THESIS_FRAGMENTS.get(slug, ()))
             failures.extend(
                 analytical_figure_failures_for(page, EXPECTED_ANALYTICAL_FIGURES.get(slug))
             )
