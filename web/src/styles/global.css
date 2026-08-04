@@ -1546,6 +1546,7 @@ main > section:first-child {
 
   body .shell .column .handle .handle-t {
     min-width: 0;
+    max-inline-size: 5em;
     flex: 1 1 auto;
   }
 }

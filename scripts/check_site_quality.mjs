@@ -471,13 +471,16 @@ function chapterOpeningProblems(state) {
   return problems;
 }
 
-function mobileHandleTitleProblems(state) {
+function mobileHandleTitleProblems(state, expectedTitle = "") {
   const problems = [];
   const title = state?.title;
   const number = state?.number;
   if (!state || !title || !number) return ["mobile handle current chapter is missing"];
   if (!number.visible || !number.text) problems.push("mobile handle chapter number is not readable");
   if (!title.visible || !title.text) problems.push("mobile handle current title is not readable");
+  if (expectedTitle && title.text !== expectedTitle) {
+    problems.push("mobile handle does not name the full chapter");
+  }
   if (
     !Number.isFinite(title.width) || !Number.isFinite(title.fontSize) ||
     title.width <= 0 || title.fontSize <= 0
@@ -902,7 +905,7 @@ async function lifecycleSelfTest() {
     number: { visible: true, text: "第八章" },
     title: {
       visible: true,
-      text: "方法學對照",
+      text: "方法選擇的量化代價",
       width: 48,
       fontSize: 20,
       clientWidth: 48,
@@ -913,15 +916,24 @@ async function lifecycleSelfTest() {
     },
   };
   const missedMobileHandleProblems = [];
-  const expectMobileHandleProblem = (name, state, expected) => {
-    const problems = mobileHandleTitleProblems(state);
+  const expectMobileHandleProblem = (name, state, expected, expectedTitle = "") => {
+    const problems = mobileHandleTitleProblems(state, expectedTitle);
     if (!problems.some((problem) => problem.includes(expected))) {
       missedMobileHandleProblems.push(name);
     }
   };
-  if (mobileHandleTitleProblems(completeMobileHandleTitle).length) {
+  if (mobileHandleTitleProblems(completeMobileHandleTitle, "方法選擇的量化代價").length) {
     throw new Error("the mobile-handle predicate rejects a readable ellipsis");
   }
+  expectMobileHandleProblem(
+    "short navigation label",
+    {
+      ...completeMobileHandleTitle,
+      title: { ...completeMobileHandleTitle.title, text: "方法學對照" },
+    },
+    "does not name the full chapter",
+    "方法選擇的量化代價",
+  );
   expectMobileHandleProblem(
     "less-than-two-em title box",
     {
@@ -1522,6 +1534,7 @@ const PROBE = `(() => {
       railRect.left < innerWidth - 1 && railRect.bottom > 1 && railRect.top < innerHeight - 1,
   );
   out.mainWidth = main ? +main.getBoundingClientRect().width.toFixed(1) : 0;
+  out.primaryHeadingText = main?.querySelector("h1")?.textContent.trim() ?? "";
   out.handleVisible = Boolean(
     handle && handleStyle?.display !== "none" && handleStyle?.visibility !== "hidden" &&
       handle.getClientRects().length,
@@ -3054,7 +3067,12 @@ async function main() {
           failures.push(`${route} @${width} ${theme}: persistent rail is visible on mobile`);
         }
         if (width === 375 && route === "/methods/") {
-          for (const problem of mobileHandleTitleProblems(r.mobileHandleTitle)) {
+          for (
+            const problem of mobileHandleTitleProblems(
+              r.mobileHandleTitle,
+              r.primaryHeadingText,
+            )
+          ) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
