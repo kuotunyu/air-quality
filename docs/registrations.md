@@ -25,11 +25,11 @@ uv run twair doctor
 | 階段 | 需要 | 用途 |
 |---|---|---|
 | Phase 1 | 無 | airtw 年度包無須驗證 |
-| Phase 1（增量） | `MOENV_API_KEY` | 每日更新、測站基本資料 |
-| Phase 2 | `CWA_API_KEY` | 氣象站觀測 |
-| Phase 4 | `CDSAPI_KEY` | ERA5 邊界層高度 |
-| Phase 6 | `GEE_PROJECT_ID` | 衛星資料 —— **可選，有替代方案，見下** |
-| 發布 | `HF_TOKEN` | HuggingFace 資料集與 Space |
+| Metadata／維運 | `MOENV_API_KEY` | 重抓測站基本資料、唯讀 freshness 檢查 |
+| 延後的氣象加值 | `CWA_API_KEY` | 氣象站觀測 |
+| 延後的氣象加值 | `CDSAPI_KEY` | ERA5 邊界層高度 |
+| 延後的 Phase 6 | `GEE_PROJECT_ID` | 衛星資料 —— **可選，有替代方案，見下** |
+| 發布收尾 | `HF_TOKEN` | Hugging Face Dataset 與 Space 更新 |
 
 ---
 
@@ -111,7 +111,7 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
 uv run earthengine authenticate
 ```
 
-## 5. HuggingFace — `HF_TOKEN`
+## 5. Hugging Face — `HF_TOKEN`
 
 <https://huggingface.co/settings/tokens>
 

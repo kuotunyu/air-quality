@@ -1,7 +1,7 @@
 # 03 — 空間結構：「分區各跑一次」買到了什麼
 
-> Markdown 而非 PLAN.md:499 所寫的 `.qmd`：`reports/` 既有檔案（01-core.md）
-> 就是 Markdown，本 repo 不使用 Quarto 工具鏈。偏離已記錄於 PROGRESS.md。
+> 本報告採 Markdown，與 `reports/01-core.md` 使用同一套公開報告契約；repo 不使用
+> Quarto 工具鏈。這項交付取代了早期 `.qmd` 藍圖，判定記在 [PLAN.md](../PLAN.md) 的 Phase 5。
 >
 > 所有數字由 `uv run twair analyze m6` 產出（seed 12345、999 次模擬虛無、
 > knn(5)、BH 校正），表格存於 `data/outputs/m6_spatial/*.parquet`。

@@ -283,6 +283,19 @@ def test_the_doc_says_so_when_no_sample_was_captured(
     assert "_not captured_" in (tmp_path / "data-sources.md").read_text(encoding="utf-8")
 
 
+def test_the_source_doc_does_not_describe_a_read_only_probe_as_incremental_ingest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("twair.ingest.probe.DOCS_DIR", tmp_path)
+
+    write_sources_doc(_catalog_summary([archive()]), None)
+    text = (tmp_path / "data-sources.md").read_text(encoding="utf-8")
+
+    assert "每日增量更新" not in text
+    assert "唯讀 freshness 檢查" in text
+    assert "不寫回 canonical store" in text
+
+
 def test_the_conf_keeps_every_resolved_file_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
