@@ -438,6 +438,7 @@ const dots = main.map((s) => {
     display: flex;
     flex-direction: column;
     container-type: inline-size;
+    container-name: map-frame;
     width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
     margin-inline: auto;
   }
@@ -525,9 +526,54 @@ const dots = main.map((s) => {
    */
   .map-box {
     position: relative;
+    container-type: inline-size;
+    container-name: map-drawing;
     aspect-ratio: var(--map-ratio);
     width: 100%;
   }
+
+  /*
+   * 2026-08-04 — the first-viewport audit measured the legend being narrowed by
+   * the island's height budget: at 375px the 167px ramp made its title 130px
+   * tall, and at 1280×720 the 198px ramp kept the final ticks below the fold.
+   * The drawing still uses the same height-derived width, while its explanatory
+   * scale may now use the available 330px track. At 1440×900 the drawing stops
+   * at the existing 260px county-label collision floor so the complete legend
+   * remains in view without changing the projection or any mark.
+   */
+  .map-wrap {
+    width: min(100%, 330px);
+  }
+
+  .map-box {
+    width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
+    margin-inline: auto;
+  }
+
+  @media (min-width: 901px) and (max-height: 799px) {
+    .map-box {
+      width: min(100%, 50vh * var(--map-wide));
+    }
+  }
+
+  @media (min-width: 901px) and (max-width: 1599px) and (min-height: 800px) {
+    .map-box {
+      width: min(100%, 260px);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .map-box {
+      width: min(100%, max(52vh * var(--map-wide), 5.5rem));
+    }
+  }
+
+  @media (max-width: 420px) {
+    .map-box {
+      width: min(100%, 38vh * var(--map-wide));
+    }
+  }
+
   .map-box > svg {
     display: block;
     width: 100%;
@@ -565,7 +611,7 @@ const dots = main.map((s) => {
   }
 
   .scale {
-    margin-top: var(--space-3);
+    margin-top: 0;
   }
   .scale-title {
     margin: 0 0 0.3rem;
@@ -646,13 +692,13 @@ const dots = main.map((s) => {
       0 0 4px var(--bg-sunken);
   }
 
-  @container (max-width: 14em) {
+  @container map-drawing (max-width: 14em) {
     .county-label {
       display: none;
     }
   }
 
-  @container (max-width: 8em) {
+  @container map-frame (max-width: 8em) {
     .scale-ticks span:nth-child(2),
     .scale-ticks span:nth-child(4),
     .scale-ticks span:nth-child(5) {

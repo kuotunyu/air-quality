@@ -330,6 +330,47 @@ function firstViewportProblems({
   return problems;
 }
 
+function countyLabelProblems({ map, labels }) {
+  if (
+    !map || !Number.isFinite(map.width) || map.width <= 0 ||
+    !Array.isArray(labels) || labels.length === 0
+  ) {
+    return ["homepage county-label geometry is missing"];
+  }
+  const problems = [];
+  const visible = labels.filter((label) => label?.visible);
+  for (const label of visible) {
+    if (
+      !["top", "right", "bottom", "left", "width", "height"]
+        .every((edge) => Number.isFinite(label?.[edge])) ||
+      label.width <= 0 || label.height <= 0
+    ) {
+      problems.push("homepage county label has invalid geometry");
+    } else if (label.contained === false) {
+      problems.push(
+        `homepage county label leaves the map (${JSON.stringify(label.identifier ?? "")})`,
+      );
+    }
+  }
+
+  let overlaps = 0;
+  for (let index = 0; index < visible.length; index += 1) {
+    const first = visible[index];
+    for (let other = index + 1; other < visible.length; other += 1) {
+      const second = visible[other];
+      const overlapX = Math.min(first.right, second.right) - Math.max(first.left, second.left);
+      const overlapY = Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top);
+      if (overlapX > 1 && overlapY > 1) overlaps += 1;
+    }
+  }
+  if (overlaps) {
+    problems.push(
+      `homepage ${overlaps} county label pairs overlap on a ${map.width.toFixed(3)}px map`,
+    );
+  }
+  return problems;
+}
+
 function chapterOpeningProblems(state) {
   const problems = [];
   const viewport = state?.viewport;
@@ -418,6 +459,38 @@ function chapterOpeningProblems(state) {
     }
   }
 
+  return problems;
+}
+
+function mobileHandleTitleProblems(state) {
+  const problems = [];
+  const title = state?.title;
+  const number = state?.number;
+  if (!state || !title || !number) return ["mobile handle current chapter is missing"];
+  if (!number.visible || !number.text) problems.push("mobile handle chapter number is not readable");
+  if (!title.visible || !title.text) problems.push("mobile handle current title is not readable");
+  if (
+    !Number.isFinite(title.width) || !Number.isFinite(title.fontSize) ||
+    title.width <= 0 || title.fontSize <= 0
+  ) {
+    problems.push("mobile handle current title has invalid geometry");
+  } else if (title.width + CSS_PX_SERIALIZATION_EPSILON < title.fontSize * 2) {
+    problems.push(
+      `mobile handle current title is ${title.width}px wide ` +
+        `(${title.fontSize}px font; 2em readable floor)`,
+    );
+  }
+  if (
+    !Number.isFinite(title.clientWidth) || !Number.isFinite(title.scrollWidth) ||
+    title.scrollWidth <= title.clientWidth
+  ) {
+    problems.push("mobile handle long title does not overflow its own box");
+  } else if (
+    title.textOverflow !== "ellipsis" || title.overflowX !== "hidden" ||
+    title.whiteSpace !== "nowrap"
+  ) {
+    problems.push("mobile handle long title does not use a real ellipsis");
+  }
   return problems;
 }
 
@@ -676,6 +749,62 @@ async function lifecycleSelfTest() {
       `the homepage first-viewport predicate accepts ${missedGeometryProblems.join(", ")}`,
     );
   }
+
+  const normalLabelMap = {
+    top: 100, right: 350, bottom: 645, left: 50, width: 300, height: 545,
+  };
+  const normalLabels = [
+    part({ top: 200, right: 140, bottom: 222, left: 100, width: 40, height: 22 }, {
+      identifier: "甲縣",
+    }),
+    part({ top: 200, right: 200, bottom: 222, left: 160, width: 40, height: 22 }, {
+      identifier: "乙縣",
+    }),
+  ];
+  const missedCountyLabelProblems = [];
+  const expectCountyLabelProblem = (name, state, expected) => {
+    const problems = countyLabelProblems(state);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedCountyLabelProblems.push(name);
+    }
+  };
+  if (countyLabelProblems({ map: normalLabelMap, labels: normalLabels }).length) {
+    throw new Error("the homepage county-label predicate rejects clear geometry");
+  }
+  expectCountyLabelProblem(
+    "overlapping names on a normal map",
+    {
+      map: normalLabelMap,
+      labels: [
+        normalLabels[0],
+        part({ top: 200, right: 160, bottom: 222, left: 120, width: 40, height: 22 }, {
+          identifier: "乙縣",
+        }),
+      ],
+    },
+    "county label pairs overlap",
+  );
+  if (
+    countyLabelProblems({
+      map: { ...normalLabelMap, right: 248, width: 198 },
+      labels: normalLabels.map((label) => ({ ...label, visible: false })),
+    }).length
+  ) {
+    throw new Error("the homepage county-label predicate rejects hidden small-map labels");
+  }
+  expectCountyLabelProblem(
+    "name outside its map",
+    {
+      map: normalLabelMap,
+      labels: [normalLabels[0], { ...normalLabels[1], contained: false }],
+    },
+    "leaves the map",
+  );
+  if (missedCountyLabelProblems.length) {
+    throw new Error(
+      `the homepage county-label predicate accepts ${missedCountyLabelProblems.join(", ")}`,
+    );
+  }
   console.log("site quality homepage first-viewport self-test passed");
 
   const atlasPart = ({ top, right, bottom, left }) => ({
@@ -759,6 +888,64 @@ async function lifecycleSelfTest() {
     throw new Error(`the homepage atlas predicate accepts ${missedAtlasProblems.join(", ")}`);
   }
   console.log("site quality homepage atlas self-test passed");
+
+  const completeMobileHandleTitle = {
+    number: { visible: true, text: "第八章" },
+    title: {
+      visible: true,
+      text: "方法學對照",
+      width: 48,
+      fontSize: 20,
+      clientWidth: 48,
+      scrollWidth: 96,
+      textOverflow: "ellipsis",
+      overflowX: "hidden",
+      whiteSpace: "nowrap",
+    },
+  };
+  const missedMobileHandleProblems = [];
+  const expectMobileHandleProblem = (name, state, expected) => {
+    const problems = mobileHandleTitleProblems(state);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedMobileHandleProblems.push(name);
+    }
+  };
+  if (mobileHandleTitleProblems(completeMobileHandleTitle).length) {
+    throw new Error("the mobile-handle predicate rejects a readable ellipsis");
+  }
+  expectMobileHandleProblem(
+    "less-than-two-em title box",
+    {
+      ...completeMobileHandleTitle,
+      title: { ...completeMobileHandleTitle.title, width: 24 },
+    },
+    "2em readable floor",
+  );
+  expectMobileHandleProblem(
+    "ancestor-only clipping",
+    {
+      ...completeMobileHandleTitle,
+      title: {
+        ...completeMobileHandleTitle.title,
+        clientWidth: 96,
+        scrollWidth: 96,
+      },
+    },
+    "does not overflow its own box",
+  );
+  expectMobileHandleProblem(
+    "clipped without an ellipsis",
+    {
+      ...completeMobileHandleTitle,
+      title: { ...completeMobileHandleTitle.title, textOverflow: "clip" },
+    },
+    "does not use a real ellipsis",
+  );
+  if (missedMobileHandleProblems.length) {
+    throw new Error(
+      `the mobile-handle predicate accepts ${missedMobileHandleProblems.join(", ")}`,
+    );
+  }
 
   const completeChapterOpening = {
     viewport: { width: 1280, height: 720 },
@@ -1314,6 +1501,8 @@ const PROBE = `(() => {
   const rail = document.querySelector(".rail");
   const main = document.querySelector("main");
   const handle = document.querySelector(".handle");
+  const handleNumber = handle?.querySelector(".handle-n") ?? null;
+  const handleTitle = handle?.querySelector(".handle-t") ?? null;
   const railStyle = rail ? getComputedStyle(rail) : null;
   const handleStyle = handle ? getComputedStyle(handle) : null;
   const railRect = rail?.getBoundingClientRect() ?? null;
@@ -1328,6 +1517,27 @@ const PROBE = `(() => {
     handle && handleStyle?.display !== "none" && handleStyle?.visibility !== "hidden" &&
       handle.getClientRects().length,
   );
+  const handlePart = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      visible: style.display !== "none" && style.visibility !== "hidden" &&
+        rect.width > 0 && rect.height > 0,
+      text: element.textContent.trim(),
+      width: +rect.width.toFixed(3),
+      fontSize: +parseFloat(style.fontSize).toFixed(3),
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      textOverflow: style.textOverflow,
+      overflowX: style.overflowX,
+      whiteSpace: style.whiteSpace,
+    };
+  };
+  out.mobileHandleTitle = {
+    number: handlePart(handleNumber),
+    title: handlePart(handleTitle),
+  };
   if (out.smallestFont === Infinity) out.smallestFont = 0;
   return out;
 })()`;
@@ -1598,6 +1808,7 @@ async function main() {
         map: inspect(map),
         mapSvg: inspect(map?.querySelector(":scope > svg") ?? null, map, false, "both"),
         stationMarks: inspectAnchoredAll("[data-homepage-map] .dot", map, "both"),
+        countyLabels: inspectAll("[data-homepage-map] .county-label", map),
         legend: inspect(legend),
         scaleBar: inspect(scaleBar, legend, false, "inline"),
         scaleTicks: inspect(scaleTicks, legend, false, "inline"),
@@ -1631,6 +1842,7 @@ async function main() {
     }
     return [
       ...firstViewportProblems({ ...geometry, requireVerticalViewport }),
+      ...countyLabelProblems({ map: geometry.map, labels: geometry.countyLabels }),
       ...atlasLayoutProblems(geometry.atlasLayout),
     ];
   };
@@ -2832,6 +3044,11 @@ async function main() {
         if (width === 375 && r.railVisible) {
           failures.push(`${route} @${width} ${theme}: persistent rail is visible on mobile`);
         }
+        if (width === 375 && route === "/methods/") {
+          for (const problem of mobileHandleTitleProblems(r.mobileHandleTitle)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
         for (const bad of r.lowContrast) {
           failures.push(
             `${route} @${width} ${theme}: Lc ${bad.lc} on ${JSON.stringify(bad.text)} ` +
@@ -2984,6 +3201,13 @@ async function main() {
             value: "translate(-50%, 1000px)",
             expected: "tick mark leaves its container",
           },
+          {
+            name: "disabled county-label container",
+            selector: "[data-homepage-map]",
+            property: "container-type",
+            value: "normal",
+            expected: "county label pairs overlap",
+          },
         ];
         for (const mutation of geometryMutations) {
           const problems = await homepageFirstViewport({
@@ -3042,32 +3266,6 @@ async function main() {
           overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           clippedLabels,
           homepage: ${JSON.stringify(route === "/")} ? (() => {
-            const map = document.querySelector("[data-homepage-map]");
-            const frame = document.querySelector("[data-homepage-map-frame]");
-            const labels = [...document.querySelectorAll(".county-label")];
-            const visibleLabels = labels.filter(visible);
-            const labelFont = labels.length ? parseFloat(getComputedStyle(labels[0]).fontSize) : 0;
-            const safeLabelWidth = 260 * (labelFont / 18);
-            const boundaryProbe = frame?.cloneNode(true) ?? null;
-            let labelsHiddenAtSafeBoundary = false;
-            let labelsVisibleAboveSafeBoundary = false;
-            if (boundaryProbe && safeLabelWidth > 0) {
-              boundaryProbe.style.position = "fixed";
-              boundaryProbe.style.left = "-10000px";
-              boundaryProbe.style.top = "0";
-              boundaryProbe.style.width = (safeLabelWidth - 1) + "px";
-              document.body.append(boundaryProbe);
-              const probeLabels = [...boundaryProbe.querySelectorAll(".county-label")];
-              labelsHiddenAtSafeBoundary = Boolean(
-                probeLabels.length &&
-                probeLabels.every((label) => getComputedStyle(label).display === "none")
-              );
-              boundaryProbe.style.width = (safeLabelWidth * 1.2) + "px";
-              labelsVisibleAboveSafeBoundary = probeLabels.some(
-                (label) => getComputedStyle(label).display !== "none"
-              );
-              boundaryProbe.remove();
-            }
             const tickRects = [...document.querySelectorAll("[data-homepage-map-legend] .scale-ticks > span")]
               .filter(visible)
               .map((tick) => tick.getBoundingClientRect())
@@ -3079,12 +3277,7 @@ async function main() {
               return overlapX > 1 && overlapY > 1;
             }).length;
             return {
-              mapWidth: map?.getBoundingClientRect().width ?? 0,
-              labelFont,
-              visibleLabels: visibleLabels.length,
               tickOverlaps,
-              labelsHiddenAtSafeBoundary,
-              labelsVisibleAboveSafeBoundary,
             };
           })() : null,
         };
@@ -3106,25 +3299,10 @@ async function main() {
       for (const problem of await homepageStructureProblems({ enhanced: true })) {
         failures.push(`${state}: ${problem}`);
       }
-      const safeLabelWidth = 260 * ((zoomed?.homepage?.labelFont ?? 0) / 18);
-      if (
-        zoomed?.homepage?.visibleLabels > 0 &&
-        zoomed?.homepage?.mapWidth + 1 < safeLabelWidth
-      ) {
-        failures.push(
-          `${state}: county labels remain visible below their effective safe map width`,
-        );
-      }
       if (zoomed?.homepage?.tickOverlaps > 0) {
         failures.push(
           `${state}: ${zoomed.homepage.tickOverlaps} adjacent legend tick pairs overlap`,
         );
-      }
-      if (!zoomed?.homepage?.labelsHiddenAtSafeBoundary) {
-        failures.push(`${state}: county labels remain visible at their measured safe boundary`);
-      }
-      if (!zoomed?.homepage?.labelsVisibleAboveSafeBoundary) {
-        failures.push(`${state}: county labels remain hidden well above their measured safe boundary`);
       }
     }
     const zoomFocus = await focusVisibleStates([

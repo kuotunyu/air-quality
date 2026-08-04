@@ -477,6 +477,13 @@ const opening = [
   --atlas-columns: 1;
 }
 
+/* The handle already marks the page boundary. Measured at 375px, the generic
+ * first-section inset consumed the last 14px needed to keep the complete scale
+ * in view, so the opening uses the same compact inset as short landscape. */
+#hero {
+  padding-top: 0.3rem;
+}
+
 /* This is a reading breakpoint, so it deliberately follows the root type
  * scale. At 200% text a fixed 760px threshold kept three columns inside an
  * 845px atlas; `rem` lets the same document return to its linear source order.
@@ -486,6 +493,7 @@ const opening = [
     --atlas-columns: 3;
     grid-template-columns: minmax(0, 1fr) clamp(260px, 28%, 330px) minmax(0, 1fr);
     column-gap: clamp(var(--space-3), 3cqi, var(--space-5));
+    row-gap: var(--space-1);
     align-items: start;
   }
   .hero-grid > .hero-opening {
@@ -515,6 +523,15 @@ const opening = [
   }
   .hero-grid > :global(.map-tools) {
     grid-area: 5 / 1 / auto / -1;
+  }
+}
+
+/* The 1280×720 audit left only 2.4px beneath the complete tick strip. In this
+ * bounded handle layout the opening and atlas row are one argument, so their
+ * grid gap can collapse while every later row keeps the normal evidence rhythm. */
+@media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+  .hero-grid {
+    row-gap: 0;
   }
 }
 </style>

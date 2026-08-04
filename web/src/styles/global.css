@@ -1520,6 +1520,36 @@ main > section:first-child {
   }
 }
 
+/* 2026-08-04 — at a measured 375px viewport the two full-size controls, two
+   20px flex gaps and desktop page inset left the current chapter title a 24px
+   box: technically ellipsized, but too narrow to expose a useful prefix. The
+   controls keep their 44px block target; only duplicated inline air is returned
+   to the title, whose own box remains the ellipsis boundary. */
+@media (max-width: 30rem) {
+  body .shell .column .handle {
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+  }
+
+  body .shell .column .handle .rail-open,
+  body .shell .column .handle .theme-toggle {
+    padding-inline: var(--space-2);
+  }
+
+  body .shell .column .handle .handle-at {
+    flex: 1 1 auto;
+  }
+
+  body .shell .column .handle .handle-n {
+    flex: none;
+  }
+
+  body .shell .column .handle .handle-t {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+
 /* Whatever a chapter happens to end on — a hero grid, a picker, a disclosure —
  * brings its own bottom margin, so the measured gap before the next chapter's
  * rule ranged from 78px to 130px depending on which. The padding is supposed to
