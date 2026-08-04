@@ -1,12 +1,12 @@
 /**
  * Re-derive the design claims PRODUCT.md makes, and fail if they stop holding.
  *
- * PRODUCT.md's accessibility section states four measured properties:
+ * PRODUCT.md's accessibility section originally stated four measured properties:
  *
  *   * every text node clears APCA Lc 60 in both themes — and records that the
  *     dark theme once had 26 nodes below it, the worst at 47.3;
  *   * no page scrolls horizontally at 375px, in either theme;
- *   * the smallest rendered type is 18.7px at 375 and 20px at 1440;
+ *   * the smallest rendered type was 18.7px at 375 and 20px at 1440;
  *   * the two figure controls are at least 44px tall.
  *
  * Those numbers came from nineteen throwaway browser scripts, and `.gitignore`
@@ -15,6 +15,15 @@
  * a class of defect this repository could no longer detect. A claim with no
  * verifier is a claim that will drift, and this project's whole argument is
  * that its numbers are re-derivable.
+ *
+ * PRODUCT.md's 2026-08-04 current-state rule supersedes those old size and
+ * shell measurements. The final built site records 20.1375px root/body,
+ * 18.3251px smallest visible text and 19.1306px smallest in-figure annotation
+ * at 375px; the corresponding 1440px values are 22px, 20.02px and 20.9px.
+ * At the adaptive-shell boundary, 1599px has only the handle/drawer while
+ * 1600px has only a 264px persistent rail. At 1280x720, all seven chart-route
+ * primary plots begin before 396px and retain at least 180px of visible plot;
+ * the homepage map and legend end at 710.9776px, leaving 9.0224px below them.
  *
  * This serves `web/dist` itself and drives headless Chrome over CDP. No
  * dependency beyond Node and a Chrome binary: `sharp`, `puppeteer` and friends

@@ -478,6 +478,15 @@ brand
    caption 算繪在 `.table-wrap` **裡面**，而那是 `overflow-x: auto`——
    正好在最需要名字的窄寬度，它會跟著表格橫向捲走。十二張表上方本來就都有標題或
    `<summary>`，指過去就好：不新增可見文字，也沒有東西會不同步。
+68. **2026-08-04 的 readable evidence-first 版取代第 11、58、59 條當時的 72rem shell
+   邊界與舊字級現況，但保留那些規則記下的原因。** 375px 下 root／正文為 20.1375px，
+   最小可見文字 18.3251px、最小圖內標註 19.1306px；1440px 下三者分別為 22px、
+   20.02px、20.9px。Shell 現在以 100rem 為界：1599px 實測只有 handle／drawer，
+   1600px 則只有寬 264px 的常駐 rail。1280×720 下，有圖的七章都在 396px 前開始
+   primary plot，最少仍顯示 180px 的 plot；首頁完整地圖與 legend 到 710.9776px，
+   首屏底部保留 9.0224px。十一個 route、六個 viewport、深淺兩色共 132 個狀態的
+   document overflow 與小於 44px 的觸控目標都是 0；完整品質閘門量過 12,254 個文字
+   節點、126 次 focus check，APCA Lc 低於 60 與問題數也都是 0。
 
 
 ## Accessibility & Inclusion
