@@ -172,6 +172,27 @@ const MIN_TARGET_PX = 44;
 const TARGET_LAYOUT_RESERVE_PX = 1 / 64;
 const CSS_PX_SERIALIZATION_EPSILON = 0.0001;
 const READOUT_OVERLAP_TOLERANCE_PX = 1;
+const CHART_TEXT_CONTRACTS = [
+  { role: "tick", selector: ".plot-x span, .plot-y span", ratio: 1.10 },
+  {
+    role: "label",
+    selector: ".plot-keys span, .plot-note, .chart-key li, .readout-row",
+    ratio: 1.10,
+  },
+  {
+    role: "micro",
+    selector:
+      ".axis span, .readout-when, .radial-scale, .radial-unit, .bearing, " +
+      ".ramp-title, .ramp-ticks, .ramp-foot, .scale-title, .scale-ticks, " +
+      ".county-label, .corr-label, .ctrl-label, .corr-value, .ctrl-value, " +
+      ".ctrl-value small",
+    ratio: 1.05,
+  },
+];
+const CHART_STROKE_EPSILON = 0.01;
+const AXIS_LABEL_CLEARANCE_PX = 4;
+const EXPECTED_DESKTOP_COUNTY_LABELS = 15;
+const MIN_LABELLED_MAP_WIDTH_PX = 329;
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -339,7 +360,7 @@ function firstViewportProblems({
   return problems;
 }
 
-function countyLabelProblems({ map, labels }) {
+function countyLabelProblems({ map, labels, expectedVisible = null }) {
   if (
     !map || !Number.isFinite(map.width) || map.width <= 0 ||
     !Array.isArray(labels) || labels.length === 0
@@ -348,6 +369,11 @@ function countyLabelProblems({ map, labels }) {
   }
   const problems = [];
   const visible = labels.filter((label) => label?.visible);
+  if (expectedVisible !== null && visible.length !== expectedVisible) {
+    problems.push(
+      `homepage visible county-label inventory is ${visible.length}, expected ${expectedVisible}`,
+    );
+  }
   for (const label of visible) {
     if (
       !["top", "right", "bottom", "left", "width", "height"]
@@ -783,6 +809,20 @@ async function lifecycleSelfTest() {
   if (countyLabelProblems({ map: normalLabelMap, labels: normalLabels }).length) {
     throw new Error("the homepage county-label predicate rejects clear geometry");
   }
+  if (
+    countyLabelProblems({
+      map: normalLabelMap,
+      labels: normalLabels,
+      expectedVisible: 2,
+    }).length
+  ) {
+    throw new Error("the homepage county-label predicate rejects its exact inventory");
+  }
+  expectCountyLabelProblem(
+    "missing visible county name",
+    { map: normalLabelMap, labels: normalLabels, expectedVisible: 3 },
+    "visible county-label inventory",
+  );
   expectCountyLabelProblem(
     "overlapping names on a normal map",
     {
@@ -1376,7 +1416,52 @@ const PROBE = `(() => {
 
   const out = { nodes: 0, lowContrast: [], smallestFont: Infinity, smallestAnnotation: Infinity,
     smallTargets: [], collisions: [], tableWraps: 0, tableScrollers: 0,
-    invalidTableScrollers: [], invalidTableRules: [] };
+    invalidTableScrollers: [], invalidTableRules: [], invalidChartText: [],
+    invalidChartStrokes: [] };
+  out.body = parseFloat(getComputedStyle(document.body).fontSize);
+
+  for (const contract of ${JSON.stringify(CHART_TEXT_CONTRACTS)}) {
+    let smallest = Infinity;
+    for (const element of document.querySelectorAll(contract.selector)) {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        rect.width <= 0 || rect.height <= 0
+      ) continue;
+      smallest = Math.min(smallest, parseFloat(style.fontSize));
+    }
+    if (
+      smallest !== Infinity &&
+      smallest + ${CSS_PX_SERIALIZATION_EPSILON} < out.body * contract.ratio
+    ) {
+      out.invalidChartText.push({
+        role: contract.role,
+        size: +smallest.toFixed(3),
+        required: +(out.body * contract.ratio).toFixed(3),
+      });
+    }
+  }
+
+  for (const element of document.querySelectorAll(".plot-line, .plot-grid, .plot-axis")) {
+    const actual = parseFloat(getComputedStyle(element).strokeWidth);
+    const expected = element.classList.contains("plot-grid")
+      ? 1
+      : element.classList.contains("plot-axis")
+        ? 1.5
+        : element.classList.contains("emphasis-primary")
+          ? 3
+          : element.classList.contains("emphasis-comparison")
+            ? 2.25
+            : 2.5;
+    if (Math.abs(actual - expected) > ${CHART_STROKE_EPSILON}) {
+      out.invalidChartStrokes.push({
+        cls: String(element.getAttribute("class") ?? ""),
+        actual,
+        expected,
+      });
+    }
+  }
 
   const MARKS = ".plot-x span, .plot-y span, .plot-keys span, .axis span";
 
@@ -1415,15 +1500,22 @@ const PROBE = `(() => {
       for (let j = i + 1; j < marks.length; j += 1) {
         const a = marks[i].r;
         const b = marks[j].r;
-        const dx = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-        const dy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
         // A pixel of touching is kerning and antialiasing, not a collision.
-        if (dx > 1 && dy > 1) {
+        // 2026-08-04 — the approved legibility contract supersedes the one-pixel
+        // touching tolerance: visible labels in one axis strip need 4 CSS px of air.
+        const horizontal = strip.matches(".plot-x, .axis");
+        const orthogonalOverlap = horizontal
+          ? Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+          : Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const clearance = horizontal
+          ? Math.max(a.left, b.left) - Math.min(a.right, b.right)
+          : Math.max(a.top, b.top) - Math.min(a.bottom, b.bottom);
+        if (orthogonalOverlap > 1 && clearance < ${AXIS_LABEL_CLEARANCE_PX}) {
           out.collisions.push({
             strip: String(strip.className || "").slice(0, 20),
             a: marks[i].text.slice(0, 14),
             b: marks[j].text.slice(0, 14),
-            px: +Math.min(dx, dy).toFixed(1),
+            px: +clearance.toFixed(1),
           });
         }
       }
@@ -1517,7 +1609,6 @@ const PROBE = `(() => {
     }
   }
 
-  out.body = parseFloat(getComputedStyle(document.body).fontSize);
   out.overflow = document.documentElement.scrollWidth - document.documentElement.clientWidth;
   const rail = document.querySelector(".rail");
   const main = document.querySelector("main");
@@ -1864,7 +1955,14 @@ async function main() {
     }
     return [
       ...firstViewportProblems({ ...geometry, requireVerticalViewport }),
-      ...countyLabelProblems({ map: geometry.map, labels: geometry.countyLabels }),
+      ...countyLabelProblems({
+        map: geometry.map,
+        labels: geometry.countyLabels,
+        expectedVisible:
+          geometry.map?.width >= MIN_LABELLED_MAP_WIDTH_PX
+            ? EXPECTED_DESKTOP_COUNTY_LABELS
+            : null,
+      }),
       ...atlasLayoutProblems(geometry.atlasLayout),
     ];
   };
@@ -2910,18 +3008,29 @@ async function main() {
         if (route === "/trend/" && width === 375 && theme === "light") {
           const trendMarks = await evaluate(`(() => {
             const plots = [...document.querySelectorAll(".plot[data-readout]")].slice(0, 3);
-            const charts = plots.map((plot) => ({
-              lines: [...plot.querySelectorAll(".plot-line")].map((line) => ({
-                weight: parseFloat(getComputedStyle(line).strokeWidth),
-                dash: getComputedStyle(line).strokeDasharray,
-              })),
-              payloadHasEmphasis: (() => {
-                try {
-                  const raw = plot.querySelector(".plot-readout-data")?.textContent ?? "";
-                  return JSON.parse(raw).series.some((series) => "emphasis" in series);
-                } catch { return true; }
-              })(),
-            }));
+            const mark = (element) => ({
+              weight: parseFloat(getComputedStyle(element).strokeWidth),
+              dash: getComputedStyle(element).strokeDasharray,
+            });
+            const charts = plots.map((plot) => {
+              const chart = plot.closest(".chart");
+              return {
+                lines: [...plot.querySelectorAll(".plot-line")].map(mark),
+                seriesKeys: [...(chart?.querySelectorAll(
+                  ".chart-key > li:not(.key-guide) .key-mark line",
+                ) ?? [])].map(mark),
+                guideKeys: [...(chart?.querySelectorAll(
+                  ".chart-key > li.key-guide .key-mark line",
+                ) ?? [])].map(mark),
+                guidePaths: [...plot.querySelectorAll(".plot-area svg path:not(.plot-line)")].map(mark),
+                payloadHasEmphasis: (() => {
+                  try {
+                    const raw = plot.querySelector(".plot-readout-data")?.textContent ?? "";
+                    return JSON.parse(raw).series.some((series) => "emphasis" in series);
+                  } catch { return true; }
+                })(),
+              };
+            });
             return charts;
           })()`);
           const twoLineCharts = trendMarks?.slice(0, 2) ?? [];
@@ -2930,9 +3039,13 @@ async function main() {
             twoLineCharts.some(
               (chart) =>
                 chart.lines.length !== 2 ||
-                Math.abs(chart.lines[0].weight - 2.5) > 0.01 ||
-                Math.abs(chart.lines[1].weight - 1.75) > 0.01 ||
+                chart.seriesKeys.length !== 2 ||
+                Math.abs(chart.lines[0].weight - 3) > 0.01 ||
+                Math.abs(chart.lines[1].weight - 2.25) > 0.01 ||
+                Math.abs(chart.seriesKeys[0].weight - 3) > 0.01 ||
+                Math.abs(chart.seriesKeys[1].weight - 2.25) > 0.01 ||
                 chart.lines[1].dash === "none" ||
+                chart.seriesKeys.some((key, index) => key.dash !== chart.lines[index].dash) ||
                 chart.payloadHasEmphasis,
             )
           ) {
@@ -2942,10 +3055,25 @@ async function main() {
           if (
             !zones ||
             zones.lines.length !== 8 ||
-            zones.lines.some((line) => Math.abs(line.weight - zones.lines[0].weight) > 0.01) ||
+            zones.seriesKeys.length !== 8 ||
+            zones.lines.some((line) => Math.abs(line.weight - 2.5) > 0.01) ||
+            zones.seriesKeys.some(
+              (key, index) =>
+                Math.abs(key.weight - 2.5) > 0.01 || key.dash !== zones.lines[index].dash,
+            ) ||
             zones.payloadHasEmphasis
           ) {
             failures.push("/trend/ @375 light: eight-zone lines do not retain a uniform weight");
+          }
+          const guideKeys = trendMarks?.flatMap((chart) => chart.guideKeys) ?? [];
+          const guidePaths = trendMarks?.flatMap((chart) => chart.guidePaths) ?? [];
+          if (
+            guideKeys.length === 0 || guidePaths.length === 0 ||
+            [...guideKeys, ...guidePaths].some(
+              (guide) => Math.abs(guide.weight - 1.5) > 0.01,
+            )
+          ) {
+            failures.push("/trend/ @375 light: guide keys and paths do not retain 1.5px weight");
           }
         }
         const renderedTheme = await evaluate(`(() => {
@@ -3046,6 +3174,18 @@ async function main() {
         for (const problem of new Set(r.invalidTableRules)) {
           failures.push(`${route} @${width} ${theme}: ${problem}`);
         }
+        for (const bad of r.invalidChartText) {
+          failures.push(
+            `${route} @${width} ${theme}: ${bad.role} chart text is ${bad.size}px, ` +
+              `expected at least ${bad.required}px`,
+          );
+        }
+        for (const bad of r.invalidChartStrokes) {
+          failures.push(
+            `${route} @${width} ${theme}: .${bad.cls} stroke is ${bad.actual}px, ` +
+              `expected ${bad.expected}px`,
+          );
+        }
         if (width === 1440) {
           if (r.railWidth > 272) {
             failures.push(`${route} @${width} ${theme}: rail width exceeds 272px`);
@@ -3092,7 +3232,8 @@ async function main() {
           totals.collisions += 1;
           failures.push(
             `${route} @${width} ${theme}: ${JSON.stringify(bad.a)} and ` +
-              `${JSON.stringify(bad.b)} overlap by ${bad.px}px in .${bad.strip}`,
+              `${JSON.stringify(bad.b)} leave ${bad.px}px clearance in .${bad.strip} ` +
+              `(minimum ${AXIS_LABEL_CLEARANCE_PX}px)`,
           );
         }
         if (route === "/trend/" && width === 375 && theme === "light") {

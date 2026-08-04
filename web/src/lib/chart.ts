@@ -344,7 +344,8 @@ export const concentrationLegend = PM25_BREAKS.map((breakpoint, index) => ({
  * bit over half. Being 10px generous costs nothing, and being short would put a
  * label back outside the card.
  */
-export function labelGutter(labels: (string | number)[], size = 24, pad = 16): number {
+// 2026-08-04 — 25px conservatively covers the final token's 24.2px ceiling.
+export function labelGutter(labels: (string | number)[], size = 25, pad = 16): number {
   const width = (label: string | number) =>
     [...String(label)].reduce(
       (sum, ch) => sum + (/[⺀-鿿＀-￯]/.test(ch) ? 1 : 0.56),
@@ -368,6 +369,7 @@ export function labelGutter(labels: (string | number)[], size = 24, pad = 16): n
  */
 export function xLabelBucket(labels: (string | number)[]): "s" | "l" {
   // Same estimator as `labelGutter`, at the tick size, without its padding.
+  // 2026-08-04 — 25px conservatively covers the final token's 24.2px ceiling.
   const widest = Math.max(
     0,
     ...labels.map((label) =>
@@ -376,7 +378,7 @@ export function xLabelBucket(labels: (string | number)[]): "s" | "l" {
         0,
       ),
     ),
-  ) * 24;
+  ) * 25;
   // 46, so 「48h」 (40.3px) is short and a four-digit year (53.8px) is not.
   return widest <= 46 ? "s" : "l";
 }
@@ -399,7 +401,8 @@ export function yGutter(labels: (string | number)[]): number {
   // Must track `--chart-tick` in global.css. Both are px because the plot is.
   // 21 -> 24 on 2026-08-01 with the token; left behind, every y gutter on the
   // site would have been sized for type 14% smaller than the type in it.
-  return labelGutter(labels, 24, 12);
+  // 2026-08-04 — supersedes the 24px estimator above for the 1.10rem token.
+  return labelGutter(labels, 25, 12);
 }
 
 /**

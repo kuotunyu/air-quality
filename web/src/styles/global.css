@@ -643,9 +643,13 @@
   --text-lg: 1.2rem;
   --text-xl: 1.5rem;
   --text-2xl: 2rem;
-  --chart-tick: 0.95rem;
-  --chart-label: 0.95rem;
-  --chart-micro: 0.95rem;
+  /* 2026-08-04 — the final chart reading scale is larger than the prose-facing
+     apparatus floor: axes and legends use 1.10rem, dense specialist labels use
+     1.05rem. Earlier token declarations remain as history; this final block is
+     the operative override. */
+  --chart-tick: 1.1rem;
+  --chart-label: 1.1rem;
+  --chart-micro: 1.05rem;
 }
 
 /*
@@ -1049,7 +1053,7 @@ select {
    necessary because the component's scoped mobile rule otherwise outranks this
    task-scoped global correction. */
 .ctrl-value > small {
-  font-size: var(--text-xs) !important;
+  font-size: var(--chart-micro) !important;
 }
 
 /*
@@ -1492,6 +1496,14 @@ main > section:first-child {
 
   body .evidence-figure[data-primary-evidence] > figure {
     margin-block-start: 0.3rem;
+  }
+
+  /* 2026-08-04 — increasing the legend role added 4.937px before every primary
+     plot at 1280×720, while the trend unit band added another 3.126px. Returning
+     half of the key's measured 13.2px bottom margin keeps the larger labels and
+     restores both plots above the 55vh opening boundary. */
+  body [data-primary-evidence] .chart-key {
+    margin-bottom: 0.3rem;
   }
 
   /* The first methods comparison belongs to the chapter opening; later
@@ -2590,7 +2602,7 @@ main {
 
 .plot-line {
   fill: none;
-  stroke-width: 2;
+  stroke-width: 2.5;
   stroke-linejoin: round;
   stroke-linecap: round;
 }

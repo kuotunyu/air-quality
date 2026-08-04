@@ -119,7 +119,10 @@ const counties = COUNTIES.map((county) => ({
  * placed first took the space and the other went unnamed. Nothing is lost by a
  * county being skipped entirely: every one of them carries a `<title>`.
  */
-const MIN_RENDER_PX = 260;
+// 2026-08-04 — the map still reaches 260px, but its container rule hides
+// visual county labels there. The acceptance matrix first shows all 15 names
+// in the measured 330px map state, so enlarged labels are solved at that state.
+const MIN_RENDER_PX = 330;
 const unitsPerPx = width / MIN_RENDER_PX;
 // A CJK glyph is one em wide, so the width follows the font size directly. The
 // height has to match what the CSS below actually produces: the label sets its
@@ -133,7 +136,8 @@ const unitsPerPx = width / MIN_RENDER_PX;
 // drifted once: the label inherited the body's 1.7 line-height while this
 // assumed 1.15, every box came out 27px against an estimate of 17, and two
 // labels overlapped on a map that had been checked and declared clear.
-const LABEL_PX = 18;
+// 24px conservatively covers --chart-micro's measured 23.1px desktop ceiling.
+const LABEL_PX = 24;
 const charWidth = LABEL_PX * unitsPerPx;
 const labelHeight = LABEL_PX * 1.15 * unitsPerPx + 4 * unitsPerPx;
 
