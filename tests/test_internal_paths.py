@@ -105,3 +105,32 @@ def test_a_history_without_internal_paths_passes(tmp_path: Path) -> None:
     repo = _new_repo(tmp_path)
 
     assert internal_path_violations(repo) == []
+
+
+def test_a_deleted_legacy_design_spec_remains_rejected_through_history(
+    tmp_path: Path,
+) -> None:
+    repo = _new_repo(tmp_path)
+    design = repo / "docs" / "design" / "approved-layout.md"
+    design.parent.mkdir(parents=True)
+    design.write_text("internal design\n", encoding="utf-8")
+    _commit(repo, "add internal design")
+    _run_git(repo, "rm", "-q", design.relative_to(repo).as_posix())
+    _commit(repo, "remove internal design")
+
+    assert internal_path_violations(repo) == ["docs/design/approved-layout.md"]
+
+
+def test_a_force_added_legacy_implementation_plan_is_rejected(
+    tmp_path: Path,
+) -> None:
+    repo = _new_repo(tmp_path)
+    (repo / ".gitignore").write_text("/docs/plans/\n", encoding="utf-8")
+    plan = repo / "docs" / "plans" / "implementation.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("internal plan\n", encoding="utf-8")
+    _run_git(repo, "add", ".gitignore")
+    _run_git(repo, "add", "-f", plan.relative_to(repo).as_posix())
+    _commit(repo, "force-add internal plan")
+
+    assert internal_path_violations(repo) == ["docs/plans/implementation.md"]

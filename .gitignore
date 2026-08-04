@@ -84,6 +84,8 @@ web/_*.js
 # Design specs, implementation plans, mockups and review scratch are useful for
 # resuming work on this machine, but they are not part of the public project.
 /.superpowers/
+/docs/design/
+/docs/plans/
 /docs/superpowers/
 /HANDOFF.md
 /PROGRESS.md

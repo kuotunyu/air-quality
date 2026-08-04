@@ -8,7 +8,12 @@ from pathlib import Path
 from twair.paths import REPO_ROOT
 
 BLOCKED_EXACT_PATHS = frozenset({"HANDOFF.md", "PROGRESS.md"})
-BLOCKED_PATH_PREFIXES = (".superpowers/", "docs/superpowers/")
+BLOCKED_PATH_PREFIXES = (
+    ".superpowers/",
+    "docs/design/",
+    "docs/plans/",
+    "docs/superpowers/",
+)
 
 
 def _git(repo: Path, *args: str) -> str:
