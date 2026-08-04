@@ -604,7 +604,7 @@ def test_ci_audits_the_candidate_revision_with_complete_history() -> None:
         if step.get("name") == "Protected identities stay out of every reachable text surface"
     )
 
-    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["uses"] == ("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
     assert checkout["with"] == {"fetch-depth": 0}
     assert "ref" not in checkout["with"]
     assert audit["run"] == (
