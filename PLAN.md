@@ -5,12 +5,29 @@
 
 ---
 
-**這份文件是 roadmap，不是可量測現況。** 磁碟上的 store、分析產物、網站匯出與
-可由它們推導的下一步，請執行 `uv run twair status`；已完成階段與後續方向則以本文件為準。
+**這份文件保留早期 blueprint，也標示現在真正交付的 release boundary。**
+磁碟上的 store、分析產物與網站匯出仍以 `uv run twair status` 為準；本文件負責說明
+哪些原始構想已交付、哪些被實測結果取代、哪些明確延後。程式、測試與產物的證據
+優先於勾選框；規劃若與 [docs/](docs/) 的實測文件牴觸，以後者為準。
 
-執行過程中發現的事實若與本規劃牴觸，以 `docs/` 下的相關實測文件為準
-（特別是 [docs/archive-formats.md](docs/archive-formats.md)）。更正讀者會看到的說法時，
-直接更新對應的公開技術文件；可重用且容易重蹈的教訓則收進
+## 2026-08-04 實測現況
+
+| 範圍 | 現況 | 可重跑的證據 |
+|---|---|---|
+| Canonical store | 1982–2025、44 年、521 個分區、340,371,384 筆逐時觀測 | `uv run twair status` |
+| QA/QC 與分析 | QC、M1–M7、M9–M12 均有實際 Parquet 產物；未取得外部資料的 M8 不冒充完成 | `data/outputs/` 與各 `twair analyze …` 指令 |
+| 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
+| 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
+| 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
+| 發布邊界 | GitHub Pages 與 HF Space 已公開；完整 HF Dataset 等專案收尾後再上架，PyPI 仍是選配 | README 與本文件 Phase 7–8 |
+
+下方驗收標記採三種交付判定：
+
+- `[x]`：已由程式、測試或產物交付。
+- `[x] **已取代**`：早期做法沒有照字面實作，但已有更合適且可驗證的替代方案。
+- `[ ] **延後**`：不在目前 release boundary；不應被誤讀為現有功能故障。
+
+更正讀者會看到的說法時，直接更新對應的公開技術文件；可重用且容易重蹈的教訓則收進
 [docs/working-rules.md](docs/working-rules.md)。
 
 ---
@@ -39,24 +56,24 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 
 | # | 缺陷 | 嚴重度 | 原專題出處 | 終極版對策 |
 |---|---|---|---|---|
-| D1 | **逐時資料聚合成月平均** | 🔴 致命 | 第三章「將逐時資料合併為各測站之月資料」，N=7,286 | 全程使用逐時原始值（~1 億筆），月均只當作對照組 |
+| D1 | **逐時資料聚合成月平均** | 🔴 致命 | 第三章「將逐時資料合併為各測站之月資料」，N=7,286 | Canonical store 保留 340,371,384 筆逐時觀測；月均只作有覆蓋率門檻的衍生表與對照組 |
 | D2 | **用 PM10 預測 PM2.5** | 🔴 致命 | 第五章解釋變數含 PM10，β=0.4133, t=92.75 | PM2.5 是 PM10 的物理子集，定義上的資訊洩漏。移出特徵集；改把 PM2.5/PM10 ratio 當作**來源指紋**分析 |
 | D3 | **風向 WD_HR 當線性連續變數** | 🔴 嚴重 | 全文，含 p.29 散佈圖、各章迴歸係數 | 0° 與 359° 物理相鄰卻數值相距 359。改用 sin/cos 分解 + 風速風向合成 u/v 分量 |
-| D4 | **常態檢定結論倒果為因** | 🟠 | p.37「將拒絕域的標準降低至 0.01，使每一個變數都不拒絕虛無假設，因此符合常態性」 | 不做這種檢定。改用穩健統計、bootstrap CI、分位數迴歸 |
-| D5 | **共線性用逐步刪除硬處理** | 🟠 | 第五章第三節，NO/NO2/NOx 反覆進出模型 8 次 | NO + NO2 ≡ NOx 是恆等式，本來就不該同時進模型。改用 Elastic Net / 樹模型 + SHAP |
+| D4 | **常態檢定結論倒果為因** | 🟠 | p.37「將拒絕域的標準降低至 0.01，使每一個變數都不拒絕虛無假設，因此符合常態性」 | M3 直接量測 sample size 如何驅動拒絕率；推論改報 block/bootstrap interval 與樣本外表現，不再靠調 α 宣稱常態 |
+| D5 | **共線性用逐步刪除硬處理** | 🟠 | 第五章第三節，NO/NO2/NOx 反覆進出模型 8 次 | NO + NO2 ≡ NOx 是恆等式，本來就不該同時進模型；M2 改用 NOx level + NO2/NOx ratio 與 LightGBM TreeSHAP，M3 另量化係數不穩定 |
 | D6 | **零樣本外驗證** | 🟠 | 全文只有 in-sample AIC/BIC | rolling-origin CV + leave-one-station-out + leave-one-year-out，一律報告 baseline 對照 |
 | D7 | **78 個測站的空間維度沒用** | 🟠 | 僅「分 8 區各跑一次」 | ✅ M6 實測後修正指控：分層其實移除大部分空間相依（每月殘差 I 0.157→0.063），但原文 t 值出自合併式模型——two-way 校正後 t(PM10) 92.75→14.07，WD_HR 失去顯著；分區在地理 ensemble 99.5 百分位、惟資料偏好 k=2。LISA BH 後 0 熱點。人口加權暴露與 1km 場**不做**，理由記錄於 conf/spatial.yaml |
-| D8 | **相關 ≠ 因果，無氣象正規化** | 🟡 | 全文 | Grange et al. (2018) random-forest 氣象正規化 + 事件研究/合成控制 |
+| D8 | **相關 ≠ 因果，無氣象正規化** | 🟡 | 全文 | Grange et al. (2018) random-forest 氣象正規化 + weather-only counterfactual + placebo distribution；結果寫成偵測極限，不冒充政策因果 |
 | D9 | **GUI 工具不可重現** | 🟡 | SAS EG / SPSS | 全 Python，uv 鎖定版本，CI 可重跑 |
-| D10 | **放棄 SARIMA** | 🟡 | p.137「SARIMA 不在本專題繼續討論…在此實屬不便」 | 補回 SARIMA，並加上現代基準（LightGBM / N-HiTS / GNN） |
-| D11 | **缺漏值以鄰近測站代替，無記錄** | 🟡 | 第三章 | ✅ 完整 QA/QC 模組，保留原始 flag；`qc/gapfill.py` 四種可切換策略 ＋ M11 敏感度分析（鄰站法 MAE 7.41 μg/m³，同樣的單小時缺口比內插差 2.8 倍） |
+| D10 | **放棄 SARIMA** | 🟡 | p.137「SARIMA 不在本專題繼續討論…在此實屬不便」 | M12 補回 AutoARIMA／SARIMA 並與 persistence、climatology 比較；M9 另以 LightGBM 實作可部署預報，N-HiTS／GNN 延後 |
+| D11 | **缺漏值以鄰近測站代替，無記錄** | 🟡 | 第三章 | ✅ Canonical store 與公開圖表不補值；`qc/gapfill.py` 的四種策略只在隔離、帶旗標且不回寫 store 的 M11 敏感度實驗中比較（鄰站法 MAE 7.41 μg/m³，同樣的單小時缺口比內插差 2.8 倍） |
 
 ### 目標產出（四位一體）
 
-1. **開源資料集** — HuggingFace Datasets，台灣 2006→今 全測站逐時空品 + 氣象，含 QA flag
-2. **看得懂的技術報告** — 方法完整可重現（Markdown 即可，不需要 Quarto/DOI 那一套）
+1. **開源資料集** — 台灣 1982–2025 全測站逐時空品 + 氣象，含 QA flag；網站先交付 L0/L1，完整 Hugging Face Dataset 延後上架
+2. **看得懂的技術報告** — 方法完整可重現（Markdown，不引入 Quarto/DOI）
 3. **科普互動網站** — GitHub Pages，scrollytelling + 瀏覽器端資料探索器
-4. **可用工具** — `twair` Python 套件（PyPI）+ HuggingFace Space 預測 demo
+4. **可用工具** — `twair` Python 套件 + Hugging Face Space 預測 demo；PyPI 是選配而非 release gate
 
 ---
 
@@ -77,99 +94,56 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | 層 | 選擇 | 理由 |
 |---|---|---|
 | 套件管理 | **uv** + `pyproject.toml` | 快、鎖定版本、CI 友善 |
-| 資料處理 | **Polars** 主力 + **Pandas** 相容層 | 逐時 1 億筆，Pandas 單獨扛不住 |
+| 資料處理 | **Polars** 主力 + **Pandas** 相容層 | 逐時 3.40 億筆；只在 statsmodels 等相容邊界轉換 |
 | 查詢/儲存 | **DuckDB** + **Parquet(zstd)**，Hive 分區 | 免資料庫伺服器；同一份 Parquet 給 Python 與瀏覽器共用 |
-| Schema 驗證 | **Pandera**（Polars backend） | 每個 pipeline 階段強制 schema |
+| Schema 驗證 | `twair.store.schema` 的 typed contract | 驗證 key、dtype 與重複列；衝突資料拒絕而不猜測 |
 | 抓取 | **httpx** + **tenacity** + **gdown** | async + 重試 + Google Drive |
-| 統計 | statsmodels, scipy, **pingouin** | 混合模型、SARIMAX、穩健統計 |
-| ML | scikit-learn, **LightGBM**, **SHAP** | 主力 + 可解釋性 |
-| 時序 | **statsforecast**（SARIMA/ETS）、**neuralforecast**（N-HiTS/PatchTST） | 快速 backtest |
+| 統計 | statsmodels + scipy | M1 復刻、OLS、趨勢與 bootstrap 推論 |
+| ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
+| 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
-| 地科 | **xarray** + **cdsapi**(ERA5) + **earthengine-api**(S5P/MODIS) | 再分析與衛星 |
-| 圖 | **PyTorch Geometric**（僅 M9 GNN） | 測站關係圖 |
-| 報告 | **Quarto** | 一份原始檔輸出 HTML/PDF |
-| 前端 | **Astro** + TypeScript + **Tailwind** | 靜態產出、島嶼式互動、部署到 Pages 零成本 |
-| 圖表 | **ECharts**（統計圖）+ **MapLibre GL JS**（地圖）+ **deck.gl**（軌跡/大量點） | |
+| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | credential verification 已有；外部資料與 M8 尚未交付 |
+| 報告 | **Markdown** | 表格由 Parquet 產物重生；不維護第二套 Quarto/PDF 工具鏈 |
+| 前端 | **Astro** + TypeScript + handwritten CSS | 靜態產出、部署到 Pages 零成本 |
+| 圖表 | build-time **SVG** + 少量 progressive enhancement | 無繪圖 runtime；沒有 JavaScript 時仍可閱讀與列印 |
 | 瀏覽器端查詢 | **DuckDB-WASM** | 直接查 Parquet，無後端也能做 ad-hoc 分析 |
 | Space | **Gradio** | 預測模型 demo |
 | 品質 | pytest, ruff, mypy, pre-commit | |
-| CI | GitHub Actions | 每日增量更新 + 部署 |
+| CI | GitHub Actions | 程式品質、每週離線 freshness gate、Pages 部署 |
 
 ---
 
 ## Repo 結構
 
 ```
-taiwan-air-quality/
-├─ README.md                    # 中文主 README（含 hero 圖 + 一句話定位）
-├─ README.en.md
-├─ PLAN.md                      # 本計畫（Phase 0 從此檔複製進來）
-├─ LICENSE (MIT) / LICENSE-DATA (CC BY 4.0)
-├─ pyproject.toml / uv.lock
-├─ (justfile — 計畫過，沒有做；`twair` CLI 取代了它，見下方 quick start)
-├─ conf/
-│  ├─ sources.yaml              # 所有資料源的 URL、dataset id、參數
-│  ├─ stations.yaml             # 測站白名單、別名對照（改名/搬遷歷史）
-│  ├─ pollutants.yaml           # 測項單位、合理值域、偵測極限
-│  ├─ events.yaml               # 政策/事件時間軸（因果分析用）
-│  └─ qc.yaml                   # QA/QC 規則參數
+air-quality/
+├─ README.md / README.en.md / PLAN.md
+├─ conf/                         # 資料源、測站、QA/QC、分析與網站參數
 ├─ src/twair/
-│  ├─ ingest/
-│  │  ├─ moenv_api.py           # data.moenv.gov.tw REST API
-│  │  ├─ airtw_yearly.py        # airtw 年度逐時包（Google Drive）
-│  │  ├─ cwa.py                 # 中央氣象署 API + CODiS 歷史觀測
-│  │  ├─ era5.py                # Copernicus CDS
-│  │  ├─ gee.py                 # Sentinel-5P / MODIS AOD
-│  │  ├─ microsensors.py        # 智慧城鄉空品微型感測器
-│  │  └─ registry.py            # 來源註冊 + 快取 + checksum
-│  ├─ qc/
-│  │  ├─ flags.py               # 解析 #, *, x, A, NR, ND, - 等原始標記
-│  │  ├─ range.py               # 值域/物理一致性檢查
-│  │  ├─ outliers.py            # 尖峰 vs 真實事件的區辨
-│  │  ├─ gapfill.py             # 多策略缺漏填補（可切換 + 記錄）
-│  │  └─ report.py              # 產出資料品質報告
-│  ├─ store/
-│  │  ├─ schema.py              # Pandera schema 定義
-│  │  ├─ writer.py              # Parquet Hive 分區寫入
-│  │  ├─ catalog.py             # DuckDB view 註冊
-│  │  └─ hf.py                  # 推送 HuggingFace Datasets
-│  ├─ features/
-│  │  ├─ met.py                 # 風向 sin/cos、u/v、露點、通風係數
-│  │  ├─ temporal.py            # 循環時間編碼、假日、農曆節慶（燒金/鞭炮）
-│  │  └─ chem.py                # PM2.5/PM10 ratio、SO2/NOx、Ox=O3+NO2
-│  ├─ analysis/
-│  │  ├─ replication.py         # M1 復刻 2018 專題
-│  │  ├─ drivers.py             # M2 逐時驅動因子
-│  │  ├─ pitfalls.py            # M3 方法學對照（錯 vs 對）
-│  │  ├─ deweather.py           # M4 氣象正規化
-│  │  ├─ causal.py              # M5 政策因果
-│  │  ├─ spatial.py             # M6 空間
-│  │  ├─ trajectory.py          # M7 境外傳輸
-│  │  ├─ satellite.py           # M8 衛星融合
-│  │  └─ health.py              # M10 健康衝擊
-│  ├─ models/
-│  │  ├─ baselines.py           # persistence / climatology / SARIMA
-│  │  ├─ gbdt.py / dl.py / gnn.py
-│  │  └─ evaluate.py            # 統一 backtest 框架
-│  ├─ viz/
-│  │  └─ export.py              # 產出網站用的 json / parquet（分層）
-│  └─ cli.py                    # typer CLI: twair ingest / qc / run ...
-├─ notebooks/                   # 探索用，不進 CI
-├─ reports/                     # Quarto (.qmd) → docs/report/
-├─ web/                         # Astro 專案 → docs/
-├─ spaces/forecast/             # HF Gradio Space（獨立 requirements）
+│  ├─ ingest/                    # 年度頁探勘、下載、跨格式 archive parser、來源驗證
+│  ├─ qc/                        # flag、sentinel、一致性、異常、stuck、報告與 M11 實驗工具
+│  ├─ store/                     # schema、去重、Hive Parquet writer、聚合與修復稽核
+│  ├─ features/                  # 氣象、化學、時間與不洩漏的 lag features
+│  ├─ analysis/                  # M1–M7、M10–M11
+│  ├─ models/                    # 共用評估、M9 forecast、M12 SARIMA、Space bundle
+│  ├─ viz/                       # 網站 JSON／Parquet／SVG-friendly payload export
+│  ├─ freshness.py / status.py  # 離線可判定的資料新鮮度與磁碟現況
+│  └─ cli.py                     # `twair` CLI
+├─ reports/                      # 由分析產物重生的 Markdown 報告
+├─ web/                          # Astro 靜態網站與 DuckDB-WASM 資料探索器
+├─ spaces/forecast/              # 可追蹤的 Gradio 程式；model/data bundle 由 CLI 重建
+├─ scripts/                      # publication consistency 與 repository gates
 ├─ tests/
-├─ data/                        # gitignored
-│  ├─ raw/  interim/  processed/  outputs/
+├─ data/                         # gitignored：raw、processed、outputs
 └─ .github/workflows/
-   ├─ ci.yml                    # lint + type + test
-   ├─ daily-update.yml          # 每日增量抓取 → 更新 HF dataset
-   └─ deploy-web.yml            # 建置 Astro → GitHub Pages
+   ├─ ci.yml                     # lint、type、test、publication consistency
+   ├─ freshness.yml              # 每週離線判斷是否漏掉完整年度
+   └─ pages.yml                  # 建置 Astro 並部署 GitHub Pages
 ```
 
 ---
 
-## 資料源（已查證，2026-07 現況）
+## 資料源（核心已查證；外部加值源明確延後）
 
 > ⚠️ 環保署已於 2023/08 改制為**環境部**，原專題引用的 `taqm.epa.gov.tw` 已失效。
 
@@ -177,24 +151,24 @@ taiwan-air-quality/
 
 | 來源 | 位址 | 內容 | 取得方式 | 備註 |
 |---|---|---|---|---|
-| **環境部 空品監測網 年度逐時包** | `airtw.moenv.gov.tw/cht/Query/His_Data.aspx` | 全年逐時原始值，2018–2025 + 「歷年」，可依空品區或全部測站下載 | 頁面刮取 Google Drive file id → `gdown` | **主力歷史資料源**。連結會變動，需每次解析頁面 |
-| **環境部 資料開放平臺 API** | `data.moenv.gov.tw/api/v2/{id}` | `AQX_P_07` 測站基本資料（經緯度/測站類型/空品區）、`aqx_p_432` 即時 AQI、`aqx_p_488` AQI 歷史月包（已到 2026/06，117 檔） | REST，需免費 API key，支援 `year_month`, `offset`, `limit`, `format`, `sort` | 用於**每日增量更新**與 metadata |
-| **中央氣象署 開放資料** | `opendata.cwa.gov.tw` | 自動氣象站逐時觀測（氣壓、日射、能見度等原專題缺的變數） | REST，需免費授權碼 | Swagger: `/dist/opendata-swagger.html` |
-| **CWA CODiS** | `codis.cwa.gov.tw` | 歷史逐時氣象觀測（可回溯數十年） | 頁面查詢刮取 | 補 opendata 只有近期的缺口；**須遵守 robots.txt 與 rate limit** |
+| **環境部 空品監測網 年度逐時包** | `airtw.moenv.gov.tw/cht/Query/His_Data.aspx` | 1982–2025 全年逐時原始值，可依空品區或全部測站下載 | 頁面探勘 Google Drive file id → `gdown` | ✅ **主力來源已完整建置**；連結會變動，所以 `twair probe sources` 每次重新解析 |
+| **環境部 資料開放平臺 API** | `data.moenv.gov.tw/api/v2/{id}` | 測站基本資料與即時發布時間 | REST，部分功能需 API key | ✅ 測站登錄與 optional live context；freshness 的 pass/fail 不依賴網路 |
+| **中央氣象署 開放資料** | `opendata.cwa.gov.tw` | 自動氣象站逐時觀測 | REST，需授權碼 | ⬜ credential probe 已實作，資料尚未取得 |
+| **CWA CODiS** | `codis.cwa.gov.tw` | 歷史逐時氣象觀測 | 頁面查詢 | ⬜ 未納入目前 release boundary |
 
 ### 加值（進階模組用）
 
 | 來源 | 內容 | 取得 |
 |---|---|---|
-| **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫、地面氣壓、降水 | `cdsapi`，免費帳號 |
-| **Sentinel-5P TROPOMI** | NO2 / SO2 / CO / UV Aerosol Index 柱濃度 | Google Earth Engine `COPERNICUS/S5P/OFFL/L3_*` |
-| **MODIS MAIAC AOD** | 1 km 氣膠光學厚度 | GEE `MODIS/061/MCD19A2_GRANULES` |
-| **智慧城鄉空品微型感測器** | 數千個低成本 PM2.5 感測器 | 環境部開放平臺 / 民生公共物聯網 |
-| **NOAA HYSPLIT + GDAS** | 後推軌跡 | ARL 氣象檔 + HYSPLIT（容器化）或 ERA5 風場自建 Lagrangian 積分器 |
-| **內政部 人口統計網格** | 人口加權暴露 | 政府資料開放平臺 |
+| **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫、地面氣壓、降水 | ⬜ credential probe 已實作；尚未取得 |
+| **Sentinel-5P TROPOMI / MODIS MAIAC AOD** | 柱濃度與氣膠光學厚度 | ⬜ Phase 6 延後；尚未取得 |
+| **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
+| **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
+| **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
 
 > **BLH（邊界層高度）是原專題最關鍵的缺失變數。** 污染物濃度 ≈ 排放量 / 混合層體積。
-> 沒有 BLH，任何「氣象因子對 PM2.5 影響」的討論都缺一塊。這是終極版最有力的加分項之一。
+> 沒有 BLH，任何「氣象因子對 PM2.5 影響」的討論都缺一塊。M4 因此把 holdout
+> 表現與限制一起公開；補入 BLH 是後續研究，不是目前成果的隱藏前提。
 
 ---
 
@@ -206,25 +180,28 @@ taiwan-air-quality/
 
 ### Phase 0 — 專案骨架與資料源盤點
 
-**目標**：建立可運作的開發環境，並**實地確認**每個資料源真的拿得到。
+**目標**：建立可運作的開發環境，實地確認核心 airtw 年度來源，並讓需要憑證的
+加值來源在沒有憑證時明確顯示為未驗證，而不是假裝成功。
 
 **步驟**
 1. `uv init` 建立專案，寫 `pyproject.toml`（Python 3.12），安裝核心依賴
-2. 建立上述完整目錄結構，`justfile`、`.pre-commit-config.yaml`、`ruff.toml`、`mypy.ini`
-3. 把本計畫複製為 repo 內的 `PLAN.md`
-4. **資料源探勘腳本** `scripts/probe_sources.py`：
-   - 呼叫 `data.moenv.gov.tw` 列出所有 `空品測站小時值` 標籤的 dataset（搜尋結果顯示有 79 個），**輸出實際 dataset id 清單到 `conf/sources.yaml`**（不要憑猜測寫死 id）
-   - 解析 `His_Data.aspx`，抓出每個年份/空品區對應的 Google Drive file id
-   - 各下載 1 個最小樣本（1 個月 / 1 個測站），存到 `data/raw/_samples/`
+2. **已取代**：依賴、Ruff 與 MyPy 設定集中在 `pyproject.toml`，操作入口是 `twair` CLI；
+   repository gates 由 `scripts/check_*.py` 與 GitHub Actions 執行，不建立 justfile 或分散設定檔
+3. 保留 repo 內 `PLAN.md`，讓原始 blueprint 與實作判定可追蹤
+4. **資料源探勘命令** `uv run twair probe sources`（實作於 `twair.ingest.probe`）：
+   - 解析 `His_Data.aspx`，抓出實際年度、類型、空品區與 Google Drive file id，輸出到 `conf/sources.yaml`
+   - 下載跨格式世代的真實樣本，存到 gitignored 的 `data/raw/_samples/`
    - 產出 `docs/data-sources.md`：每個源的實際欄位、編碼、分隔符、flag 符號、時區、單位
-5. 申請所有 API key（環境部、CWA、CDS、GEE），寫 `.env.example`，`.env` 進 `.gitignore`
+5. 把環境部、CWA、CDS、GEE 的 optional credential contract 寫入 `.env.example`；
+   沒有憑證的來源保持 `probed: false`，不阻擋核心年度資料建置
 6. `docs/legal.md`：記錄每個來源的授權條款、robots.txt 檢查結果、rate limit 策略
 
 **驗收**
 - [x] ~~`just setup` 一鍵可跑~~ → `uv sync --all-extras --group dev`（沒有 justfile）
-- [ ] `data/raw/_samples/` 下每個資料源都有真實樣本檔
-- [ ] `docs/data-sources.md` 記錄了**實際觀察到**的欄位而非文件宣稱的
-- [ ] `conf/sources.yaml` 的每個 id / URL 都經過驗證
+- [x] `data/raw/_samples/` 有 1994、2010、2024 三個真實 archive 樣本，跨越實際格式世代
+- [x] `docs/data-sources.md` 由 live probe 產生，記錄實際 archive inventory 與觀察到的格式
+- [x] `conf/sources.yaml` 記錄 1982–2025 的 44 個年度、108 個逐時檔；未提供憑證的外部來源明列 `probed: false`
+- [x] `docs/legal.md` 記錄來源、授權、再散布與 attribution 邊界
 
 **風險**：airtw 的 Google Drive 連結會變動 → 探勘腳本必須每次重新解析頁面，並把 file id + 檔案 checksum 存進 `conf/sources.yaml` 供比對。
 
@@ -232,14 +209,14 @@ taiwan-air-quality/
 
 ### Phase 1 — 資料取得與 QA/QC → Canonical Dataset ⭐
 
-**目標**：把散落的政府原始檔統一成一份乾淨、有版本、有品質標記的資料集。
+**目標**：把散落的政府原始檔統一成一份可追溯、有版本、有品質標記的資料集。
 **這是整個專案的地基，也是最容易被低估的部分——原專題的「以鄰近測站資料代替」一句話帶過，正是它最大的黑盒。**
 
 #### 1.1 抓取
 
-- `twair ingest airtw --years 2006:2026` — 年度包，落地 `data/raw/airtw/`
-- `twair ingest moenv --dataset AQX_P_07` — 測站 metadata
-- `twair ingest cwa --years ...` — 氣象站觀測
+- `twair ingest airtw` — 依 `conf/sources.yaml` 下載年度包，落地 `data/raw/airtw/`
+- `twair stations geo` — 取得測站 metadata；歷史名稱與生命週期另由 canonical register 管理
+- CWA／ERA5／GEE 尚未取得，不混入目前的資料或分析宣稱
 - 所有下載存 checksum 到 `data/raw/_manifest.jsonl`，重跑時跳過已存在且 checksum 相符者
 - 全部走 `registry.py` 統一的重試 / rate limit / 快取
 
@@ -255,12 +232,11 @@ taiwan-air-quality/
    → **違反者標記而非刪除**，並在報告中統計違反率（這本身是有趣的發現）
 4. **異常偵測**（`outliers.py`）✅ **已完成** — 區分「儀器尖峰」與「真實污染事件」：
    單站尖峰但鄰站無反應 + 持續 <2h → 可疑；多站同步上升 → 真實事件（沙塵/境外傳輸）
-5. **缺漏填補**（`gapfill.py`）— **多策略可切換**，預設**不填補**：
-   - `none`（預設，分析時 dropna）
-   - `interpolate`（≤3h 線性內插）
-   - `neighbor`（鄰近測站迴歸，**復刻原專題做法**，供對照）
-   - `mice` / `iterative`
-   → 每筆填補值都帶 `imputed: bool` + `impute_method` 欄位；**M2 分析必須做填補策略的敏感度分析**
+5. **缺漏語意與 M11 敏感度實驗**（`gapfill.py`、`analysis/imputation.py`）：
+   - canonical store 與網站永遠保留 null；稀疏聚合回傳 null 並保留 `n_valid`／`coverage_ratio`
+   - `none` 是 shipped behavior，不發明任何值
+   - `interpolate`、`neighbor`、`iterative` 只在 derived frame 上明確呼叫，供 M11 遮罩重建實驗
+   - 每個實驗填入值都有 companion flag；任何策略都不回寫 canonical store，也不橋接公開圖表的缺口
 6. **測站生命週期** — 處理測站改名、搬遷、新設、停用（`conf/stations.yaml` 維護別名表與有效期間）
 
 #### 1.3 儲存格式
@@ -271,20 +247,17 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 ```
 | 欄位 | 型別 | 說明 |
 |---|---|---|
-| `station_id` | int32 | 環境部站代碼 |
-| `station_name` | categorical | |
-| `county` / `airzone` | categorical | 縣市 / 空品區（8 區，沿用原專題分類） |
-| `station_type` | categorical | 一般/工業/交通/國家公園/背景 — **原專題「只能用所有測站都有的測項」的限制，改為明確建模** |
-| `lat` / `lon` / `elevation` | float32 | |
-| `ts_local` | datetime(Asia/Taipei) | |
-| `ts_utc` | datetime(UTC) | |
-| `pollutant` | categorical | |
-| `value` | float32 | |
-| `unit` | categorical | |
-| `flag` | categorical | valid / hw_error / calibration / procedure / below_dl / missing |
-| `imputed` | bool | |
-| `impute_method` | categorical | |
-| `source` | categorical | airtw_yearly / moenv_api / … |
+| `station_name` | categorical | 正規化後測站名稱；地理與生命週期由獨立 register 對照 |
+| `pollutant` | categorical | 測項代碼 |
+| `ts_local` | datetime | 原始資料所用的台灣本地時鐘 |
+| `value` | float32 / null | 原始數值；無效或缺測時保持 null |
+| `flag` | categorical | 解析後的原始品質語意 |
+| `value_retained` | bool | 被標記的原始數字是否仍保留供稽核 |
+| `imputed` | bool | canonical store 固定為 false；M11 derived frame 才可能為 true |
+| `impute_method` | categorical / null | canonical store 為 null；僅記錄隔離實驗策略 |
+| `generation` | categorical | archive 格式世代 |
+| `source_member` | string | 原始 archive member，提供逐列 provenance |
+| `year` / `month` | int | 由 `ts_local` 推導的 Hive partition key |
 
 **日/月聚合表**：含 `n_valid`、`coverage_ratio` 欄位（**聚合前必須檢查覆蓋率，原專題沒做**）
 
@@ -296,7 +269,7 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 - 物理一致性違反率
 - 測站生命週期甘特圖
 
-#### 1.5 發布到 HuggingFace
+#### 1.5 發布到 Hugging Face（延後至專案收尾）
 
 - `twair publish hf` → `<user>/taiwan-air-quality`
 - 完整 **Dataset Card**：來源、授權、欄位字典、已知問題、引用格式、使用範例（含 DuckDB one-liner）
@@ -305,10 +278,10 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 
 **驗收**
 - [x] ~~`just ingest && just qc` 端到端可跑完，產出 Parquet~~ → `uv run twair ingest airtw` + `uv run twair build`
-- [ ] 逐時筆數與環境部官方公告的測站數 × 時數大致相符（誤差 <1%，差異須有解釋）
-- [ ] `docs/data-quality.md` 完整
-- [ ] HF dataset 頁面可用 `datasets.load_dataset()` 載入
-- [ ] pytest 覆蓋 flags 解析、schema 驗證、時區轉換（**夏令時間/跨年邊界要有測試**）
+- [x] **已取代**：「測站數 × 時數」不能描述測項與測站會變動的 long table；改以 340,371,384 列、521 個分區、來源 member、duplicate-key gate 與逐年 coverage 共同驗收
+- [x] `docs/data-quality.md` 由 QC 產物支持，缺值、旗標、sentinel、物理一致性與測站生命週期均保留
+- [ ] **延後**：完整 HF Dataset 頁面可用 `datasets.load_dataset()` 載入；等專案收尾後再發布
+- [x] pytest 覆蓋 flag 解析、canonical schema、archive 日期順序、午夜、跨年圖軸與缺口語意；1982–2025 的台灣資料期間不含夏令時間切換
 
 > **這個 Phase 結束就已經是一個可以獨立發布、被別人引用的貢獻了。** 台灣目前沒有一份
 > 乾淨、有 QA flag、涵蓋全歷史的開源空品資料集。
@@ -334,20 +307,20 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 
 | 面向 | 原專題 | 終極版 |
 |---|---|---|
-| 時間解析度 | 月平均 N=7,286 | 逐時 N≈1e8 |
+| 時間解析度 | 月平均 N=7,286 | 逐時；M2 實際可建模樣本 5,136,594 列 |
 | 風向 | 線性 0–360 | `sin(θ)`, `cos(θ)`，另加 u/v 分量與風速交互 |
 | PM10 | 當解釋變數 | **移出**；PM2.5/PM10 ratio 當作來源指紋衍生變數 |
-| 氣象 | 溫度/濕度/雨量/風 | + **BLH**、氣壓、日射、通風係數(BLH×WS)、露點差 |
-| 時間效應 | 無 | hour/dow/doy 循環編碼、國定假日、**農曆年與中元（燒金/鞭炮）** |
+| 氣象 | 溫度/濕度/雨量/風 | 同一批站內量測 + 風向 sin/cos 與 u/v；**BLH 尚未取得，明列限制** |
+| 時間效應 | 無 | hour/dow/doy 循環編碼與長期趨勢 |
 | 化學 | 單一污染物 | Ox = O3 + NO2、SO2/NOx ratio、NOx/CO ratio |
-| 共線性 | 逐步剔除 | Elastic Net、VIF 診斷、樹模型天然免疫 |
-| 模型 | OLS → Mixed AR(1) | OLS / Elastic Net / GAM / Mixed / **LightGBM**（主力）多模型對照 |
-| 可解釋性 | 迴歸係數 | **SHAP**（global + local + interaction） |
+| 共線性 | 逐步剔除 | 不讓 NO、NO2、NOx 同時進模；以 NOx level + NO2/NOx ratio 建模 |
+| 模型 | OLS → Mixed AR(1) | **LightGBM** 主力，另以 persistence／climatology 作同 split 基準 |
+| 可解釋性 | 迴歸係數 | LightGBM TreeSHAP 的 global mean absolute contribution |
 | 驗證 | in-sample AIC/BIC | rolling-origin CV + LOSO(站) + LOYO(年)，對照 persistence/climatology baseline |
 | 不確定性 | 無 | bootstrap CI、分位數迴歸（極端高濃度日的驅動因子與平常日不同） |
 
 **必做的敏感度分析**
-- 缺漏填補策略（none / interpolate / neighbor / mice）對結論的影響
+- 缺漏策略由 M11 隔離實驗評估重建誤差；不把填補 frame 當成 canonical 資料或公開趨勢
 - 測站類型（工業/交通/一般/背景）分層是否改變驅動因子排序
 - 加不加 PM10 的 R² 差距 → **量化 D2 這個洩漏到底虛胖了多少**
 
@@ -363,44 +336,47 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 6. **in-sample vs out-of-sample** — 原模型在 2018–2025 資料上的表現
 
 **驗收**
-- [ ] 復刻結果與原專題數值對照表完成，主要係數方向一致
-- [ ] M2 完整 backtest 結果表（多模型 × 多驗證策略 × 多指標）
-- [ ] SHAP 圖組完成
-- [ ] M3 六組對照圖完成
-- [ ] Quarto 報告 `reports/01-core.qmd` 可產出 HTML
+- [x] M1 有 52 列公布值／復刻值對照，報告逐項說明樣本與係數差異
+- [x] **已取代**：沒有為湊數實作原始 model zoo；M2 交付 LightGBM feature-set 對照、rolling-origin、LOSO、LOYO、RMSE／MAE／R²／高值 F1 與兩條 baseline
+- [x] 五組 feature-set 的 TreeSHAP importance 已輸出
+- [x] M3 六組方法學問題由 14 個 Parquet 產物與網站方法章交付
+- [x] **已取代**：`reports/01-core.md` 直接由 Parquet 重生；repo 不使用 Quarto
 
 ---
 
 ### Phase 3 — 網站骨架 + 首波上線 ⭐
 
-**目標**：在分析全部做完之前先讓網站活起來。前三章先上，後續章節逐步補。
+**目標**：早期先讓網站活起來；現行版本已從首波單頁演進成首頁加 10 個獨立 route。
 
 #### 資料分層策略（關鍵設計）
 
-1 億筆不可能丟進瀏覽器。分三層：
+3.40 億筆不可能整份丟進瀏覽器。現行 export 分三層：
 
 | Level | 內容 | 大小 | 交付方式 |
 |---|---|---|---|
-| L0 | 站-月 aggregates（78 站 × ~240 月 × 15 測項） | ~2 MB JSON | 內嵌，即時互動 |
-| L1 | 站-日（~850 萬列） | ~40 MB Parquet 分檔 | DuckDB-WASM 按需 range-request 載入 |
-| L2 | 站-時 全量 | ~2 GB | 只放 HF，網站提供下載連結 + 查詢範例 |
+| L0 | 站-月 aggregates | 每測項一個 JSON | 建置時載入圖表與測站摘要 |
+| L1 | 站-日 aggregates | 每測項一個 Parquet | DuckDB-WASM 按需 range-request 載入 |
+| L2 | 站-時全量 + QA provenance | 本機 canonical store | 完整 HF Dataset 上架後提供；目前不假裝網站已供下載 |
 
 `viz/export.py` 負責從 Parquet 產出 L0/L1，寫入 `web/public/data/`。
 
 #### 網站章節
 
-| # | 章節 | 內容 | 互動 |
+| # | route | 章節 | 回答的問題 |
 |---|---|---|---|
-| 0 | Hero | 全台最新 PM2.5 地圖 | MapLibre 測站點 + 時間軸 scrubber |
-| 1 | 這 20 年到底變好了嗎？ | 全台趨勢，raw vs 氣象正規化雙線 | 切換縣市/測站類型 |
-| 2 | 你住的地方 | 選測站 → 個人化報告：年均、超過 WHO 指引幾天、換算等效香菸數、與全台排名 | 下拉/地圖點選 |
-| 3 | 空氣從哪裡來？ | CBPF 極座標圖 + HYSPLIT 軌跡動畫 | deck.gl 軌跡播放 |
-| 4 | **事件效應的偵測極限** | 事件研究互動圖 + 安慰劑散布對照 | 選事件切換 |
-| 5 | **方法學對照** | M3 六組成對圖表（全部由本專案重算，**不重製原文圖表**） | before/after 滑桿 |
-| 6 | 資料探索器 | DuckDB-WASM，使用者寫 SQL 或用 UI 拉圖 | |
-| 7 | 方法與資料 | 完整技術文件、資料集下載、引用格式 | |
+| 1 | `/trend/` | 長期趨勢與氣象校正 | 監測網擴張與氣象扣除後，下降是否仍成立 |
+| 2 | `/stations/` | 測站個別統計 | 每個測站最近哪一年完整到可比較 |
+| 3 | `/space/` | 空間結構與官方分區 | 官方分區移除了多少殘差空間相依 |
+| 4 | `/sources/` | 污染來向與風速條件 | 高濃度對應哪些方位與風速 |
+| 5 | `/detection/` | 事件效應的偵測極限 | 方法能分辨多小的事件效應 |
+| 6 | `/forecast/` | 預測技巧與有效期距 | 預測何時不再比簡單基準有用 |
+| 7 | `/health/` | 健康負擔與它的假設 | 暴露反應與比較基準如何改變結果 |
+| 8 | `/methods/` | 方法選擇的量化代價 | 2018 方法與現行方法逐項相差多少 |
+| 9 | `/explore/` | 資料查詢 | 如何在瀏覽器內直接查 Parquet |
+| 10 | `/data/` | 資料與方法 | 可下載層級、重建方式、授權與 null 語意 |
 
-**視覺方向**：深色為主、資料密度高、克制的動效。第 5 章是差異化重點，值得花最多設計力氣。
+首頁負責第一眼看見完整台灣地圖、核心發現與章節入口；各章改成獨立 route，避免早期
+單頁版本長達數十個 viewport。視覺採淺色 evidence-first 版面，深色主題另有獨立色階。
 
 > **第 4 章的寫法（重要）**
 >
@@ -429,28 +405,29 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 **驗收**
 - [x] 本地可跑 —— `cd web && npm run dev`
 - [x] GitHub Actions 部署到 GitHub Pages 成功 —— <https://kuotunyu.github.io/air-quality/>
-- [x] 章節 0/1/2/5/6/7 上線
-- [x] 第 6 章 DuckDB-WASM 資料探索器 —— 瀏覽器內跑 SQL，無查詢伺服器
+- [x] 首頁與 10 個主題 route 全部上線，章節順序由 `web/src/lib/chapters.ts` 單一管理
+- [x] 第 9 章 DuckDB-WASM 資料探索器 —— 瀏覽器內跑 SQL，無查詢伺服器
 - [x] 行動裝置可用 —— 375px 無橫向溢出，全部文字達 WCAG AA
 - [x] 深/淺色主題都正常 —— 兩套色階分別定義，非濾鏡
 
 ---
 
-### Phase 4 — 氣象正規化 + 政策因果
+### Phase 4 — 氣象正規化 + 事件偵測極限
 
 #### M4 氣象正規化（`analysis/deweather.py`）
 
 實作 Grange et al. (2018) `rmweather` 演算法（R 套件，需**自行以 Python 實作**）：
 
 1. 訓練 RF：`PM2.5 ~ 氣象變數 + unix_time(趨勢) + doy + hour + dow`（300 棵樹）
-2. 對每個時間點，**重抽樣**氣象變數（從整個資料期間隨機抽），預測 1000 次取平均
+2. 對每個時間點，**重抽樣**除趨勢外的條件，預測 100 次取平均；這個預設值由收斂量測決定
 3. 得到「氣象條件標準化後」的濃度序列 → 反映真實排放變化
 4. 用 Theil-Sen 估趨勢，bootstrap 信賴區間
 
 **產出**：全台與各縣市的 raw trend vs deweathered trend 對照。
-回答「空氣變好，有多少是政策的功勞、多少只是那年風比較大」。
+回答「觀察到的趨勢有多少與模型可見的氣象條件有關」。這不是政策因果歸因；
+本地儀器看不到的 BLH 與長程傳輸仍可能留在 normalised series 裡。
 
-#### M5 政策因果（`analysis/causal.py`）
+#### M5 事件效應與 placebo 偵測（`analysis/causal.py`）
 
 `conf/events.yaml` 建立事件時間軸，至少涵蓋：
 - 2018 空污法修法
@@ -461,19 +438,18 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 - 六輕歲修期間
 - 各縣市自治條例
 
-方法（多方法交叉驗證，結論一致才可信）：
-1. **事件研究 / 時間斷點迴歸（RDiT）** — 在 deweathered 序列上做
-2. **合成控制法** — 用未受影響的測站當 donor pool
-3. **Bayesian structural time series（CausalImpact）**
-4. **DiD** — 處理組 vs 對照組測站
+早期 blueprint 列過 RDiT、合成控制、BSTS 與 DiD。現行交付收斂成一個更窄、
+但能被資料支持的問題：在 deweathered daily series 上以 weather-only counterfactual
+估計事件窗口，再把結果放進同站、同季節的 placebo-year 分布。這套設計量的是
+「目前資料與方法能否把訊號從自然波動中分出來」，不把單一模型包裝成政策因果定論。
 
 **必須誠實報告**：多數政策的效果量會很小或不顯著。這是正確的科學結論，不要為了故事性誇大。
 
 **驗收**
-- [ ] deweather 模組有單元測試（合成資料驗證能還原已知趨勢）
-- [ ] 每個事件至少 2 種方法的結果，含信賴區間
-- [ ] 網站第 1、4 章上線
-- [ ] `reports/02-trends-causal.qmd`
+- [x] deweather 模組以合成資料驗證已知斜率、block bootstrap、held-fixed feature 與 resampling 語意
+- [x] **已取代**：每個已查證事件輸出 counterfactual effect、信賴區間與 placebo distribution；不把四個未完成的方法名字當成 robustness
+- [x] 網站第 1 章趨勢與第 5 章偵測極限上線
+- [x] **已取代**：結果由 `m4_deweather`／`m5_causal` Parquet、網站章節與 `docs/methodology.md` 交付，不建立 Quarto 報告
 
 ---
 
@@ -481,29 +457,34 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 
 #### M6 空間（`analysis/spatial.py`）
 - **Moran's I / LISA** — 全域與局部空間自相關，找 hot spot / cold spot
-- **測站分群** — 時序型態分群（DTW + k-medoids，或 UMAP + HDBSCAN）→ 檢驗官方 8 空品區劃分是否合理（**很可能不合理，這是好發現**）
-- **Kriging / RF 空間內插** — 產出全台 1km 網格 PM2.5 濃度場（逐月）
-- **人口加權暴露** — 結合人口網格，算真正的人口暴露量而非測站平均（**測站平均系統性低估都會區暴露**）
+- **測站分群** — 以月序列與純地理 ensemble 檢驗官方空品區，讓資料決定支持的粒度
+- **空間內插的能力測試** — 以 buffered leave-one-station-out 量測場重建能力；
+  實測後拒絕發布超出監測網解析度的 1 km 濃度場
+- **人口加權暴露** — 未取得人口網格，因此不發布人口暴露數字，也不預設測站平均偏誤方向
 
 #### M7 境外傳輸（`analysis/trajectory.py`）
 - **CPF / CBPF** — conditional (bivariate) probability function 極座標圖，找高濃度對應的風速風向組合 → 污染源方位
-- **HYSPLIT 72h 後推軌跡** — 容器化 HYSPLIT + GDAS，或用 ERA5 風場自建 Lagrangian 積分器（fallback）
-- **軌跡分群** — k-means on trajectory，分類傳輸路徑（東北季風 / 西南氣流 / 局地滯留）
-- **PSCF / CWT** — 潛在源貢獻函數，畫出境外源區
+- **HYSPLIT／軌跡分群／PSCF** — 需要尚未取得的外部風場與軌跡資料，明確延後；
+  現行 M7 只回答監測站風速風向條件支持的「來向」，不宣稱跨境源區
 - **交叉驗證** — 用 PM2.5/PM10 ratio、SO2/NOx ratio 佐證來源類型（沙塵 ratio 低、燃燒 ratio 高）
 
 **驗收**
-- [ ] ~~全台 1km 濃度場~~ **不出**：最近鄰 0.6–67 km，1km 宣稱網絡給不起的解析度；補值技巧以緩衝 LOO 實測（M6 field_skill）
+- [x] **已取代**：全台 1 km 濃度場不出；最近鄰 0.6–67 km，1 km 宣稱網絡給不起的解析度，改以緩衝 LOO 實測 `field_skill`
 - [x] Moran's I 顯著性、LISA 圖 ✅（M6：Cliff–Ord 殘差虛無、correlogram 變號、LISA BH 後 0/60）
-- [ ] 至少 5 年的後推軌跡資料庫 + 分群結果
-- [ ] 網站第 3 章上線（軌跡動畫）
-- [ ] `reports/03-spatial.qmd`
+- [ ] **延後**：至少 5 年的後推軌跡資料庫與分群；不阻擋現行 M6／M7 發布
+- [x] 網站第 3 章空間結構與第 4 章 CBPF 污染來向上線；沒有資料就不放軌跡動畫
+- [x] **已取代**：`reports/03-spatial.md` 由 M6 Parquet 產物支持；repo 不使用 Quarto
 
-**風險**：HYSPLIT 部署較重。若受阻，先用 ERA5 風場的簡易積分器出結果，把 HYSPLIT 列為後續增強，**不要卡住整條流程**。
+**後續風險**：HYSPLIT 不只是部署問題，還需要可重現的風場、起點高度與 archive contract。
+若重啟，先寫獨立設計與 validation target；不再用簡化積分器冒充等價替代。
 
 ---
 
 ### Phase 6 — 衛星 + 微型感測器融合
+
+**交付判定：延後，不屬於目前 release boundary。** 這一階段需要新的資料授權、
+credential、校正研究與空間驗證；在核心 44 年地面監測專案收尾前，不為了填滿 roadmap
+引入另一條研究主線。保留下列 blueprint，供日後真的取得資料時重新評估。
 
 #### M8（`analysis/satellite.py`）
 - **Sentinel-5P** NO2/SO2 柱濃度 vs 地面測值的相關性與偏差分析
@@ -513,81 +494,86 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
   - 方法：geostatistical fusion / RF with satellite covariates / Bayesian hierarchical model
 
 **驗收**
-- [ ] 至少 1 年的 1km 日 PM2.5 融合產品
-- [ ] 融合場的獨立驗證（留出測站評估）
-- [ ] 微感測器校正前後 RMSE 對照
-- [ ] `reports/04-fusion.qmd`
+- [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
+- [ ] **延後**：融合場的留出測站評估
+- [ ] **延後**：微感測器校正前後 RMSE 對照
+- [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
-**風險**：GEE 需註冊專案（免費但需審核，可能數天）。Phase 0 就要先申請。
+**重啟條件**：先取得可合法重現的 GEE／微感測器資料與 credential，再寫獨立設計；
+現在只有 credential probe，不等於資料已取得。
 
 ---
 
-### Phase 7 — 預測模型 + HuggingFace Space
+### Phase 7 — 預測模型 + Hugging Face Space
 
 #### M9（`src/twair/models/`）
 
-任務：全台各測站 PM2.5 未來 1–72 小時預測。
+任務：以公開歷史觀測預測各測站 PM2.5 未來 1、6、24、48 小時，並讓每個期距
+都先超越 persistence 與 climatology，不能只靠漂亮的 R²。
 
 | 層級 | 模型 |
 |---|---|
-| Baseline | persistence、climatology、seasonal naive |
-| 傳統 | **SARIMA / SARIMAX**（補上原專題明說放棄的） |
-| ML | LightGBM direct multi-horizon（主力） |
-| DL | N-HiTS / PatchTST（neuralforecast） |
-| 圖 | **GNN**（測站為節點，距離+風向為邊，捕捉污染傳輸） |
+| Baseline | persistence、station-month-hour climatology |
+| 傳統 | M12 **AutoARIMA / SARIMA**，在相同 horizon 對照兩條 baseline |
+| ML | M9 LightGBM direct multi-horizon（現行主力） |
+| DL／圖模型 | N-HiTS、PatchTST、GNN 是早期 stretch goals，未納入目前 release |
 
 - 統一 backtest 框架（`evaluate.py`）：rolling origin、固定測試期、每個 horizon 分別報告
-- 指標：RMSE / MAE / MAPE / 高濃度事件的 F1（**預測「會不會爆表」比預測絕對值更有用**）
-- **與環境部官方空品預報比較**（若可取得歷史預報）
+- 指標：每個 horizon 的 RMSE、R²、skill vs persistence、skill vs climatology，並保留最差 split 與 losing-split count
+- **與環境部官方空品預報比較**需要可對齊的歷史 forecast archive，現行資料沒有，因此不做不公平比較
 
 #### HF Space（`spaces/forecast/`）
-Gradio 介面：選測站 → 顯示最近觀測 + 未來 72h 預測（含預測區間）+ SHAP 解釋當前預測的主因。
+Gradio 介面：選測站、demo 時刻與 1／6／24／48 小時期距，並排顯示模型、
+persistence、climatology 與實際觀測。Tracked app 不含完整資料；model/data bundle 由
+`uv run twair export space` 從本機 store 重建。
 
 **驗收**
-- [ ] Backtest 結果表：所有模型 × 所有 horizon
-- [ ] 主力模型明顯優於 baseline（否則誠實報告）
-- [ ] HF Space 可運行
-- [ ] `reports/05-forecast.qmd`
+- [x] **已取代**：不追求未實作的 model zoo；M9 有 4 個 horizon × 4 個 rolling-origin split，M12 另有 SARIMA／baseline 對照
+- [x] M9 的 16 個 horizon-split cells 全部勝過 persistence；同時公開 skill 對 climatology 的衰退，不能把「48 小時最有 skill」誤讀成最實用
+- [x] HF Space 公開運行，tracked source 與本機可重建 bundle 使用同一組 M9 model parameters
+- [x] **已取代**：`data/outputs/m9_forecast/`、網站第 6 章與 `spaces/forecast/README.md` 是 forecast report；不建立 Quarto 檔
 
 ---
 
 ### Phase 8 — 健康衝擊、收尾、自動化
 
 #### M10 健康衝擊（`analysis/health.py`，加分）
-- WHO 2021 全球空氣品質指引比對（年均 5 µg/m³、日均 15 µg/m³）
-- GEMM / IER 曝露反應函數 → 歸因死亡數估計（**須明確標註方法不確定性**）
-- 換算成直覺單位（等效香菸數、預期壽命損失）供科普章節使用
+- WHO 2021 annual guideline 與 GBD TMREL endpoints 並列，讓 counterfactual 的選擇可見
+- 以有正式來源的 all-cause mortality response function 計算 attributable fraction 與 sensitivity grid
+- **不報死亡人數、GEMM、壽命或人口暴露**：repo 沒有人口、年齡結構、基礎死亡率與暴露面，不能用小數位掩飾缺資料
 
 #### 收尾
-1. **CI 自動更新**：`daily-update.yml` — 每日抓增量 → QC → 更新 Parquet → push HF dataset → 重建網站 L0/L1 → 部署
+1. **CI 與 freshness 分工**：`ci.yml` 驗證 commit；`freshness.yml` 每週離線判斷是否漏掉已完整發布的年度；
+   資料更新仍是本機、可檢查的 ingest → build → aggregate → export，不讓排程自動改寫 repo 或 HF Dataset
 2. **文件**
    - `README.md`（中）/ `README.en.md`：一句話定位、快速開始、主要發現摘要 ✅
    - `docs/methodology.md`：完整方法論 ✅
    - 所有模組的 docstring + `mkdocs` API 文件（選配）
-3. **`twair` 發布到 PyPI**（選配）
-4. **完整報告** `reports/00-full.md`：把各階段的發現串成一份能讀完的文件
+3. **`twair` 發布到 PyPI**（選配，不是目前 release gate）
+4. **完整敘事**由首頁與 10 個主題 route 交付；分析細節留在 Markdown 報告與方法文件，
+   不再維護內容重複的 `reports/00-full.md`
 
 > **不做學術形式的那一套。** 這是 side project，不是投稿用的研究：
 > 沒有 `CITATION.cff`、沒有 Zenodo DOI、不用 Quarto 出 PDF。
 > 嚴謹度留著（那是這個專案好玩的地方），行政開銷丟掉。
 
 **驗收**
-- [ ] CI 綠燈，每日更新連續成功 7 天
-- [ ] 網站全 8 章上線
-- [ ] HF dataset + Space 都活著
-- [ ] README 有人看得懂在幹嘛（找非本科朋友試讀）
-- [ ] PyPI 可 `pip install twair`
+- [x] **已取代**：CI、weekly freshness 與 Pages workflow 分工，排程只檢查而不 mutation；不以「每日自動 push 7 天」當品質證據
+- [x] 首頁與全 10 章上線，沒有 JavaScript 時仍保有主要敘事與圖表
+- [ ] **延後**：完整 HF Dataset 等專案收尾後上架；HF Space 已公開且 tracked bundle 可重建
+- [ ] **人工驗收**：請非本科讀者完成一次 README／首頁試讀；automated quality gate 不能冒充使用者研究
+- [ ] **選配**：PyPI 發布；目前以 `uv sync` 與 repo CLI 重現，不阻擋網站／研究 release
 
 ---
 
 ## 跨階段的硬性規範
 
-1. **可重現**：每個分析輸出寫入 `data/outputs/<module>/<run_id>/`，含 `config.yaml`（含 hash）、`git_sha`、`env.txt`、`metrics.json`
+1. **可重現**：分析輸出寫入 `data/outputs/<module>/` 的穩定 Parquet contract；報告與網站只讀這些產物，網站 manifest 另記 `git_sha` 與 checksum
 2. **不硬編**：所有路徑、URL、參數進 `conf/*.yaml`
-3. **Schema 強制**：pipeline 每個階段進出都過 Pandera 驗證，失敗即中止
+3. **Schema 強制**：canonical frame 進出都過 `twair.store.schema` 的 dtype、key、flag 與 duplicate gate，失敗即中止
 4. **測試**：`ingest` 用 recorded fixtures（不打真實網路）；`qc` 與 `features` 要有邏輯測試；分析模組用合成資料驗證能還原已知答案
 5. **誠實報告**：效果不顯著、模型輸給 baseline、資料有問題——**全部如實寫進報告**。這比漂亮的結果更能證明能力
-6. **雙語**：README、網站、Dataset Card 中英雙語；程式碼註解與 commit 英文
+6. **語言邊界**：README 維持正體中文／英文雙入口；網站以正體中文服務目前受眾；未來 Dataset Card 再提供雙語
 7. **合規**：遵守 robots.txt、rate limit（預設 ≥1s/req）、標註來源與授權、不重新散布有授權限制的原始檔
 
 ---
@@ -600,7 +586,13 @@ Gradio 介面：選測站 → 顯示最近觀測 + 未來 72h 預測（含預測
 ```bash
 # 環境
 uv sync --all-extras --group dev
-uv run pytest && uv run ruff check .
+uv run python scripts/check_history_identity.py
+uv run python scripts/check_repository_anonymity.py
+uv run python scripts/check_test_count.py
+uv run pytest -q
+uv run ruff check .
+uv run ruff format .
+npm --prefix web run check
 
 # 資料管線（首次會跑很久，用 --years 2024:2025 先試小範圍）
 uv run twair ingest airtw && uv run twair build && uv run twair aggregate
@@ -608,8 +600,8 @@ duckdb -c "SELECT count(*) FROM 'data/processed/observations/**/*.parquet'"
 
 # 分析
 uv run twair analyze m1   # 復刻，比對 reports/_expected/replication_2018.yaml
-uv run twair analyze m2  # 逐時重做，5.13M 列
-uv run twair analyze all
+uv run twair analyze m2  # 逐時重做
+uv run twair analyze --help  # M3–M12 依需要逐模組執行；沒有虛構的 `all` 指令
 
 # 網站
 uv run twair export web            # 產出 web/public/data/
@@ -617,12 +609,13 @@ npm --prefix web run dev           # http://localhost:4321
 npm --prefix web run build         # 產出 web/dist/，由 .github/workflows/pages.yml 部署
 
 # 發布
-# 沒有指令。Space 由 spaces/forecast/ 手動推到 HuggingFace，dataset 尚未上架。
+# `uv run twair export space` 重建可部署 bundle；推送 Space 仍是手動外部發布。
+# 完整 dataset 尚未上架，待專案收尾與 owner 明確確認。
 # 見 docs/legal.md。
 ```
 
 **關鍵驗收檢查點**
-1. Phase 1 結束：逐時筆數 vs 官方測站數 × 時數，誤差 <1%
+1. Phase 1 結束：`twair status`、逐年 coverage、duplicate-key gate 與 QC report 對同一 store 給出一致狀態
 2. Phase 2 結束：M1 復刻的 OLS 係數與原專題 p.49 表格方向一致、量級相近
 3. Phase 3 結束：GitHub Pages 網址可公開存取，行動裝置正常
 4. Phase 7 結束：主力預測模型在 24h horizon 的 RMSE 優於 persistence baseline
@@ -635,11 +628,11 @@ npm --prefix web run build         # 產出 web/dist/，由 .github/workflows/pa
 |---|---|
 | airtw Google Drive 連結變動 | 每次執行重新解析 `His_Data.aspx`；file id + checksum 存檔比對 |
 | CODiS 爬蟲被擋 | 嚴格 rate limit + 快取；備案改用 opendata API（時間範圍較短）或 ERA5 |
-| GEE 專案審核需時 | Phase 0 就申請 |
+| GEE 專案與資料授權需時 | Phase 6 已延後；重啟時先驗證 credential、授權與可重現下載，再承諾產出 |
 | ERA5 下載排隊慢 | 背景批次下載；先用單一年份跑通流程 |
-| HYSPLIT 部署複雜 | Fallback：ERA5 風場自建簡易 Lagrangian 積分器 |
-| 逐時 1 億筆記憶體撐不住 | Polars lazy + DuckDB out-of-core；分區處理 |
-| 範圍過大爛尾 | **嚴格照 Phase 順序**，每階段都要能單獨發布；Phase 1–3 完成即已是完整作品 |
+| HYSPLIT 需要額外資料與驗證 | 明確延後；重啟時以獨立設計定義風場、起點高度、軌跡真值與 validation target |
+| 逐時 3.40 億筆記憶體撐不住 | Polars lazy + DuckDB out-of-core；分區處理 |
+| 範圍過大爛尾 | 每階段都要能單獨發布；Phase 6 已明確延後，不為了順序阻擋有資料支持的 M9–M12 |
 | 測站改名/搬遷造成序列斷裂 | `conf/stations.yaml` 維護別名與有效期；斷裂處在報告中明確標註 |
 
 ---
@@ -647,5 +640,6 @@ npm --prefix web run build         # 產出 web/dist/，由 .github/workflows/pa
 ## 最小可行版本（若時間不足）
 
 **Phase 0 + 1 + 2 + 3 就已經是一個完整、可以拿出去的作品**：
-乾淨的開源資料集 + 嚴謹的分析重做 + 方法學對照的互動網站。
-Phase 4–8 是加分，可以在上線後逐步補齊——**先上線再迭代，不要等全部做完才發布**。
+可追溯的 canonical store與公開 L0/L1 + 嚴謹的分析重做 + 方法學對照的互動網站。
+目前已超過這個邊界；尚未完成的 HF Dataset 與外部加值資料應獨立發布，
+**不要讓尚未取得的資料把已量測成果寫成「未完成」**。

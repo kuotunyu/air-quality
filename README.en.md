@@ -2,15 +2,16 @@
 
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
 
-> Every hourly observation, at every station, from 1982 to the present:
+> Every hourly observation published in MoENV's 1982–2025 annual archives:
 > 340 million measurements, quality-flagged rather than quietly repaired,
 > with an open pipeline and an interactive site on top.
 
-### Taiwan's PM2.5 fell 60% between 2008 and 2025. About 43% of that was the weather, not emissions.
+### Taiwan's PM2.5 fell 60% between 2008 and 2025; meteorological normalisation assigns 43% of that fall to weather the model can see.
 
 Measured by normalising out meteorological conditions — 61 stations, one set of rows, two lines.
 Asked again by a completely different aggregation (the median of per-station slope ratios), the answer is 42.2%.
-[See the chart →](https://kuotunyu.github.io/air-quality/#trend)
+This is a model decomposition, not causal attribution to policy or emissions; unobserved BLH and long-range transport remain limitations.
+[See the chart →](https://kuotunyu.github.io/air-quality/trend/)
 
 [繁體中文](README.md) ·
 [Interactive site](https://kuotunyu.github.io/air-quality/) ·
@@ -69,41 +70,41 @@ as such — see [docs/working-rules.md](docs/working-rules.md).
 
 ```mermaid
 flowchart TD
-    subgraph Data Sources [Data Ingestion]
-        A[MoENV His_Data.aspx] -->|Scrape / gdown| D[Raw ZIP / 7z Archives]
-        B[MoENV Open Data API] -->|REST / JSON| E[API Incremental Cache]
-        C[CWA / ERA5 / Satellite] -->|API / NetCDF| F[Covariates & Weather]
+    subgraph Data Sources [Measured Inputs]
+        A[MoENV Annual Archive Catalogue] -->|Probe file IDs / gdown| D[Raw ZIP / 7z Archives]
+        B[MoENV Station Register] -->|Metadata only| S[Station Metadata]
+        C[CWA / ERA5 / Satellite] -.->|Deferred; absent from current results| X[Future covariates]
     end
 
     subgraph Ingestion [Processing & Pipeline]
-        D -->|twair ingest| G[Raw CSV / XLS / ODS Parsing]
-        E -->|twair ingest| G
+        D -->|twair build| G[Cross-generation CSV / XLS / ODS Parsing]
     end
 
     subgraph QC [Quality Control Suite]
         G -->|Flags parsing| H[Flag Classification]
         H_flag["#, *, x, A, NR, ND, -"] --> H
-        G -->|Range & Consistency Check| I[Physical Consistency]
+        G -->|Sentinel & Consistency Check| I[Physical Consistency]
         I_check["PM2.5 <= PM10, NO+NO2 ~ NOx"] --> I
         G -->|Sentinel Handling| J[Circular Sentinels]
         J_set["888 (variable dir), 999 (calm)"] --> J
     end
 
     subgraph Storage [Canonical Parquet Store]
-        H & I & J -->|twair build| K[observations/ year=YYYY/month=MM/]
+        H & I & J --> K[observations/ year=YYYY/month=MM/]
         K -->|zstd Hive Partition| L[(Canonical Parquet Store)]
-        L -->|twair PIVOT / Agg| M[(daily / monthly / wide Datasets)]
+        L -->|coverage-gated aggregation| M[(Daily / Monthly / Wide Datasets)]
     end
 
     subgraph Analytics [Analysis Modules]
         L -->|twair qc outliers| N_out[Isolated Excursion vs Network Episode]
         M -->|M1| N[2018 Method Replication]
         M -->|M2-M3| O[Hourly Drivers & Pitfall Analysis]
-        M -->|M4-M5| P[Weather Normalization & Causal Policy Inference]
+        M -->|M4-M5| P[Weather Normalisation & Detection Limits]
+        M -->|M6-M12| T[Spatial / Forecast / Health / Sensitivity Analyses]
     end
 
     subgraph Export [Web Packaging]
-        O & P -->|twair export web| Q_json[L0 Static JSON / Parquet Web Layer]
+        O & P & T -->|twair export web| Q_json[L0 JSON / L1 Parquet Web Layer]
         Q_json -->|Embedded SVG Charts| R_astro[Astro Static Engine]
         Q_json -->|DuckDB WebAssembly| S_wasm[In-Browser SQL Query Engine]
     end
@@ -118,10 +119,10 @@ flowchart TD
 
 | | Description |
 |---|---|
-| 📦 **Open-Source Dataset** | 1982–Present hourly air quality observations + meteorology across Taiwan, packaged with original flags. **Not yet uploaded** — the L0 and L1 layers download directly from [chapter 10](https://kuotunyu.github.io/air-quality/data/). |
+| 📦 **Open-Source Dataset** | 1982–2025 hourly air quality observations + meteorology across Taiwan, packaged with original flags. Full L2 is **not yet on Hugging Face**; L0 and L1 download directly from [chapter 10](https://kuotunyu.github.io/air-quality/data/). |
 | 📊 **Reproducible Science** | Step-by-step replication of the 2018 method, followed by rigorous corrections and quantitative comparisons. |
-| 🌐 **Interactive Dashboard** | Scroll-driven charts showing trends, individualized exposure reports, wind-vector fingerprinting, policy effects, and methodology comparisons. |
-| 🔮 **Forecast Demo** | [HuggingFace Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
+| 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, source direction, event-detection limits, forecasting, health assumptions, and method comparisons. |
+| 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
 | 🔧 **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
 ---
@@ -166,8 +167,7 @@ uv run twair doctor
 ```bash
 uv run twair probe sources
 ```
-The `probe sources` utility crawls the Ministry of Environment page to locate current Google Drive archive download identifiers, downloads a tiny test chunk, verifies checksums, and populates `conf/sources.yaml` and `docs/data-sources.md`. 
-Since governmental server links change periodically, this crawl step ensures we do not rely on brittle hardcoded URLs.
+The `probe sources` utility parses the live airtw annual catalogue, resolves current Google Drive identifiers, downloads one real archive sample, and populates `conf/sources.yaml` and `docs/data-sources.md`. Credentialed value-add sources remain explicitly unprobed when no credential is configured. Since government links change periodically, the catalogue is rediscovered rather than treated as a permanent hardcoded URL list.
 
 ---
 
@@ -177,19 +177,19 @@ For the measured state of the store and outputs, run `uv run twair status`.
 The roadmap is in [PLAN.md](PLAN.md); durable evidence and decisions live in
 the relevant public [technical docs](docs/).
 
-| Phase | Content | Status |
+| Phase | Current delivery | Disposition |
 |---|---|---|
-| **Phase 0** | Skeletal Framework & Source Inventory | ✅ Complete |
-| **Phase 1** | Data Retrieval, Core QC, and Canonical Parquet Store | ✅ Complete |
-| **Phase 2** | Method Replication (M1) & Robust Pitfall Demonstration (M3) | ✅ Complete |
-| **Phase 3** | Astro Interactive Dashboard & DuckDB-WASM Setup | ✅ Complete |
-| **Phase 4** | Weather Normalization (M4) & Policy Causal Inference (M5) | ✅ Complete |
-| **Phase 5** | Source direction via CBPF (M7) ✅ / Spatial autocorrelation (M6) ✅ | ✅ **Done** |
-| **Phase 6** | Satellite AOD & Low-Cost Micro-sensor Network Fusion | ⬜ Likely skipped |
-| **Phase 7** | Forecasting (M9) & HF Space Demo | ✅ **Complete — [Space is live](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast)** |
-| **Phase 8** | Health burden (M10) ✅ / freshness check ✅ / full report ⬜ | 🔄 **In progress** |
+| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; credentialed value-add sources deferred |
+| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; full HF Dataset publishes at closeout |
+| **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
+| **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
+| **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
+| **Phase 5** | M6 spatial structure and M7 CBPF source direction | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
+| **Phase 6** | Satellite and low-cost sensor fusion | ⏸ Explicitly deferred; not a blocker for this release |
+| **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
+| **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |
 
-Read the full blueprints in [PLAN.md](PLAN.md).
+The original blueprint and every superseded/deferred disposition remain in [PLAN.md](PLAN.md).
 
 ---
 
@@ -209,7 +209,7 @@ npm run dev    # Dashboard launches on http://localhost:4321
 ### Dashboard Core Philosophy
 1. **Charts are HTML native**: Charts are compiled into lightweight SVGs inside Astro frontmatter. The website loads immediately and is completely interactive even with JavaScript disabled in the browser.
 2. **Null Values are Sacred**: Missing data points represent periods of station inactivity or insufficient data coverage. Instead of smoothly interpolating across gaps, charts render distinct breaks.
-3. **No External Query Servers**: The M6 explorer runs **DuckDB-WASM** compiled to WebAssembly. When a user explores daily records, DuckDB fetches only the required bytes from remote Parquet partitions via *HTTP Range Requests*—bypassing the need for database API keys or external server upkeep.
+3. **No External Query Servers**: The chapter 9 explorer runs **DuckDB-WASM** compiled to WebAssembly. When a user explores daily records, DuckDB fetches only the required bytes from remote Parquet files via *HTTP Range Requests*—bypassing the need for database API keys or external server upkeep.
 
 ---
 

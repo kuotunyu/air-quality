@@ -2,14 +2,15 @@
 
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
 
-> 1982 年至今、全台每一個測站、每一個小時的原始觀測：
+> 1982–2025 年環境部年度檔裡的全台逐時原始觀測：
 > 3.40 億筆資料，標記品質而不悄悄修補，
 > 附上完整開源的管線與一個互動網站。
 
-### 台灣的 PM2.5 在 2008–2025 年間降了 60%。其中 43% 是天氣，不是減排。
+### 台灣的 PM2.5 在 2008–2025 年間降了 60%；氣象正規化把其中 43% 歸於模型看得見的氣象差異。
 
 把氣象條件正規化之後量出來的——61 個測站、同一批資料、兩條線。
 用另一種完全不同的聚合方式（逐站斜率比值的中位數）再問一次，答案是 42.2%。
+這是模型分解，不是政策或排放的因果歸因；本地儀器看不到的 BLH 與長程傳輸仍是限制。
 [看那張圖 →](https://kuotunyu.github.io/air-quality/trend/)
 
 [English](README.en.md) ·
@@ -59,10 +60,10 @@
 
 | | 內容 |
 |---|---|
-| 📦 **開源資料集** | 1982–今 全測站逐時空品觀測 + 氣象，含原始品質旗標。**尚未上架**——L0／L1 兩層可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載 |
+| 📦 **開源資料集** | 1982–2025 全測站逐時空品觀測 + 氣象，含原始品質旗標。完整 L2 **尚未上架 Hugging Face**；L0／L1 兩層可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載 |
 | 📊 **可重現研究** | 從復刻 2018 年結果開始，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、污染來源方位、事件偵測極限、方法學對照 |
-| 🔮 **預測 demo** | [HuggingFace Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
+| 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
 | 🔧 **Python 套件** | `twair` — 資料管線與分析工具 |
 
 ## 資料來源
@@ -104,8 +105,9 @@ uv run twair doctor
 uv run twair probe sources
 ```
 
-`probe sources` 會實地連線各資料源、解析出當前有效的下載連結、抓取小樣本，
-並把結果寫進 `conf/sources.yaml` 與 `docs/data-sources.md`。
+`probe sources` 會實地解析 airtw 年度目錄與當前下載連結、抓取一個真實 archive 樣本，
+並把結果寫進 `conf/sources.yaml` 與 `docs/data-sources.md`；需要憑證的加值來源若未設定，
+會明確保留為未驗證。
 政府網站的連結會變動，所以這一步每次都重新解析，不寫死任何 URL。
 
 ## 專案狀態
@@ -113,20 +115,21 @@ uv run twair probe sources
 目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。後續方向見
 [PLAN.md](PLAN.md)；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
 
-| 階段 | 內容 | 狀態 |
+| 階段 | 目前交付 | 交付判定 |
 |---|---|---|
-| Phase 0 | 專案骨架、資料源盤點 | ✅ 完成 |
-| Phase 1 | 資料取得、QA/QC、Canonical Parquet | ✅ 完成 |
-| Phase 2 | 復刻 2018 專題 → 逐時重做 → 方法學對照 | ✅ 完成 |
-| Phase 3 | 互動網站首波上線 | ✅ 完成 |
-| Phase 4 | 氣象正規化、事件效應偵測 | ✅ 完成 |
-| Phase 5 | 境外傳輸（CBPF）✅ ／ 空間自相關（M6）✅ | ✅ 完成 |
-| Phase 6 | 衛星與微型感測器融合 | ⬜ |
-| Phase 7 | 預測模型（M9）✅ ／ HuggingFace Space ✅ | ✅ 完成 |
-| Phase 8 | 健康衝擊（M10）✅ ／ 資料新鮮度檢查 ✅ ／ 完整報告 ⬜ | 🔄 進行中 |
+| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；需憑證的加值源延後 |
+| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；完整 HF Dataset 收尾後發布 |
+| Phase 2 | M1 復刻、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
+| Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
+| Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
+| Phase 5 | M6 空間結構、M7 CBPF 污染來向 | ✅ 有界完成；HYSPLIT／1 km 場延後 |
+| Phase 6 | 衛星與微型感測器融合 | ⏸ 明確延後，不阻擋目前 release |
+| Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
+| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 收尾：HF Dataset 與人工讀者試讀待辦；PyPI 選配 |
 
 完整計畫見 [PLAN.md](PLAN.md)。磁碟上的實際狀態用 `uv run twair status` 看——
-這份表寫的是意圖，那個指令量的是事實。
+這份表寫的是 release 邊界；那個指令量的是本機事實。原始 blueprint 與每項
+「已取代／延後」的理由都保留在 [PLAN.md](PLAN.md)。
 
 ## 網站
 
