@@ -28,7 +28,7 @@ uv run twair doctor
 | Metadata／維運 | `MOENV_API_KEY` | 重抓測站基本資料、唯讀 freshness 檢查 |
 | 延後的氣象加值 | `CWA_API_KEY` | 氣象站觀測 |
 | 延後的氣象加值 | `CDSAPI_KEY` | ERA5 邊界層高度 |
-| 延後的 Phase 6 | `GEE_PROJECT_ID` | 衛星資料 —— **可選，有替代方案，見下** |
+| Phase 6 Stage A | `GEE_PROJECT_ID` | S5P 站月來源取得；進階 MAIAC／融合仍可延後 |
 | 發布收尾 | `HF_TOKEN` | Hugging Face Dataset 與 Space 更新 |
 
 ---
@@ -79,16 +79,15 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
 
 下載採排隊制，大範圍請求可能等數小時，建議背景批次執行。
 
-## 4. Google Earth Engine — `GEE_PROJECT_ID`（**可選，可延後**）
+## 4. Google Earth Engine — `GEE_PROJECT_ID`
 
-> **這一項不急，也不是非它不可。**
+> **S5P Stage A 已使用 GEE 驗證；它仍不是目前 release 的必要依賴。**
 >
-> GEE 只影響 Phase 6 的衛星部分（Sentinel-5P 柱濃度、MODIS AOD、
-> 由此推出的 1km 濃度場）。Phase 2–5、7、8 完全用不到，
+> GEE 只影響 Phase 6 的衛星部分（Sentinel-5P 柱濃度與 MODIS AOD）。
+> Phase 2–5、7、8 完全用不到，
 > Phase 6 的另一半（微型感測器校正）也不需要。
 >
-> 註冊流程要建 Google Cloud 專案並通過非商業資格審查，比其他幾項繁瑣許多。
-> **建議做到 Phase 6 再決定**，屆時可比較這兩個替代方案：
+> 若不使用 GEE，仍可比較這兩個替代方案：
 >
 > | 替代方案 | 提供 | 註冊難度 |
 > |---|---|---|
@@ -102,7 +101,7 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
 1. 用 Google 帳號登入
 2. 註冊使用目的（選 **noncommercial / research**）
 3. 建立或指定一個 Google Cloud 專案並啟用 Earth Engine API
-4. **審核可能需要數天** —— 請及早申請
+4. 在 Earth Engine 設定頁確認 project 已註冊為 noncommercial／research
 5. 填入 `.env` 的 `GEE_PROJECT_ID`
 
 本機認證：
@@ -110,6 +109,18 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
 ```bash
 uv run earthengine authenticate
 ```
+
+驗證與取得：
+
+```bash
+uv run twair doctor
+uv run twair stations
+uv run --extra earth twair ingest satellite --year 2025 --months 1:12
+```
+
+`twair ingest satellite` 讀取 `data/outputs/qc/stations.parquet`，因此先跑一次
+`twair stations`。輸出只代表官方 S5P atmospheric columns 在測站位置的站月取樣；
+它不是地面濃度、排放估計或 M8 融合結果。
 
 ## 5. Hugging Face — `HF_TOKEN`
 

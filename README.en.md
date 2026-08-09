@@ -129,7 +129,10 @@ flowchart TD
 
 ## Data Sources
 
-All retrieved files originate from governmental open data portals under the *Government Data Open License, Version 1.0*.
+MoENV and CWA data use Taiwan's *Government Data Open License, Version 1.0*.
+Copernicus satellite inputs are governed separately by the
+[Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
+See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution boundaries.
 
 | Source | Content | Spatial/Temporal | Span | Status |
 |---|---|---|---|---|
@@ -137,7 +140,8 @@ All retrieved files originate from governmental open data portals under the *Gov
 | [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time | ✅ in use (station register, freshness check) |
 | [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
 | [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temp, surface pressure | 1982–Present | ⬜ **not yet acquired** |
-| [Google Earth Engine (S5P / MODIS)](https://earthengine.google.com/) | Sentinel-5P TROPOMI & MODIS | Columnar NO2, SO2, CO, and 1km AOD | 2018–Present | ⬜ **not yet acquired** (Phase 6) |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2025 source acquisition implemented; M8 analysis and fusion remain incomplete |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | ⏸ The synchronous pilot timed out; batch acquisition and calibration remain |
 
 Every meteorological variable in use today is measured by the air-quality stations' own instruments — temperature, humidity, rainfall, wind speed and bearing. Nothing comes from CWA or from a reanalysis yet.
 
@@ -185,7 +189,7 @@ the relevant public [technical docs](docs/).
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
 | **Phase 5** | M6 spatial structure and M7 CBPF source direction | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
-| **Phase 6** | Satellite and low-cost sensor fusion | ⏸ Explicitly deferred; not a blocker for this release |
+| **Phase 6** | Satellite and low-cost sensor fusion | 🟡 S5P source-acquisition Stage A delivered; analysis, MAIAC, and fusion remain deferred and do not block this release |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |
 

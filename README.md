@@ -68,7 +68,9 @@
 
 ## 資料來源
 
-全部為政府公開資料，依《政府資料開放授權條款第 1 版》使用。
+環境部與中央氣象署資料依《政府資料開放授權條款第 1 版》使用；
+Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)。
+各來源的授權與再散布邊界見 [docs/legal.md](docs/legal.md)。
 
 | 來源 | 內容 | 期間 | 狀態 |
 |---|---|---|---|
@@ -76,7 +78,8 @@
 | [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時 | ✅ 使用中（測站登錄、資料新鮮度檢查） |
 | [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 | ⬜ **尚未取得** |
 | [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、風場、氣壓 | 1982– | ⬜ **尚未取得** |
-| [Sentinel-5P / MODIS](https://earthengine.google.com/) | 衛星柱濃度、氣膠光學厚度 | 2018– | ⬜ **尚未取得**（Phase 6，建議略過） |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 🟡 2025 站月來源取得已實作；M8 分析與融合尚未完成 |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | ⏸ 同步查詢 pilot 逾時；批次取得與校正研究待辦 |
 
 氣象變數目前**全部來自空品測站自己的儀器**（溫度、濕度、雨量、風速風向），
 不是氣象署，也不是再分析資料。
@@ -123,7 +126,7 @@ uv run twair probe sources
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
 | Phase 5 | M6 空間結構、M7 CBPF 污染來向 | ✅ 有界完成；HYSPLIT／1 km 場延後 |
-| Phase 6 | 衛星與微型感測器融合 | ⏸ 明確延後，不阻擋目前 release |
+| Phase 6 | 衛星與微型感測器融合 | 🟡 S5P 來源取得 Stage A 已交付；分析、MAIAC 與融合仍延後，不阻擋目前 release |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
 | Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 收尾：HF Dataset 與人工讀者試讀待辦；PyPI 選配 |
 

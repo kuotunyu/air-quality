@@ -19,7 +19,7 @@ from rich.logging import RichHandler
 
 from twair import __version__
 from twair.config import get_settings
-from twair.paths import ensure_dirs
+from twair.paths import ensure_dirs, outputs_dir
 from twair.scalars import as_float, as_int
 
 # Rich draws its tables with box-drawing characters, and a redirected stdout on
@@ -194,6 +194,59 @@ def ingest_airtw(
         patient=patient,
         data_type=kind,
     )
+
+
+@ingest_app.command("satellite")
+def ingest_satellite(
+    year: int = typer.Option(2025, "--year", help="Calendar year to acquire."),
+    months: str = typer.Option(
+        "1:12",
+        "--months",
+        help="Comma-separated months or inclusive ranges, e.g. 1,3,6:8.",
+    ),
+) -> None:
+    """Acquire S5P monthly atmospheric columns at standard-station locations."""
+    from twair.ingest.satellite import (
+        EarthEngineBackend,
+        acquire_s5p,
+        parse_months,
+        write_satellite_result,
+    )
+
+    try:
+        selected_months = parse_months(months)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--months") from exc
+    if year < 2018:
+        raise typer.BadParameter(
+            "Sentinel-5P OFFL sources do not cover a complete pre-2018 year",
+            param_hint="--year",
+        )
+    station_path = outputs_dir("qc") / "stations.parquet"
+    if not station_path.exists():
+        raise typer.BadParameter(
+            f"{station_path} not found — run `twair stations` first",
+            param_hint="station snapshot",
+        )
+    try:
+        project = get_settings().require("gee_project_id")
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc), param_hint="GEE_PROJECT_ID") from exc
+    result = acquire_s5p(
+        pl.read_parquet(station_path),
+        backend=EarthEngineBackend(project),
+        project=project,
+        year=year,
+        months=selected_months,
+    )
+    paths = write_satellite_result(result)
+    written = pl.read_parquet(paths["values"])
+    console.print(
+        f"S5P: [green]{written.height:,}[/green] station-month rows, "
+        f"[yellow]{written['value'].null_count():,}[/yellow] masked/null values"
+    )
+    for name, path in paths.items():
+        console.print(f"wrote {name}: {path}")
 
 
 @app.command("build")

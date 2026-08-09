@@ -1,7 +1,8 @@
 # 資料來源盤點
 
-> 由 `uv run twair probe sources` 產生於 2026-08-01T21:48:16+00:00。
-> 記錄的是**實際觀察到**的行為，不是官方文件的宣稱。
+> 環境部核心盤點由 `uv run twair probe sources` 產生於 2026-08-01T21:48:16+00:00；
+> GEE 段落另標 2026-08-10 實測。這裡記錄的是**實際觀察到**的行為，
+> 不是只抄官方文件的宣稱。
 
 ## 1. 環境部 空氣品質監測網 — 歷年監測資料
 
@@ -84,5 +85,39 @@
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
 | 智慧城鄉微型感測器 | 高密度 PM2.5 | 環境部開放平臺 |
+
+### 2026-08-10 GEE 實測與 Stage A 邊界
+
+Earth Engine credential 與真實查詢均已驗證。現行 `twair ingest satellite` 只取得兩個
+官方 L3 column band，不把它們改名為地面濃度或排放量：
+
+| key | collection | band | unit |
+|---|---|---|---|
+| `s5p_no2` | `COPERNICUS/S5P/OFFL/L3_NO2` | `tropospheric_NO2_column_number_density` | mol/m² |
+| `s5p_so2` | `COPERNICUS/S5P/OFFL/L3_SO2` | `SO2_column_number_density` | mol/m² |
+
+GEE 的 L3 ingest grid 約為 0.01°（此處取樣 scale 設為 1,113 m），但 Sentinel-5P
+來源產品在 nadir 的實際解析度約為 3.5 × 7 km。grid spacing 不是彼此獨立的 1 km
+衛星資訊，後續分析不得用前者宣稱 1 km 的物理解像力。
+
+2025 全年重跑指令：
+
+```bash
+uv run --extra earth twair ingest satellite --year 2025 --months 1:12
+```
+
+實測產物位於 `data/interim/satellite/year=2025/`：1,824 個 station-month-source row、
+24 個 source-month coverage row。76 個有座標測站中，S5P NO₂ 有 1 個 masked/null
+sample；S5P SO₂ 有 362 個負值，均照原值保留。另有 6 個歷史測站沒有座標，manifest
+明確計數而不送進 Earth Engine。這些是 M8 的來源輸入，不是相關性、校正或融合結論。
+
+同年度的部分月份重跑會保留其他月份，但只有在 source contract 與測站名稱／座標
+inventory hash 完全相同時才允許合併。每次取得的月份、source、時間與 Git 狀態都留在
+manifest 的 `acquisition_runs`；年度輸出先寫入 staging generation，再交換正式目錄，
+若上次程序在交換途中中斷，下次執行會先恢復孤立 backup，避免把部分月份當成完整年度。
+
+MODIS MAIAC 的 metadata 與 tile 位置可查，但 2025 station-month 的同步 `getInfo`
+pilot 即使限縮到台灣兩個 tile 並只取 best-quality QA 仍逾時。下一步必須先設計可重啟的
+batch export／checkpoint；目前沒有 AOD 產物，也不發布衛星推估 PM2.5。
 
 見 [registrations.md](registrations.md) 取得各項憑證。

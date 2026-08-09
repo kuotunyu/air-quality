@@ -1,0 +1,13 @@
+"s5p":
+  "s5p_no2":
+    "collection_id": "COPERNICUS/S5P/OFFL/L3_NO2"
+    "band": "tropospheric_NO2_column_number_density"
+    "unit": "mol/m^2"
+    "sample_scale_m": 1113
+    "column_kind": "tropospheric_vertical_column"
+  "s5p_so2":
+    "collection_id": "COPERNICUS/S5P/OFFL/L3_SO2"
+    "band": "SO2_column_number_density"
+    "unit": "mol/m^2"
+    "sample_scale_m": 1113
+    "column_kind": "vertical_column"
