@@ -15,7 +15,7 @@
 | 範圍 | 現況 | 可重跑的證據 |
 |---|---|---|
 | Canonical store | 1982–2025、44 年、521 個分區、340,371,384 筆逐時觀測 | `uv run twair status` |
-| QA/QC 與分析 | QC、M1–M7、M9–M12 均有實際 Parquet 產物；M8 只有 S5P Stage A 來源取得，不冒充分析或融合已完成 | `data/outputs/`、`data/interim/satellite/` 與各 `twair analyze …` 指令 |
+| QA/QC 與分析 | QC、M1–M7、M9–M12 均有實際 Parquet 產物；M8 已有 S5P Stage A 與 MAIAC 可續跑 batch acquisition path，不冒充分析或融合已完成 | `data/outputs/`、`data/interim/satellite/`、`twair ingest maiac …` 與各 `twair analyze …` 指令 |
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
 | 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
@@ -492,6 +492,9 @@ roadmap 把「能下載」寫成「M8 已完成」。
 - **Stage A source acquisition（已交付）** — `twair ingest satellite --year 2025 --months 1:12`
   從 GEE 取得 S5P NO₂／SO₂ 柱濃度到 `data/interim/satellite/year=2025/`；
   嚴格驗證 station-month key，masked sample 保留為 null，負值不裁成零，並輸出 coverage 與 manifest
+- **MAIAC batch acquisition path（已交付）** — `twair ingest maiac plan|submit|status|import-files`
+  以逐月 task、最多 2 個 active task、durable ledger 與 deterministic description 避免中斷後重複送出；
+  CSV 只有在完整 station-month key、source contract、checksum 與 task provenance 都通過時才原子合併
 - **Sentinel-5P** NO2/SO2 柱濃度 vs 地面測值的相關性與偏差分析
 - **MODIS MAIAC AOD → PM2.5** — AOD 與地面 PM2.5 的關係受 BLH 與 RH 調制，建立校正模型
 - **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
@@ -505,9 +508,9 @@ roadmap 把「能下載」寫成「M8 已完成」。
 - [ ] **延後**：微感測器校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
-**下一個條件**：S5P Stage A 已排除 credential 與基本取得風險；接下來先為 MAIAC
-設計可重啟的 batch export／checkpoint，再決定是否值得投入 BLH、AOD 校正、微型感測器
-與留出測站驗證。沒有這些驗證前，不發布融合濃度場。
+**下一個條件**：S5P Stage A 已排除 credential 與基本取得風險；MAIAC 的可重啟 batch
+export／checkpoint 已落地，接下來必須先取得並驗證真實 AOD 站月表，再決定是否值得投入
+BLH、AOD 校正、微型感測器與留出測站驗證。沒有這些驗證前，不發布融合濃度場。
 
 ---
 

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import polars as pl
 import typer
@@ -19,8 +20,11 @@ from rich.logging import RichHandler
 
 from twair import __version__
 from twair.config import get_settings
-from twair.paths import ensure_dirs, outputs_dir
+from twair.paths import ensure_dirs, interim_dir, outputs_dir
 from twair.scalars import as_float, as_int
+
+if TYPE_CHECKING:
+    from twair.ingest.maiac import ExportEntry, ExportLedger
 
 # Rich draws its tables with box-drawing characters, and a redirected stdout on
 # Windows in this locale is cp950, which has no code point for ┆. So
@@ -52,6 +56,12 @@ app.add_typer(probe_app, name="probe")
 
 ingest_app = typer.Typer(help="Phase 1: download raw data from upstream providers.")
 app.add_typer(ingest_app, name="ingest")
+
+maiac_app = typer.Typer(
+    help="Plan, submit, monitor, and import resumable MODIS MAIAC exports.",
+    no_args_is_help=True,
+)
+ingest_app.add_typer(maiac_app, name="maiac")
 
 
 def _parse_year_range(spec: str | None) -> range | None:
@@ -247,6 +257,211 @@ def ingest_satellite(
     )
     for name, path in paths.items():
         console.print(f"wrote {name}: {path}")
+
+
+def _maiac_months(spec: str) -> tuple[int, ...]:
+    from twair.ingest.satellite import parse_months
+
+    try:
+        return parse_months(spec)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--months") from exc
+
+
+def _maiac_stations() -> pl.DataFrame:
+    station_path = outputs_dir("qc") / "stations.parquet"
+    if not station_path.exists():
+        raise typer.BadParameter(
+            f"{station_path} not found — run `twair stations` first",
+            param_hint="station snapshot",
+        )
+    return pl.read_parquet(station_path)
+
+
+def _maiac_project() -> str:
+    try:
+        return get_settings().require("gee_project_id")
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc), param_hint="GEE_PROJECT_ID") from exc
+
+
+def _maiac_ledger_path(year: int) -> Path:
+    return interim_dir("maiac") / f"year={year}" / "export-ledger.json"
+
+
+def _print_maiac_states(entries: Sequence[ExportEntry]) -> None:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        state = entry.state
+        counts[state] = counts.get(state, 0) + 1
+    console.print(
+        "MAIAC task states: " + ", ".join(f"{state}: {counts[state]}" for state in sorted(counts))
+    )
+
+
+@maiac_app.command("plan")
+def plan_maiac(
+    year: int = typer.Option(2025, "--year", help="Calendar year to export."),
+    months: str = typer.Option(
+        "1:12",
+        "--months",
+        help="Comma-separated months or inclusive ranges, e.g. 1,3,6:8.",
+    ),
+) -> None:
+    """Write deterministic local export intent without contacting Earth Engine."""
+    from twair.ingest.maiac import plan_exports, read_export_ledger, write_export_ledger
+
+    selected_months = _maiac_months(months)
+    ledger = plan_exports(
+        _maiac_stations(),
+        project=_maiac_project(),
+        year=year,
+        months=selected_months,
+    )
+    try:
+        path = write_export_ledger(ledger)
+        persisted = read_export_ledger(path)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc), param_hint="MAIAC plan") from exc
+    console.print(
+        f"MAIAC: [green]{len(persisted.entries)}[/green] month(s) planned, "
+        f"{persisted.stations_with_coordinates} stations with coordinates"
+    )
+    _print_maiac_states(persisted.entries)
+    console.print(f"wrote ledger: {path}")
+
+
+@maiac_app.command("submit")
+def submit_maiac(
+    year: int = typer.Option(2025, "--year", help="Calendar year in the local ledger."),
+    confirm_drive_export: bool = typer.Option(
+        False,
+        "--confirm-drive-export",
+        help="Explicitly allow new Earth Engine batch tasks to write CSV files to Drive.",
+    ),
+) -> None:
+    """Reconcile existing tasks, then submit only the available bounded capacity."""
+    if not confirm_drive_export:
+        raise typer.BadParameter(
+            "submission requires --confirm-drive-export",
+            param_hint="--confirm-drive-export",
+        )
+    from twair.ingest.maiac import (
+        EarthEngineMaiacBackend,
+        read_export_ledger,
+        submit_exports,
+        write_export_ledger,
+    )
+
+    path = _maiac_ledger_path(year)
+    try:
+        ledger = read_export_ledger(path)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="MAIAC ledger") from exc
+    project = _maiac_project()
+    if ledger.gee_project != project:
+        raise typer.BadParameter(
+            "GEE_PROJECT_ID differs from the project recorded in the MAIAC ledger",
+            param_hint="GEE_PROJECT_ID",
+        )
+
+    def persist(snapshot: ExportLedger) -> None:
+        write_export_ledger(snapshot, destination=path)
+
+    try:
+        updated = submit_exports(
+            ledger,
+            _maiac_stations(),
+            backend=EarthEngineMaiacBackend(project),
+            confirm=True,
+            persist=persist,
+        )
+        write_export_ledger(updated, destination=path)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc), param_hint="MAIAC submission") from exc
+    _print_maiac_states(updated.entries)
+    console.print(f"updated ledger: {path}")
+
+
+@maiac_app.command("status")
+def status_maiac(
+    year: int = typer.Option(2025, "--year", help="Calendar year in the local ledger."),
+) -> None:
+    """Refresh local state from Earth Engine without creating a task."""
+    from twair.ingest.maiac import (
+        EarthEngineMaiacBackend,
+        read_export_ledger,
+        refresh_export_status,
+        write_export_ledger,
+    )
+
+    path = _maiac_ledger_path(year)
+    try:
+        ledger = read_export_ledger(path)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="MAIAC ledger") from exc
+    project = _maiac_project()
+    if ledger.gee_project != project:
+        raise typer.BadParameter(
+            "GEE_PROJECT_ID differs from the project recorded in the MAIAC ledger",
+            param_hint="GEE_PROJECT_ID",
+        )
+    try:
+        updated = refresh_export_status(
+            ledger,
+            backend=EarthEngineMaiacBackend(project),
+        )
+        write_export_ledger(updated, destination=path)
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc), param_hint="MAIAC status") from exc
+    _print_maiac_states(updated.entries)
+    console.print(f"updated ledger: {path}")
+
+
+@maiac_app.command("import-files")
+def import_maiac_files(
+    from_dir: Annotated[
+        Path,
+        typer.Option(
+            "--from-dir",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+            resolve_path=True,
+            help="Directory containing downloaded Earth Engine CSV exports.",
+        ),
+    ],
+    year: int = typer.Option(2025, "--year", help="Calendar year in the local ledger."),
+    months: str = typer.Option(
+        "1:12",
+        "--months",
+        help="Comma-separated completed months or inclusive ranges to import.",
+    ),
+) -> None:
+    """Validate downloaded CSV files and merge complete station months atomically."""
+    from twair.ingest.maiac import read_export_ledger
+    from twair.ingest.maiac_import import import_exported_files, write_maiac_result
+
+    path = _maiac_ledger_path(year)
+    try:
+        ledger = read_export_ledger(path)
+        result = import_exported_files(
+            ledger,
+            _maiac_stations(),
+            source_dir=from_dir,
+            months=_maiac_months(months),
+        )
+        paths = write_maiac_result(result)
+        persisted = pl.read_parquet(paths["values"])
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="MAIAC import") from exc
+    console.print(
+        f"MAIAC: [green]{persisted.height:,}[/green] station-month rows, "
+        f"[yellow]{persisted['value'].null_count():,}[/yellow] masked/null values"
+    )
+    for name, output_path in paths.items():
+        console.print(f"wrote {name}: {output_path}")
 
 
 @app.command("build")

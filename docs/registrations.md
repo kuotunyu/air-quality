@@ -122,6 +122,27 @@ uv run --extra earth twair ingest satellite --year 2025 --months 1:12
 `twair stations`。輸出只代表官方 S5P atmospheric columns 在測站位置的站月取樣；
 它不是地面濃度、排放估計或 M8 融合結果。
 
+MAIAC 使用可續跑的 monthly batch export。`plan` 只寫本機 ledger，不接觸遠端；
+`submit` 只有明確提供 `--confirm-drive-export` 才會建立寫入 Google Drive 的 task：
+
+```bash
+uv run --extra earth twair ingest maiac plan --year 2025 --months 1:12
+uv run --extra earth twair ingest maiac submit --year 2025 --confirm-drive-export
+uv run --extra earth twair ingest maiac status --year 2025
+```
+
+每次 `submit` 先對照帳號既有 task，並把 `READY`／`RUNNING` 總數限制在 2；等前一批
+完成後重跑同一個 `submit`，才會補上後續月份。Earth Engine 會把 CSV 寫到 Drive 的
+`twair-earth-engine` 資料夾。下載完成的 CSV 到同一個本機目錄後，再匯入已完成月份：
+
+```bash
+uv run twair ingest maiac import-files \
+  --year 2025 --months 1:12 --from-dir PATH_TO_DOWNLOADED_CSVS
+```
+
+ledger 與匯入結果都在 gitignored 的 `data/interim/maiac/year=2025/`。不要手改 task ID、
+CSV 檔名或內容；匯入器會用 ledger、完整測站集合與 checksum 驗證後才接受。
+
 ## 5. Hugging Face — `HF_TOKEN`
 
 <https://huggingface.co/settings/tokens>

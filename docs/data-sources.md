@@ -117,7 +117,19 @@ manifest 的 `acquisition_runs`；年度輸出先寫入 staging generation，再
 若上次程序在交換途中中斷，下次執行會先恢復孤立 backup，避免把部分月份當成完整年度。
 
 MODIS MAIAC 的 metadata 與 tile 位置可查，但 2025 station-month 的同步 `getInfo`
-pilot 即使限縮到台灣兩個 tile 並只取 best-quality QA 仍逾時。下一步必須先設計可重啟的
-batch export／checkpoint；目前沒有 AOD 產物，也不發布衛星推估 PM2.5。
+pilot 即使限縮到台灣兩個 tile 並只取 best-quality QA 仍逾時。因此 MAIAC 改走每月
+Earth Engine batch export：先寫本機 ledger，再以 deterministic description 對照遠端
+task，帳號同時最多維持 2 個 `READY`／`RUNNING` task。程序每啟動一個 task 就保存 ID，
+中斷後會接續而不重複送出。
+
+匯出的 `Optical_Depth_055` 只保留 `AOD_QA` bits 8–11 等於 0 的 sample，套用 0.001
+scale factor，並在 1,000 m sampling scale 對台灣 `h28v06`、`h29v06` tile 的測站位置
+計算月平均。CSV 必須逐月含完整測站列；空白 AOD 保留為 null，缺列、重複列、月份錯置、
+欄位漂移或非有限數值則拒絕匯入。輸入 checksum、Earth Engine task ID、source contract
+與測站 inventory hash 都寫入 manifest，年度結果以完整 generation 原子交換。
+
+在 batch task 完成且 CSV 通過匯入前，仍然沒有 MAIAC AOD 產物；AOD 也不是 PM2.5，
+本專案不會把來源取得寫成衛星推估 PM2.5 或 M8 融合結論。操作順序見
+[registrations.md](registrations.md)。
 
 見 [registrations.md](registrations.md) 取得各項憑證。
