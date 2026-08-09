@@ -18,8 +18,12 @@
 
 **沒有去函詢問，也不打算。** 這是個人的 side project，不是要投稿的研究，
 不需要書面授權依據。管線公開就代表資料實質上仍然可得，
-而 L2 是四項產出裡可替代性最高的一項。若日後真的想上架 L2，
-再打 (02) 2311-7722 #2311 問一句即可——**但那是選配，不是待辦**。
+而 L2 是四項產出裡可替代性最高的一項。完整 L2 不列入後續發布工作；若未來要推翻
+這個邊界，必須重新做法律與產品決策，不能把它當成既有 roadmap 的待辦。
+
+Hugging Face Dataset 只封裝同一批 L0／L1 衍生統計。`twair export dataset` 只建立
+本機 bundle，不會上傳；資料授權在 Dataset Card 中記為 `other`，不把程式碼的 MIT
+授權誤套到資料上。
 
 ## ⚠️ 補記：逐時原始值其實已經公開了一份樣本
 
@@ -53,14 +57,11 @@
 若日後要縮小範圍，最小的改法是把樣本裁到一季（約 6,200 列），示範效果不變。
 **目前不做，理由如上。**
 
-**發布這件事沒有自動化。** 這裡原本寫著「`twair publish hf` 只推送 L0/L1」——
-**那個指令不存在**，`twair --help` 的子指令是 probe / ingest / build / repair /
-aggregate / qc / stations / analyze / report / export / freshness / summary /
-status，沒有 `publish`。整份文件最核心的發布保證，過去是建立在一個從未被寫出來的
-機制上。實際情形是：**上架都是手動的**，Space 由 `spaces/forecast/` 手動推到
-HuggingFace，而 dataset 至今未上架（查證：`huggingface.co/api/datasets?author=steven0226`
-回傳 6 個 dataset，沒有一個是這個專案的）。repo 內沒有任何 `huggingface_hub`
-匯入、沒有 `store/hf.py`、沒有發布 workflow，所以也不存在「誤觸」的可能。
+**發布仍然沒有自動化。** 這裡原本寫著「`twair publish hf` 只推送 L0/L1」——
+那個指令不存在。現在 `twair export dataset` 只會把 L0／L1 組成本機 bundle；
+它不呼叫 Hugging Face API，也沒有 dataset 發布 workflow。Space 與 Dataset 的實際
+上架仍是 owner 明確確認後才做的外部動作，因此建立 bundle 不等於發布，也不會讓
+完整 L2 越過上面的邊界。
 
 <details>
 <summary>底下是當初查證的矛盾內容（保留備查）</summary>

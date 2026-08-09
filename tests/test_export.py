@@ -296,6 +296,34 @@ class TestManifest:
         assert [entry["file"] for entry in manifest["files"]] == ["a.json"]
 
 
+class TestPublicationBoundary:
+    def test_meta_describes_l2_as_local_and_rebuildable_not_remotely_hosted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stations = pl.DataFrame(
+            {
+                "station_name": ["甲站"],
+                "airzone": ["北部空品區"],
+                "station_type": ["general"],
+                "first_year": [2025],
+                "last_year": [2025],
+                "years_present": [1],
+            }
+        )
+        monkeypatch.setattr(export, "_read_stations", lambda: stations)
+        monkeypatch.setattr(export, "documented_pollutants", lambda config=None: {})
+        monkeypatch.setattr(export, "_data_through", lambda: "2025-12-31 23:00:00")
+        monkeypatch.setattr(export, "_hourly_observations", lambda: 1)
+        monkeypatch.setattr(export, "git_state", lambda: ("abc1234", False))
+
+        path = export.export_meta(tmp_path)
+        layer = json.loads(path.read_text(encoding="utf-8"))["layers"]["L2"]
+
+        assert "local" in layer.lower()
+        assert "pipeline" in layer.lower()
+        assert "huggingface" not in layer.lower()
+
+
 class TestShippedExportCheck:
     """`scripts/check_web_export.py` — the manifest against the tree, not a tmp dir.
 

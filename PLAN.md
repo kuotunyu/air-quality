@@ -19,7 +19,7 @@
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
 | 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
-| 發布邊界 | GitHub Pages 與 HF Space 已公開；完整 HF Dataset 等專案收尾後再上架，PyPI 仍是選配 | README 與本文件 Phase 7–8 |
+| 發布邊界 | GitHub Pages 與 HF Space 已公開；L0／L1 HF Dataset 先完成本機 bundle 與載入驗證，再由 owner 決定遠端上架；完整 L2 不發布，PyPI 仍是選配 | README 與本文件 Phase 7–8 |
 
 下方驗收標記採三種交付判定：
 
@@ -70,7 +70,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 
 ### 目標產出（四位一體）
 
-1. **開源資料集** — 台灣 1982–2025 全測站逐時空品 + 氣象，含 QA flag；網站先交付 L0/L1，完整 Hugging Face Dataset 延後上架
+1. **開源資料集** — 台灣 1982–2025 全測站的 L0 站月與 L1 站日衍生統計；網站直接交付，也能封裝成 Hugging Face Dataset。完整 L2 逐時複本不發布，由公開管線重建
 2. **看得懂的技術報告** — 方法完整可重現（Markdown，不引入 Quarto/DOI）
 3. **科普互動網站** — GitHub Pages，scrollytelling + 瀏覽器端資料探索器
 4. **可用工具** — `twair` Python 套件 + Hugging Face Space 預測 demo；PyPI 是選配而非 release gate
@@ -269,18 +269,18 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 - 物理一致性違反率
 - 測站生命週期甘特圖
 
-#### 1.5 發布到 Hugging Face（延後至專案收尾）
+#### 1.5 L0／L1 Hugging Face Dataset（本機 bundle 完成後再人工上架）
 
-- `twair publish hf` → `<user>/taiwan-air-quality`
+- `twair export dataset` → 本機 `data/exports/huggingface/air-quality/`；不自動上傳
 - 完整 **Dataset Card**：來源、授權、欄位字典、已知問題、引用格式、使用範例（含 DuckDB one-liner）
-- 提供三種粒度的 config：`hourly` / `daily` / `monthly`
+- 提供兩種可獨立載入的 config：`daily` / `monthly`；不建立 `hourly` config
 - 打 tag `v1.0.0`，Dataset Card 標註對應的 repo commit
 
 **驗收**
 - [x] ~~`just ingest && just qc` 端到端可跑完，產出 Parquet~~ → `uv run twair ingest airtw` + `uv run twair build`
 - [x] **已取代**：「測站數 × 時數」不能描述測項與測站會變動的 long table；改以 340,371,384 列、521 個分區、來源 member、duplicate-key gate 與逐年 coverage 共同驗收
 - [x] `docs/data-quality.md` 由 QC 產物支持，缺值、旗標、sentinel、物理一致性與測站生命週期均保留
-- [ ] **延後**：完整 HF Dataset 頁面可用 `datasets.load_dataset()` 載入；等專案收尾後再發布
+- [x] **本機驗收**：L0／L1 bundle 的兩個 config 已用 `datasets.load_dataset()` 載入；遠端上架需要 owner 最後確認
 - [x] pytest 覆蓋 flag 解析、canonical schema、archive 日期順序、午夜、跨年圖軸與缺口語意；1982–2025 的台灣資料期間不含夏令時間切換
 
 > **這個 Phase 結束就已經是一個可以獨立發布、被別人引用的貢獻了。** 台灣目前沒有一份
@@ -356,7 +356,7 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 |---|---|---|---|
 | L0 | 站-月 aggregates | 每測項一個 JSON | 建置時載入圖表與測站摘要 |
 | L1 | 站-日 aggregates | 每測項一個 Parquet | DuckDB-WASM 按需 range-request 載入 |
-| L2 | 站-時全量 + QA provenance | 本機 canonical store | 完整 HF Dataset 上架後提供；目前不假裝網站已供下載 |
+| L2 | 站-時全量 + QA provenance | 本機 canonical store | 不發布完整複本；公開管線與上游 archive 可重建 |
 
 `viz/export.py` 負責從 Parquet 產出 L0/L1，寫入 `web/public/data/`。
 
@@ -420,7 +420,7 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 
 1. 訓練 RF：`PM2.5 ~ 氣象變數 + unix_time(趨勢) + doy + hour + dow`（300 棵樹）
 2. 對每個時間點，**重抽樣**除趨勢外的條件，預測 100 次取平均；這個預設值由收斂量測決定
-3. 得到「氣象條件標準化後」的濃度序列 → 反映真實排放變化
+3. 得到「模型可見的氣象條件標準化後」的濃度序列；剩餘趨勢仍混合排放、傳輸、化學反應與其他未建模因素
 4. 用 Theil-Sen 估趨勢，bootstrap 信賴區間
 
 **產出**：全台與各縣市的 raw trend vs deweathered trend 對照。
@@ -560,7 +560,7 @@ persistence、climatology 與實際觀測。Tracked app 不含完整資料；mod
 **驗收**
 - [x] **已取代**：CI、weekly freshness 與 Pages workflow 分工，排程只檢查而不 mutation；不以「每日自動 push 7 天」當品質證據
 - [x] 首頁與全 10 章上線，沒有 JavaScript 時仍保有主要敘事與圖表
-- [ ] **延後**：完整 HF Dataset 等專案收尾後上架；HF Space 已公開且 tracked bundle 可重建
+- [ ] **人工發布**：L0／L1 HF Dataset 本機 bundle 與載入 gate 通過後，由 owner 決定上架；完整 L2 不列入發布；HF Space 已公開且 tracked bundle 可重建
 - [ ] **人工驗收**：請非本科讀者完成一次 README／首頁試讀；automated quality gate 不能冒充使用者研究
 - [ ] **選配**：PyPI 發布；目前以 `uv sync` 與 repo CLI 重現，不阻擋網站／研究 release
 

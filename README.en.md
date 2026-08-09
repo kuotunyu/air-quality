@@ -119,7 +119,7 @@ flowchart TD
 
 | | Description |
 |---|---|
-| 📦 **Open-Source Dataset** | 1982–2025 hourly air quality observations + meteorology across Taiwan, packaged with original flags. Full L2 is **not yet on Hugging Face**; L0 and L1 download directly from [chapter 10](https://kuotunyu.github.io/air-quality/data/). |
+| 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025, downloadable from [chapter 10](https://kuotunyu.github.io/air-quality/data/) and packageable as a Hugging Face Dataset. The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | 📊 **Reproducible Science** | Step-by-step replication of the 2018 method, followed by rigorous corrections and quantitative comparisons. |
 | 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, source direction, event-detection limits, forecasting, health assumptions, and method comparisons. |
 | 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |

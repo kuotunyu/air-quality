@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import replace
+from pathlib import Path
+from typing import Annotated
 
 import polars as pl
 import typer
@@ -1099,6 +1101,34 @@ def export_space(
     console.print(
         "\n[yellow]Not published.[/yellow] The bundle embeds a sample of hourly "
         "observations; see docs/legal.md before pushing it anywhere."
+    )
+
+
+@export_app.command("dataset")
+def export_dataset(
+    destination: Annotated[
+        Path | None,
+        typer.Option(
+            "--destination",
+            help="Local bundle directory; defaults below the ignored data/exports tree.",
+        ),
+    ] = None,
+    overwrite: Annotated[
+        bool,
+        typer.Option(
+            "--overwrite",
+            help="Replace an existing bundle at the exact destination.",
+        ),
+    ] = False,
+) -> None:
+    """Build the public L0/L1 Hugging Face Dataset bundle locally."""
+    from twair.viz.hf_dataset import build_dataset_bundle
+
+    report = build_dataset_bundle(destination=destination, overwrite=overwrite)
+    console.print(f"[green]{report.summary()}[/green]")
+    console.print(f"wrote {report.destination}")
+    console.print(
+        "\n[yellow]Not uploaded.[/yellow] L2 remains local and is not part of this bundle."
     )
 
 

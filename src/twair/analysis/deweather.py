@@ -1,9 +1,10 @@
 """M4 — meteorological normalisation.
 
-A falling PM2.5 trend has two possible causes and they are not distinguishable
-by looking at the series: emissions went down, or the weather happened to be
-kinder — more wind, more rain, fewer inversions. Any claim that a policy worked
-has to separate them first.
+A falling PM2.5 trend can reflect several overlapping changes that the series
+alone cannot separate: local meteorology, transport, atmospheric chemistry,
+emissions, and the monitoring network. This module asks a narrower question:
+does the trend remain after making the model-visible local weather conditions
+comparable across time?
 
 The method is Grange et al. (2018), *Science of the Total Environment* 653,
 implemented here in Python because the reference implementation (`rmweather`) is
@@ -22,9 +23,9 @@ Three things this method is not, all of which are easy to assume it is:
 
 **It is not causal attribution.** It removes the weather influence *the model
 can see*. Long-range transport that local wind speed and humidity do not
-capture stays in the normalised series, and will be read as an emissions
-change. The R² of the fit is reported next to every trend for exactly this
-reason: a model that explains little cannot have removed much.
+capture stays in the normalised series together with emissions, chemistry, and
+every other omitted process. The R² of the fit is reported next to every trend
+for exactly this reason: a model that explains little cannot have removed much.
 
 **It is not detrending.** The trend term is deliberately the one variable held
 fixed. Resampling it too would remove the very signal being measured.
@@ -68,8 +69,8 @@ TARGET = "PM2.5"
 
 # Meteorology and time, and nothing else. Chemistry is deliberately absent: NOx
 # and CO co-vary with PM2.5 because they share sources, so including them would
-# let the model explain away the emissions change this analysis exists to
-# measure.
+# let the adjustment absorb part of the remaining trend through a second
+# pollutant instead of isolating the model-visible meteorological component.
 NORMALISE_FEATURES: tuple[str, ...] = (
     "AMB_TEMP",
     "RH",

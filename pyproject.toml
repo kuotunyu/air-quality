@@ -151,6 +151,10 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = [
     "gdown", "gdown.*", "selectolax", "selectolax.*", "duckdb", "duckdb.*",
+    # PyArrow 25.0.0 exposes the Parquet runtime API but ships no `py.typed`
+    # marker. Keep that external boundary here instead of silencing the call
+    # site, so our own bundle types remain checked.
+    "pyarrow", "pyarrow.*",
     "shap", "shap.*", "lightgbm", "lightgbm.*", "pykrige", "pykrige.*",
     "sklearn", "sklearn.*",
     "esda", "esda.*", "libpysal", "libpysal.*", "ee", "ee.*", "scipy", "scipy.*",

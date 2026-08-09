@@ -60,7 +60,7 @@
 
 | | 內容 |
 |---|---|
-| 📦 **開源資料集** | 1982–2025 全測站逐時空品觀測 + 氣象，含原始品質旗標。完整 L2 **尚未上架 Hugging Face**；L0／L1 兩層可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載 |
+| 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計，可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載，也可封裝成 Hugging Face Dataset。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | 📊 **可重現研究** | 從復刻 2018 年結果開始，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、污染來源方位、事件偵測極限、方法學對照 |
 | 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
@@ -118,7 +118,7 @@ uv run twair probe sources
 | 階段 | 目前交付 | 交付判定 |
 |---|---|---|
 | Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；需憑證的加值源延後 |
-| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；完整 HF Dataset 收尾後發布 |
+| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；L0／L1 Dataset bundle 可本機重建，遠端上架另行人工確認 |
 | Phase 2 | M1 復刻、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |

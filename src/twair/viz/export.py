@@ -342,7 +342,7 @@ def export_meta(destination: Path | None = None) -> Path:
         "layers": {
             "L0": "station-month means, inline JSON",
             "L1": "station-day means, Parquet via DuckDB-WASM",
-            "L2": "station-hour observations with QA flags — HuggingFace, not this site",
+            "L2": "station-hour observations with QA flags — local; rebuild with the pipeline",
         },
         "coverage_note": (
             "Aggregates below the coverage threshold carry a null mean and a non-zero "
