@@ -37,6 +37,7 @@ __all__ = [
     "read_export_ledger",
     "refresh_export_status",
     "submit_exports",
+    "validate_export_ledger",
     "write_export_ledger",
 ]
 
@@ -297,9 +298,7 @@ def plan_exports(
 
     selected_config = config or load_maiac_config()
     placed, unplaced_count = _placed_stations(stations)
-    station_hash = _canonical_sha256(
-        placed.select("station_name", "lon", "lat").to_dicts()
-    )
+    station_hash = _canonical_sha256(placed.select("station_name", "lon", "lat").to_dicts())
     source_contract = _source_contract(selected_config)
     source_hash = _canonical_sha256(source_contract)
     timestamp = planned_at or datetime.now(UTC).isoformat(timespec="seconds")
@@ -360,7 +359,7 @@ def _copy_ledger(ledger: ExportLedger) -> ExportLedger:
     )
 
 
-def _validate_export_ledger(ledger: ExportLedger) -> None:
+def validate_export_ledger(ledger: ExportLedger) -> None:
     if ledger.schema_version != 1:
         raise RuntimeError("unsupported MAIAC export ledger schema version")
     if not isinstance(ledger.gee_project, str) or not ledger.gee_project.strip():
@@ -384,7 +383,10 @@ def _validate_export_ledger(ledger: ExportLedger) -> None:
         raise RuntimeError("MAIAC export ledger station counts must be non-negative integers")
     if ledger.stations_with_coordinates <= 0:
         raise RuntimeError("MAIAC export ledger must contain coordinate-bearing stations")
-    if ledger.stations_with_coordinates + ledger.stations_without_coordinates != ledger.stations_total:
+    if (
+        ledger.stations_with_coordinates + ledger.stations_without_coordinates
+        != ledger.stations_total
+    ):
         raise RuntimeError("MAIAC export ledger station counts are inconsistent")
     if not _SHA256_RE.fullmatch(ledger.station_inventory_sha256):
         raise RuntimeError("MAIAC export ledger station inventory hash is invalid")
@@ -399,7 +401,11 @@ def _validate_export_ledger(ledger: ExportLedger) -> None:
     for entry in ledger.entries:
         if entry.year != ledger.year:
             raise RuntimeError("MAIAC export entry year is inconsistent")
-        if not isinstance(entry.month, int) or isinstance(entry.month, bool) or not 1 <= entry.month <= 12:
+        if (
+            not isinstance(entry.month, int)
+            or isinstance(entry.month, bool)
+            or not 1 <= entry.month <= 12
+        ):
             raise RuntimeError("MAIAC export entry month must be an integer from 1 through 12")
         if entry.state not in _TASK_STATES:
             raise RuntimeError(f"unsupported MAIAC task state: {entry.state!r}")
@@ -416,7 +422,9 @@ def _validate_export_ledger(ledger: ExportLedger) -> None:
             ("updated timestamp", entry.updated_at),
         ):
             if value is not None and (not isinstance(value, str) or not value):
-                raise RuntimeError(f"MAIAC export entry {field_name} must be non-empty when present")
+                raise RuntimeError(
+                    f"MAIAC export entry {field_name} must be non-empty when present"
+                )
         if entry.state != "PLANNED" and entry.task_id is None:
             raise RuntimeError("a remote MAIAC task state requires a task id")
         entry_months.append(entry.month)
@@ -459,7 +467,7 @@ def _ledger_from_payload(payload: object) -> ExportLedger:
         )
     except (KeyError, TypeError) as exc:
         raise RuntimeError("MAIAC export ledger is missing a required field") from exc
-    _validate_export_ledger(ledger)
+    validate_export_ledger(ledger)
     return ledger
 
 
@@ -536,7 +544,7 @@ def _merge_export_ledgers(existing: ExportLedger, incoming: ExportLedger) -> Exp
         source_contract=dict(existing.source_contract),
         entries=entries,
     )
-    _validate_export_ledger(merged)
+    validate_export_ledger(merged)
     return merged
 
 
@@ -551,7 +559,7 @@ def write_export_ledger(
     _recover_ledger_swap(target)
     existing = read_export_ledger(target) if target.exists() else None
     combined = _merge_export_ledgers(existing, ledger) if existing is not None else ledger
-    _validate_export_ledger(combined)
+    validate_export_ledger(combined)
 
     target.parent.mkdir(parents=True, exist_ok=True)
     token = uuid4().hex
@@ -613,8 +621,7 @@ def _remote_indexes(
         by_description[task.description] = task
     if duplicate_descriptions:
         raise RuntimeError(
-            "duplicate remote MAIAC task description(s): "
-            f"{sorted(duplicate_descriptions)}"
+            f"duplicate remote MAIAC task description(s): {sorted(duplicate_descriptions)}"
         )
     return by_id, by_description
 
@@ -644,13 +651,11 @@ def _validated_submission_context(
     stations: pl.DataFrame,
     config: MaiacConfig,
 ) -> pl.DataFrame:
-    _validate_export_ledger(ledger)
+    validate_export_ledger(ledger)
     if _canonical_sha256(_source_contract(config)) != ledger.source_contract_sha256:
         raise RuntimeError("current MAIAC source contract differs from the export ledger")
     placed, unplaced_count = _placed_stations(stations)
-    station_hash = _canonical_sha256(
-        placed.select("station_name", "lon", "lat").to_dicts()
-    )
+    station_hash = _canonical_sha256(placed.select("station_name", "lon", "lat").to_dicts())
     if station_hash != ledger.station_inventory_sha256:
         raise RuntimeError("current station inventory differs from the MAIAC export ledger")
     if (
@@ -685,7 +690,7 @@ def refresh_export_status(
             entry.state = "UNKNOWN"
             entry.error_message = None
             entry.updated_at = timestamp
-    _validate_export_ledger(updated)
+    validate_export_ledger(updated)
     return updated
 
 
@@ -728,7 +733,7 @@ def submit_exports(
         if persist is not None:
             persist(_copy_ledger(updated))
 
-    _validate_export_ledger(updated)
+    validate_export_ledger(updated)
     return updated
 
 
@@ -747,9 +752,7 @@ class _EarthEnginePreparedTask:
             description=str(description),
             state=str(status.get("state", "")),
             error_message=(
-                str(status["error_message"])
-                if status.get("error_message") is not None
-                else None
+                str(status["error_message"]) if status.get("error_message") is not None else None
             ),
         )
         _validate_remote_task(remote)
@@ -781,9 +784,7 @@ class EarthEngineMaiacBackend:
             description=str(description) if description is not None else "",
             state=str(status.get("state", "")),
             error_message=(
-                str(status["error_message"])
-                if status.get("error_message") is not None
-                else None
+                str(status["error_message"]) if status.get("error_message") is not None else None
             ),
         )
         _validate_remote_task(remote)
@@ -819,16 +820,8 @@ class EarthEngineMaiacBackend:
         def best_quality(image: Any) -> Any:
             selected = ee.Image(image)
             qa = selected.select(config.qa_band)
-            mask = (
-                qa.rightShift(config.qa_shift)
-                .bitwiseAnd(config.qa_mask)
-                .eq(config.qa_best)
-            )
-            return (
-                selected.select(config.aod_band)
-                .updateMask(mask)
-                .multiply(config.scale_factor)
-            )
+            mask = qa.rightShift(config.qa_shift).bitwiseAnd(config.qa_mask).eq(config.qa_best)
+            return selected.select(config.aod_band).updateMask(mask).multiply(config.scale_factor)
 
         composite = monthly.map(best_quality).mean().rename("value")
         reduced = composite.reduceRegions(

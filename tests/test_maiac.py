@@ -360,9 +360,7 @@ def test_the_maiac_contract_pins_the_catalog_qa_and_scale() -> None:
         ("max_active_tasks", True, "integer from 1 through 2"),
     ],
 )
-def test_a_boolean_cannot_pose_as_a_maiac_integer(
-    field: str, value: object, message: str
-) -> None:
+def test_a_boolean_cannot_pose_as_a_maiac_integer(field: str, value: object, message: str) -> None:
     raw = valid_config()
     group = raw["maiac"]
     assert isinstance(group, dict)
@@ -504,7 +502,9 @@ def test_the_default_ledger_path_stays_below_the_ignored_data_tree(
     monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
     ledger = plan_exports(stations(), project="test-project", year=2025, months=(1,))
 
-    assert ledger.default_path == tmp_path / "interim" / "maiac" / "year=2025" / "export-ledger.json"
+    assert (
+        ledger.default_path == tmp_path / "interim" / "maiac" / "year=2025" / "export-ledger.json"
+    )
 
 
 def test_the_export_ledger_round_trips_all_local_intent(tmp_path: Path) -> None:
