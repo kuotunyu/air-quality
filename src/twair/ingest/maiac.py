@@ -721,6 +721,11 @@ def submit_exports(
 
     active = sum(task.state in {"READY", "RUNNING"} for task in remote_tasks)
     available = max(0, selected_config.max_active_tasks - active)
+    if not by_description and all(entry.task_id is None for entry in updated.entries):
+        # Drive creates a named export folder lazily.  Two first tasks completed
+        # together in the 2025 run and raced into two same-name folders, so the
+        # first task must establish the folder before parallel submission begins.
+        available = min(available, 1)
     for entry in updated.entries:
         if available <= 0:
             break

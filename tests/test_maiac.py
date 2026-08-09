@@ -747,6 +747,22 @@ def test_account_wide_active_tasks_consume_the_local_submission_budget() -> None
     assert [entry.state for entry in updated.entries] == ["READY", "PLANNED"]
 
 
+def test_a_new_drive_folder_is_bootstrapped_with_one_task_before_parallel_exports() -> None:
+    ledger = plan_exports(stations(), project="test-project", year=2025, months=(1, 2))
+    backend = FakeTaskBackend()
+
+    updated = submit_exports(
+        ledger,
+        stations(),
+        backend=backend,
+        confirm=True,
+        updated_at="2026-08-10T03:00:00+00:00",
+    )
+
+    assert backend.started == [ledger.entries[0].description]
+    assert [entry.state for entry in updated.entries] == ["READY", "PLANNED"]
+
+
 def test_submit_refuses_without_the_explicit_drive_confirmation() -> None:
     ledger = plan_exports(stations(), project="test-project", year=2025, months=(1,))
     backend = FakeTaskBackend()
@@ -775,8 +791,20 @@ def test_duplicate_remote_descriptions_stop_before_any_submission() -> None:
 
 
 def test_a_second_start_failure_keeps_the_first_task_id_in_a_durable_snapshot() -> None:
-    ledger = plan_exports(stations(), project="test-project", year=2025, months=(1, 2))
-    backend = FakeTaskBackend(fail_on_start=2)
+    ledger = plan_exports(stations(), project="test-project", year=2025, months=(1, 2, 3))
+    ledger.entries[0].task_id = "task-existing"
+    ledger.entries[0].state = "COMPLETED"
+    backend = FakeTaskBackend(
+        remote=[
+            RemoteTask(
+                task_id="task-existing",
+                description=ledger.entries[0].description,
+                state="COMPLETED",
+                error_message=None,
+            )
+        ],
+        fail_on_start=2,
+    )
     snapshots: list[ExportLedger] = []
 
     with pytest.raises(RuntimeError, match="injected failure on start 2"):
@@ -790,8 +818,8 @@ def test_a_second_start_failure_keeps_the_first_task_id_in_a_durable_snapshot() 
         )
 
     assert len(snapshots) == 1
-    assert snapshots[0].entries[0].task_id == "task-1"
-    assert snapshots[0].entries[1].task_id is None
+    assert snapshots[0].entries[1].task_id == "task-1"
+    assert snapshots[0].entries[2].task_id is None
 
 
 def test_a_failed_task_is_reported_but_never_retried_implicitly() -> None:

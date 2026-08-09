@@ -131,9 +131,10 @@ uv run --extra earth twair ingest maiac submit --year 2025 --confirm-drive-expor
 uv run --extra earth twair ingest maiac status --year 2025
 ```
 
-每次 `submit` 先對照帳號既有 task，並把 `READY`／`RUNNING` 總數限制在 2；等前一批
-完成後重跑同一個 `submit`，才會補上後續月份。Earth Engine 會把 CSV 寫到 Drive 的
-`twair-earth-engine` 資料夾。下載完成的 CSV 到同一個本機目錄後，再匯入已完成月份：
+每次 `submit` 先對照帳號既有 task。全新 ledger 第一次只送 1 個 task，讓 Drive 先建立
+folder；後續才把 `READY`／`RUNNING` 總數限制在 2。等前一批完成後重跑同一個 `submit`，
+才會補上後續月份。Earth Engine 會把 CSV 寫到 Drive 的 `twair-earth-engine` 資料夾。
+下載完成的 CSV 到同一個本機目錄後，再匯入已完成月份：
 
 ```bash
 uv run twair ingest maiac import-files \

@@ -119,8 +119,10 @@ manifest 的 `acquisition_runs`；年度輸出先寫入 staging generation，再
 MODIS MAIAC 的 metadata 與 tile 位置可查，但 2025 station-month 的同步 `getInfo`
 pilot 即使限縮到台灣兩個 tile 並只取 best-quality QA 仍逾時。因此 MAIAC 改走每月
 Earth Engine batch export：先寫本機 ledger，再以 deterministic description 對照遠端
-task，帳號同時最多維持 2 個 `READY`／`RUNNING` task。程序每啟動一個 task 就保存 ID，
-中斷後會接續而不重複送出。
+task。全新 Drive folder 先以 1 個 task 建立，後續才讓帳號同時最多維持 2 個
+`READY`／`RUNNING` task；程序每啟動一個 task 就保存 ID，中斷後會接續而不重複送出。
+這個 bootstrap 是實測必要條件：2025 首次執行曾讓同時完成的前兩個 task 競態建立兩個
+同名 folder，1 月與其餘月份因此分開；12 份 CSV 全數找回後已加入回歸測試。
 
 匯出的 `Optical_Depth_055` 只保留 `AOD_QA` bits 8–11 等於 0 的 sample，套用 0.001
 scale factor，並在 1,000 m sampling scale 對台灣 `h28v06`、`h29v06` tile 的測站位置
@@ -128,8 +130,13 @@ scale factor，並在 1,000 m sampling scale 對台灣 `h28v06`、`h29v06` tile 
 欄位漂移或非有限數值則拒絕匯入。輸入 checksum、Earth Engine task ID、source contract
 與測站 inventory hash 都寫入 manifest，年度結果以完整 generation 原子交換。
 
-在 batch task 完成且 CSV 通過匯入前，仍然沒有 MAIAC AOD 產物；AOD 也不是 PM2.5，
-本專案不會把來源取得寫成衛星推估 PM2.5 或 M8 融合結論。操作順序見
+2025 全年 12 個 task 已實際完成並通過匯入：76 個有座標測站形成 912 個 station-month
+row，69 個 best-quality QA 後沒有值的 sample 保留為 null；沒有重複 key、非有限值或
+負值。非 null AOD 的實測範圍為 0.015–0.669，中位數 0.2555。7 月有 24 個 null，明顯
+高於其他月份，因此後續模型必須顯式處理 coverage，而不是先補值。原始 CSV、ledger、
+Parquet 與 manifest 位於 gitignored 的 `data/interim/maiac/year=2025/`。
+
+AOD 不是 PM2.5；這份站月來源表仍不是衛星推估 PM2.5 或 M8 融合結論。操作順序見
 [registrations.md](registrations.md)。
 
 見 [registrations.md](registrations.md) 取得各項憑證。

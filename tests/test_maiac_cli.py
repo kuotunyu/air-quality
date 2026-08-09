@@ -154,12 +154,12 @@ def test_submit_starts_only_the_configured_account_wide_capacity_and_persists_id
         get_settings.cache_clear()
 
     assert result.exit_code == 0, result.output
-    assert backend.started == [1, 2]
+    assert backend.started == [1]
     persisted = read_export_ledger(ledger.default_path)
-    assert [entry.task_id for entry in persisted.entries] == ["task-1", "task-2", None]
-    assert [entry.state for entry in persisted.entries] == ["READY", "READY", "PLANNED"]
-    assert "READY: 2" in result.output
-    assert "PLANNED: 1" in result.output
+    assert [entry.task_id for entry in persisted.entries] == ["task-1", None, None]
+    assert [entry.state for entry in persisted.entries] == ["READY", "PLANNED", "PLANNED"]
+    assert "READY: 1" in result.output
+    assert "PLANNED: 2" in result.output
 
 
 def test_status_refreshes_remote_state_without_preparing_a_new_task(
