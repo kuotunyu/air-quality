@@ -18,8 +18,12 @@
 /** 民國101年5月14日 — the year PM2.5 entered the standard at 15 annual / 35 daily. */
 export const TW_PM25_ADDED = 2012;
 
+export const TW_PM25_ADDED_DATE = "2012-05-14";
+
 /** 民國113年9月30日 — the year it was tightened to 12 annual / 30 daily. */
 export const TW_PM25_TIGHTENED = 2024;
+
+export const TW_PM25_TIGHTENED_DATE = "2024-09-30";
 
 /** The daily limit before the 2024 revision, for a caveat that names both. */
 export const TW_PM25_DAILY_BEFORE = 35;

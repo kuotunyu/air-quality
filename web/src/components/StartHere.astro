@@ -11,6 +11,7 @@ const paths = [
 
 <nav class="start-here" aria-labelledby="start-here-heading" style="--enter:3">
   <h2 id="start-here-heading" class="start-here-heading">從這裡開始</h2>
+  <p class="start-here-intro">四個最常見的問題，各選一條路開始。</p>
   <ul class="start-here-list">
     {
       paths.map(([path, label, claim]) => (
@@ -25,3 +26,10 @@ const paths = [
     }
   </ul>
 </nav>
+
+<style>
+  .start-here-intro {
+    margin: 0 0 var(--space-2);
+    color: var(--text-muted);
+  }
+</style>

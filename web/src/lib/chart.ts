@@ -19,6 +19,18 @@ export interface Scale {
   range: [number, number];
 }
 
+export type GuideAnnotation =
+  | {
+      kind: "transition";
+      title: string;
+      fromLabel: string;
+      fromValue: string;
+      changeLabel: string;
+      toLabel: string;
+      toValue: string;
+    }
+  | { kind: "value"; title: string; value: string; tone: "who" };
+
 /**
  * The shortest a plot box gets, in px.
  *

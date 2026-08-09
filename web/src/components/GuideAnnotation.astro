@@ -1,0 +1,208 @@
+---
+import type { GuideAnnotation } from "../lib/chart";
+
+interface Props {
+  annotation: GuideAnnotation;
+  fallback: string;
+  layout?: "stacked" | "timeline";
+  fromMark?: string;
+  fromInk?: string;
+  toMark?: string;
+  toInk?: string;
+}
+
+const { annotation, fallback, layout = "stacked", fromMark, fromInk, toMark, toInk } = Astro.props;
+---
+
+{
+  annotation.kind === "transition" ? (
+    <span
+      class:list={[
+        "guide-annotation",
+        "guide-transition",
+        { "guide-transition-timeline": layout === "timeline" },
+      ]}
+      data-kind="transition"
+      style={`--guide-old-mark:${fromMark ?? "var(--c3-ink)"};--guide-old-ink:${fromInk ?? "var(--c3-ink)"};--guide-current-mark:${toMark ?? "var(--c5-ink)"};--guide-current-ink:${toInk ?? "var(--c5-ink)"}`}
+      aria-label={`${annotation.title}，${annotation.fromLabel} ${annotation.fromValue}，${annotation.changeLabel}，${annotation.toLabel} ${annotation.toValue}`}
+    >
+      <span class="guide-title">{annotation.title}</span>
+      <span class="guide-row">
+        <svg class="guide-line-sample guide-line-sample-old" viewBox="0 0 30 6" aria-hidden="true">
+          <line x1="1" y1="3" x2="29" y2="3" stroke="var(--guide-old-mark)"
+            stroke-width="3" stroke-dasharray="8 5" stroke-linecap="round" />
+        </svg>
+        <span class="guide-state">{annotation.fromLabel}</span>
+        <strong class="guide-value guide-value-old">{annotation.fromValue}</strong>
+      </span>
+      <span class="guide-change">
+        <span class="guide-arrow" aria-hidden="true">↓</span>
+        <span>{annotation.changeLabel}</span>
+      </span>
+      <span class="guide-row">
+        <svg class="guide-line-sample guide-line-sample-current" viewBox="0 0 30 6" aria-hidden="true">
+          <line x1="1" y1="3" x2="29" y2="3" stroke="var(--guide-current-mark)"
+            stroke-width="3" stroke-dasharray="8 5" stroke-linecap="round" />
+        </svg>
+        <span class="guide-state">{annotation.toLabel}</span>
+        <strong class="guide-value guide-value-current">{annotation.toValue}</strong>
+      </span>
+    </span>
+  ) : annotation.tone === "who" ? (
+    <span
+      class="guide-annotation guide-single"
+      data-kind="value"
+      aria-label={`${annotation.title} ${annotation.value}`}
+    >
+      <span class="guide-title">{annotation.title}</span>
+      <strong class="guide-value guide-value-who">{annotation.value}</strong>
+    </span>
+  ) : (
+    <span class="guide-annotation" data-kind="value">{fallback}</span>
+  )
+}
+
+<style>
+  .guide-annotation {
+    display: inline-grid;
+    gap: 0.16em;
+    min-width: max-content;
+    max-width: 100%;
+    color: var(--text);
+    line-height: 1.12;
+    text-align: left;
+    text-indent: 0;
+    vertical-align: top;
+    white-space: normal;
+  }
+
+  .guide-transition {
+    grid-template-columns: max-content;
+  }
+
+  .guide-transition-timeline {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: 0.32em 0.8em;
+    align-items: baseline;
+  }
+
+  .guide-transition-timeline > .guide-title {
+    grid-area: 1 / 1;
+  }
+
+  .guide-transition-timeline > .guide-title + .guide-row {
+    grid-area: 1 / 2;
+  }
+
+  .guide-transition-timeline > .guide-change {
+    grid-area: 2 / 1;
+    margin-left: 0;
+  }
+
+  .guide-transition-timeline > .guide-change + .guide-row {
+    grid-area: 2 / 2;
+  }
+
+  @container (max-width: 19em) {
+    .guide-transition-timeline {
+      grid-template-columns: max-content;
+    }
+
+    .guide-transition-timeline > .guide-title,
+    .guide-transition-timeline > .guide-title + .guide-row,
+    .guide-transition-timeline > .guide-change,
+    .guide-transition-timeline > .guide-change + .guide-row {
+      grid-area: auto;
+    }
+
+    .guide-transition-timeline > .guide-change {
+      margin-left: calc(1.7em + 0.42em);
+    }
+  }
+
+  .guide-title {
+    color: var(--text-muted);
+    font-weight: 650;
+  }
+
+  .guide-row {
+    display: grid;
+    grid-template-columns: 1.7em max-content 2.1ch;
+    gap: 0.42em;
+    align-items: baseline;
+  }
+
+  .guide-line-sample {
+    width: 1.7em;
+    height: 0.42em;
+    overflow: visible;
+  }
+
+  .guide-state {
+    font-size: 0.9em;
+  }
+
+  .guide-change {
+    display: grid;
+    grid-template-columns: 1.15em max-content;
+    gap: 0.28em;
+    align-items: center;
+    margin-left: calc(1.7em + 0.42em);
+    color: var(--text-muted);
+    font-size: 0.86em;
+  }
+
+  .guide-arrow {
+    color: var(--text);
+    font-size: 1.18em;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+  }
+
+  .guide-value {
+    display: inline-flex;
+    min-width: 2.1ch;
+    padding: 0.05em 0.24em;
+    align-items: baseline;
+    justify-content: center;
+    border-radius: 0.28em;
+    font-size: 1.08em;
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    line-height: 1.05;
+  }
+
+  .guide-value-old {
+    color: var(--guide-old-ink);
+  }
+
+  .guide-value-current {
+    color: var(--guide-current-ink);
+    font-weight: 800;
+  }
+
+  .guide-transition .guide-value {
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .guide-transition .guide-value {
+    font-size: 1.12em;
+  }
+
+  .guide-single {
+    display: inline-flex;
+    gap: 0.45em;
+    align-items: baseline;
+  }
+
+  .guide-single .guide-title {
+    color: var(--c1-ink);
+  }
+
+  .guide-value-who {
+    color: var(--c1-ink);
+    background: color-mix(in srgb, var(--c1) 13%, var(--bg-sunken));
+  }
+</style>

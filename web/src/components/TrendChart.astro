@@ -1,4 +1,5 @@
 ---
+import GuideAnnotationView from "./GuideAnnotation.astro";
 import {
   gapPct,
   smoothPath,
@@ -11,8 +12,29 @@ import {
   yearTicks,
   yGutter,
 } from "../lib/chart";
+import type { GuideAnnotation } from "../lib/chart";
 
-type Guide = { value?: number; values?: (number | null)[]; label: string; colour: string };
+type Guide = {
+  value?: number;
+  values?: (number | null)[];
+  label: string;
+  colour: string;
+  annotation?: GuideAnnotation;
+  levelColours?: Record<string, string>;
+  levelInkColours?: Record<string, string>;
+  strokeWidth?: number;
+  riserStrokeWidth?: number;
+  dash?: string;
+  riserColour?: string;
+  notePlacement?: "above" | "on-line" | "top-right" | "key";
+  noteYear?: number;
+  startMilestone?: {
+    year: number;
+    label: string;
+    ariaLabel: string;
+  };
+};
+type LevelPath = { value: number; colour: string; d: string };
 type Emphasis = "primary" | "comparison";
 type Series = {
   key: string;
@@ -188,6 +210,41 @@ function stepRisers(values: (number | null)[]): string {
 }
 
 /*
+ * A stepped legal threshold can carry meaning in each horizontal level without
+ * turning the vertical change itself into a third threshold. Each same-level
+ * run is grouped into one SVG path, but every disconnected run starts with a
+ * fresh `M`: a null still breaks the guide and is never bridged.
+ */
+function stepLevelPaths(
+  values: (number | null)[],
+  levelColours: Record<string, string>,
+  fallbackColour: string,
+): LevelPath[] {
+  const paths = new Map<string, LevelPath>();
+  let previous: { index: number; value: number } | null = null;
+
+  values.forEach((value, index) => {
+    if (value == null || !Number.isFinite(value)) {
+      previous = null;
+      return;
+    }
+    if (previous) {
+      const colour = levelColours[String(previous.value)] ?? fallbackColour;
+      const key = `${previous.value}\u0000${colour}`;
+      const segment =
+        `M${n(x(previous.index), 2)} ${n(y(previous.value), 2)} ` +
+        `H${n(x(index), 2)}`;
+      const path = paths.get(key);
+      if (path) path.d += ` ${segment}`;
+      else paths.set(key, { value: previous.value, colour, d: segment });
+    }
+    previous = { index, value };
+  });
+
+  return [...paths.values()];
+}
+
+/*
  * Reference-line labels get the same de-overlap the series labels used to.
  *
  * Two limits ten units apart on a 300px plot put two 36px pills 35px apart —
@@ -202,6 +259,25 @@ const noteY = spreadLabels(
   gapPct(52),
   [gapPct(26), 100 - gapPct(26)],
 );
+const guideNoteTop = (guide: Guide, index: number): number =>
+  guide.notePlacement === "top-right"
+    ? 8
+    : guide.notePlacement === "on-line"
+      ? y(guideLevel(guide) as number)
+      : noteY[index];
+const noteX = (guide: Guide): number | null => {
+  if (guide.noteYear == null) return null;
+  const index = years.indexOf(guide.noteYear);
+  return index === -1 ? null : x(index);
+};
+const milestoneFor = (guide: Guide) => {
+  if (!guide.values || !guide.startMilestone) return null;
+  const index = years.indexOf(guide.startMilestone.year);
+  const value = index === -1 ? null : guide.values[index];
+  return index === -1 || value == null
+    ? null
+    : { ...guide.startMilestone, index, value, left: x(index), top: y(value) };
+};
 
 /*
  * The key sits ABOVE the plot, in one row, and this is the fourth place it has
@@ -232,6 +308,14 @@ const noteY = spreadLabels(
    their established uniform weight unless a caller opts in explicitly. */
 const emphasisFor = (s: Series): Emphasis | undefined =>
   s.emphasis ?? (series.length === 2 ? (s.dash ? "comparison" : "primary") : undefined);
+const hasCustomGuideMark = (guide: Guide): boolean =>
+  guide.levelColours != null ||
+  guide.levelInkColours != null ||
+  guide.strokeWidth != null ||
+  guide.riserStrokeWidth != null ||
+  guide.dash != null ||
+  guide.riserColour != null ||
+  guide.notePlacement != null;
 
 const keyed = series.map((s) => {
   let last: number | null = null;
@@ -246,7 +330,7 @@ const keyed = series.map((s) => {
 });
 ---
 
-<div class:list={["chart", { crowded: series.length > 2 }]}>
+<div class:list={["chart", { crowded: series.length > 2 }]} data-guide-count={visibleGuides.length}>
   {/*
     The key row is a sibling of `.plot`, so it cannot read `.plot`'s container
     query — and it has to swap at the same width the pills do. `.chart` is the
@@ -274,12 +358,56 @@ const keyed = series.map((s) => {
           the duplication the pills were introduced to remove.
         */}
         {visibleGuides.map((g) => (
-          <li class="key-guide" style={`--mark:${g.colour};--mark-ink:${markInk(g.colour)}`}>
+          <li
+            class:list={[
+              "key-guide",
+              {
+                "key-guide-on-line": g.notePlacement === "on-line",
+                "key-guide-transition": g.annotation?.kind === "transition",
+                "key-guide-force-key": g.notePlacement === "key",
+              },
+            ]}
+            style={`--mark:${g.colour};--mark-ink:${markInk(g.colour)}`}
+          >
             <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
               <line x1="1" y1="4" x2="21" y2="4" stroke={g.colour} stroke-width="1.5"
                 stroke-linecap="round" stroke-dasharray="5 4" />
             </svg>
-            <span class="key-name">{g.label}</span>
+            {g.annotation ? (
+              <GuideAnnotationView
+                annotation={g.annotation}
+                fallback={g.label}
+                layout={
+                  g.notePlacement === "key" && g.annotation.kind === "transition"
+                    ? "timeline"
+                    : "stacked"
+                }
+                fromMark={
+                  g.annotation.kind === "transition"
+                    ? g.levelColours?.[g.annotation.fromValue] ?? g.colour
+                    : undefined
+                }
+                fromInk={
+                  g.annotation.kind === "transition"
+                    ? g.levelInkColours?.[g.annotation.fromValue] ??
+                      markInk(g.levelColours?.[g.annotation.fromValue] ?? g.colour)
+                    : undefined
+                }
+                toMark={
+                  g.annotation.kind === "transition"
+                    ? g.levelColours?.[g.annotation.toValue] ?? g.colour
+                    : undefined
+                }
+                toInk={
+                  g.annotation.kind === "transition"
+                    ? g.levelInkColours?.[g.annotation.toValue] ??
+                      markInk(g.levelColours?.[g.annotation.toValue] ?? g.colour)
+                    : undefined
+                }
+              />
+            ) : (
+              <span class="key-name">{g.label}</span>
+            )}
           </li>
         ))}
       </ul>
@@ -341,28 +469,72 @@ const keyed = series.map((s) => {
             in dark — but a 1px dash antialiases into the ground and the RENDERED
             line does not. The fix is the weight, not the colour: the tokens were
             solved once and are still right. */}
+        {/* Figure 1.1 opts into separate legal-level and WHO strokes so those
+            three references remain distinct from its two data series. */}
         {
-          visibleGuides.map((guide) => (
-            <>
-              <path
-                d={guide.values ? stepPath(guide.values) : `M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
-                fill="none"
-                stroke={guide.colour}
-                stroke-width="1.5"
-                stroke-dasharray="5 4"
-                vector-effect="non-scaling-stroke"
-              />
-              {guide.values && (
+          visibleGuides.map((guide) =>
+            hasCustomGuideMark(guide) ? (
+              <>
+                {guide.values ? (
+                  stepLevelPaths(guide.values, guide.levelColours ?? {}, guide.colour).map((path) => (
+                    <path
+                      d={path.d}
+                      fill="none"
+                      stroke={path.colour}
+                      stroke-width={guide.strokeWidth ?? 1.5}
+                      stroke-dasharray={guide.dash ?? "5 4"}
+                      stroke-linecap="round"
+                      vector-effect="non-scaling-stroke"
+                      data-guide-kind="level"
+                      data-guide-level={path.value}
+                    />
+                  ))
+                ) : (
+                  <path
+                    d={`M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
+                    fill="none"
+                    stroke={guide.levelColours?.[String(guide.value)] ?? guide.colour}
+                    stroke-width={guide.strokeWidth ?? 1.5}
+                    stroke-dasharray={guide.dash ?? "5 4"}
+                    stroke-linecap="round"
+                    vector-effect="non-scaling-stroke"
+                    data-guide-kind="level"
+                    data-guide-level={guide.value}
+                  />
+                )}
+                {guide.values && (
+                  <path
+                    d={stepRisers(guide.values)}
+                    fill="none"
+                    stroke={guide.riserColour ?? guide.colour}
+                    stroke-width={guide.riserStrokeWidth ?? guide.strokeWidth ?? 1.5}
+                    vector-effect="non-scaling-stroke"
+                    data-guide-kind="riser"
+                  />
+                )}
+              </>
+            ) : (
+              <>
                 <path
-                  d={stepRisers(guide.values)}
+                  d={guide.values ? stepPath(guide.values) : `M0 ${n(y(guide.value as number), 3)} L100 ${n(y(guide.value as number), 3)}`}
                   fill="none"
                   stroke={guide.colour}
                   stroke-width="1.5"
+                  stroke-dasharray="5 4"
                   vector-effect="non-scaling-stroke"
                 />
-              )}
-            </>
-          ))
+                {guide.values && (
+                  <path
+                    d={stepRisers(guide.values)}
+                    fill="none"
+                    stroke={guide.colour}
+                    stroke-width="1.5"
+                    vector-effect="non-scaling-stroke"
+                  />
+                )}
+              </>
+            ),
+          )
         }
 
         {/* On zero when zero is on the scale, at the foot of the box otherwise.
@@ -398,6 +570,38 @@ const keyed = series.map((s) => {
         }
       </svg>
 
+      {
+        visibleGuides.map((guide) => {
+          const milestone = milestoneFor(guide);
+          if (!milestone) return null;
+          const levelColour = guide.levelColours?.[String(milestone.value)] ?? guide.colour;
+          const levelInk = guide.levelInkColours?.[String(milestone.value)] ?? markInk(levelColour);
+          return (
+            <>
+              <span
+                class="guide-start-marker"
+                data-guide-kind="start-marker"
+                data-guide-year={milestone.year}
+                aria-hidden="true"
+                style={`left:${n(milestone.left, 3)}%;top:${n(milestone.top, 3)}%;--mark:${levelColour}`}
+              />
+              <span
+                class="guide-start-leader"
+                data-guide-kind="start-leader"
+                aria-hidden="true"
+                style={`left:${n(milestone.left, 3)}%;top:${n(milestone.top, 3)}%;--mark:${levelColour}`}
+              />
+              <span
+                class="guide-start-note"
+                data-guide-kind="start-note"
+                aria-label={milestone.ariaLabel}
+                style={`left:${n(milestone.left, 3)}%;top:${n(milestone.top, 3)}%;--mark-ink:${levelInk}`}
+              >{milestone.label}</span>
+            </>
+          );
+        })
+      }
+
       {/*
         No data points.
 
@@ -409,11 +613,53 @@ const keyed = series.map((s) => {
         interval is in the x axis and in the caption, which is where it belongs.
       */}
       {
-        visibleGuides.map((guide, gi) => (
-          <span class={`plot-note note-${notesAt}`} style={`top:${n(noteY[gi], 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}`}>
-            {guide.label}
-          </span>
-        ))
+        visibleGuides.map((guide, gi) => {
+          const noteYearX = noteX(guide);
+          return (
+            <span
+              class:list={["plot-note", `note-${notesAt}`, {
+                "plot-note-structured": guide.annotation,
+                "plot-note-transition": guide.annotation?.kind === "transition",
+                "plot-note-on-line": guide.notePlacement === "on-line",
+                "plot-note-top-right": guide.notePlacement === "top-right",
+                "plot-note-force-key": guide.notePlacement === "key",
+                "plot-note-year": noteYearX != null,
+              }]}
+              style={`top:${n(guideNoteTop(guide, gi), 3)}%;--mark:${guide.colour};--mark-ink:${markInk(guide.colour)}${noteYearX == null ? "" : `;--note-x:${n(noteYearX, 3)}%`}`}
+            >
+              {guide.annotation ? (
+                <GuideAnnotationView
+                  annotation={guide.annotation}
+                  fallback={guide.label}
+                  fromMark={
+                    guide.annotation.kind === "transition"
+                      ? guide.levelColours?.[guide.annotation.fromValue] ?? guide.colour
+                      : undefined
+                  }
+                  fromInk={
+                    guide.annotation.kind === "transition"
+                      ? guide.levelInkColours?.[guide.annotation.fromValue] ??
+                        markInk(guide.levelColours?.[guide.annotation.fromValue] ?? guide.colour)
+                      : undefined
+                  }
+                  toMark={
+                    guide.annotation.kind === "transition"
+                      ? guide.levelColours?.[guide.annotation.toValue] ?? guide.colour
+                      : undefined
+                  }
+                  toInk={
+                    guide.annotation.kind === "transition"
+                      ? guide.levelInkColours?.[guide.annotation.toValue] ??
+                        markInk(guide.levelColours?.[guide.annotation.toValue] ?? guide.colour)
+                      : undefined
+                  }
+                />
+              ) : (
+                guide.label
+              )}
+            </span>
+          );
+        })
       }
     </div>
 
@@ -441,6 +687,10 @@ const keyed = series.map((s) => {
 </div>
 
 <style>
+  .chart {
+    container-name: trend-chart;
+  }
+
   .plot-line.emphasis-primary {
     stroke-width: 3;
   }
@@ -473,10 +723,105 @@ const keyed = series.map((s) => {
     margin-top: -0.28em;
   }
 
+  /* WHO is read as a value attached to one exact guide, so it is the explicit
+     exception to the default-above rule. The opaque backing interrupts the
+     dash before it can run through the glyphs. */
+  .plot-note.plot-note-on-line {
+    margin-top: 0;
+    transform: translateY(-50%);
+    background: var(--bg-sunken);
+  }
+
+  .plot-note.plot-note-structured {
+    padding: 0.42em 0.58em;
+    border-radius: 0.55rem;
+  }
+
+  .plot-note.plot-note-transition {
+    font-size: clamp(1.2rem, 1.08rem + 0.4vw, 1.4rem);
+  }
+
   .plot-note.note-left {
     right: auto;
     left: 0.35em;
     text-align: left;
+  }
+
+  .plot-note.plot-note-top-right {
+    right: 16px;
+    left: auto;
+    margin-top: 0;
+    transform: none;
+    text-align: left;
+  }
+
+  .plot-note.plot-note-on-line.note-left {
+    right: auto;
+    left: clamp(32px, 5%, 48px);
+  }
+
+  .plot-note.plot-note-year {
+    right: auto;
+    left: var(--note-x);
+    transform: translate(-50%, -50%);
+  }
+
+  .plot-note.plot-note-on-line.note-left.plot-note-year {
+    left: var(--note-x);
+  }
+
+  .plot-note.plot-note-transition {
+    padding-block: 0.12em;
+  }
+
+  .plot-note-transition :global(.guide-annotation) {
+    gap: 0.06em;
+    line-height: 1;
+  }
+
+  .plot-note-transition :global(.guide-row) {
+    line-height: 1;
+  }
+
+  .plot-note-transition :global(.guide-change) {
+    font-size: 0.78em;
+  }
+
+  .guide-start-marker {
+    position: absolute;
+    z-index: 1;
+    width: 10px;
+    height: 10px;
+    border: 3px solid var(--mark);
+    border-radius: 50%;
+    background: var(--bg-sunken);
+    transform: translate(-50%, -50%);
+  }
+
+  .guide-start-leader {
+    position: absolute;
+    z-index: 1;
+    width: 2px;
+    height: 8px;
+    margin-top: -5px;
+    background: var(--mark);
+    transform: translate(-50%, -100%);
+  }
+
+  .guide-start-note {
+    position: absolute;
+    z-index: 1;
+    margin-top: -13px;
+    padding: 0.1em 0.35em;
+    border-radius: 0.25em;
+    background: var(--bg-sunken);
+    color: var(--mark-ink);
+    font-family: var(--font-numeric);
+    font-size: var(--chart-label);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    transform: translate(-50%, -100%);
+    white-space: nowrap;
   }
 
   /*
@@ -538,6 +883,42 @@ const keyed = series.map((s) => {
     display: none;
   }
 
+  /* Some plots use the same legal transition but have data in the top-right
+     band. Placement is an explicit chart decision so the static page, no-JS
+     rendering and PNG export all agree about where the legend lives. */
+  .plot-note.plot-note-force-key {
+    display: none;
+  }
+
+  .chart-key .key-guide-force-key {
+    display: list-item;
+    box-sizing: border-box;
+    inline-size: min(23rem, 100%);
+    margin-inline-start: auto;
+    container-type: inline-size;
+  }
+
+  .chart-key .key-guide-transition {
+    padding: 0.72em 0.85em;
+    text-indent: 0;
+  }
+
+  .plot-note.plot-note-transition,
+  .chart-key .key-guide-transition {
+    border: 1px solid var(--line);
+    border-radius: 0.65rem;
+    background: var(--bg-raised);
+    box-shadow: none;
+  }
+
+  .plot-note.plot-note-transition {
+    padding: 0.72em 0.82em;
+  }
+
+  .chart-key .key-guide-transition > .key-mark {
+    display: none;
+  }
+
   /*
    * 480 rather than 420, because the pill is a fixed 260px and the question is
    * what fraction of the plot it covers. Measured by walking each series at 200
@@ -546,12 +927,57 @@ const keyed = series.map((s) => {
    * points of a line were behind the label. At 535 and every width above it,
    * zero. The threshold now sits between those two.
    */
-  @container (max-width: 480px) {
+  @container trend-chart (max-width: 480px) {
     .plot-note {
       display: none;
     }
+    .plot-note.plot-note-on-line {
+      display: block;
+    }
     .chart-key .key-guide {
       display: list-item;
+    }
+    .chart-key .key-guide-on-line {
+      display: none;
+    }
+  }
+
+  /* Figure 1.1's enlarged timeline and start label cannot share the
+     intermediate plot without covering the series or each other. The start
+     label hides first, then the complete timeline moves to the key at the next
+     narrow tier; its 2012 marker remains on the plot. */
+  @container (max-width: 720px) {
+    .guide-start-leader,
+    .guide-start-note {
+      display: none;
+    }
+  }
+
+  @container trend-chart (max-width: 888px) {
+    .plot-note.plot-note-transition {
+      display: none;
+    }
+    .chart-key .key-guide-transition {
+      display: list-item;
+    }
+  }
+
+  @container trend-chart (min-width: 888.01px) and (max-width: 40em) {
+    .plot-note.plot-note-transition {
+      display: none;
+    }
+    .chart-key .key-guide-transition {
+      display: list-item;
+    }
+    .plot-note.plot-note-on-line {
+      display: none;
+    }
+    .chart-key .key-guide-on-line {
+      display: list-item;
+    }
+    .guide-start-leader,
+    .guide-start-note {
+      display: none;
     }
   }
 

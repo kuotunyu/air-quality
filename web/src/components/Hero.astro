@@ -169,11 +169,18 @@ const opening = [
     </div>
 
         <p class="lede hero-context" data-homepage-atlas-right>
-          同一份資料也顯示，{latestYear} 年有可比較資料的 {latest.length} 個測站中，
-          <strong>{overWho} 個</strong>超過世界衛生組織的年均指引值（5 μg/m³），
-          {overTaiwan} 個超過台灣自身的標準（{TAIWAN_PM25_ANNUAL} μg/m³）。
-          趨勢與水準是兩個不同的量，這兩項結果並不衝突。
+          長期趨勢已改善，但這不等於空氣品質已達健康指引。
         </p>
+
+        <section class="hero-level-summary" data-homepage-level-summary aria-labelledby="level-summary-heading">
+          <p class="eyebrow" id="level-summary-heading">2025 年的水準</p>
+          <p class="lede">
+            有可比較資料的 {latest.length} 個測站中，<strong>{overWho} 個</strong>
+            超過世界衛生組織的年均指引值（5 μg/m³），{overTaiwan} 個超過台灣自身的
+            標準（{TAIWAN_PM25_ANNUAL} μg/m³）。趨勢與水準是兩個不同的量，這兩項結果
+            並不衝突。
+          </p>
+        </section>
 
         <div class="hero-routes" data-homepage-routes>
           <StartHere />
@@ -430,6 +437,19 @@ const opening = [
   gap: var(--space-4);
 }
 
+.hero-level-summary {
+  border-top: 1px solid var(--line-soft);
+  padding-top: var(--space-3);
+}
+
+.hero-level-summary .eyebrow {
+  margin-bottom: var(--space-1);
+}
+
+.hero-level-summary .lede {
+  margin: 0;
+}
+
 @container (max-width: 39.999rem) {
   .hero-grid {
     gap: var(--space-1);
@@ -515,11 +535,14 @@ const opening = [
     align-self: center;
     margin: 0;
   }
-  .hero-after > .hero-routes {
+  .hero-after > :global(.hero-level-summary) {
     grid-area: 3 / 1 / auto / -1;
   }
-  .hero-grid > :global(.map-notes) {
+  .hero-after > .hero-routes {
     grid-area: 4 / 1 / auto / -1;
+  }
+  .hero-grid > :global(.map-notes) {
+    grid-area: 5 / 1 / auto / -1;
   }
   .hero-grid > :global(.map-tools) {
     grid-area: 5 / 1 / auto / -1;

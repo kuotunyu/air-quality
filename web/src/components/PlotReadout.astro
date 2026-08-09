@@ -432,6 +432,22 @@
     }
   }
 
+  @container (min-width: 44em) {
+    .readout-dock {
+      min-block-size: 1px;
+    }
+
+    .readout-panel {
+      grid-template-columns: max-content repeat(2, minmax(0, 1fr));
+      align-items: baseline;
+    }
+
+    .readout-when {
+      grid-column: auto;
+      margin-bottom: 0;
+    }
+  }
+
   .readout-when {
     margin: 0 0 0.15rem;
     font-size: var(--chart-micro);

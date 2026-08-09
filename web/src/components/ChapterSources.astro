@@ -330,8 +330,8 @@ const legend = BREAKS.map((b, i) => ({
           the readout column is 190px and the disc is 440.
         */}
         <div class="ramp">
-          <p class="ramp-title">顏色＝高值機率</p>
-          <div class="ramp-bar" role="img" aria-label={`機率色階，分界 ${BREAKS.join("、")}`}>
+          <p class="ramp-title">顏色＝高值機率（低 → 高）</p>
+          <div class="ramp-bar" role="img" aria-label={`機率色階，由低到高，分界 ${BREAKS.join("、")}`}>
             {legend.map((l) => <span style={`background:${l.colour}`} />)}
           </div>
           <div class="ramp-ticks" aria-hidden="true">
@@ -647,6 +647,18 @@ const legend = BREAKS.map((b, i) => ({
   }
   .plot-row > * {
     min-width: 0;
+  }
+  /* This figure uses seven discrete bins rather than a continuous field, so
+     hue separates neighbours while monotonic lightness keeps the low-to-high
+     order legible. Each theme still moves away from its own paper. */
+  .polar {
+    --c0: light-dark(oklch(0.68 0.125 193), oklch(0.566 0.14 49));
+    --c1: light-dark(oklch(0.64 0.137 232), oklch(0.635 0.13 249));
+    --c2: light-dark(oklch(0.598 0.149 270), oklch(0.704 0.12 122));
+    --c3: light-dark(oklch(0.548 0.152 310), oklch(0.773 0.11 308));
+    --c4: light-dark(oklch(0.505 0.16 343), oklch(0.842 0.10 49));
+    --c5: light-dark(oklch(0.46 0.132 15), oklch(0.915 0.07 249));
+    --c6: light-dark(oklch(0.416 0.155 84), oklch(0.985 0.02 122));
   }
   /*
    * A square that owns its own coordinate space.

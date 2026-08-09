@@ -11,7 +11,12 @@ import ChapterIntro from "./ChapterIntro.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
-import { taiwanAnnual } from "../lib/standards";
+import {
+  TW_PM25_ADDED,
+  TW_PM25_ADDED_DATE,
+  TW_PM25_TIGHTENED_DATE,
+  taiwanAnnual,
+} from "../lib/standards";
 
 const firstYear = trend.years[0];
 const lastYear = trend.years[trend.years.length - 1];
@@ -201,6 +206,38 @@ const airzoneSeries = (trendByAirzone.series as {
  * against the axis it is drawn on.
  */
 const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
+const dottedDate = (iso: string): string => iso.replaceAll("-", ".");
+const addedDate = dottedDate(TW_PM25_ADDED_DATE);
+const tightenedDate = dottedDate(TW_PM25_TIGHTENED_DATE);
+const taiwanAnnualGuide = (
+  years: number[],
+  notePlacement: "top-right" | "key" = "top-right",
+) => ({
+  values: taiwanAnnualFor(years),
+  label: "台灣年均標準 15 → 12",
+  colour: "var(--taiwan)",
+  levelColours: { "15": "var(--k2)", "12": "var(--k5)" },
+  levelInkColours: { "15": "var(--k2-ink)", "12": "var(--k5-ink)" },
+  strokeWidth: 3,
+  riserStrokeWidth: 2,
+  dash: "8 5",
+  riserColour: "var(--rule)",
+  notePlacement,
+  startMilestone: {
+    year: TW_PM25_ADDED,
+    label: `${addedDate.slice(0, 7)} 標準開始生效`,
+    ariaLabel: `${TW_PM25_ADDED_DATE} PM2.5 年均標準開始生效，標準為 15 微克/立方公尺`,
+  },
+  annotation: {
+    kind: "transition" as const,
+    title: "台灣 PM2.5 年均標準",
+    fromLabel: `${addedDate} 起生效`,
+    fromValue: "15",
+    changeLabel: `${tightenedDate} \u8abf\u964d`,
+    toLabel: "\u73fe\u884c\u6a19\u6e96",
+    toValue: "12",
+  },
+});
 
 ---
 
@@ -231,10 +268,22 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
         },
       ]}
       guides={[
-        { values: taiwanAnnualFor(trend.years), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" },
-        { value: 5, label: "WHO 年均指引 5", colour: "var(--who)" },
+        taiwanAnnualGuide(trend.years),
+        {
+          value: 5,
+          label: "WHO 年均指引 5",
+          colour: "var(--c1-ink)",
+          strokeWidth: 2,
+          dash: "8 5",
+          notePlacement: "on-line",
+          noteYear: 2010,
+          annotation: { kind: "value", title: "WHO 年均指引", value: "5", tone: "who" },
+        },
       ]}
       unit="μg/m³"
+      ar={58}
+      minH={320}
+      maxH={520}
       notesAt="left"
       primaryPlot
     />
@@ -269,7 +318,7 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
     在固定的測站集合上，下降同樣成立。若兩條線分岔，結論就必須修正。
   </div>
 
-  <h2>氣象正規化：分離天氣與排放</h2>
+  <h2>把各年的天氣條件調整成相同水準</h2>
 
   <p>
     上一個校正量到的差異在誤差範圍內。這一個不是——它改變下降幅度的解讀。
@@ -278,13 +327,13 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
   <p>
     同樣一場東北季風，可以把中部的濃度壓下來，也可以把它悶住。
     一年的空氣看起來變好，可能是排放真的少了，也可能只是那幾年的風況比較有利。
-    要分開這兩件事，做法是<strong>把天氣抽掉再看一次</strong>：
+    這裡不是從觀測值減掉一個「天氣數字」，而是<strong>把每一年的天氣條件調整成相同水準，再比較 PM2.5</strong>：
     用隨機森林學會「這個測站在什麼氣象條件下會有多少 PM2.5」，
     然後對每一個時間點，把氣象變數從整段期間隨機重抽、預測很多次再平均。
     得到的序列可以讀成「如果每一年的天氣都是這 18 年的平均，濃度會是多少」。
   </p>
 
-  <EvidenceFigure number="1.2" title="扣除天氣後，下降幅度還剩多少？">
+  <EvidenceFigure number="1.2" title="在相同天氣條件下，PM2.5 還下降多少？">
     <TrendChart
       years={dwYears}
       series={[
@@ -296,19 +345,19 @@ const taiwanAnnualFor = (years: number[]) => years.map(taiwanAnnual);
         },
         {
           key: "normalised",
-          label: "氣象正規化後",
+          label: "相同天氣條件下",
           values: dwNormalised,
           colour: "var(--k1)",
           dash: "5 3",
         },
       ]}
-      guides={[{ values: taiwanAnnualFor(dwYears), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" }]}
+      guides={[taiwanAnnualGuide(dwYears, "key")]}
       unit="μg/m³"
       notesAt="left"
     />
     <Fragment slot="caption">
       {dw.panel.n_stations} 個測站、{dw.panel.balanced_since}–{dwYears[dwYears.length - 1]} 年，
-      兩條線都出自同一批列。實線是實際量到的；虛線是同一批資料在「平均天氣」下的樣子。
+      兩條線都出自同一批列。實線是實際量到的；虛線是假設每一年遇到相同天氣條件時的估計值。
       {dwCrossing && <>兩條線在 {dwCrossing} 年前後交叉。</>}
     </Fragment>
   </EvidenceFigure>

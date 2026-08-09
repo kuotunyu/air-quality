@@ -1747,6 +1747,13 @@ async function main() {
       try { data = holder?.textContent ? JSON.parse(holder.textContent) : null; } catch {}
       const panelBox = panel?.getBoundingClientRect();
       const areaBox = area?.getBoundingClientRect();
+      const rect = (element) => {
+        const box = element?.getBoundingClientRect();
+        return box ? {
+          top: box.top, right: box.right, bottom: box.bottom, left: box.left,
+          width: box.width, height: box.height,
+        } : null;
+      };
       return {
         panelReady: Boolean(panel),
         panelInDock: Boolean(dock && dock.previousElementSibling === plot),
@@ -1783,6 +1790,10 @@ async function main() {
           ? [...panel.querySelectorAll(".readout-row")].map(
               (row) => +row.getBoundingClientRect().height.toFixed(3),
             )
+          : [],
+        whenBox: rect(panel?.querySelector(".readout-when")),
+        rowBoxes: panel
+          ? [...panel.querySelectorAll(".readout-row")].map(rect)
           : [],
         rowMetrics: panel
           ? [...panel.querySelectorAll(".readout-row")].map((row) => {
@@ -2080,6 +2091,8 @@ async function main() {
         .map((name) => name.textContent.trim()).filter(Boolean).sort();
       const overlays = [...(map?.querySelectorAll(".county-label") ?? [])];
       const after = document.querySelector(".hero-after");
+      const levelSummary = document.querySelector("[data-homepage-level-summary]");
+      const routes = document.querySelector("[data-homepage-routes]");
       const notes = document.querySelector(".map-notes");
       const mountId = map?.getAttribute("data-figure-tools-mount") ?? "";
       const mounts = mountId ? [...document.querySelectorAll("#" + CSS.escape(mountId))] : [];
@@ -2105,6 +2118,13 @@ async function main() {
         enhancedOrder: Boolean(
           follows(map, after) && follows(after, notes) && follows(notes, tools)
         ),
+        levelSummaryAfterMap: Boolean(
+          follows(map, levelSummary) && follows(levelSummary, routes) &&
+          map && levelSummary && levelSummary.getBoundingClientRect().top >=
+            map.getBoundingClientRect().bottom - 1 &&
+          routes && levelSummary.getBoundingClientRect().bottom <=
+            routes.getBoundingClientRect().top + 1
+        ),
       };
     })()`);
     const problems = [];
@@ -2124,15 +2144,1047 @@ async function main() {
       enhanced &&
       (
         structure?.mountCount !== 1 || structure?.toolCount !== 2 ||
-        !structure?.toolsOutsideMap || !structure?.enhancedOrder
+        !structure?.toolsOutsideMap || !structure?.enhancedOrder ||
+        !structure?.levelSummaryAfterMap
       )
     ) {
-      problems.push("homepage enhanced figure tools precede the intended post-map content");
+      problems.push("homepage post-map evidence order is incomplete");
     }
     return problems;
   };
 
   const failures = [];
+  const trendGuideSnapshot = () =>
+    evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width > 0 && rect.height > 0;
+      };
+      const rect = (element) => {
+        const box = element?.getBoundingClientRect();
+        return box ? {
+          top: box.top, right: box.right, bottom: box.bottom, left: box.left,
+          width: box.width, height: box.height,
+        } : null;
+      };
+      const contentWidth = (element) => {
+        if (!element) return null;
+        const style = getComputedStyle(element);
+        const width = element.getBoundingClientRect().width -
+          parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd) -
+          parseFloat(style.borderInlineStartWidth) - parseFloat(style.borderInlineEndWidth);
+        return Number.isFinite(width) ? width : null;
+      };
+      const charts = [...document.querySelectorAll(".chart")].slice(0, 3);
+      const firstPlot = document.querySelector(".plot[data-readout]");
+      const chart = firstPlot?.closest(".chart");
+      const plotArea = firstPlot?.querySelector(".plot-area");
+      const transitionPlotAnnotation = [...(firstPlot?.querySelectorAll(
+        '.guide-annotation[data-kind="transition"]',
+      ) ?? [])].find(visible);
+      const transitionKeyAnnotation = [...(chart?.querySelectorAll(
+        '.chart-key .guide-annotation[data-kind="transition"]',
+      ) ?? [])].find(visible);
+      const transitionPlotHost = transitionPlotAnnotation?.closest(".plot-note-transition");
+      const transitionKeyHost = transitionKeyAnnotation?.closest(".key-guide-transition");
+      const transition = transitionPlotAnnotation ?? transitionKeyAnnotation;
+      const transitionRows = transition?.querySelectorAll(".guide-row") ?? [];
+      const transitionKey = chart?.querySelector(".chart-key .key-guide-transition");
+      const plotWho = firstPlot?.querySelector('.guide-annotation[data-kind="value"]');
+      const keyWho = [...(chart?.querySelectorAll(
+        '.chart-key .guide-annotation[data-kind="value"]',
+      ) ?? [])].find(visible);
+      const who = [plotWho, keyWho].find(visible);
+      const whoPlotNote = plotWho?.closest(".plot-note");
+      const whoKeyItem = keyWho?.closest(".key-guide-on-line");
+      const whoLine = firstPlot?.querySelector(
+        '[data-guide-kind="level"][data-guide-level="5"]',
+      );
+      const startMarker = firstPlot?.querySelector('[data-guide-kind="start-marker"]');
+      const startNote = firstPlot?.querySelector('[data-guide-kind="start-note"]');
+      const startLeader = firstPlot?.querySelector('[data-guide-kind="start-leader"]');
+      const readout = JSON.parse(firstPlot?.querySelector(".plot-readout-data")?.textContent ?? "{}");
+      const renderedYears = (readout.x ?? []).map(Number);
+      const yearX = (year) => {
+        const index = renderedYears.indexOf(year);
+        return index === -1 || renderedYears.length < 2
+          ? NaN
+          : plotArea.getBoundingClientRect().left +
+            plotArea.getBoundingClientRect().width * index / (renderedYears.length - 1);
+      };
+      const oldValue = transition?.querySelector(".guide-value-old");
+      const change = transition?.querySelector(".guide-change");
+      const currentValue = transition?.querySelector(".guide-value-current");
+      const whoTitle = who?.querySelector(".guide-title");
+      const whoValue = who?.querySelector(".guide-value-who");
+      const guidePaths = [...(firstPlot?.querySelectorAll("[data-guide-kind]") ?? [])]
+        .filter((element) => element instanceof SVGElement);
+      const transitionNote = firstPlot
+        ?.querySelector('.guide-annotation[data-kind="transition"]')
+        ?.closest(".plot-note");
+      const annotationBoxes = [transitionNote, startNote]
+        .filter(visible)
+        .map((note) => note.getBoundingClientRect());
+      const seriesOcclusionBoxes = [transitionNote, startNote, startLeader, startMarker]
+        .filter(visible)
+        .map((annotation) => annotation.getBoundingClientRect());
+      const plotAnnotationBoxes = [transitionNote, startNote, whoPlotNote]
+        .filter(visible)
+        .map((note) => note.getBoundingClientRect());
+      const plotBox = plotArea?.getBoundingClientRect();
+      const annotationOverlapCount = plotAnnotationBoxes.reduce(
+        (total, box, index) => total + plotAnnotationBoxes.slice(index + 1)
+          .filter((other) =>
+            Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1 &&
+            Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1,
+          ).length,
+        0,
+      );
+      const plotBoundaryViolationCount = plotBox
+        ? plotAnnotationBoxes.filter((box) =>
+            box.left < plotBox.left - 1 || box.right > plotBox.right + 1 ||
+            box.top < plotBox.top - 1 || box.bottom > plotBox.bottom + 1,
+          ).length
+        : plotAnnotationBoxes.length;
+      const seriesOcclusionCount = seriesOcclusionBoxes.reduce(
+        (annotationTotal, annotationBox) =>
+          annotationTotal + [...(firstPlot?.querySelectorAll("path.plot-line") ?? [])]
+            .reduce((total, path) => {
+              const length = path.getTotalLength();
+              const matrix = path.getScreenCTM();
+              if (!matrix) return total;
+              let hits = 0;
+              for (let index = 0; index <= 1000; index += 1) {
+                const point = path.getPointAtLength(length * index / 1000)
+                  .matrixTransform(matrix);
+                if (
+                  point.x >= annotationBox.left && point.x <= annotationBox.right &&
+                  point.y >= annotationBox.top && point.y <= annotationBox.bottom
+                ) hits += 1;
+              }
+              return total + hits;
+            }, 0),
+        0,
+      );
+      const token = (name) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(" + name + ")";
+        document.body.append(probe);
+        const colour = getComputedStyle(probe).color;
+        probe.remove();
+        return colour;
+      };
+      const alphaOf = (colour) => {
+        if (!colour) return null;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 1, 1);
+        return context.getImageData(0, 0, 1, 1).data[3];
+      };
+      const surface = (element) => {
+        if (!element) return null;
+        const style = getComputedStyle(element);
+        const border = (side) => ({
+          width: parseFloat(style["border" + side + "Width"]),
+          style: style["border" + side + "Style"],
+          colour: style["border" + side + "Color"],
+        });
+        return {
+          box: rect(element),
+          background: style.backgroundColor,
+          backgroundAlpha: alphaOf(style.backgroundColor),
+          borders: {
+            top: border("Top"),
+            right: border("Right"),
+            bottom: border("Bottom"),
+            left: border("Left"),
+          },
+          boxShadow: style.boxShadow,
+          paddingInline: parseFloat(style.paddingInlineStart) + parseFloat(style.paddingInlineEnd),
+          paddingBlock: parseFloat(style.paddingBlockStart) + parseFloat(style.paddingBlockEnd),
+        };
+      };
+      const mark = (element) => {
+        if (!element) return null;
+        const style = getComputedStyle(element);
+        return {
+          stroke: style.stroke,
+          weight: parseFloat(style.strokeWidth),
+          dash: style.strokeDasharray
+            .replaceAll("px", "")
+            .replaceAll(",", " ")
+            .replace(/\\s+/g, " ")
+            .trim(),
+          cap: style.strokeLinecap,
+        };
+      };
+      const whoBackground = whoPlotNote
+        ? getComputedStyle(whoPlotNote).backgroundColor
+        : null;
+      const guideCopies = charts.map((currentChart) => {
+        const plotCopies = [...currentChart.querySelectorAll(".plot .plot-note")];
+        const keyCopies = [...currentChart.querySelectorAll(
+          ".chart-key .key-guide",
+        )];
+        const chartTransitionPlot = [...currentChart.querySelectorAll(
+          ".plot .plot-note-transition",
+        )].find(visible);
+        const chartTransitionKey = [...currentChart.querySelectorAll(
+          ".chart-key .key-guide-transition",
+        )].find(visible);
+        const currentKey = currentChart.querySelector(".chart-key");
+        const activeTransition = chartTransitionPlot ?? chartTransitionKey;
+        const activeTransitionAnnotation = activeTransition?.querySelector(
+          '.guide-annotation[data-kind="transition"]',
+        );
+        const activeTransitionRows = activeTransitionAnnotation?.querySelectorAll(
+          ".guide-row",
+        ) ?? [];
+        const activeTransitionBox = activeTransition?.getBoundingClientRect() ?? null;
+        const currentPlot = currentChart.querySelector(".plot-area");
+        const currentPlotBox = currentPlot?.getBoundingClientRect() ?? null;
+        const transitionOverlapsPlot = Boolean(
+          activeTransitionBox && currentPlotBox &&
+          Math.min(activeTransitionBox.right, currentPlotBox.right) -
+            Math.max(activeTransitionBox.left, currentPlotBox.left) > 1 &&
+          Math.min(activeTransitionBox.bottom, currentPlotBox.bottom) -
+            Math.max(activeTransitionBox.top, currentPlotBox.top) > 1
+        );
+        const transitionSeriesOcclusionCount = activeTransitionBox
+          ? [...(currentPlot?.querySelectorAll("path.plot-line") ?? [])]
+              .reduce((total, path) => {
+                const length = path.getTotalLength();
+                const matrix = path.getScreenCTM();
+                if (!matrix) return total;
+                let hits = 0;
+                for (let index = 0; index <= 1000; index += 1) {
+                  const point = path.getPointAtLength(length * index / 1000)
+                    .matrixTransform(matrix);
+                  if (
+                    point.x >= activeTransitionBox.left &&
+                    point.x <= activeTransitionBox.right &&
+                    point.y >= activeTransitionBox.top &&
+                    point.y <= activeTransitionBox.bottom
+                  ) hits += 1;
+                }
+                return total + hits;
+              }, 0)
+          : 0;
+        const configuredSource = currentChart.getAttribute("data-guide-count");
+        const plotVisible = plotCopies.filter(visible).length;
+        const keyVisible = keyCopies.filter(visible).length;
+        const chartStyle = getComputedStyle(currentChart);
+        return {
+          configured: configuredSource === null ? null : Number(configuredSource),
+          chartContentWidth: contentWidth(currentChart),
+          rootSize: parseFloat(getComputedStyle(document.documentElement).fontSize),
+          plotRendered: plotCopies.length,
+          keyRendered: keyCopies.length,
+          plotVisible,
+          keyVisible,
+          visible: plotVisible + keyVisible,
+          transitionPlotVisible: chartTransitionPlot ? 1 : 0,
+          transitionKeyVisible: chartTransitionKey ? 1 : 0,
+          transitionOverlapsPlot,
+          transitionSeriesOcclusionCount,
+          keyBox: rect(currentKey),
+          keyContentWidth: contentWidth(currentKey),
+          transitionKeyBox: rect(chartTransitionKey),
+          timelineBoxes: {
+            title: rect(activeTransitionAnnotation?.querySelector(".guide-title")),
+            old: rect(activeTransitionRows[0]),
+            change: rect(activeTransitionAnnotation?.querySelector(".guide-change")),
+            current: rect(activeTransitionRows[1]),
+          },
+          containerName: chartStyle.containerName,
+          transitionText: [...currentChart.querySelectorAll(
+            '.guide-annotation[data-kind="transition"]',
+          )].map((node) => node.textContent).join(" ").replace(/\s+/g, " ").trim(),
+        };
+      });
+      return {
+        chartContainerName: chart ? getComputedStyle(chart).containerName : null,
+        chartContentWidth: contentWidth(chart),
+        plotContentWidth: contentWidth(firstPlot),
+        guideCopies,
+        transitionVisible: visible(transition),
+        whoVisible: visible(who),
+        plotNotesVisible: [...(firstPlot?.querySelectorAll(".plot-note") ?? [])]
+          .filter(visible).length,
+        text: [transition?.textContent, who?.textContent]
+          .filter(Boolean).join(" ").replace(/\\s+/g, " ").trim(),
+        boxes: {
+          chart: rect(chart), plotArea: rect(plotArea), transitionNote: rect(transitionNote),
+          transition: rect(transition), who: rect(who), old: rect(oldValue),
+          change: rect(change), current: rect(currentValue), startMarker: rect(startMarker),
+          startNote: rect(startNote),
+          startLeader: rect(startLeader),
+        },
+        expectedX2010: yearX(2010),
+        expectedX2012: yearX(2012),
+        expectedX2024: yearX(2024),
+        standardPathEndpoints: Object.fromEntries(
+          guidePaths
+            .filter((path) => path.getAttribute("data-guide-kind") === "level")
+            .map((path) => [path.getAttribute("data-guide-level"), rect(path)]),
+        ),
+        colours: {
+          old: oldValue ? getComputedStyle(oldValue).color : null,
+          current: currentValue ? getComputedStyle(currentValue).color : null,
+          whoTitle: whoTitle ? getComputedStyle(whoTitle).color : null,
+          whoValue: whoValue ? getComputedStyle(whoValue).color : null,
+        },
+        valueBackgroundAlpha: {
+          old: alphaOf(oldValue ? getComputedStyle(oldValue).backgroundColor : null),
+          current: alphaOf(currentValue ? getComputedStyle(currentValue).backgroundColor : null),
+        },
+        guidePaths: guidePaths.map((path) => ({
+          kind: path.getAttribute("data-guide-kind"),
+          level: path.getAttribute("data-guide-level"),
+          ...mark(path),
+        })),
+        samples: {
+          old: mark(transition?.querySelector(".guide-line-sample-old line")),
+          current: mark(transition?.querySelector(".guide-line-sample-current line")),
+        },
+        transitionTypography: {
+          fontSize: transitionNote ? parseFloat(getComputedStyle(transitionNote).fontSize) : null,
+          rootSize: parseFloat(getComputedStyle(document.documentElement).fontSize),
+        },
+        seriesStrokes: [...(firstPlot?.querySelectorAll("path.plot-line") ?? [])]
+          .slice(0, 2)
+          .map((path) => getComputedStyle(path).stroke),
+        guideTokens: {
+          oldMark: token("--k2"),
+          oldInk: token("--k2-ink"),
+          currentMark: token("--k5"),
+          currentInk: token("--k5-ink"),
+          who: token("--c1-ink"),
+          seriesAll: token("--k0"),
+          seriesBalanced: token("--k1"),
+          riser: token("--rule"),
+          line: token("--line"),
+          bgRaised: token("--bg-raised"),
+        },
+        whoPlacement: {
+          label: rect(whoPlotNote),
+          key: rect(whoKeyItem),
+          line: rect(whoLine),
+          background: whoBackground,
+          backgroundAlpha: alphaOf(whoBackground),
+          plotCount: [...(firstPlot?.querySelectorAll(
+            '.guide-annotation[data-kind="value"]',
+          ) ?? [])].filter(visible).length,
+          keyCount: [...(chart?.querySelectorAll(
+            '.chart-key .guide-annotation[data-kind="value"]',
+          ) ?? [])].filter(visible).length,
+        },
+        startPlacement: {
+          markerVisible: visible(startMarker),
+          noteVisible: visible(startNote),
+          leaderVisible: visible(startLeader),
+          markerYear: startMarker?.getAttribute("data-guide-year") ?? null,
+          noteText: startNote?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
+          noteAriaLabel: startNote?.getAttribute("aria-label") ?? null,
+        },
+        transitionPlacement: {
+          plotCount: [...(firstPlot?.querySelectorAll(
+            '.guide-annotation[data-kind="transition"]',
+          ) ?? [])].filter(visible).length,
+          keyCount: [...(chart?.querySelectorAll(
+            '.chart-key .guide-annotation[data-kind="transition"]',
+          ) ?? [])].filter(visible).length,
+          keyOuterMarkCount: [...(transitionKey?.children ?? [])]
+            .filter((element) => element.matches(".key-mark") && visible(element)).length,
+          keyOldSampleCount: [...(transitionKey?.querySelectorAll(
+            ".guide-line-sample-old",
+          ) ?? [])].filter(visible).length,
+          keyCurrentSampleCount: [...(transitionKey?.querySelectorAll(
+            ".guide-line-sample-current",
+          ) ?? [])].filter(visible).length,
+          activeSampleCount: [...(transition?.querySelectorAll(
+            ".guide-line-sample",
+          ) ?? [])].filter(visible).length,
+          activeOldSampleCount: [...(transition?.querySelectorAll(
+            ".guide-line-sample-old",
+          ) ?? [])].filter(visible).length,
+          activeCurrentSampleCount: [...(transition?.querySelectorAll(
+            ".guide-line-sample-current",
+          ) ?? [])].filter(visible).length,
+          activeChangeSampleCount: [...(transition?.querySelectorAll(
+            ".guide-change .guide-line-sample",
+          ) ?? [])].filter(visible).length,
+          activeOtherSampleCount: [...(transition?.querySelectorAll(
+            ".guide-line-sample",
+          ) ?? [])].filter((sample) =>
+            visible(sample) && !sample.matches(
+              ".guide-line-sample-old, .guide-line-sample-current",
+            )
+          ).length,
+          plotSurface: surface(transitionPlotHost),
+          keySurface: surface(transitionKeyHost),
+          titleText: transition?.querySelector(".guide-title")
+            ?.textContent?.replace(/\\s+/g, " ").trim() ?? null,
+          fromText: transitionRows[0]?.textContent
+            ?.replace(/(?<=\\S)(?<!\\d)(?=\\d+$)/, " ").replace(/\\s+/g, " ").trim() ?? null,
+          changeText: transition?.querySelector(".guide-change")
+            ?.textContent?.replace(/^\\s*↓\\s*/, "").replace(/\\s+/g, " ").trim() ?? null,
+        },
+        plotHeight: firstPlot?.querySelector(".plot-area")?.getBoundingClientRect().height ?? null,
+        horizontalOverflow:
+          document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        annotationOverlapCount,
+        plotBoundaryViolationCount,
+        seriesOcclusionCount,
+      };
+    })()`);
+  const forceFirstTrendChartContentWidth = (targetWidth) =>
+    evaluate(`(() => {
+      const chart = document.querySelector(".chart");
+      if (!chart) return false;
+      const style = getComputedStyle(chart);
+      const inlineFrame =
+        parseFloat(style.paddingInlineStart) + parseFloat(style.paddingInlineEnd) +
+        parseFloat(style.borderInlineStartWidth) + parseFloat(style.borderInlineEndWidth);
+      chart.style.width = String(
+        ${JSON.stringify(targetWidth)} + (style.boxSizing === "border-box" ? inlineFrame : 0),
+      ) + "px";
+      chart.style.maxWidth = "none";
+      return true;
+    })()`);
+  const trendGuideCopyProblems = (snapshot, width, theme) => {
+    const problems = [];
+    const contentBoxes =
+      " (chart content " + String(snapshot?.chartContentWidth) +
+      "px, plot content " + String(snapshot?.plotContentWidth) + "px)";
+    for (const [index, copies] of (snapshot?.guideCopies ?? []).entries()) {
+      const configuredIsValid =
+        Number.isInteger(copies.configured) && copies.configured > 0;
+      if (
+        !configuredIsValid ||
+        copies.plotRendered !== copies.configured ||
+        copies.keyRendered !== copies.configured ||
+        copies.visible !== copies.configured
+      ) {
+        problems.push(
+          "/trend/ @" + width + " " + theme + ": Figure 1." + (index + 1) +
+            " guide copies disagree with source count " + String(copies.configured) +
+            " (plot rendered " + copies.plotRendered + ", visible " +
+            copies.plotVisible + "; key rendered " + copies.keyRendered +
+            ", visible " + copies.keyVisible + "; combined visible " +
+            copies.visible + ")" + contentBoxes,
+        );
+      }
+      if (
+        index < 2 &&
+        !["台灣 PM2.5 年均標準", "2012.05.14", "15", "2024.09.30", "12"]
+          .every((part) => copies.transitionText.includes(part))
+      ) {
+        problems.push(
+          "/trend/ @" + width + " " + theme + ": Figure 1." + (index + 1) +
+            " lacks the shared Taiwan-standard transition legend" + contentBoxes,
+        );
+      }
+      if (index < 2) {
+        const enlargedTextNeedsKey =
+          Number.isFinite(copies.chartContentWidth) &&
+          Number.isFinite(copies.rootSize) &&
+          copies.chartContentWidth > 888 && copies.chartContentWidth <= copies.rootSize * 40;
+        const expectedKey = index === 1 || copies.chartContentWidth <= 888 || enlargedTextNeedsKey;
+        if (
+          copies.transitionPlotVisible !== (expectedKey ? 0 : 1) ||
+          copies.transitionKeyVisible !== (expectedKey ? 1 : 0)
+        ) {
+          problems.push(
+            "/trend/ @" + width + " " + theme + ": Figure 1." + (index + 1) +
+              " transition legend is in the wrong chart region" + contentBoxes,
+          );
+        }
+        if (
+          index === 1 &&
+          (copies.transitionOverlapsPlot || copies.transitionSeriesOcclusionCount !== 0)
+        ) {
+          problems.push(
+            "/trend/ @" + width + " " + theme +
+              ": Figure 1.2 transition legend overlaps its plot or covers " +
+              copies.transitionSeriesOcclusionCount + " sampled series points" + contentBoxes,
+          );
+        }
+        if (index === 1 && expectedKey) {
+          const rightGap = copies.keyBox && copies.transitionKeyBox
+            ? copies.keyBox.right - copies.transitionKeyBox.right
+            : NaN;
+          const expectedWidth = Math.min(
+            copies.rootSize * 23,
+            copies.keyContentWidth,
+          );
+          if (!Number.isFinite(rightGap) || Math.abs(rightGap) > 1) {
+            problems.push(
+              "/trend/ @" + width + " " + theme +
+                ": Figure 1.2 standard legend does not use the key's right edge (gap " +
+                String(rightGap) + "px)" + contentBoxes,
+            );
+          }
+          if (
+            !Number.isFinite(copies.transitionKeyBox?.width) ||
+            !Number.isFinite(expectedWidth) ||
+            copies.transitionKeyBox.width < expectedWidth - 1
+          ) {
+            problems.push(
+              "/trend/ @" + width + " " + theme +
+                ": Figure 1.2 standard legend is narrower than its available 23rem register (" +
+                String(copies.transitionKeyBox?.width) + "px, expected " +
+                String(expectedWidth) + "px)" + contentBoxes,
+            );
+          }
+          const compactTimelineExpected =
+            copies.chartContentWidth >= copies.rootSize * 44;
+          const overlapsVertically = (first, second) =>
+            first && second &&
+            Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top) > 1;
+          const timeline = copies.timelineBoxes;
+          if (
+            compactTimelineExpected &&
+            (!overlapsVertically(timeline?.title, timeline?.old) ||
+              !overlapsVertically(timeline?.change, timeline?.current))
+          ) {
+            problems.push(
+              "/trend/ @" + width + " " + theme +
+                ": Figure 1.2 standard timeline still consumes four vertical rows" +
+                contentBoxes,
+            );
+          }
+        }
+      }
+    }
+    return problems;
+  };
+  const wideReadingLayoutSnapshot = () =>
+    evaluate(`(() => {
+      const visible = (element) => {
+        if (!element) return false;
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          box.width > 0 && box.height > 0;
+      };
+      const box = (element) => {
+        const rect = element?.getBoundingClientRect();
+        return rect ? {
+          top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
+          width: rect.width, height: rect.height,
+        } : null;
+      };
+      const main = document.querySelector("main");
+      const page = document.querySelector("main > .page");
+      const pageStyle = page ? getComputedStyle(page) : null;
+      const pageBox = box(page);
+      const content = pageBox && pageStyle ? {
+        left: pageBox.left + parseFloat(pageStyle.paddingInlineStart),
+        right: pageBox.right - parseFloat(pageStyle.paddingInlineEnd),
+        width: pageBox.width - parseFloat(pageStyle.paddingInlineStart) -
+          parseFloat(pageStyle.paddingInlineEnd),
+      } : null;
+      const prose = [...(page?.querySelectorAll(
+        ":scope > .chapter-intro .lede, :scope > p:not(.eyebrow)",
+      ) ?? [])].find(visible);
+      const evidence = [...(page?.querySelectorAll(":scope > .evidence-figure") ?? [])]
+        .find(visible);
+      const evidenceStyle = evidence ? getComputedStyle(evidence) : null;
+      const evidenceBox = box(evidence);
+      const evidenceHeader = evidence?.querySelector(":scope > .evidence-header");
+      const evidenceCaption = evidence?.querySelector("figcaption");
+      let next = evidence?.nextElementSibling ?? null;
+      while (next && !visible(next)) next = next.nextElementSibling;
+      const nextBox = box(next);
+      const evidencePaddingEnd = evidenceStyle
+        ? parseFloat(evidenceStyle.paddingBlockEnd)
+        : null;
+      const rail = document.querySelector(".rail");
+      return {
+        main: box(main),
+        page: pageBox,
+        content,
+        prose: box(prose),
+        evidence: evidenceBox,
+        evidenceHeader: box(evidenceHeader),
+        evidenceCaption: box(evidenceCaption),
+        evidencePaddingEnd,
+        evidenceMarginEnd: evidenceStyle
+          ? parseFloat(evidenceStyle.marginBlockEnd)
+          : null,
+        evidenceExitGap: evidenceBox && nextBox && Number.isFinite(evidencePaddingEnd)
+          ? nextBox.top - (evidenceBox.bottom - evidencePaddingEnd)
+          : null,
+        rail: visible(rail) ? box(rail) : null,
+        tables: [...(page?.querySelectorAll(":scope > .table-wrap") ?? [])]
+          .filter(visible).map(box),
+        overflow: document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    })()`);
+  const wideReadingLayoutProblems = (snapshot, route) => {
+    const problems = [];
+    const centre = (part) => part ? (part.left + part.right) / 2 : NaN;
+    if (
+      !snapshot?.main || !snapshot?.page || !snapshot?.content || !snapshot?.prose ||
+      !Number.isFinite(centre(snapshot.main)) ||
+      Math.abs(centre(snapshot.main) - centre(snapshot.page)) > 1
+    ) {
+      problems.push(`${route} wide layout does not centre the reading page in main`);
+    }
+    if (
+      !Number.isFinite(snapshot?.content?.width) ||
+      !Number.isFinite(snapshot?.prose?.width) ||
+      Math.abs(snapshot.content.width - snapshot.prose.width) > 1
+    ) {
+      problems.push(`${route} wide layout page is not the prose reading register`);
+    }
+    const evidence = snapshot?.evidence;
+    const content = snapshot?.content;
+    if (
+      !evidence || !content || evidence.width <= content.width ||
+      Math.abs((content.left - evidence.left) - (evidence.right - content.right)) > 1
+    ) {
+      problems.push(`${route} wide evidence does not expand symmetrically from the reading register`);
+    }
+    if (
+      !snapshot?.evidenceHeader ||
+      Math.abs(snapshot.evidenceHeader.left - content.left) > 1
+    ) {
+      problems.push(`${route} evidence heading does not return to the prose reading spine`);
+    }
+    if (
+      !snapshot?.evidenceCaption ||
+      Math.abs(snapshot.evidenceCaption.left - content.left) > 1
+    ) {
+      problems.push(`${route} evidence caption does not return to the prose reading spine`);
+    }
+    if (
+      !Number.isFinite(snapshot?.evidencePaddingEnd) ||
+      Math.abs(snapshot.evidencePaddingEnd) > 0.5
+    ) {
+      problems.push(
+        `${route} evidence inherits ${snapshot?.evidencePaddingEnd}px of duplicate end padding`,
+      );
+    }
+    if (
+      !Number.isFinite(snapshot?.evidenceExitGap) ||
+      !Number.isFinite(snapshot?.evidenceMarginEnd) ||
+      Math.abs(snapshot.evidenceExitGap - snapshot.evidenceMarginEnd) > 1
+    ) {
+      problems.push(
+        `${route} evidence exit gap is not governed by its end margin ` +
+          `(${snapshot?.evidenceExitGap}px vs ${snapshot?.evidenceMarginEnd}px)`,
+      );
+    }
+    for (const table of snapshot?.tables ?? []) {
+      if (
+        table.left < content.left - 1 || table.right > content.right + 1 ||
+        (snapshot.rail && table.left < snapshot.rail.right - 1)
+      ) {
+        problems.push(`${route} direct table leaves the reading register or intersects the rail`);
+      }
+    }
+    if (snapshot?.overflow !== 0) {
+      problems.push(`${route} wide layout adds ${snapshot?.overflow}px horizontal overflow`);
+    }
+    return problems;
+  };
+  const recordTrendGuideGeometry = (snapshot, width, theme) => {
+    const contentBoxes =
+      " (chart content " + String(snapshot?.chartContentWidth) +
+      "px, plot content " + String(snapshot?.plotContentWidth) + "px)";
+    const height = snapshot?.plotHeight;
+    const chartContentWidth = snapshot?.chartContentWidth;
+    const plotContentWidth = snapshot?.plotContentWidth;
+    const rootSize = snapshot?.transitionTypography?.rootSize;
+    const enlargedTextNeedsKey =
+      Number.isFinite(chartContentWidth) &&
+      Number.isFinite(rootSize) &&
+      chartContentWidth > 888 && chartContentWidth <= rootSize * 40;
+    if (!Number.isFinite(height) || height < 320 || height > 520) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": figure 1.1 plot height is outside 320–520px (" + String(height) + ")",
+      );
+    }
+    if (snapshot?.seriesOcclusionCount !== 0) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": the Taiwan standard annotation covers " +
+          String(snapshot?.seriesOcclusionCount) + " sampled trend points" + contentBoxes,
+      );
+    }
+    if (snapshot?.annotationOverlapCount !== 0) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Figure 1.1 has " + String(snapshot?.annotationOverlapCount) +
+          " annotation-to-annotation collisions",
+      );
+    }
+    if (snapshot?.plotBoundaryViolationCount !== 0) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Figure 1.1 has " + String(snapshot?.plotBoundaryViolationCount) +
+          " annotations outside the plot boundary",
+      );
+    }
+    if (snapshot?.horizontalOverflow !== 0) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": the refined guide chart adds " +
+          String(snapshot?.horizontalOverflow) + "px horizontal overflow",
+      );
+    }
+    if (snapshot?.chartContainerName !== "trend-chart") {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": TrendChart root does not expose the trend-chart container" + contentBoxes,
+      );
+    }
+    failures.push(...trendGuideCopyProblems(snapshot, width, theme));
+    const who = snapshot?.whoPlacement;
+    const labelCentre = who?.label ? (who.label.top + who.label.bottom) / 2 : NaN;
+    const lineCentre = who?.line ? (who.line.top + who.line.bottom) / 2 : NaN;
+    if (!enlargedTextNeedsKey && (
+      !Number.isFinite(labelCentre) || !Number.isFinite(lineCentre) ||
+      Math.abs(labelCentre - lineCentre) > 1
+    )) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": WHO label is not centred on the 5 μg/m³ guide",
+      );
+    }
+    if (!enlargedTextNeedsKey && who?.backgroundAlpha !== 255) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": WHO on-line label background is not opaque",
+      );
+    }
+    if (
+      who?.plotCount !== (enlargedTextNeedsKey ? 0 : 1) ||
+      who?.keyCount !== (enlargedTextNeedsKey ? 1 : 0)
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": WHO guide label is missing or duplicated between plot and key",
+      );
+    }
+    const whoCentre = who?.label ? (who.label.left + who.label.right) / 2 : NaN;
+    if (!enlargedTextNeedsKey && (
+      !Number.isFinite(snapshot?.expectedX2010) || Math.abs(whoCentre - snapshot.expectedX2010) > 1
+    )) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": WHO guide label is not anchored to 2010 on the chart x scale",
+      );
+    }
+    const start = snapshot?.startPlacement;
+    const marker = snapshot?.boxes?.startMarker;
+    const note = snapshot?.boxes?.startNote;
+    const leader = snapshot?.boxes?.startLeader;
+    const markerCentreX = marker ? (marker.left + marker.right) / 2 : NaN;
+    const markerCentreY = marker ? (marker.top + marker.bottom) / 2 : NaN;
+    const noteCentreX = note ? (note.left + note.right) / 2 : NaN;
+    const noteGap = marker && note ? marker.top - note.bottom : NaN;
+    const leaderCentreX = leader ? (leader.left + leader.right) / 2 : NaN;
+    const oldStandard = snapshot?.standardPathEndpoints?.["15"];
+    const currentStandard = snapshot?.standardPathEndpoints?.["12"];
+    const oldStandardStartsAt2012 =
+      Number.isFinite(snapshot?.expectedX2012) &&
+      Number.isFinite(oldStandard?.left) &&
+      Math.abs(oldStandard.left - snapshot.expectedX2012) <= 1;
+    const currentStandardStartsAt2024 =
+      Number.isFinite(snapshot?.expectedX2024) &&
+      Number.isFinite(currentStandard?.left) &&
+      Math.abs(currentStandard.left - snapshot.expectedX2024) <= 1;
+    const markerAt2012 =
+      Number.isFinite(snapshot?.expectedX2012) &&
+      Number.isFinite(markerCentreX) &&
+      Math.abs(markerCentreX - snapshot.expectedX2012) <= 1 &&
+      Number.isFinite(markerCentreY) &&
+      Number.isFinite(oldStandard?.top) &&
+      Math.abs(markerCentreY - oldStandard.top) <= 1;
+    const correctStartText = start?.noteText === "2012.05 標準開始生效";
+    const startLabelAnchored =
+      correctStartText &&
+      (!start?.noteVisible || (
+        Number.isFinite(noteCentreX) &&
+        Math.abs(noteCentreX - markerCentreX) <= 1 &&
+        Number.isFinite(noteGap) &&
+        noteGap >= 8 &&
+        noteGap <= 12
+      ));
+    const startLeaderConnects =
+      start?.leaderVisible === start?.noteVisible &&
+      (!start?.leaderVisible || (
+        Number.isFinite(leaderCentreX) &&
+        Math.abs(leaderCentreX - markerCentreX) <= 1 &&
+        Math.abs(leader.top - note.bottom) <= 1 &&
+        Math.abs(leader.bottom - marker.top) <= 1
+      ));
+    const correctStartAria =
+      start?.noteAriaLabel ===
+      "2012-05-14 PM2.5 年均標準開始生效，標準為 15 微克/立方公尺";
+    if (
+      start?.markerYear !== "2012" ||
+      !markerAt2012 ||
+      !oldStandardStartsAt2012 ||
+      !currentStandardStartsAt2024 ||
+      !startLabelAnchored ||
+      !startLeaderConnects ||
+      !correctStartAria
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Figure 1.1 does not keep the 2012 start milestone on its measured year anchors",
+      );
+    }
+    if (!startLabelAnchored) {
+      const startLabelFailures = [];
+      if (!correctStartText) startLabelFailures.push("text");
+      if (
+        start?.noteVisible &&
+        (!Number.isFinite(noteCentreX) || Math.abs(noteCentreX - markerCentreX) > 1)
+      ) {
+        startLabelFailures.push("horizontal anchor");
+      }
+      if (start?.noteVisible && (!Number.isFinite(noteGap) || noteGap < 8 || noteGap > 12)) {
+        startLabelFailures.push("vertical gap");
+      }
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Figure 1.1 start label has wrong " + startLabelFailures.join(", "),
+      );
+    }
+    if (!startLeaderConnects) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Figure 1.1 start leader does not connect the note to the marker",
+      );
+    }
+    const transition = snapshot?.transitionPlacement;
+    const intermediateTimelineInKey =
+      Number.isFinite(chartContentWidth) &&
+      (chartContentWidth <= 888 || enlargedTextNeedsKey);
+    const expectedTransitionPlotCount = intermediateTimelineInKey ? 0 : 1;
+    const expectedTransitionKeyCount = intermediateTimelineInKey ? 1 : 0;
+    const expectedTransitionKeySampleCount = intermediateTimelineInKey ? 1 : 0;
+    const expectedStartNoteVisible =
+      Number.isFinite(plotContentWidth) && plotContentWidth > 720 && !enlargedTextNeedsKey;
+    const transitionVisibleCount =
+      (transition?.plotCount ?? 0) + (transition?.keyCount ?? 0);
+    if (
+      !Number.isFinite(chartContentWidth) ||
+      !Number.isFinite(plotContentWidth) ||
+      transitionVisibleCount !== 1 ||
+      !snapshot?.transitionVisible ||
+      transition?.plotCount !== expectedTransitionPlotCount ||
+      transition?.keyCount !== expectedTransitionKeyCount ||
+      !start?.markerVisible ||
+      start?.noteVisible !== expectedStartNoteVisible
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Taiwan standard transition has " + transitionVisibleCount +
+          " visible copies or is rendered in the wrong responsive region" + contentBoxes,
+      );
+    }
+    if (
+      transition?.keyOuterMarkCount !== 0 ||
+      transition?.keyOldSampleCount !== expectedTransitionKeySampleCount ||
+      transition?.keyCurrentSampleCount !== expectedTransitionKeySampleCount
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": transition key marks are outer " +
+          String(transition?.keyOuterMarkCount) + ", old " +
+          String(transition?.keyOldSampleCount) + ", current " +
+          String(transition?.keyCurrentSampleCount) +
+          " (expected outer 0, old/current " +
+          String(expectedTransitionKeySampleCount) + ")" + contentBoxes,
+      );
+    }
+    if (
+      transition?.activeSampleCount !== 2 ||
+      transition?.activeOldSampleCount !== 1 ||
+      transition?.activeCurrentSampleCount !== 1 ||
+      transition?.activeChangeSampleCount !== 0 ||
+      transition?.activeOtherSampleCount !== 0
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": active Taiwan standard legend must expose only the 15 and 12 swatches",
+      );
+    }
+    const activeSurface = intermediateTimelineInKey
+      ? transition?.keySurface
+      : transition?.plotSurface;
+    const tokens = snapshot?.guideTokens;
+    const fullLegendBorder = Object.values(activeSurface?.borders ?? {}).every((border) =>
+      Math.abs(border?.width - 1) <= 0.01 &&
+      border?.style === "solid" &&
+      border?.colour === tokens?.line
+    );
+    const boundedLegend =
+      activeSurface?.backgroundAlpha === 255 &&
+      activeSurface?.background === tokens?.bgRaised &&
+      fullLegendBorder &&
+      activeSurface?.boxShadow === "none" &&
+      activeSurface?.paddingInline >= 20 &&
+      activeSurface?.paddingBlock >= 12;
+    const correctLegendCopy =
+      transition?.titleText === "台灣 PM2.5 年均標準" &&
+      transition?.fromText === "2012.05.14 起生效 15" &&
+      transition?.changeText === "2024.09.30 調降";
+    const activeSurfaceContainer = intermediateTimelineInKey
+      ? snapshot?.boxes?.chart
+      : snapshot?.boxes?.plotArea;
+    const activeSurfaceBox = activeSurface?.box;
+    const activeSurfaceIsContained =
+      activeSurfaceBox && activeSurfaceContainer &&
+      activeSurfaceBox.left >= activeSurfaceContainer.left - 1 &&
+      activeSurfaceBox.right <= activeSurfaceContainer.right + 1 &&
+      activeSurfaceBox.top >= activeSurfaceContainer.top - 1 &&
+      activeSurfaceBox.bottom <= activeSurfaceContainer.bottom + 1;
+    if (!boundedLegend) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Taiwan standard transition is not an opaque bounded legend surface" + contentBoxes,
+      );
+    }
+    if (!correctLegendCopy) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Taiwan standard transition does not use the approved legend copy",
+      );
+    }
+    if (!activeSurfaceIsContained) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": Taiwan standard legend surface leaves its active responsive region" + contentBoxes,
+      );
+    }
+    if (!intermediateTimelineInKey) {
+      const plot = snapshot?.boxes?.plotArea;
+      const note = snapshot?.boxes?.transitionNote;
+      const topInset = plot && note ? note.top - plot.top : NaN;
+      const rightInset = plot && note ? plot.right - note.right : NaN;
+      if (
+        !Number.isFinite(topInset) ||
+        !Number.isFinite(rightInset) ||
+        Math.abs(topInset - plot.height * 0.08) > 1 ||
+        Math.abs(rightInset - 16) > 1 ||
+        note.left < plot.left ||
+        note.bottom > plot.bottom
+      ) {
+        failures.push(
+          "/trend/ @" + width + " " + theme +
+            ": Taiwan standard annotation is not anchored inside the approved upper-right inset",
+        );
+      }
+    }
+    const colours = snapshot?.colours;
+    if (colours?.whoTitle !== tokens?.who || colours?.whoValue !== tokens?.who) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": WHO title and value do not both use the WHO semantic colour",
+      );
+    }
+    if (
+      snapshot?.valueBackgroundAlpha?.old !== 0 ||
+      snapshot?.valueBackgroundAlpha?.current !== 0
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": 15 and 12 values still use decorative background fills",
+      );
+    }
+    const expectedLevels = [
+      { level: "15", stroke: tokens?.oldMark, weight: 3 },
+      { level: "12", stroke: tokens?.currentMark, weight: 3 },
+      { level: "5", stroke: tokens?.who, weight: 2 },
+    ];
+    const levelPaths = snapshot?.guidePaths?.filter((path) => path.kind === "level") ?? [];
+    const renderedMarkStrokes = [
+      ...(snapshot?.seriesStrokes ?? []).slice(0, 2),
+      ...["15", "12", "5"].map(
+        (level) => levelPaths.find((path) => path.level === level)?.stroke,
+      ),
+    ];
+    if (
+      renderedMarkStrokes.length !== 5 ||
+      renderedMarkStrokes.some((stroke) => !stroke) ||
+      new Set(renderedMarkStrokes).size !== 5
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": all-stations, balanced, old, current, and WHO rendered strokes are not pairwise distinct",
+      );
+    }
+    const levelsMatch = expectedLevels.every((expected) =>
+      levelPaths.some((path) =>
+        path.level === expected.level &&
+        path.stroke === expected.stroke &&
+        Math.abs(path.weight - expected.weight) <= 0.01 &&
+        path.dash === "8 5" &&
+        path.cap === "round",
+      ),
+    );
+    if (!levelsMatch) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": 15 and 12 guides are not 3px while WHO remains 2px",
+      );
+    }
+    const riser = snapshot?.guidePaths?.find((path) => path.kind === "riser");
+    if (
+      riser?.stroke !== tokens?.riser ||
+      Math.abs(riser?.weight - 2) > 0.01 ||
+      riser?.dash !== "none"
+    ) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": the 2024 riser is not a neutral 2px solid line",
+      );
+    }
+    const samplesMatch = [
+      [snapshot?.samples?.old, tokens?.oldMark],
+      [snapshot?.samples?.current, tokens?.currentMark],
+    ].every(([sample, stroke]) =>
+      sample?.stroke === stroke &&
+      Math.abs(sample?.weight - 3) <= 0.01 &&
+      sample?.dash === "8 5" &&
+      sample?.cap === "round",
+    );
+    if (!samplesMatch) {
+      failures.push(
+        "/trend/ @" + width + " " + theme +
+          ": the 15 and 12 annotation rows lack matching 3px dashed samples",
+      );
+    }
+    if (!intermediateTimelineInKey) {
+      const typography = snapshot?.transitionTypography;
+      if (
+        !Number.isFinite(typography?.fontSize) ||
+        !Number.isFinite(typography?.rootSize) ||
+        typography.fontSize < typography.rootSize * 1.2 - 0.02 ||
+        typography.fontSize > typography.rootSize * 1.4 + 0.02
+      ) {
+        failures.push(
+          "/trend/ @" + width + " " + theme +
+            ": Taiwan standard transition card is not enlarged to the approved type scale",
+        );
+      }
+    }
+  };
   if (18.99 + CSS_PX_SERIALIZATION_EPSILON >= 20 * 0.95) {
     failures.push("annotation ratio gate accepts 94.95% of body size");
   }
@@ -2813,6 +3865,408 @@ async function main() {
             failures.push(`${route} @${width}x${height} ${theme}: ${problem}`);
           }
         }
+        if (route === "/forecast/") {
+          const palette = await evaluate(`(() => {
+            const rootStyle = getComputedStyle(document.documentElement);
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext("2d", { willReadFrequently: true });
+            const rgb = (colour) => {
+              context.clearRect(0, 0, 1, 1);
+              context.fillStyle = colour;
+              context.fillRect(0, 0, 1, 1);
+              return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)]
+                .map((channel) => channel / 255);
+            };
+            const linear = (value) => value <= 0.04045
+              ? value / 12.92
+              : ((value + 0.055) / 1.055) ** 2.4;
+            const linearRgb = (colour) => colour.map(linear);
+            const labFromLinear = ([red, green, blue]) => {
+              const l = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+              const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+              const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+              return [
+                0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+                1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+                0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+              ];
+            };
+            const matrices = {
+              protan: [
+                [0.152286, 1.052583, -0.204868],
+                [0.114503, 0.786281, 0.099216],
+                [-0.003882, -0.048116, 1.051998],
+              ],
+              deutan: [
+                [0.367322, 0.860646, -0.227968],
+                [0.280085, 0.672501, 0.047413],
+                [-0.01182, 0.04294, 0.968881],
+              ],
+            };
+            const simulate = (colour, matrix) => {
+              const source = linearRgb(colour);
+              return labFromLinear(matrix.map((row) => Math.max(0, Math.min(1,
+                row.reduce((sum, weight, index) => sum + weight * source[index], 0),
+              ))));
+            };
+            const distance = (left, right) => Math.hypot(
+              left[0] - right[0], left[1] - right[1], left[2] - right[2],
+            );
+            const minimumPairwise = (values) => {
+              let minimum = Infinity;
+              for (let left = 0; left < values.length; left += 1) {
+                for (let right = left + 1; right < values.length; right += 1) {
+                  minimum = Math.min(minimum, distance(values[left], values[right]));
+                }
+              }
+              return minimum;
+            };
+            const colours = Array.from({ length: 8 }, (_, index) =>
+              rgb(rootStyle.getPropertyValue("--k" + index))
+            );
+            const labs = colours.map((colour) => labFromLinear(linearRgb(colour)));
+            const prefixes = Object.fromEntries([2, 3, 4, 8].map((count) => {
+              const subset = colours.slice(0, count);
+              return [count, {
+                normal: minimumPairwise(labs.slice(0, count)),
+                protan: minimumPairwise(subset.map((colour) => simulate(colour, matrices.protan))),
+                deutan: minimumPairwise(subset.map((colour) => simulate(colour, matrices.deutan))),
+              }];
+            }));
+            const luminance = (colour) => {
+              const [red, green, blue] = linearRgb(colour);
+              return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+            };
+            const surfaces = ["--bg", "--bg-raised", "--bg-sunken"]
+              .map((token) => rgb(rootStyle.getPropertyValue(token)));
+            const contrast = (left, right) => {
+              const a = luminance(left);
+              const b = luminance(right);
+              return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+            };
+            const lightnesses = labs.map((lab) => lab[0]);
+            const chromas = labs.map((lab) => Math.hypot(lab[1], lab[2]));
+            return {
+              count: colours.length,
+              unique: new Set(colours.map((colour) => colour.join(","))).size,
+              prefixes,
+              lightnessRange: Math.max(...lightnesses) - Math.min(...lightnesses),
+              minimumChroma: Math.min(...chromas),
+              minimumSurfaceContrast: Math.min(...colours.flatMap((colour) =>
+                surfaces.map((surface) => contrast(colour, surface))
+              )),
+            };
+          })()`);
+          const commonFloor = theme === "light"
+            ? { normal: 0.15, protan: 0.12, deutan: 0.11 }
+            : { normal: 0.135, protan: 0.14, deutan: 0.13 };
+          const fullFloor = theme === "light"
+            ? { normal: 0.04, protan: 0.04, deutan: 0.04 }
+            : { normal: 0.075, protan: 0.075, deutan: 0.075 };
+          if (width === 1440) {
+            console.log("site-quality categorical palette " + JSON.stringify({ theme, ...palette }));
+          }
+          if (palette?.count !== 8 || palette?.unique !== 8) {
+            failures.push(`${route} @${width} ${theme}: categorical palette is not eight distinct colours`);
+          }
+          if (
+            palette?.prefixes?.[4]?.normal < commonFloor.normal ||
+            palette?.prefixes?.[4]?.protan < commonFloor.protan ||
+            palette?.prefixes?.[4]?.deutan < commonFloor.deutan
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: common categorical prefix remains difficult to distinguish ` +
+                `(normal=${palette?.prefixes?.[4]?.normal?.toFixed(3)}, ` +
+                `protan=${palette?.prefixes?.[4]?.protan?.toFixed(3)}, ` +
+                `deutan=${palette?.prefixes?.[4]?.deutan?.toFixed(3)})`,
+            );
+          }
+          if (
+            palette?.prefixes?.[8]?.normal < fullFloor.normal ||
+            palette?.prefixes?.[8]?.protan < fullFloor.protan ||
+            palette?.prefixes?.[8]?.deutan < fullFloor.deutan
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: full categorical palette contains a collapsed pair ` +
+                `(normal=${palette?.prefixes?.[8]?.normal?.toFixed(3)}, ` +
+                `protan=${palette?.prefixes?.[8]?.protan?.toFixed(3)}, ` +
+                `deutan=${palette?.prefixes?.[8]?.deutan?.toFixed(3)})`,
+            );
+          }
+          if (palette?.minimumSurfaceContrast < 3) {
+            failures.push(
+              `${route} @${width} ${theme}: categorical mark falls below 3:1 against a chart surface ` +
+                `(${palette?.minimumSurfaceContrast?.toFixed(2)})`,
+            );
+          }
+          if (palette?.minimumChroma < 0.055 || palette?.lightnessRange > 0.35) {
+            failures.push(
+              `${route} @${width} ${theme}: categorical palette loses its controlled colour rhythm ` +
+                `(minimum-chroma=${palette?.minimumChroma?.toFixed(3)}, ` +
+                `lightness-range=${palette?.lightnessRange?.toFixed(3)})`,
+            );
+          }
+        }
+        if (route === "/methods/") {
+          const methodColour = await evaluate(`(() => {
+            const line = document.querySelector(".plot-line");
+            const probe = document.createElement("span");
+            probe.style.color = "var(--k0)";
+            document.body.append(probe);
+            const result = {
+              line: getComputedStyle(line).stroke,
+              expected: getComputedStyle(probe).color,
+            };
+            probe.remove();
+            return result;
+          })()`);
+          if (methodColour?.line !== methodColour?.expected) {
+            failures.push(
+              `${route} @${width} ${theme}: method series does not use the first categorical role ` +
+                `(${methodColour?.line} instead of ${methodColour?.expected})`,
+            );
+          }
+        }
+        if (route === "/detection/") {
+          const detectionColours = await evaluate(`(() => {
+            const resolve = (token) => {
+              const probe = document.createElement("span");
+              probe.style.color = "var(" + token + ")";
+              document.body.append(probe);
+              const colour = getComputedStyle(probe).color;
+              probe.remove();
+              return colour;
+            };
+            return {
+              real: getComputedStyle(document.querySelector(".plot-pt.real")).color,
+              realExpected: resolve("--k1"),
+              placebo: getComputedStyle(document.querySelector(".placebo-pool path")).stroke,
+              placeboExpected: resolve("--text-faint"),
+              adverse: getComputedStyle(document.querySelector("td.worse")).color,
+              adverseExpected: resolve("--sign-neg-ink"),
+            };
+          })()`);
+          if (detectionColours?.real !== detectionColours?.realExpected) {
+            failures.push(
+              `${route} @${width} ${theme}: actual event estimates do not use the categorical emphasis role`,
+            );
+          }
+          if (detectionColours?.placebo !== detectionColours?.placeboExpected) {
+            failures.push(
+              `${route} @${width} ${theme}: placebo distribution no longer stays neutral`,
+            );
+          }
+          if (detectionColours?.adverse !== detectionColours?.adverseExpected) {
+            failures.push(
+              `${route} @${width} ${theme}: adverse result does not use the negative semantic role`,
+            );
+          }
+        }
+        if (route === "/sources/") {
+          const palette = await evaluate(`(() => {
+            const swatches = [...document.querySelectorAll(".ramp-bar span")];
+            const surface = document.querySelector(".chart.polar");
+            const title = document.querySelector(".ramp-title")?.textContent ?? "";
+            const scale = document.querySelector(".ramp-bar")?.getAttribute("aria-label") ?? "";
+            const canvas = document.createElement("canvas");
+            canvas.width = canvas.height = 1;
+            const context = canvas.getContext("2d", { willReadFrequently: true });
+            const rgb = (colour) => {
+              context.clearRect(0, 0, 1, 1);
+              context.fillStyle = colour;
+              context.fillRect(0, 0, 1, 1);
+              return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)]
+                .map((channel) => channel / 255);
+            };
+            const linear = (value) => value <= 0.04045
+              ? value / 12.92
+              : ((value + 0.055) / 1.055) ** 2.4;
+            const linearRgb = (colour) => colour.map(linear);
+            const labFromLinear = ([red, green, blue]) => {
+              const l = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+              const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+              const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+              return [
+                0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+                1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+                0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+              ];
+            };
+            const matrices = {
+              protan: [
+                [0.152286, 1.052583, -0.204868],
+                [0.114503, 0.786281, 0.099216],
+                [-0.003882, -0.048116, 1.051998],
+              ],
+              deutan: [
+                [0.367322, 0.860646, -0.227968],
+                [0.280085, 0.672501, 0.047413],
+                [-0.01182, 0.04294, 0.968881],
+              ],
+            };
+            const simulate = (colour, matrix) => {
+              const source = linearRgb(colour);
+              return labFromLinear(matrix.map((row) => Math.max(0, Math.min(1,
+                row.reduce((sum, weight, index) => sum + weight * source[index], 0),
+              ))));
+            };
+            const distance = (left, right) => Math.hypot(
+              left[0] - right[0], left[1] - right[1], left[2] - right[2],
+            );
+            const adjacentDistances = (values) => values.slice(1)
+              .map((value, index) => distance(values[index], value));
+            const colours = swatches.map((swatch) => rgb(getComputedStyle(swatch).backgroundColor));
+            const labs = colours.map((colour) => labFromLinear(linearRgb(colour)));
+            const normalDistances = adjacentDistances(labs);
+            const protanDistances = adjacentDistances(
+              colours.map((colour) => simulate(colour, matrices.protan)),
+            );
+            const deutanDistances = adjacentDistances(
+              colours.map((colour) => simulate(colour, matrices.deutan)),
+            );
+            const chromas = labs.map((lab) => Math.hypot(lab[1], lab[2]));
+            const chromaSteps = chromas.slice(1)
+              .map((chroma, index) => chroma - chromas[index]);
+            const hues = labs.map((lab) => (
+              Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360
+            ) % 360);
+            const hueSteps = hues.slice(1).map((hue, index) => (
+              (hue - hues[index] + 540) % 360 - 180
+            ));
+            const totalHueTravel = hueSteps.reduce((sum, step) => sum + Math.abs(step), 0);
+            const luminance = (colour) => {
+              const [red, green, blue] = linearRgb(colour);
+              return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+            };
+            const surfaceColour = rgb(getComputedStyle(surface).backgroundColor);
+            const surfaceLuminance = luminance(surfaceColour);
+            const contrast = (colour) => {
+              const value = luminance(colour);
+              return (Math.max(value, surfaceLuminance) + 0.05) /
+                (Math.min(value, surfaceLuminance) + 0.05);
+            };
+            const steps = labs.slice(1).map((lab, index) => lab[0] - labs[index][0]);
+            const lightnessStepMagnitudes = steps.map(Math.abs);
+            return {
+              count: colours.length,
+              unique: new Set(colours.map((colour) => colour.join(","))).size,
+              normalDistances,
+              protanDistances,
+              deutanDistances,
+              minNormal: Math.min(...normalDistances),
+              minProtan: Math.min(...protanDistances),
+              minDeutan: Math.min(...deutanDistances),
+              averageLightness: labs.reduce((sum, lab) => sum + lab[0], 0) / labs.length,
+              minLightness: Math.min(...labs.map((lab) => lab[0])),
+              averageChroma: chromas.reduce((sum, chroma) => sum + chroma, 0) / chromas.length,
+              minChroma: Math.min(...chromas),
+              chromaSteps,
+              maxChromaStep: Math.max(...chromaSteps.map(Math.abs)),
+              hueSteps,
+              totalHueTravel,
+              hueDirection: hueSteps.every((step) => step < 0) ? "descending" :
+                hueSteps.every((step) => step > 0) ? "ascending" : "mixed",
+              lightnessSteps: steps,
+              minLightnessStep: Math.min(...steps.map(Math.abs)),
+              lightnessStepSpread:
+                Math.max(...lightnessStepMagnitudes) - Math.min(...lightnessStepMagnitudes),
+              normalDistanceSpread:
+                Math.max(...normalDistances) - Math.min(...normalDistances),
+              direction: steps.every((step) => step < 0) ? "descending" :
+                steps.every((step) => step > 0) ? "ascending" : "mixed",
+              minSurfaceContrast: Math.min(...colours.map(contrast)),
+              endpointCopy: /低\\s*→\\s*高/.test(title) && /由低到高/.test(scale),
+            };
+          })()`);
+          const expectedDirection = theme === "light" ? "descending" : "ascending";
+          const minimumLightnessStep = theme === "light" ? 0.03 : 0.052;
+          if (width === 1440) {
+            console.log("site-quality CBPF palette " + JSON.stringify({ theme, ...palette }));
+          }
+          if (palette?.count !== 7 || palette?.unique !== 7) {
+            failures.push(`${route} @${width} ${theme}: CBPF ramp is not seven distinct colours`);
+          }
+          if (
+            palette?.minNormal < 0.095 ||
+            palette?.minProtan < 0.06 ||
+            palette?.minDeutan < 0.06
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: CBPF adjacent colours remain too close ` +
+                `(normal=${palette?.minNormal?.toFixed(3)}, ` +
+                `protan=${palette?.minProtan?.toFixed(3)}, ` +
+                `deutan=${palette?.minDeutan?.toFixed(3)}; ` +
+                `normal-pairs=${palette?.normalDistances?.map((value) => value.toFixed(3)).join("/")}; ` +
+                `protan-pairs=${palette?.protanDistances?.map((value) => value.toFixed(3)).join("/")}; ` +
+                `deutan-pairs=${palette?.deutanDistances?.map((value) => value.toFixed(3)).join("/")})`,
+            );
+          }
+          if (
+            palette?.direction !== expectedDirection ||
+            palette?.minLightnessStep < minimumLightnessStep
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: CBPF lightness ordering is not a clear ` +
+                `${expectedDirection} sequence ` +
+                `(direction=${palette?.direction}, step=${palette?.minLightnessStep?.toFixed(3)}, ` +
+                `pairs=${palette?.lightnessSteps?.map((value) => value.toFixed(3)).join("/")})`,
+            );
+          }
+          if (
+            theme === "light" &&
+            (palette?.averageLightness < 0.55 || palette?.minLightness < 0.42)
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: CBPF Light palette remains too dark ` +
+                `(average=${palette?.averageLightness?.toFixed(3)}, ` +
+                `darkest=${palette?.minLightness?.toFixed(3)})`,
+            );
+          }
+          if (
+            theme === "light" &&
+            (
+              palette?.averageChroma < 0.11 || palette?.minChroma < 0.085 ||
+              palette?.hueDirection !== "ascending" ||
+              palette?.totalHueTravel < 140 || palette?.totalHueTravel > 230
+            )
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: CBPF Light palette remains foggy or incoherent ` +
+                `(average-chroma=${palette?.averageChroma?.toFixed(3)}, ` +
+                `minimum-chroma=${palette?.minChroma?.toFixed(3)}, ` +
+                `hue-direction=${palette?.hueDirection}, ` +
+                `hue-steps=${palette?.hueSteps?.map((value) => value.toFixed(1)).join("/")}, ` +
+                `hue-travel=${palette?.totalHueTravel?.toFixed(1)})`,
+            );
+          }
+          if (
+            theme === "light" &&
+            (
+              palette?.lightnessStepSpread > 0.015 ||
+              palette?.maxChromaStep > 0.035 ||
+              palette?.normalDistanceSpread > 0.020
+            )
+          ) {
+            failures.push(
+              `${route} @${width} ${theme}: CBPF Light palette tonal rhythm is uneven ` +
+                `(lightness-step-spread=${palette?.lightnessStepSpread?.toFixed(3)}, ` +
+                `chroma-step=${palette?.maxChromaStep?.toFixed(3)}, ` +
+                `normal-distance-spread=${palette?.normalDistanceSpread?.toFixed(3)}; ` +
+                `chroma-pairs=${palette?.chromaSteps?.map((value) => value.toFixed(3)).join("/")})`,
+            );
+          }
+          const minimumSurfaceContrast = theme === "light" ? 2.2 : 3;
+          if (palette?.minSurfaceContrast < minimumSurfaceContrast) {
+            failures.push(
+              `${route} @${width} ${theme}: CBPF ramp falls below 3:1 against its surface ` +
+                `(${palette?.minSurfaceContrast?.toFixed(2)})`,
+            );
+          }
+          if (!palette?.endpointCopy) {
+            failures.push(`${route} @${width} ${theme}: CBPF ramp does not state low to high`);
+          }
+        }
         const hasReadout = await evaluate(
           `Boolean(document.querySelector(".plot[data-readout]"))`,
         );
@@ -2987,6 +4441,19 @@ async function main() {
                     `states ${JSON.stringify(states)})`,
                 );
               }
+              if (route === "/trend/" && width === 1440) {
+                const overlapsVertically = (first, second) =>
+                  first && second &&
+                  Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top) > 1;
+                const readoutSharesOneBand =
+                  end?.rowBoxes?.length === 2 &&
+                  end.rowBoxes.every((row) => overlapsVertically(end.whenBox, row));
+                if (!readoutSharesOneBand) {
+                  failures.push(
+                    `/trend/ @1440 ${theme}: desktop readout still reserves multiple text rows`,
+                  );
+                }
+              }
               if (
                 end?.overlapX > READOUT_OVERLAP_TOLERANCE_PX &&
                 end?.overlapY > READOUT_OVERLAP_TOLERANCE_PX
@@ -3008,10 +4475,27 @@ async function main() {
         if (route === "/trend/" && width === 375 && theme === "light") {
           const trendMarks = await evaluate(`(() => {
             const plots = [...document.querySelectorAll(".plot[data-readout]")].slice(0, 3);
-            const mark = (element) => ({
-              weight: parseFloat(getComputedStyle(element).strokeWidth),
-              dash: getComputedStyle(element).strokeDasharray,
-            });
+            const resolveColour = (name) => {
+              const probe = document.createElement("span");
+              probe.style.color = "var(" + name + ")";
+              document.body.append(probe);
+              const colour = getComputedStyle(probe).color;
+              probe.remove();
+              return colour;
+            };
+            const taiwanStroke = resolveColour("--taiwan");
+            const mark = (element) => {
+              const style = getComputedStyle(element);
+              return {
+                weight: parseFloat(style.strokeWidth),
+                dash: style.strokeDasharray
+                  .replaceAll("px", "")
+                  .replaceAll(",", " ")
+                  .replace(/\\s+/g, " ")
+                  .trim(),
+                stroke: style.stroke,
+              };
+            };
             const charts = plots.map((plot) => {
               const chart = plot.closest(".chart");
               return {
@@ -3023,6 +4507,7 @@ async function main() {
                   ".chart-key > li.key-guide .key-mark line",
                 ) ?? [])].map(mark),
                 guidePaths: [...plot.querySelectorAll(".plot-area svg path:not(.plot-line)")].map(mark),
+                taiwanStroke,
                 payloadHasEmphasis: (() => {
                   try {
                     const raw = plot.querySelector(".plot-readout-data")?.textContent ?? "";
@@ -3066,14 +4551,89 @@ async function main() {
             failures.push("/trend/ @375 light: eight-zone lines do not retain a uniform weight");
           }
           const guideKeys = trendMarks?.flatMap((chart) => chart.guideKeys) ?? [];
-          const guidePaths = trendMarks?.flatMap((chart) => chart.guidePaths) ?? [];
+          const legacyCharts = trendMarks?.slice(2) ?? [];
+          const legacyGuidesMatch =
+            legacyCharts.length === 1 &&
+            legacyCharts.every((chart) =>
+              chart.guidePaths.length === 2 &&
+              chart.guidePaths.every(
+                (guide) =>
+                  Math.abs(guide.weight - 1.5) <= 0.01 &&
+                  guide.stroke === chart.taiwanStroke,
+              ) &&
+              chart.guidePaths[0].dash === "5 4" &&
+              chart.guidePaths[1].dash === "none",
+            );
           if (
-            guideKeys.length === 0 || guidePaths.length === 0 ||
-            [...guideKeys, ...guidePaths].some(
+            guideKeys.length === 0 ||
+            guideKeys.some(
               (guide) => Math.abs(guide.weight - 1.5) > 0.01,
-            )
+            ) ||
+            !legacyGuidesMatch
           ) {
-            failures.push("/trend/ @375 light: guide keys and paths do not retain 1.5px weight");
+            failures.push(
+              "/trend/ @375 light: guide keys or figure 1.3 changed its legacy weight, colour, or dash pattern",
+            );
+          }
+        }
+        const guideAnnotations = route === "/trend/" ? await trendGuideSnapshot() : null;
+        if (route === "/trend/") {
+          recordTrendGuideGeometry(guideAnnotations, width, theme);
+        }
+        if (route === "/trend/" && theme === "light" && (width === 375 || width === 1440)) {
+          const requiredText = [
+            "台灣 PM2.5 年均標準", "2012.05.14", "起生效", "15", "2024.09.30", "\u8abf\u964d", "\u73fe\u884c\u6a19\u6e96", "12",
+            "WHO \u5e74\u5747\u6307\u5f15", "5",
+          ];
+          if (
+            !guideAnnotations?.transitionVisible || !guideAnnotations?.whoVisible ||
+            requiredText.some((part) => !guideAnnotations.text.includes(part))
+          ) {
+            failures.push(`/trend/ @${width} light: figure 1.1 lacks the structured standard annotations`);
+          }
+          const colours = guideAnnotations?.colours ?? {};
+          const tokens = guideAnnotations?.guideTokens ?? {};
+          const badgeColours = [colours.old, colours.current, colours.whoValue];
+          const seriesStrokes = guideAnnotations?.seriesStrokes ?? [];
+          if (
+            badgeColours.some((colour) => !colour) ||
+            new Set(badgeColours).size !== 3 ||
+            colours.old !== tokens.oldInk ||
+            colours.current !== tokens.currentInk ||
+            colours.whoValue !== tokens.who ||
+            colours.old === tokens.seriesAll ||
+            colours.old === tokens.seriesBalanced ||
+            colours.current === tokens.seriesAll ||
+            colours.current === tokens.seriesBalanced ||
+            seriesStrokes[0] !== tokens.seriesAll ||
+            seriesStrokes[1] !== tokens.seriesBalanced
+          ) {
+            failures.push(`/trend/ @${width} light: figure 1.1 does not keep legal-status and series colours distinct`);
+          }
+          if (width === 375) {
+            if (guideAnnotations?.plotNotesVisible !== 1) {
+              failures.push(
+                "/trend/ @375 light: the phone plot does not retain exactly the on-line WHO label",
+              );
+            }
+          } else {
+            const boxes = guideAnnotations?.boxes;
+            const centre = (box) => box ? (box.top + box.bottom) / 2 : NaN;
+            if (
+              !(centre(boxes?.old) < centre(boxes?.change) &&
+                centre(boxes?.change) < centre(boxes?.current))
+            ) {
+              failures.push("/trend/ @1440 light: the 15 to 12 standard change does not read vertically downward");
+            }
+            if (boxes?.transition && boxes?.who) {
+              const overlapX = Math.min(boxes.transition.right, boxes.who.right) -
+                Math.max(boxes.transition.left, boxes.who.left);
+              const overlapY = Math.min(boxes.transition.bottom, boxes.who.bottom) -
+                Math.max(boxes.transition.top, boxes.who.top);
+              if (overlapX > 1 && overlapY > 1) {
+                failures.push("/trend/ @1440 light: the Taiwan and WHO annotations overlap");
+              }
+            }
           }
         }
         const renderedTheme = await evaluate(`(() => {
@@ -3319,6 +4879,158 @@ async function main() {
     }
   }
 
+  console.log("site-quality stage: wide reading layout");
+  await restartBrowser();
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1920,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  await evaluate('localStorage.setItem("twair-theme", "light")');
+  for (const route of ["/trend/", "/space/", "/detection/"]) {
+    await send("Page.navigate", { url: `${origin}${route}` });
+    if (!(await settled(evaluate, 8000, `${route} @1920px wide reading layout`))) {
+      failures.push(`${route} @1920x1000 light: wide reading layout never finished styling`);
+      continue;
+    }
+    const snapshot = await wideReadingLayoutSnapshot();
+    for (const problem of wideReadingLayoutProblems(snapshot, route)) {
+      failures.push(`${route} @1920x1000 light: ${problem}`);
+    }
+  }
+
+  console.log("site-quality stage: focused trend guide widths");
+  for (const [width, height] of [
+    [480, 900],
+    [588, 900],
+    [600, 900],
+    [719, 900],
+    [720, 900],
+    [721, 900],
+    [753, 900],
+    [754, 900],
+    [768, 900],
+    [1000, 900],
+    [1280, 900],
+    [1920, 900],
+  ]) {
+    for (const theme of ["light", "dark"]) {
+      await restartBrowser();
+      await send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      const osTheme = theme === "light" ? "dark" : "light";
+      await send("Emulation.setEmulatedMedia", {
+        media: "",
+        features: [{ name: "prefers-color-scheme", value: osTheme }],
+      });
+      await send("Page.navigate", { url: `${origin}/` });
+      if (!(await settled(evaluate, 8000, `/ @${width}px ${theme} trend setup`))) {
+        failures.push(`/ @${width}x${height} ${theme}: trend setup never finished styling`);
+        continue;
+      }
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      await send("Page.navigate", { url: `${origin}/trend/` });
+      if (!(await settled(evaluate, 8000, `/trend/ @${width}px ${theme} focused guide`))) {
+        failures.push(`/trend/ @${width}x${height} ${theme}: focused guide never finished styling`);
+        continue;
+      }
+      const snapshot = await trendGuideSnapshot();
+      recordTrendGuideGeometry(snapshot, width, theme);
+      if (width === 588 && theme === "light") {
+        await evaluate(`(() => {
+          const chart = [...document.querySelectorAll(".chart")][1];
+          chart?.querySelector(".plot .plot-note")?.remove();
+          chart?.querySelector(".chart-key .key-guide")?.remove();
+        })()`);
+        const mutationProblems = trendGuideCopyProblems(
+          await trendGuideSnapshot(),
+          width,
+          theme,
+        );
+        const removedCopiesDetected = mutationProblems.some((problem) =>
+          problem.includes("Figure 1.2 guide copies disagree with source count 1") &&
+          problem.includes("plot rendered 0") && problem.includes("key rendered 0"),
+        );
+        if (!removedCopiesDetected) {
+          failures.push(
+            `/trend/ @${width} ${theme}: guide-copy detector accepts simultaneous Figure 1.2 removal`,
+          );
+        }
+      }
+    }
+  }
+
+  console.log("site-quality stage: fractional trend guide widths");
+  for (const targetWidth of [480.5, 888, 888.25]) {
+    for (const theme of ["light", "dark"]) {
+      await restartBrowser();
+      await send("Emulation.setDeviceMetricsOverride", {
+        width: 1920,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      const osTheme = theme === "light" ? "dark" : "light";
+      await send("Emulation.setEmulatedMedia", {
+        media: "",
+        features: [{ name: "prefers-color-scheme", value: osTheme }],
+      });
+      await send("Page.navigate", { url: `${origin}/` });
+      if (!(await settled(evaluate, 8000, `/ @fractional ${targetWidth}px ${theme} trend setup`))) {
+        failures.push(`/ @fractional ${targetWidth}px ${theme}: trend setup never finished styling`);
+        continue;
+      }
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      await send("Page.navigate", { url: `${origin}/trend/` });
+      if (!(await settled(
+        evaluate,
+        8000,
+        `/trend/ @fractional ${targetWidth}px ${theme} focused guide`,
+      ))) {
+        failures.push(
+          `/trend/ @fractional ${targetWidth}px ${theme}: focused guide never finished styling`,
+        );
+        continue;
+      }
+      if (!(await forceFirstTrendChartContentWidth(targetWidth))) {
+        failures.push(`/trend/ @fractional ${targetWidth}px ${theme}: first chart is missing`);
+        continue;
+      }
+      await settlePaint(evaluate, `/trend/ @fractional ${targetWidth}px ${theme} resize`);
+      const snapshot = await trendGuideSnapshot();
+      console.log("site-quality fractional trend " + JSON.stringify({
+        viewportWidth: 1920,
+        targetWidth,
+        theme,
+        chartContentWidth: snapshot?.chartContentWidth,
+        plotContentWidth: snapshot?.plotContentWidth,
+        transition: snapshot?.transitionPlacement,
+        transitionFontSize: snapshot?.transitionTypography?.fontSize,
+        rootFontSize: snapshot?.transitionTypography?.rootSize,
+        seriesOcclusionCount: snapshot?.seriesOcclusionCount,
+      }));
+      if (
+        !Number.isFinite(snapshot?.chartContentWidth) ||
+        Math.abs(snapshot.chartContentWidth - targetWidth) > 0.02
+      ) {
+        failures.push(
+          `/trend/ @fractional ${targetWidth}px ${theme}: measured chart content is ` +
+          String(snapshot?.chartContentWidth) + "px",
+        );
+      }
+      recordTrendGuideGeometry(snapshot, `fractional ${targetWidth}px`, theme);
+    }
+  }
+
   for (const [width, height] of [
     [390, 844],
     [1280, 720],
@@ -3472,6 +5184,14 @@ async function main() {
           `${state}: ${zoomed.homepage.tickOverlaps} adjacent legend tick pairs overlap`,
         );
       }
+    }
+    if (route === "/trend/") {
+      const trendZoomSnapshot = await trendGuideSnapshot();
+      recordTrendGuideGeometry(
+        trendZoomSnapshot,
+        `${width}x${height} 200% text${suffix}`,
+        "light",
+      );
     }
     const zoomFocus = await focusVisibleStates([
       { name: "zoomed control", selector: "button, select, summary", required: true },

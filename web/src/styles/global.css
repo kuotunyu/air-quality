@@ -309,14 +309,23 @@
    * principle 17 and the accessibility section have been amended to say so
    * instead of continuing to claim a floor the site no longer holds.
    */
-  --k0: #1a6cb0;
-  --k1: #e8701a;
-  --k2: #2e9e48;
-  --k3: #0e9c9c;
-  --k4: #d62f50;
-  --k5: #8a3fc0;
-  --k6: #7f9b12;
-  --k7: #c2417f;
+  /*
+   * [2026-08-09] The visual voice above was kept but its uneven perception was
+   * not. The first four colours now carry the common two-to-four-series charts;
+   * the complete eight are reserved for the zone comparison, where dash and
+   * direct labels still carry identity when hue is lost. The browser gate
+   * measures the resolved colours rather than trusting these coordinates. At
+   * 1440px the light four-colour minimum is 0.158/0.135/0.116 and all-eight is
+   * 0.045/0.046/0.042 under normal/protan/deutan transforms.
+   */
+  --k0: oklch(0.614 0.147 249);
+  --k1: oklch(0.595 0.147 50);
+  --k2: oklch(0.48 0.17 342);
+  --k3: oklch(0.606 0.107 173);
+  --k4: oklch(0.46 0.082 30);
+  --k5: oklch(0.607 0.081 203);
+  --k6: oklch(0.499 0.176 264);
+  --k7: oklch(0.459 0.081 358);
 
   /*
    * A third job for colour, and the reason it needs its own two tokens: SIGN.
@@ -344,6 +353,9 @@
    */
   --sign-pos: oklch(0.500 0.108 252);
   --sign-neg: oklch(0.455 0.115 22);
+  /* Sign marks only need non-text contrast; prose-sized values need their own
+     ink role so a semantic red does not become faint type on a dark surface. */
+  --sign-neg-ink: var(--sign-neg);
 
   /*
    * Every link on the site, so it is prose and answers to prose thresholds.
@@ -714,14 +726,18 @@
     /* Same six hues, lifted for a near-black ground — the ramp is redeclared
        rather than inverted here for the same reason, and for the same measured
        cause: a colour that carries on chalk is usually too dark on charcoal. */
-    --k0: #63a8ee;
-    --k1: #f39044;
-    --k2: #57bf6f;
-    --k3: #3ebfbf;
-    --k4: #ec6a83;
-    --k5: #b078e0;
-    --k6: #a9c53a;
-    --k7: #e07aa8;
+    /* [2026-08-09] Independently solved on the three dark surfaces: these are
+       not mechanical lifts of the light marks, so their perceived weight and
+       colour-vision distances survive the charcoal ground. The measured dark
+       minima are 0.143/0.146/0.134 for four and 0.091/0.084/0.080 for eight. */
+    --k0: oklch(0.744 0.132 246);
+    --k1: oklch(0.701 0.124 56);
+    --k2: oklch(0.653 0.107 346);
+    --k3: oklch(0.826 0.098 161);
+    --k4: oklch(0.553 0.101 22);
+    --k5: oklch(0.882 0.066 207);
+    --k6: oklch(0.891 0.151 102);
+    --k7: oklch(0.558 0.157 292);
 
     /* Re-solved for the dark ground rather than inverted, the same rule the ramp
        above follows. Measured, the light theme's two on the dark surfaces:
@@ -730,6 +746,7 @@
        and the worst is the one a reader meets inside a `.card`. */
     --sign-pos: oklch(0.700 0.112 252);
     --sign-neg: oklch(0.672 0.132 22);
+    --sign-neg-ink: color-mix(in oklab, var(--sign-neg) 50%, var(--ink-mix));
     --accent: oklch(0.871 0.056 250);
 
     --ink-mix: oklch(0.99 0.004 250);
@@ -1437,6 +1454,13 @@ code,
   padding-inline: var(--page-pad);
 }
 
+/* The evidence-width page left the prose register attached to its left edge,
+ * so all remaining room landed on one side. Keep the page itself as the
+ * reading register; evidence surfaces opt into a wider, symmetric register. */
+main > section.page:not(#hero):not(#chapters) {
+  max-width: calc(var(--measure) + 2 * var(--page-pad));
+}
+
 /* A chapter boundary used to be built out of four things stacked up: a hairline
  * on the section, 49px of padding, a second hairline beside the chapter number,
  * then the heading. Two rules 49px apart do not separate twice as clearly as
@@ -1876,8 +1900,9 @@ figure {
 .evidence-figure {
   width: 100%;
   max-width: var(--evidence-measure);
-  margin-block: var(--space-5);
+  margin-block: var(--space-5) var(--space-4);
   padding-block-start: var(--space-3);
+  padding-block-end: 0;
   border-block-start: 1px solid var(--rule);
 }
 
@@ -2019,6 +2044,23 @@ main {
   --bleed: clamp(0px, calc(var(--room) - 1.5rem), 8rem);
   width: calc(100% + 2 * var(--bleed));
   margin-inline: calc(-1 * var(--bleed));
+}
+
+/* EvidenceFigure wraps its semantic heading, figure and caption in a section,
+ * so the direct-figure rule above cannot reach it. Give that wrapper the same
+ * symmetric escape instead of widening the reading page underneath it. */
+.page > .evidence-figure {
+  --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
+  --bleed: clamp(0px, calc(var(--room) - 1.5rem), 8rem);
+  width: calc(100% + 2 * var(--bleed));
+  margin-inline: calc(-1 * var(--bleed));
+}
+
+/* The visualization owns the bleed; its prose still belongs to the chapter's
+ * reading spine so the eye does not have to hunt for a new left edge. */
+.page > .evidence-figure > .evidence-header,
+.page > .evidence-figure figcaption {
+  margin-inline-start: var(--bleed);
 }
 
 /*
@@ -2774,6 +2816,25 @@ details,
    * existing as far as the rest of the page is concerned.
    */
   isolation: isolate;
+}
+
+/* A direct table already starts in the centred reading register. Reapplying
+ * the old figure bleed after the page itself had widened was what let chapter
+ * 5 cross the rail; tables keep their fit-content width and scroll locally. */
+.page > .table-wrap {
+  max-width: 100%;
+  margin-inline: 0;
+}
+
+/* The tablet publication register is the one deliberate exception: its four
+ * measured columns fit in the section padding but not in the reading content
+ * box. Preserve that bounded extra room instead of adding a scrollbar for a
+ * few pixels while every wider and narrower layout keeps the generic rule. */
+@media (min-width: 40rem) and (max-width: 49.999rem) {
+  #data > .table-wrap {
+    max-width: calc(100% + 2 * var(--bleed));
+    margin-inline: calc(-1 * var(--bleed));
+  }
 }
 
 table {
