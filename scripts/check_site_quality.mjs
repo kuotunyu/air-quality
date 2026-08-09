@@ -3583,6 +3583,8 @@ async function main() {
           explorerNotice && visible(explorerNotice) &&
           (!explorerRun || !visible(explorerRun) || explorerRun.disabled)
         ),
+        mainText: document.querySelector("main")?.innerText
+          .replace(/\\s+/g, " ").trim() ?? "",
       };
     })()`);
     totals.noScriptRoutes += 1;
@@ -3599,6 +3601,12 @@ async function main() {
             `(start=${noScript?.startLinks ?? "unknown"}, chapters=${noScript?.chapterLinks ?? "unknown"})`,
         );
       }
+      if (
+        noScript?.mainText?.includes("剩下的才是排放") ||
+        !noScript?.mainText?.includes("剩餘趨勢不能直接等同排放變化")
+      ) {
+        failures.push("/: chapter-one summary equates the normalised residual with emissions");
+      }
     } else {
       const incompleteIntro = ["container", "heading", "thesis"].filter(
         (part) => !noScript?.intro?.[part],
@@ -3608,6 +3616,14 @@ async function main() {
           `${route}: no-JavaScript chapter intro has unreadable parts ` +
             `(${incompleteIntro.join(", ") || "unknown"})`,
         );
+      }
+    }
+    if (route === "/trend/") {
+      if (
+        noScript?.mainText?.includes("排放本身") ||
+        !noScript?.mainText?.includes("不是直接量測排放")
+      ) {
+        failures.push("/trend/: weather-normalised comparison is described as direct emissions");
       }
     }
     const expectedFigures = STATIC_NATIVE_FIGURES.get(route);
