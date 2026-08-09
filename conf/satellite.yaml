@@ -11,3 +11,19 @@
     "unit": "mol/m^2"
     "sample_scale_m": 1113
     "column_kind": "vertical_column"
+
+"maiac":
+  "collection_id": "MODIS/061/MCD19A2_GRANULES"
+  "aod_band": "Optical_Depth_055"
+  "qa_band": "AOD_QA"
+  "unit": "1"
+  "sample_scale_m": 1000
+  "scale_factor": 0.001
+  "qa_shift": 8
+  "qa_mask": 15
+  "qa_best": 0
+  "tile_scale": 4
+  "tiles": ["h28v06", "h29v06"]
+  "drive_folder": "twair-earth-engine"
+  "description_prefix": "twair_maiac"
+  "max_active_tasks": 2
