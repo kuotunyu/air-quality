@@ -16,8 +16,10 @@ from typing import Any
 
 import polars as pl
 import pytest
+from typer.testing import CliRunner
 
-from twair.config import ConfigError
+from twair import cli
+from twair.config import ConfigError, get_settings
 from twair.ingest.maiac import (
     EarthEngineMaiacBackend,
     ExportEntry,
@@ -31,6 +33,7 @@ from twair.ingest.maiac import (
     submit_exports,
     write_export_ledger,
 )
+from twair.ingest.station_inventory import station_inventory_generation
 
 
 def valid_config() -> dict[str, object]:
@@ -507,6 +510,110 @@ def test_the_default_ledger_path_stays_below_the_ignored_data_tree(
     )
 
 
+def test_generation_plans_share_the_common_identity_without_relabelling_legacy_ledgers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    source = stations(include_unplaced=True)
+
+    legacy = plan_exports(source, project="test-project", year=2025, months=(1,))
+    generated = plan_exports(
+        source,
+        project="test-project",
+        year=2025,
+        months=(1,),
+        inventory_generation=True,
+    )
+    generation = station_inventory_generation(source).sha256
+
+    assert legacy.schema_version == 1
+    assert legacy.inventory_generation_sha256 is None
+    assert legacy.default_path == (
+        tmp_path / "interim" / "maiac" / "year=2025" / "export-ledger.json"
+    )
+    assert generated.schema_version == 2
+    assert generated.inventory_generation_sha256 == generation
+    assert generated.station_inventory_sha256 == generation
+    assert generated.default_path == (
+        tmp_path
+        / "interim"
+        / "maiac"
+        / "generations"
+        / generation
+        / "year=2025"
+        / "export-ledger.json"
+    )
+
+
+def test_a_generation_ledger_can_only_write_beneath_its_own_full_identity(
+    tmp_path: Path,
+) -> None:
+    ledger = plan_exports(
+        stations(),
+        project="test-project",
+        year=2025,
+        months=(1,),
+        inventory_generation=True,
+    )
+    wrong = tmp_path / "generations" / ("0" * 64) / "year=2025" / "export-ledger.json"
+
+    with pytest.raises(RuntimeError, match="destination generation does not match"):
+        write_export_ledger(ledger, destination=wrong)
+
+    assert not wrong.exists()
+
+
+def test_the_cli_plan_creates_local_generation_intent_without_a_legacy_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GEE_PROJECT_ID", "test-project")
+    get_settings.cache_clear()
+    snapshot = tmp_path / "outputs" / "qc" / "stations.parquet"
+    snapshot.parent.mkdir(parents=True)
+    source = stations(include_unplaced=True)
+    source.write_parquet(snapshot)
+    generation = station_inventory_generation(source).sha256
+
+    from twair.ingest import maiac
+
+    monkeypatch.setattr(
+        maiac,
+        "EarthEngineMaiacBackend",
+        lambda *_: pytest.fail("local MAIAC planning contacted Earth Engine"),
+    )
+    try:
+        result = CliRunner().invoke(
+            cli.app,
+            [
+                "ingest",
+                "maiac",
+                "plan",
+                "--year",
+                "2025",
+                "--months",
+                "1",
+                "--inventory-generation",
+            ],
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert result.exit_code == 0, result.output
+    ledger_path = (
+        tmp_path
+        / "interim"
+        / "maiac"
+        / "generations"
+        / generation
+        / "year=2025"
+        / "export-ledger.json"
+    )
+    assert ledger_path.exists()
+    assert not (tmp_path / "interim" / "maiac" / "year=2025").exists()
+    assert generation in result.output
+
+
 def test_the_export_ledger_round_trips_all_local_intent(tmp_path: Path) -> None:
     ledger = plan_exports(
         stations(include_unplaced=True),
@@ -524,6 +631,21 @@ def test_the_export_ledger_round_trips_all_local_intent(tmp_path: Path) -> None:
     payload = json.loads(written.read_text(encoding="utf-8"))
     assert payload["stations_without_coordinates"] == 1
     assert payload["entries"][0]["state"] == "PLANNED"
+    assert "inventory_generation_sha256" not in payload
+
+
+def test_a_malformed_generation_fails_as_a_ledger_contract_before_path_selection() -> None:
+    ledger = plan_exports(
+        stations(),
+        project="test-project",
+        year=2025,
+        months=(1,),
+        inventory_generation=True,
+    )
+    ledger.inventory_generation_sha256 = "not-a-sha256"
+
+    with pytest.raises(RuntimeError, match="inventory generation is invalid"):
+        write_export_ledger(ledger)
 
 
 def test_replanning_the_same_month_preserves_the_remote_task_identity(
@@ -580,6 +702,38 @@ def test_a_changed_station_inventory_cannot_merge_into_an_existing_ledger(
     with pytest.raises(RuntimeError, match="station inventory"):
         write_export_ledger(
             plan_exports(moved_stations(), project="test-project", year=2025, months=(2,)),
+            destination=destination,
+        )
+
+
+def test_a_generation_ledger_cannot_change_the_unresolved_station_count(
+    tmp_path: Path,
+) -> None:
+    first = plan_exports(
+        stations(),
+        project="test-project",
+        year=2025,
+        months=(1,),
+        inventory_generation=True,
+    )
+    destination = (
+        tmp_path
+        / "generations"
+        / str(first.inventory_generation_sha256)
+        / "year=2025"
+        / "export-ledger.json"
+    )
+    write_export_ledger(first, destination=destination)
+
+    with pytest.raises(RuntimeError, match="station counts"):
+        write_export_ledger(
+            plan_exports(
+                stations(include_unplaced=True),
+                project="test-project",
+                year=2025,
+                months=(2,),
+                inventory_generation=True,
+            ),
             destination=destination,
         )
 
@@ -906,6 +1060,50 @@ def test_status_refresh_recovers_a_remote_task_after_a_local_save_was_missed() -
     assert updated.entries[0].task_id == "task-recovered"
     assert updated.entries[0].state == "RUNNING"
     assert backend.started == []
+
+
+def test_the_cli_status_selects_the_requested_generation_without_using_the_legacy_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GEE_PROJECT_ID", "test-project")
+    get_settings.cache_clear()
+    source = stations()
+    snapshot = tmp_path / "outputs" / "qc" / "stations.parquet"
+    snapshot.parent.mkdir(parents=True)
+    source.write_parquet(snapshot)
+    ledger = plan_exports(
+        source,
+        project="test-project",
+        year=2025,
+        months=(1,),
+        inventory_generation=True,
+    )
+    path = write_export_ledger(ledger)
+
+    from twair.ingest import maiac
+
+    monkeypatch.setattr(maiac, "EarthEngineMaiacBackend", lambda _: FakeTaskBackend())
+    try:
+        result = CliRunner().invoke(
+            cli.app,
+            [
+                "ingest",
+                "maiac",
+                "status",
+                "--year",
+                "2025",
+                "--generation",
+                str(ledger.inventory_generation_sha256),
+            ],
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert result.exit_code == 0, result.output
+    assert path.exists()
+    assert not (tmp_path / "interim" / "maiac" / "year=2025").exists()
+    assert str(path) in result.output.replace("\n", "")
 
 
 def test_a_known_task_absent_from_the_remote_list_becomes_unknown_not_completed() -> None:

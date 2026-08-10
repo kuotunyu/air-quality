@@ -21,6 +21,7 @@ from twair.ingest.maiac_import import (
     import_exported_files,
     write_maiac_result,
 )
+from twair.ingest.station_inventory import station_inventory_generation
 
 
 def stations() -> pl.DataFrame:
@@ -46,15 +47,28 @@ def completed_ledger(
     *,
     station_data: pl.DataFrame | None = None,
     config: MaiacConfig | None = None,
+    inventory_generation: bool = False,
 ) -> ExportLedger:
-    ledger = plan_exports(
-        station_data if station_data is not None else stations(),
-        project="test-project",
-        year=2025,
-        months=months,
-        config=config,
-        planned_at="2026-08-10T01:02:03+00:00",
-    )
+    source = station_data if station_data is not None else stations()
+    if inventory_generation:
+        ledger = plan_exports(
+            source,
+            project="test-project",
+            year=2025,
+            months=months,
+            config=config,
+            planned_at="2026-08-10T01:02:03+00:00",
+            inventory_generation=True,
+        )
+    else:
+        ledger = plan_exports(
+            source,
+            project="test-project",
+            year=2025,
+            months=months,
+            config=config,
+            planned_at="2026-08-10T01:02:03+00:00",
+        )
     for entry in ledger.entries:
         entry.task_id = f"task-{entry.month}"
         entry.state = "COMPLETED"
@@ -92,9 +106,15 @@ def imported_month(
     *,
     station_data: pl.DataFrame | None = None,
     config: MaiacConfig | None = None,
+    inventory_generation: bool = False,
 ) -> MaiacResult:
     frame = station_data if station_data is not None else stations()
-    ledger = completed_ledger((month,), station_data=frame, config=config)
+    ledger = completed_ledger(
+        (month,),
+        station_data=frame,
+        config=config,
+        inventory_generation=inventory_generation,
+    )
     source_dir = tmp_path / f"source-{month}"
     write_export_csv(source_dir, ledger, month)
     return import_exported_files(
@@ -262,6 +282,61 @@ def test_the_result_writer_round_trips_values_coverage_and_manifest(tmp_path: Pa
     assert json.loads(paths["manifest"].read_text(encoding="utf-8"))["months"] == [1]
 
 
+def test_a_generation_import_keeps_the_ledger_identity_through_its_result_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    result = imported_month(tmp_path, 1, inventory_generation=True)
+    generation = station_inventory_generation(stations()).sha256
+
+    paths = write_maiac_result(result)
+
+    assert result.manifest["schema_version"] == 2
+    assert result.manifest["inventory_generation_sha256"] == generation
+    assert paths["manifest"] == (
+        tmp_path
+        / "interim"
+        / "maiac"
+        / "generations"
+        / generation
+        / "year=2025"
+        / "result"
+        / "manifest.json"
+    )
+
+
+def test_a_generation_import_cannot_write_into_another_generation(
+    tmp_path: Path,
+) -> None:
+    result = imported_month(tmp_path, 1, inventory_generation=True)
+    wrong = tmp_path / "generations" / ("0" * 64) / "year=2025" / "result"
+
+    with pytest.raises(RuntimeError, match="destination generation does not match"):
+        write_maiac_result(result, destination=wrong)
+
+    assert not wrong.exists()
+
+
+def test_a_malformed_result_generation_fails_as_a_manifest_contract_before_path_selection(
+    tmp_path: Path,
+) -> None:
+    result = imported_month(tmp_path, 1, inventory_generation=True)
+    result.manifest["inventory_generation_sha256"] = "not-a-sha256"
+
+    with pytest.raises(RuntimeError, match="inventory generation is invalid"):
+        write_maiac_result(result)
+
+
+def test_a_generation_result_cannot_publish_inconsistent_station_counts(
+    tmp_path: Path,
+) -> None:
+    result = imported_month(tmp_path, 1, inventory_generation=True)
+    result.manifest["stations_without_coordinates"] = 1
+
+    with pytest.raises(RuntimeError, match="station counts are inconsistent"):
+        write_maiac_result(result)
+
+
 def test_importing_february_preserves_an_existing_january_result(tmp_path: Path) -> None:
     destination = tmp_path / "result"
     write_maiac_result(imported_month(tmp_path, 1), destination=destination)
@@ -284,6 +359,33 @@ def test_a_partial_import_cannot_cross_a_station_inventory_change(tmp_path: Path
     with pytest.raises(RuntimeError, match="station inventory"):
         write_maiac_result(
             imported_month(tmp_path, 2, station_data=moved_stations()),
+            destination=destination,
+        )
+
+
+def test_a_generation_result_cannot_change_the_unresolved_station_count(
+    tmp_path: Path,
+) -> None:
+    first = imported_month(tmp_path, 1, inventory_generation=True)
+    generation = str(first.manifest["inventory_generation_sha256"])
+    destination = tmp_path / "generations" / generation / "year=2025" / "result"
+    write_maiac_result(first, destination=destination)
+    with_unplaced = pl.concat(
+        [
+            stations(),
+            pl.DataFrame([{"station_name": "Unresolved", "lon": None, "lat": None}]),
+        ],
+        how="diagonal_relaxed",
+    )
+
+    with pytest.raises(RuntimeError, match="station counts"):
+        write_maiac_result(
+            imported_month(
+                tmp_path,
+                2,
+                station_data=with_unplaced,
+                inventory_generation=True,
+            ),
             destination=destination,
         )
 

@@ -26,6 +26,10 @@ from twair.ingest.maiac import (
     plan_exports,
     validate_export_ledger,
 )
+from twair.ingest.station_inventory import (
+    maiac_generation_result_dir,
+    validate_generation_sha256,
+)
 from twair.paths import interim_dir
 from twair.provenance import git_state
 from twair.scalars import as_int
@@ -123,6 +127,7 @@ def _validate_current_contract(
         months=tuple(ledger.months),
         config=config,
         planned_at=ledger.planned_at,
+        inventory_generation=ledger.inventory_generation_sha256 is not None,
     )
     if current.station_inventory_sha256 != ledger.station_inventory_sha256:
         raise RuntimeError("current station inventory differs from the MAIAC export ledger")
@@ -231,6 +236,7 @@ def import_exported_files(
         months=tuple(ledger.months),
         config=selected_config,
         planned_at=ledger.planned_at,
+        inventory_generation=ledger.inventory_generation_sha256 is not None,
     )
     expected_stations = {
         row["station_name"]
@@ -296,7 +302,7 @@ def import_exported_files(
         "input_files": json.loads(json.dumps(input_files)),
     }
     manifest: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2 if ledger.inventory_generation_sha256 is not None else 1,
         "generated_at": timestamp,
         "gee_project": ledger.gee_project,
         "year": ledger.year,
@@ -315,6 +321,8 @@ def import_exported_files(
         "git_dirty": dirty,
         "import_runs": [import_run],
     }
+    if ledger.inventory_generation_sha256 is not None:
+        manifest["inventory_generation_sha256"] = ledger.inventory_generation_sha256
     result = MaiacResult(values=values, coverage=coverage, manifest=manifest)
     _validate_maiac_result(result)
     return result
@@ -352,7 +360,8 @@ def _validate_maiac_result(result: MaiacResult) -> None:
         raise RuntimeError("MAIAC values and coverage counts are inconsistent")
 
     manifest = result.manifest
-    if manifest.get("schema_version") != 1:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {1, 2}:
         raise RuntimeError("unsupported MAIAC result manifest schema")
     year = as_int(manifest.get("year"), what="MAIAC result manifest year")
     months = manifest.get("months")
@@ -365,6 +374,19 @@ def _validate_maiac_result(result: MaiacResult) -> None:
         raise RuntimeError("MAIAC result manifest row count is inconsistent")
     if manifest.get("null_values") != result.values["value"].null_count():
         raise RuntimeError("MAIAC result manifest null count is inconsistent")
+    counts = (
+        manifest.get("stations_total"),
+        manifest.get("stations_with_coordinates"),
+        manifest.get("stations_without_coordinates"),
+    )
+    validated_counts: list[int] = []
+    for value in counts:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise RuntimeError("MAIAC result station counts must be non-negative integers")
+        validated_counts.append(value)
+    total, placed, unplaced = validated_counts
+    if placed <= 0 or placed + unplaced != total:
+        raise RuntimeError("MAIAC result station counts are inconsistent")
     source_contract = manifest.get("source_contract")
     if not isinstance(source_contract, dict):
         raise RuntimeError("MAIAC result source contract must be a mapping")
@@ -373,6 +395,19 @@ def _validate_maiac_result(result: MaiacResult) -> None:
     station_hash = manifest.get("station_inventory_sha256")
     if not isinstance(station_hash, str) or len(station_hash) != 64:
         raise RuntimeError("MAIAC result station inventory hash is invalid")
+    if schema_version == 1:
+        if manifest.get("inventory_generation_sha256") is not None:
+            raise RuntimeError("legacy MAIAC results cannot claim an inventory generation")
+    else:
+        generation = manifest.get("inventory_generation_sha256")
+        if not isinstance(generation, str):
+            raise RuntimeError("MAIAC result inventory generation is missing")
+        try:
+            validate_generation_sha256(generation)
+        except ValueError as exc:
+            raise RuntimeError("MAIAC result inventory generation is invalid") from exc
+        if generation != station_hash:
+            raise RuntimeError("MAIAC result inventory generation is inconsistent")
     tasks = manifest.get("tasks")
     input_files = manifest.get("input_files")
     month_keys = {str(month) for month in actual_months}
@@ -441,11 +476,23 @@ def _read_maiac_result(destination: Path) -> MaiacResult | None:
 
 
 def _merge_maiac_results(existing: MaiacResult, incoming: MaiacResult) -> MaiacResult:
+    if existing.manifest.get("inventory_generation_sha256") is not None and (
+        existing.manifest.get("stations_total"),
+        existing.manifest.get("stations_with_coordinates"),
+        existing.manifest.get("stations_without_coordinates"),
+    ) != (
+        incoming.manifest.get("stations_total"),
+        incoming.manifest.get("stations_with_coordinates"),
+        incoming.manifest.get("stations_without_coordinates"),
+    ):
+        raise RuntimeError("MAIAC result merge changed the station counts")
     for field_name, label in (
+        ("schema_version", "schema version"),
         ("gee_project", "Earth Engine project"),
         ("year", "year"),
         ("station_inventory_sha256", "station inventory"),
         ("source_contract_sha256", "source contract"),
+        ("inventory_generation_sha256", "inventory generation"),
     ):
         if existing.manifest.get(field_name) != incoming.manifest.get(field_name):
             raise RuntimeError(f"MAIAC result merge changed the {label}")
@@ -477,12 +524,21 @@ def write_maiac_result(
     *,
     destination: Path | None = None,
 ) -> dict[str, Path]:
+    _validate_maiac_result(result)
     year = as_int(result.manifest.get("year"), what="MAIAC result manifest year")
-    out = destination or interim_dir("maiac") / f"year={year}" / "result"
+    generation = result.manifest.get("inventory_generation_sha256")
+    out = destination or (
+        maiac_generation_result_dir(year, generation)
+        if isinstance(generation, str)
+        else interim_dir("maiac") / f"year={year}" / "result"
+    )
     if not out.name or out == out.parent:
         raise RuntimeError("MAIAC result destination must be a named directory")
+    _validate_result_generation_destination(result.manifest, out)
     _recover_result_swap(out)
     existing = _read_maiac_result(out)
+    if existing is not None:
+        _validate_result_generation_destination(existing.manifest, out)
     combined = _merge_maiac_results(existing, result) if existing is not None else result
     _validate_maiac_result(combined)
 
@@ -515,3 +571,20 @@ def write_maiac_result(
         if staged.exists():
             shutil.rmtree(staged)
     return {name: out / filename for name, filename in OUTPUT_FILENAMES.items()}
+
+
+def _validate_result_generation_destination(manifest: dict[str, Any], destination: Path) -> None:
+    generation = manifest.get("inventory_generation_sha256")
+    path_generation = (
+        destination.parent.parent.name
+        if destination.name == "result"
+        and destination.parent.name == f"year={manifest.get('year')}"
+        and destination.parent.parent.parent.name == "generations"
+        else None
+    )
+    if generation is None:
+        if path_generation is not None:
+            raise RuntimeError("legacy MAIAC results cannot write to a generation path")
+        return
+    if path_generation != generation:
+        raise RuntimeError("MAIAC result destination generation does not match the manifest")

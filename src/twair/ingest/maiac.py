@@ -22,6 +22,11 @@ from uuid import uuid4
 import polars as pl
 
 from twair.config import ConfigError, load_conf
+from twair.ingest.station_inventory import (
+    maiac_generation_ledger_path,
+    station_inventory_generation,
+    validate_generation_sha256,
+)
 from twair.paths import interim_dir
 
 __all__ = [
@@ -103,9 +108,12 @@ class ExportLedger:
     source_contract_sha256: str
     source_contract: dict[str, object]
     entries: list[ExportEntry]
+    inventory_generation_sha256: str | None = None
 
     @property
     def default_path(self) -> Path:
+        if self.inventory_generation_sha256 is not None:
+            return maiac_generation_ledger_path(self.year, self.inventory_generation_sha256)
         return interim_dir("maiac") / f"year={self.year}" / "export-ledger.json"
 
 
@@ -283,6 +291,7 @@ def plan_exports(
     months: tuple[int, ...],
     config: MaiacConfig | None = None,
     planned_at: str | None = None,
+    inventory_generation: bool = False,
 ) -> ExportLedger:
     if not isinstance(project, str) or not project.strip():
         raise ValueError("project must be a non-empty string")
@@ -297,8 +306,14 @@ def plan_exports(
         raise ValueError("months must be unique integers from 1 through 12")
 
     selected_config = config or load_maiac_config()
-    placed, unplaced_count = _placed_stations(stations)
-    station_hash = _canonical_sha256(placed.select("station_name", "lon", "lat").to_dicts())
+    generation = station_inventory_generation(stations) if inventory_generation else None
+    if generation is None:
+        placed, unplaced_count = _placed_stations(stations)
+        station_hash = _canonical_sha256(placed.select("station_name", "lon", "lat").to_dicts())
+    else:
+        placed = generation.stations
+        unplaced_count = generation.stations_without_coordinates
+        station_hash = generation.sha256
     source_contract = _source_contract(selected_config)
     source_hash = _canonical_sha256(source_contract)
     timestamp = planned_at or datetime.now(UTC).isoformat(timespec="seconds")
@@ -323,7 +338,7 @@ def plan_exports(
             )
         )
     return ExportLedger(
-        schema_version=1,
+        schema_version=2 if generation is not None else 1,
         planned_at=timestamp,
         gee_project=project.strip(),
         year=year,
@@ -335,6 +350,7 @@ def plan_exports(
         source_contract_sha256=source_hash,
         source_contract=source_contract,
         entries=entries,
+        inventory_generation_sha256=generation.sha256 if generation is not None else None,
     )
 
 
@@ -356,11 +372,12 @@ def _copy_ledger(ledger: ExportLedger) -> ExportLedger:
         source_contract_sha256=ledger.source_contract_sha256,
         source_contract=dict(ledger.source_contract),
         entries=[_copy_entry(entry) for entry in ledger.entries],
+        inventory_generation_sha256=ledger.inventory_generation_sha256,
     )
 
 
 def validate_export_ledger(ledger: ExportLedger) -> None:
-    if ledger.schema_version != 1:
+    if ledger.schema_version not in {1, 2}:
         raise RuntimeError("unsupported MAIAC export ledger schema version")
     if not isinstance(ledger.gee_project, str) or not ledger.gee_project.strip():
         raise RuntimeError("MAIAC export ledger project must be non-empty")
@@ -390,6 +407,19 @@ def validate_export_ledger(ledger: ExportLedger) -> None:
         raise RuntimeError("MAIAC export ledger station counts are inconsistent")
     if not _SHA256_RE.fullmatch(ledger.station_inventory_sha256):
         raise RuntimeError("MAIAC export ledger station inventory hash is invalid")
+    if ledger.schema_version == 1:
+        if ledger.inventory_generation_sha256 is not None:
+            raise RuntimeError("legacy MAIAC export ledgers cannot claim an inventory generation")
+    else:
+        generation = ledger.inventory_generation_sha256
+        if not isinstance(generation, str):
+            raise RuntimeError("MAIAC export ledger inventory generation is missing")
+        try:
+            validate_generation_sha256(generation)
+        except ValueError as exc:
+            raise RuntimeError("MAIAC export ledger inventory generation is invalid") from exc
+        if generation != ledger.station_inventory_sha256:
+            raise RuntimeError("MAIAC export ledger inventory generation is inconsistent")
     if not _SHA256_RE.fullmatch(ledger.source_contract_sha256):
         raise RuntimeError("MAIAC export ledger source contract hash is invalid")
     if _canonical_sha256(ledger.source_contract) != ledger.source_contract_sha256:
@@ -464,6 +494,7 @@ def _ledger_from_payload(payload: object) -> ExportLedger:
             source_contract_sha256=raw["source_contract_sha256"],
             source_contract=source_contract,
             entries=entries,
+            inventory_generation_sha256=raw.get("inventory_generation_sha256"),
         )
     except (KeyError, TypeError) as exc:
         raise RuntimeError("MAIAC export ledger is missing a required field") from exc
@@ -502,15 +533,29 @@ def read_export_ledger(path: Path) -> ExportLedger:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"MAIAC export ledger is not readable JSON: {path}") from exc
-    return _ledger_from_payload(payload)
+    ledger = _ledger_from_payload(payload)
+    _validate_ledger_generation_destination(ledger, path)
+    return ledger
 
 
 def _merge_export_ledgers(existing: ExportLedger, incoming: ExportLedger) -> ExportLedger:
+    if existing.inventory_generation_sha256 is not None and (
+        existing.stations_total,
+        existing.stations_with_coordinates,
+        existing.stations_without_coordinates,
+    ) != (
+        incoming.stations_total,
+        incoming.stations_with_coordinates,
+        incoming.stations_without_coordinates,
+    ):
+        raise RuntimeError("MAIAC ledger merge changed the station counts")
     for field_name, label in (
+        ("schema_version", "schema version"),
         ("gee_project", "Earth Engine project"),
         ("year", "year"),
         ("station_inventory_sha256", "station inventory"),
         ("source_contract_sha256", "source contract"),
+        ("inventory_generation_sha256", "inventory generation"),
     ):
         if getattr(existing, field_name) != getattr(incoming, field_name):
             raise RuntimeError(f"MAIAC ledger merge changed the {label}")
@@ -543,6 +588,7 @@ def _merge_export_ledgers(existing: ExportLedger, incoming: ExportLedger) -> Exp
         source_contract_sha256=existing.source_contract_sha256,
         source_contract=dict(existing.source_contract),
         entries=entries,
+        inventory_generation_sha256=existing.inventory_generation_sha256,
     )
     validate_export_ledger(merged)
     return merged
@@ -553,9 +599,11 @@ def write_export_ledger(
     *,
     destination: Path | None = None,
 ) -> Path:
+    validate_export_ledger(ledger)
     target = destination or ledger.default_path
     if not target.name or target == target.parent:
         raise RuntimeError("MAIAC ledger destination must be a named file")
+    _validate_ledger_generation_destination(ledger, target)
     _recover_ledger_swap(target)
     existing = read_export_ledger(target) if target.exists() else None
     combined = _merge_export_ledgers(existing, ledger) if existing is not None else ledger
@@ -565,8 +613,11 @@ def write_export_ledger(
     token = uuid4().hex
     staged = target.with_name(f".{target.name}.staging-{token}")
     backup = target.with_name(f".{target.name}.backup-{token}")
+    payload = asdict(combined)
+    if combined.inventory_generation_sha256 is None:
+        payload.pop("inventory_generation_sha256")
     staged.write_text(
-        json.dumps(asdict(combined), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -586,6 +637,23 @@ def write_export_ledger(
         if staged.exists():
             staged.unlink()
     return target
+
+
+def _validate_ledger_generation_destination(ledger: ExportLedger, destination: Path) -> None:
+    path_generation = (
+        destination.parent.parent.name
+        if destination.name == "export-ledger.json"
+        and destination.parent.name == f"year={ledger.year}"
+        and destination.parent.parent.parent.name == "generations"
+        else None
+    )
+    generation = ledger.inventory_generation_sha256
+    if generation is None:
+        if path_generation is not None:
+            raise RuntimeError("legacy MAIAC ledgers cannot write to a generation path")
+        return
+    if path_generation != generation:
+        raise RuntimeError("MAIAC ledger destination generation does not match the ledger")
 
 
 def _validate_remote_task(task: RemoteTask) -> None:
@@ -654,8 +722,20 @@ def _validated_submission_context(
     validate_export_ledger(ledger)
     if _canonical_sha256(_source_contract(config)) != ledger.source_contract_sha256:
         raise RuntimeError("current MAIAC source contract differs from the export ledger")
-    placed, unplaced_count = _placed_stations(stations)
-    station_hash = _canonical_sha256(placed.select("station_name", "lon", "lat").to_dicts())
+    generation = (
+        station_inventory_generation(stations)
+        if ledger.inventory_generation_sha256 is not None
+        else None
+    )
+    if generation is None:
+        placed, unplaced_count = _placed_stations(stations)
+        station_hash = _canonical_sha256(placed.select("station_name", "lon", "lat").to_dicts())
+    else:
+        placed = generation.stations
+        unplaced_count = generation.stations_without_coordinates
+        station_hash = generation.sha256
+        if generation.sha256 != ledger.inventory_generation_sha256:
+            raise RuntimeError("current inventory generation differs from the MAIAC export ledger")
     if station_hash != ledger.station_inventory_sha256:
         raise RuntimeError("current station inventory differs from the MAIAC export ledger")
     if (

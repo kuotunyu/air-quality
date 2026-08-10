@@ -300,7 +300,14 @@ def _maiac_project() -> str:
         raise typer.BadParameter(str(exc), param_hint="GEE_PROJECT_ID") from exc
 
 
-def _maiac_ledger_path(year: int) -> Path:
+def _maiac_ledger_path(year: int, generation: str | None = None) -> Path:
+    if isinstance(generation, str):
+        from twair.ingest.station_inventory import maiac_generation_ledger_path
+
+        try:
+            return maiac_generation_ledger_path(year, generation)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--generation") from exc
     return interim_dir("maiac") / f"year={year}" / "export-ledger.json"
 
 
@@ -322,6 +329,11 @@ def plan_maiac(
         "--months",
         help="Comma-separated months or inclusive ranges, e.g. 1,3,6:8.",
     ),
+    inventory_generation: bool = typer.Option(
+        False,
+        "--inventory-generation",
+        help="Plan beneath a new immutable station-inventory generation path.",
+    ),
 ) -> None:
     """Write deterministic local export intent without contacting Earth Engine."""
     from twair.ingest.maiac import plan_exports, read_export_ledger, write_export_ledger
@@ -332,6 +344,7 @@ def plan_maiac(
         project=_maiac_project(),
         year=year,
         months=selected_months,
+        inventory_generation=inventory_generation is True,
     )
     try:
         path = write_export_ledger(ledger)
@@ -343,12 +356,19 @@ def plan_maiac(
         f"{persisted.stations_with_coordinates} stations with coordinates"
     )
     _print_maiac_states(persisted.entries)
+    if persisted.inventory_generation_sha256 is not None:
+        console.print(f"inventory generation: [cyan]{persisted.inventory_generation_sha256}[/cyan]")
     console.print(f"wrote ledger: {path}")
 
 
 @maiac_app.command("submit")
 def submit_maiac(
     year: int = typer.Option(2025, "--year", help="Calendar year in the local ledger."),
+    generation: str | None = typer.Option(
+        None,
+        "--generation",
+        help="Full station-inventory generation SHA-256; omit for the legacy ledger.",
+    ),
     confirm_drive_export: bool = typer.Option(
         False,
         "--confirm-drive-export",
@@ -368,7 +388,7 @@ def submit_maiac(
         write_export_ledger,
     )
 
-    path = _maiac_ledger_path(year)
+    path = _maiac_ledger_path(year, generation)
     try:
         ledger = read_export_ledger(path)
     except (FileNotFoundError, RuntimeError) as exc:
@@ -401,6 +421,11 @@ def submit_maiac(
 @maiac_app.command("status")
 def status_maiac(
     year: int = typer.Option(2025, "--year", help="Calendar year in the local ledger."),
+    generation: str | None = typer.Option(
+        None,
+        "--generation",
+        help="Full station-inventory generation SHA-256; omit for the legacy ledger.",
+    ),
 ) -> None:
     """Refresh local state from Earth Engine without creating a task."""
     from twair.ingest.maiac import (
@@ -410,7 +435,7 @@ def status_maiac(
         write_export_ledger,
     )
 
-    path = _maiac_ledger_path(year)
+    path = _maiac_ledger_path(year, generation)
     try:
         ledger = read_export_ledger(path)
     except (FileNotFoundError, RuntimeError) as exc:
@@ -448,6 +473,11 @@ def import_maiac_files(
         ),
     ],
     year: int = typer.Option(2025, "--year", help="Calendar year in the local ledger."),
+    generation: str | None = typer.Option(
+        None,
+        "--generation",
+        help="Full station-inventory generation SHA-256; omit for the legacy ledger.",
+    ),
     months: str = typer.Option(
         "1:12",
         "--months",
@@ -458,7 +488,7 @@ def import_maiac_files(
     from twair.ingest.maiac import read_export_ledger
     from twair.ingest.maiac_import import import_exported_files, write_maiac_result
 
-    path = _maiac_ledger_path(year)
+    path = _maiac_ledger_path(year, generation)
     try:
         ledger = read_export_ledger(path)
         result = import_exported_files(
