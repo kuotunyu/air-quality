@@ -231,6 +231,38 @@ PM10 讀 0、PM2.5 讀 37 是檔案裡最不可能的一組配對，
 | 2024 | 662616 | 0.8050150275230408 | 0.03371 | 0.01763 | 2762 | 0.5 |
 | 2025 | 653550 | 0.7834159731864929 | 0.02792 | 0.01609 | 2781 | 0.4761904776096344 |
 
+## 官方公告與年度檔的來源差異
+
+這張表量測官方公告生效後，年度檔是否仍包含該測站的列與非空數值。這是
+**來源之間尚未釐清的差異，不是資料有效性的判定**。本專案不刪除、不補值，也不改寫
+任何觀測；`published_after_event` 只表示公告生效後仍量到至少一筆非空數值。
+
+| event_id | station_name | pollutant | rows_at_or_after_event | numeric_rows_at_or_after_event | null_rows_at_or_after_event | first_post_event_ts | last_post_event_ts | published_after_event |
+|---|---|---|---|---|---|---|---|---|
+| wanli_monitoring_stop_2025 | 萬里 | AMB_TEMP | 5880 | 4016 | 1864 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | CH4 | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | CO | 5880 | 3986 | 1894 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | NMHC | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | NO | 5880 | 3982 | 1898 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | NO2 | 5880 | 3982 | 1898 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | NOx | 5880 | 3982 | 1898 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | O3 | 5880 | 3992 | 1888 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | PH_RAIN | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | PM10 | 5880 | 3899 | 1981 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | PM2.5 | 5880 | 3894 | 1986 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | RAINFALL | 5880 | 4006 | 1874 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | RAIN_COND | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | RAIN_INT | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | RAIN_TEMP | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | RH | 5880 | 4016 | 1864 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | SHELT_TEMP | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | SO2 | 5880 | 3886 | 1994 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | THC | 0 | 0 | 0 |  |  | False |
+| wanli_monitoring_stop_2025 | 萬里 | WD_HR | 5880 | 4016 | 1864 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | WIND_DIREC | 5880 | 4017 | 1863 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | WIND_SPEED | 5880 | 4016 | 1864 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+| wanli_monitoring_stop_2025 | 萬里 | WS_HR | 5880 | 4016 | 1864 | 2025-05-01 00:00:00 | 2025-12-31 23:00:00 | True |
+
 ## 產出檔案
 
 | 檔案 | 內容 |
@@ -243,3 +275,4 @@ PM10 讀 0、PM2.5 讀 37 是檔案裡最不可能的一組配對，
 | `sentinel_rates.parquet` | 風向哨兵碼出現率 |
 | `pm_pair_diagnostics.parquet` | PM2.5/PM10 逐時相關、不可能配對率、比值分布 |
 | `consistency/*.parquet` | 物理一致性違反率（逐年） |
+| `station_publication_conflicts.parquet` | 公告生效後，年度檔仍發布的列、非空值與來源差異 |

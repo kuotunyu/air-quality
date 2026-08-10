@@ -25,10 +25,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
+from twair.qc import report as qc_report_module
 from twair.qc.flags import Flag
 from twair.qc.report import (
     REPORTS,
@@ -63,6 +66,22 @@ def row(**over: object) -> dict[str, object]:
 
 
 Store = Callable[[list[dict[str, object]]], Path]
+
+
+def publication_event_config() -> dict[str, object]:
+    return {
+        "events": [
+            {
+                "event_id": "wanli_monitoring_stop_2025",
+                "station_name": "萬里",
+                "event_kind": "monitoring_stop",
+                "effective_from": "2025-05-01T00:00:00+08:00",
+                "source_url": "https://example.invalid/official-notice",
+                "source_published_on": "2025-04-30",
+                "source_statement": "data will no longer update",
+            }
+        ]
+    }
 
 
 @pytest.fixture
@@ -294,6 +313,158 @@ def test_a_store_holding_one_particle_size_is_an_answer_not_a_crash(
 
     assert frame.is_empty()
     assert frame.columns == ["obs_year", "paired_hours"]
+
+
+# ── reviewed publication events ──────────────────────────────────────────────
+
+
+def test_a_numeric_value_after_an_official_event_is_counted_as_published(
+    store: Store,
+) -> None:
+    root = store(
+        [
+            row(station_name="萬里", ts_local=datetime(2025, 4, 30, 23), value=12.0),
+            row(station_name="萬里", ts_local=datetime(2025, 5, 1, 1), value=13.0),
+        ]
+    )
+
+    frame = qc_report_module.station_publication_conflicts(root, config=publication_event_config())
+    result = frame.row(0, named=True)
+
+    assert frame.schema == qc_report_module.PUBLICATION_EVENT_COLUMNS
+    assert result["rows_at_or_after_event"] == 1
+    assert result["numeric_rows_at_or_after_event"] == 1
+    assert result["null_rows_at_or_after_event"] == 0
+    assert result["published_after_event"] is True
+
+
+def test_a_null_after_an_official_event_stays_null_and_is_not_numeric(store: Store) -> None:
+    root = store(
+        [
+            row(station_name="萬里", pollutant="PM10", ts_local=datetime(2025, 4, 30, 23)),
+            row(
+                station_name="萬里",
+                pollutant="PM10",
+                ts_local=datetime(2025, 5, 1, 1),
+                value=None,
+                flag=Flag.MISSING.value,
+            ),
+        ]
+    )
+
+    result = qc_report_module.station_publication_conflicts(
+        root, config=publication_event_config()
+    ).row(0, named=True)
+
+    assert result["rows_at_or_after_event"] == 1
+    assert result["numeric_rows_at_or_after_event"] == 0
+    assert result["null_rows_at_or_after_event"] == 1
+    assert result["published_after_event"] is False
+
+
+def test_a_known_pollutant_with_no_post_event_rows_produces_a_zero_count_finding(
+    store: Store,
+) -> None:
+    root = store(
+        [
+            row(
+                station_name="萬里",
+                pollutant="CO",
+                ts_local=datetime(2025, 4, 30, 23),
+            )
+        ]
+    )
+
+    result = qc_report_module.station_publication_conflicts(
+        root, config=publication_event_config()
+    ).row(0, named=True)
+
+    assert result["pollutant"] == "CO"
+    assert result["rows_at_or_after_event"] == 0
+    assert result["numeric_rows_at_or_after_event"] == 0
+    assert result["first_post_event_ts"] is None
+    assert result["last_post_event_ts"] is None
+    assert result["published_after_event"] is False
+
+
+def test_publication_event_measurement_never_changes_the_canonical_partition(
+    store: Store,
+) -> None:
+    root = store(
+        [
+            row(station_name="萬里", ts_local=datetime(2025, 4, 30, 23), value=12.0),
+            row(station_name="萬里", ts_local=datetime(2025, 5, 1, 1), value=None),
+        ]
+    )
+    partition = root / "p.parquet"
+    before = pl.read_parquet(partition)
+
+    qc_report_module.station_publication_conflicts(root, config=publication_event_config())
+
+    assert_frame_equal(pl.read_parquet(partition), before, check_row_order=True)
+
+
+def test_the_full_report_reduces_one_concrete_partition_at_a_time(
+    tmp_path: Path,
+    elsewhere: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "partitioned"
+    for month, rows in (
+        (1, [row(ts_local=datetime(2024, 1, 1, 0))]),
+        (2, [row(ts_local=datetime(2024, 2, 1, 0))]),
+    ):
+        destination = root / "year=2024" / f"month={month:02d}"
+        destination.mkdir(parents=True)
+        conform_partition(pl.DataFrame(rows).select(list(PARTITION_SCHEMA))).write_parquet(
+            destination / "part.parquet"
+        )
+
+    def whole_store_scan_is_forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the QC report returned to a whole-store lazy scan")
+
+    reads: list[tuple[Path, tuple[str, ...]]] = []
+    read_parquet = pl.read_parquet
+
+    def record_partition_read(
+        source: str | Path, *, columns: list[str] | None = None, **kwargs: Any
+    ) -> pl.DataFrame:
+        assert isinstance(source, Path), "a glob or path list can retain every partition at once"
+        assert columns is not None, "every report must project only the columns it measures"
+        reads.append((source, tuple(columns)))
+        return read_parquet(source, columns=columns, **kwargs)
+
+    monkeypatch.setattr(
+        qc_report_module, "scan_observations", whole_store_scan_is_forbidden, raising=False
+    )
+    monkeypatch.setattr(pl, "scan_parquet", whole_store_scan_is_forbidden)
+    monkeypatch.setattr(pl, "read_parquet", record_partition_read)
+
+    results = build_reports(root)
+
+    assert set(results) == set(REPORTS)
+    assert {path for path, _ in reads} == set(root.glob("**/*.parquet"))
+
+
+def test_the_public_report_calls_the_result_an_unresolved_source_disagreement(
+    store: Store, elsewhere: Path
+) -> None:
+    root = store(
+        [
+            row(station_name="萬里", ts_local=datetime(2025, 4, 30, 23), value=12.0),
+            row(station_name="萬里", ts_local=datetime(2025, 5, 1, 1), value=13.0),
+        ]
+    )
+    results = build_reports(root)
+    results["station_publication_conflicts"] = qc_report_module.station_publication_conflicts(
+        root, config=publication_event_config()
+    )
+
+    text = write_markdown(results).read_text(encoding="utf-8")
+
+    assert "來源之間尚未釐清的差異" in text
+    assert "不是資料有效性的判定" in text
+    assert "不刪除、不補值，也不改寫" in text
 
 
 # ── the markdown renderer ────────────────────────────────────────────────────

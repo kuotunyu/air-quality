@@ -12,17 +12,21 @@ analysis) plus ``docs/data-quality.md`` as a human-readable summary.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 from rich.console import Console
 
-from twair.paths import DOCS_DIR, outputs_dir
+from twair.config import ConfigError, load_conf
+from twair.paths import DOCS_DIR, outputs_dir, processed_dir
 from twair.qc.flags import Flag
 from twair.qc.sentinels import SENTINEL_FLAGS
 from twair.scalars import as_float, as_int
 from twair.store.stations import normalise_name_expr
-from twair.store.writer import scan_observations
+from twair.store.writer import OBSERVATIONS
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -34,55 +38,102 @@ INVALID_FLAGS = (
 )
 
 
-def _base(root: Path | None = None) -> pl.LazyFrame:
+def _base(root: Path | None, *, columns: list[str]) -> Iterator[pl.DataFrame]:
     """Scan the store with station names normalised and the year derived.
 
     Normalisation matters here as much as anywhere: without it 台南 and 臺南
     are counted as two stations, and every per-station statistic splits at the
     year MOENV changed the spelling.
     """
-    return scan_observations(root).with_columns(
-        normalise_name_expr(),
-        pl.col("ts_local").dt.year().cast(pl.Int16).alias("obs_year"),
-    )
+    target = root or processed_dir(OBSERVATIONS)
+    paths = sorted(target.glob("**/*.parquet"))
+    if not paths:
+        raise FileNotFoundError(f"no observation Parquet partitions under {target}")
+    projected = list(dict.fromkeys([*columns, "station_name", "ts_local"]))
+    for path in paths:
+        yield pl.read_parquet(path, columns=projected).with_columns(
+            normalise_name_expr(),
+            pl.col("ts_local").dt.year().cast(pl.Int16).alias("obs_year"),
+        )
 
 
 def coverage_by_year(root: Path | None = None) -> pl.DataFrame:
     """Rows, stations, pollutants and valid fraction per year."""
-    return (
-        _base(root)
+    counts: list[pl.DataFrame] = []
+    station_years: list[pl.DataFrame] = []
+    pollutant_years: list[pl.DataFrame] = []
+    generation_years: list[pl.DataFrame] = []
+    for part in _base(
+        root,
+        columns=["pollutant", "flag", "value_retained", "generation"],
+    ):
+        counts.append(
+            part.group_by("obs_year").agg(
+                pl.len().alias("rows"),
+                (pl.col("flag") == Flag.VALID.value).sum().alias("valid"),
+                pl.col("flag").is_in(INVALID_FLAGS).sum().alias("invalid"),
+                (pl.col("flag") == Flag.MISSING.value).sum().alias("missing"),
+                pl.col("value_retained").sum().alias("value_retained"),
+            )
+        )
+        station_years.append(part.select("obs_year", "station_name").unique())
+        pollutant_years.append(part.select("obs_year", "pollutant").unique())
+        generation_years.append(part.select("obs_year", "generation").unique())
+
+    totals = (
+        pl.concat(counts)
         .group_by("obs_year")
         .agg(
-            pl.len().alias("rows"),
-            pl.col("station_name").n_unique().alias("stations"),
-            pl.col("pollutant").n_unique().alias("pollutants"),
-            (pl.col("flag") == Flag.VALID.value).sum().alias("valid"),
-            pl.col("flag").is_in(INVALID_FLAGS).sum().alias("invalid"),
-            (pl.col("flag") == Flag.MISSING.value).sum().alias("missing"),
-            pl.col("value_retained").sum().alias("value_retained"),
-            pl.col("generation").n_unique().alias("generations"),
+            pl.col("rows").sum(),
+            pl.col("valid").sum(),
+            pl.col("invalid").sum(),
+            pl.col("missing").sum(),
+            pl.col("value_retained").sum(),
         )
+    )
+    stations = pl.concat(station_years).unique().group_by("obs_year").len(name="stations")
+    pollutants = pl.concat(pollutant_years).unique().group_by("obs_year").len(name="pollutants")
+    generations = pl.concat(generation_years).unique().group_by("obs_year").len(name="generations")
+    return (
+        totals.join(stations, on="obs_year")
+        .join(pollutants, on="obs_year")
+        .join(generations, on="obs_year")
         .with_columns(
             (pl.col("valid") / pl.col("rows")).round(4).alias("valid_ratio"),
             (pl.col("missing") / pl.col("rows")).round(4).alias("missing_ratio"),
         )
+        .select(
+            "obs_year",
+            "rows",
+            "stations",
+            "pollutants",
+            "valid",
+            "invalid",
+            "missing",
+            "value_retained",
+            "generations",
+            "valid_ratio",
+            "missing_ratio",
+        )
         .sort("obs_year")
-        .collect()
     )
 
 
 def completeness_matrix(root: Path | None = None) -> pl.DataFrame:
     """Per station × pollutant × year completeness — the heat-map source."""
-    return (
-        _base(root)
-        .group_by("obs_year", "station_name", "pollutant")
-        .agg(
+    parts = [
+        part.group_by("obs_year", "station_name", "pollutant").agg(
             pl.len().alias("hours"),
             (pl.col("flag") == Flag.VALID.value).sum().alias("valid"),
         )
+        for part in _base(root, columns=["pollutant", "flag"])
+    ]
+    return (
+        pl.concat(parts)
+        .group_by("obs_year", "station_name", "pollutant")
+        .agg(pl.col("hours").sum(), pl.col("valid").sum())
         .with_columns((pl.col("valid") / pl.col("hours")).round(4).alias("valid_ratio"))
         .sort("obs_year", "station_name", "pollutant")
-        .collect()
     )
 
 
@@ -93,32 +144,38 @@ def station_lifecycle(root: Path | None = None) -> pl.DataFrame:
     mean across years without accounting for this conflates network expansion
     with air-quality change.
     """
+    station_year_parts = [
+        part.group_by("station_name", "obs_year").agg(pl.len().alias("rows"))
+        for part in _base(root, columns=[])
+    ]
     return (
-        _base(root)
+        pl.concat(station_year_parts)
         .group_by("station_name")
         .agg(
             pl.col("obs_year").min().alias("first_year"),
             pl.col("obs_year").max().alias("last_year"),
             pl.col("obs_year").n_unique().alias("years_present"),
-            pl.len().alias("rows"),
+            pl.col("rows").sum(),
         )
         .with_columns(
             (pl.col("last_year") - pl.col("first_year") + 1).alias("span"),
         )
         .with_columns((pl.col("years_present") < pl.col("span")).alias("has_gap"))
         .sort("first_year", "station_name")
-        .collect()
     )
 
 
 def flag_distribution(root: Path | None = None) -> pl.DataFrame:
     """Flag counts per year — does instrument reliability improve over time?"""
+    parts = [
+        part.group_by("obs_year", "flag").agg(pl.len().alias("n"))
+        for part in _base(root, columns=["flag"])
+    ]
     return (
-        _base(root)
+        pl.concat(parts)
         .group_by("obs_year", "flag")
-        .agg(pl.len().alias("n"))
+        .agg(pl.col("n").sum())
         .sort("obs_year", "flag")
-        .collect()
     )
 
 
@@ -130,17 +187,21 @@ def retention_asymmetry(root: Path | None = None) -> pl.DataFrame:
     analysis that imputes missing data has to account for this changing
     denominator.
     """
-    return (
-        _base(root)
-        .filter(pl.col("flag").is_in(INVALID_FLAGS))
+    parts = [
+        part.filter(pl.col("flag").is_in(INVALID_FLAGS))
         .group_by("obs_year", "generation")
         .agg(
             pl.len().alias("invalid"),
             pl.col("value_retained").sum().alias("retained"),
         )
+        for part in _base(root, columns=["flag", "value_retained", "generation"])
+    ]
+    return (
+        pl.concat(parts)
+        .group_by("obs_year", "generation")
+        .agg(pl.col("invalid").sum(), pl.col("retained").sum())
         .with_columns((pl.col("retained") / pl.col("invalid")).round(4).alias("retained_ratio"))
         .sort("obs_year")
-        .collect()
     )
 
 
@@ -150,26 +211,29 @@ def sentinel_rates(root: Path | None = None) -> pl.DataFrame:
     Settles the Phase 0 question: were 888/999 actually present during
     2010-2017, the window the 2018 project analysed?
     """
-    return (
-        _base(root)
-        .filter(pl.col("flag").is_in(list(SENTINEL_FLAGS)))
+    parts = [
+        part.filter(pl.col("flag").is_in(list(SENTINEL_FLAGS)))
         .group_by("obs_year", "pollutant", "flag")
         .agg(pl.len().alias("n"))
+        for part in _base(root, columns=["pollutant", "flag"])
+    ]
+    return (
+        pl.concat(parts)
+        .group_by("obs_year", "pollutant", "flag")
+        .agg(pl.col("n").sum())
         .sort("obs_year", "pollutant", "flag")
-        .collect()
     )
 
 
 def wind_direction_totals(root: Path | None = None) -> pl.DataFrame:
     """Denominator for the sentinel rate."""
-    return (
-        _base(root)
-        .filter(pl.col("pollutant").is_in(["WD_HR", "WIND_DIREC"]))
+    parts = [
+        part.filter(pl.col("pollutant").is_in(["WD_HR", "WIND_DIREC"]))
         .group_by("obs_year")
         .agg(pl.len().alias("wind_cells"))
-        .sort("obs_year")
-        .collect()
-    )
+        for part in _base(root, columns=["pollutant"])
+    ]
+    return pl.concat(parts).group_by("obs_year").agg(pl.col("wind_cells").sum()).sort("obs_year")
 
 
 _NO_PAIRS = pl.DataFrame(schema={"obs_year": pl.Int16, "paired_hours": pl.UInt32})
@@ -185,25 +249,28 @@ def pm_pair_diagnostics(root: Path | None = None) -> pl.DataFrame:
     the same correlation hourly shows how much of that came from averaging away
     independent instrument noise rather than from any relationship.
     """
-    paired = (
-        _base(root)
-        .filter(
+    paired_parts: list[pl.DataFrame] = []
+    for part in _base(root, columns=["pollutant", "flag", "value"]):
+        paired = part.filter(
             pl.col("pollutant").is_in(["PM2.5", "PM10"])
             & (pl.col("flag") == Flag.VALID.value)
             & pl.col("value").is_not_null()
+        ).select("obs_year", "station_name", "ts_local", "pollutant", "value")
+        if paired.is_empty():
+            continue
+        wide = paired.pivot(
+            on="pollutant",
+            index=["obs_year", "station_name", "ts_local"],
+            values="value",
+            aggregate_function="first",
         )
-        .select("obs_year", "station_name", "ts_local", "pollutant", "value")
-        .collect()
-    )
-    if paired.is_empty():
+        if {"PM2.5", "PM10"} <= set(wide.columns):
+            paired_parts.append(wide.select("obs_year", "PM2.5", "PM10"))
+
+    if not paired_parts:
         return _NO_PAIRS.clone()
 
-    wide = paired.pivot(
-        on="pollutant",
-        index=["obs_year", "station_name", "ts_local"],
-        values="value",
-        aggregate_function="first",
-    )
+    wide = pl.concat(paired_parts)
     # A pivot only produces columns for the values it saw. A store holding PM10
     # and no PM2.5 is an ordinary state — PM2.5 monitoring started years later,
     # and any partial or single-pollutant store is in it — but it used to reach
@@ -247,6 +314,139 @@ def pm_pair_diagnostics(root: Path | None = None) -> pl.DataFrame:
     )
 
 
+PUBLICATION_EVENT_COLUMNS = pl.Schema(
+    {
+        "event_id": pl.String(),
+        "station_name": pl.String(),
+        "event_kind": pl.String(),
+        "effective_from": pl.String(),
+        "source_url": pl.String(),
+        "source_published_on": pl.String(),
+        "source_statement": pl.String(),
+        "pollutant": pl.String(),
+        "rows_at_or_after_event": pl.Int64(),
+        "numeric_rows_at_or_after_event": pl.Int64(),
+        "null_rows_at_or_after_event": pl.Int64(),
+        "first_post_event_ts": pl.Datetime("us"),
+        "last_post_event_ts": pl.Datetime("us"),
+        "published_after_event": pl.Boolean(),
+    }
+)
+
+_PUBLICATION_EVENT_REQUIRED = frozenset(
+    {
+        "event_id",
+        "station_name",
+        "event_kind",
+        "effective_from",
+        "source_url",
+        "source_published_on",
+        "source_statement",
+    }
+)
+_TAIPEI_TZ = timezone(timedelta(hours=8))
+
+
+def _publication_events(config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    raw = config if config is not None else load_conf("station_publication_events")
+    events = raw.get("events")
+    if not isinstance(events, list) or not events:
+        raise ConfigError("conf/station_publication_events.yaml defines no `events`")
+
+    parsed: list[dict[str, Any]] = []
+    event_ids: set[str] = set()
+    for index, record in enumerate(events):
+        if not isinstance(record, dict):
+            raise ConfigError(f"station publication event {index} must be a mapping")
+        missing = _PUBLICATION_EVENT_REQUIRED - set(record)
+        if missing:
+            raise ConfigError(f"station publication event {index} is missing {sorted(missing)}")
+
+        cleaned: dict[str, Any] = {}
+        for field in _PUBLICATION_EVENT_REQUIRED:
+            value = record[field]
+            if not isinstance(value, str) or not value.strip() or value != value.strip():
+                raise ConfigError(f"station publication event {index} has invalid `{field}`")
+            cleaned[field] = value
+
+        if cleaned["event_id"] in event_ids:
+            raise ConfigError(f"duplicate station publication event id: {cleaned['event_id']}")
+        event_ids.add(cleaned["event_id"])
+
+        try:
+            effective = datetime.fromisoformat(cleaned["effective_from"])
+            datetime.fromisoformat(cleaned["source_published_on"])
+        except ValueError as exc:
+            raise ConfigError(f"station publication event {index} has an invalid date") from exc
+        if effective.utcoffset() is None:
+            raise ConfigError(
+                f"station publication event {index} effective_from must include a UTC offset"
+            )
+        cleaned["_effective_local"] = effective.astimezone(_TAIPEI_TZ).replace(tzinfo=None)
+        parsed.append(cleaned)
+    return parsed
+
+
+def station_publication_conflicts(
+    root: Path | None = None, *, config: dict[str, Any] | None = None
+) -> pl.DataFrame:
+    """Measure archive rows after reviewed source events without changing them."""
+    measured: list[pl.DataFrame] = []
+    for event in _publication_events(config):
+        after_event = pl.col("ts_local") >= pl.lit(event["_effective_local"])
+        partials = [
+            part.filter(pl.col("station_name") == event["station_name"])
+            .group_by("pollutant")
+            .agg(
+                after_event.sum().cast(pl.Int64).alias("rows_at_or_after_event"),
+                (after_event & pl.col("value").is_not_null())
+                .sum()
+                .cast(pl.Int64)
+                .alias("numeric_rows_at_or_after_event"),
+                (after_event & pl.col("value").is_null())
+                .sum()
+                .cast(pl.Int64)
+                .alias("null_rows_at_or_after_event"),
+                pl.col("ts_local").filter(after_event).min().alias("first_post_event_ts"),
+                pl.col("ts_local").filter(after_event).max().alias("last_post_event_ts"),
+            )
+            for part in _base(root, columns=["pollutant", "value"])
+        ]
+        frame = (
+            pl.concat(partials)
+            .group_by("pollutant")
+            .agg(
+                pl.col("rows_at_or_after_event").sum(),
+                pl.col("numeric_rows_at_or_after_event").sum(),
+                pl.col("null_rows_at_or_after_event").sum(),
+                pl.col("first_post_event_ts").min(),
+                pl.col("last_post_event_ts").max(),
+            )
+            .with_columns(
+                *[
+                    pl.lit(event[field]).alias(field)
+                    for field in (
+                        "event_id",
+                        "station_name",
+                        "event_kind",
+                        "effective_from",
+                        "source_url",
+                        "source_published_on",
+                        "source_statement",
+                    )
+                ],
+                (pl.col("numeric_rows_at_or_after_event") > 0).alias("published_after_event"),
+            )
+            .select(*PUBLICATION_EVENT_COLUMNS.names())
+            .cast(PUBLICATION_EVENT_COLUMNS)
+        )
+        measured.append(frame)
+
+    if not measured:
+        return pl.DataFrame(schema=PUBLICATION_EVENT_COLUMNS)
+    return pl.concat(measured, how="vertical").sort("event_id", "pollutant")
+
+
 REPORTS = {
     "coverage_by_year": coverage_by_year,
     "pm_pair_diagnostics": pm_pair_diagnostics,
@@ -256,6 +456,7 @@ REPORTS = {
     "retention_asymmetry": retention_asymmetry,
     "sentinel_rates": sentinel_rates,
     "wind_direction_totals": wind_direction_totals,
+    "station_publication_conflicts": station_publication_conflicts,
 }
 
 
@@ -297,6 +498,7 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
     retention = results["retention_asymmetry"]
     sentinels = results["sentinel_rates"]
     wind_totals = results["wind_direction_totals"]
+    publication_conflicts = results["station_publication_conflicts"]
 
     total_rows = as_int(coverage["rows"].sum(), what="total rows")
     year_min = as_int(coverage["obs_year"].min(), what="first year")
@@ -336,6 +538,25 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
         _md_table(retention, ["obs_year", "generation", "invalid", "retained", "retained_ratio"])
         if not retention.is_empty()
         else "_無無效值紀錄。_"
+    )
+
+    publication_conflict_section = (
+        _md_table(
+            publication_conflicts,
+            [
+                "event_id",
+                "station_name",
+                "pollutant",
+                "rows_at_or_after_event",
+                "numeric_rows_at_or_after_event",
+                "null_rows_at_or_after_event",
+                "first_post_event_ts",
+                "last_post_event_ts",
+                "published_after_event",
+            ],
+        )
+        if not publication_conflicts.is_empty()
+        else "_目前沒有可量測的公告後資料。_"
     )
 
     doc = DOCS_DIR / "data-quality.md"
@@ -398,6 +619,14 @@ PM10 讀 0、PM2.5 讀 37 是檔案裡最不可能的一組配對，
 
 {pm_section}
 
+## 官方公告與年度檔的來源差異
+
+這張表量測官方公告生效後，年度檔是否仍包含該測站的列與非空數值。這是
+**來源之間尚未釐清的差異，不是資料有效性的判定**。本專案不刪除、不補值，也不改寫
+任何觀測；`published_after_event` 只表示公告生效後仍量到至少一筆非空數值。
+
+{publication_conflict_section}
+
 ## 產出檔案
 
 | 檔案 | 內容 |
@@ -410,6 +639,7 @@ PM10 讀 0、PM2.5 讀 37 是檔案裡最不可能的一組配對，
 | `sentinel_rates.parquet` | 風向哨兵碼出現率 |
 | `pm_pair_diagnostics.parquet` | PM2.5/PM10 逐時相關、不可能配對率、比值分布 |
 | `consistency/*.parquet` | 物理一致性違反率（逐年） |
+| `station_publication_conflicts.parquet` | 公告生效後，年度檔仍發布的列、非空值與來源差異 |
 """,
         encoding="utf-8",
     )

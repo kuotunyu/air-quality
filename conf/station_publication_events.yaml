@@ -1,0 +1,10 @@
+"schema_version": 1
+"reviewed_on": "2026-08-10"
+"events":
+  - "event_id": "wanli_monitoring_stop_2025"
+    "station_name": "萬里"
+    "event_kind": "monitoring_stop"
+    "effective_from": "2025-05-01T00:00:00+08:00"
+    "source_url": "https://data.moenv.gov.tw/announcement?p=1&type=%E8%B3%87%E6%96%99%E5%85%AC%E5%91%8A"
+    "source_published_on": "2025-04-30"
+    "source_statement": "data will no longer update"
