@@ -90,6 +90,29 @@ PRECISION_BY_UNIT = {
 }
 DEFAULT_PRECISION = 2
 
+GEO_PROVENANCE_COLUMNS = (
+    "geo_source",
+    "geo_source_record_namespace",
+    "geo_source_record_id",
+)
+
+PUBLICATION_CONFLICT_COLUMNS = (
+    "event_id",
+    "station_name",
+    "event_kind",
+    "effective_from",
+    "source_url",
+    "source_published_on",
+    "source_statement",
+    "pollutant",
+    "rows_at_or_after_event",
+    "numeric_rows_at_or_after_event",
+    "null_rows_at_or_after_event",
+    "first_post_event_ts",
+    "last_post_event_ts",
+    "published_after_event",
+)
+
 # One Parquet row group per station-decade or so. Small enough that DuckDB-WASM
 # can fetch a single station's slice without pulling the file, large enough
 # that the footer does not dominate.
@@ -311,6 +334,7 @@ def export_meta(destination: Path | None = None) -> Path:
     station_records = stations.select(
         "station_name",
         *geo_columns,
+        *GEO_PROVENANCE_COLUMNS,
         "airzone",
         "station_type",
         "first_year",
@@ -328,6 +352,7 @@ def export_meta(destination: Path | None = None) -> Path:
         "git_dirty": _dirty,
         "stations": station_records,
         "stations_without_coordinates": unplaced,
+        "station_publication_conflicts": _publication_conflict_summary(),
         "pollutants": [
             {
                 "code": code,
@@ -365,6 +390,21 @@ def export_meta(destination: Path | None = None) -> Path:
         "hourly_observations": _hourly_observations(),
     }
     return write_json(root / "meta.json", payload)
+
+
+def _publication_conflict_summary() -> dict[str, Any]:
+    frame = _read_publication_conflicts()
+    if frame is None:
+        return {
+            "status": "unavailable",
+            "reason": "qc_artifact_not_available",
+        }
+    return {
+        "status": "available",
+        "records": frame.select(*PUBLICATION_CONFLICT_COLUMNS)
+        .sort("event_id", "pollutant")
+        .to_dicts(),
+    }
 
 
 def _data_through() -> str | None:
@@ -479,3 +519,10 @@ def _read_stations() -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"{path} not found — run `twair stations` first")
     return pl.read_parquet(path)
+
+
+def _read_publication_conflicts() -> pl.DataFrame | None:
+    path = outputs_dir("qc") / "station_publication_conflicts.parquet"
+    if not path.exists():
+        return None
+    return pl.read_parquet(path, columns=list(PUBLICATION_CONFLICT_COLUMNS))

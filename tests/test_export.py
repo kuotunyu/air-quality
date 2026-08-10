@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,71 @@ def _run_check(root: Path) -> int:
         return check_web_export.main()
     finally:
         sys.argv = argv
+
+
+def _meta_stations() -> pl.DataFrame:
+    names = ["萬里", "台中", "崇倫", "阿里山", "泰山", "三民"]
+    return pl.DataFrame(
+        {
+            "station_name": names,
+            "county": ["新北市", None, None, None, None, None],
+            "township": ["萬里區", None, None, None, None, None],
+            "lon": [121.689881, None, None, None, None, None],
+            "lat": [25.179667, None, None, None, None, None],
+            "station_name_en": ["Wanli", None, None, None, None, None],
+            "geo_source": ["reviewed_historical", None, None, None, None, None],
+            "geo_source_record_namespace": [
+                "AIRTW central station detail",
+                None,
+                None,
+                None,
+                None,
+                None,
+            ],
+            "geo_source_record_id": ["61", None, None, None, None, None],
+            "airzone": ["北部空品區"] * 6,
+            "station_type": ["background"] * 6,
+            "first_year": [1993, 1984, 1999, 2000, 2005, 1983],
+            "last_year": [2025, 1992, 2011, 2011, 2009, 1999],
+            "years_present": [33, 9, 13, 11, 5, 17],
+        }
+    )
+
+
+def _publication_conflict() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "event_id": ["wanli_monitoring_stop_2025"],
+            "station_name": ["萬里"],
+            "event_kind": ["monitoring_stop"],
+            "effective_from": ["2025-05-01T00:00:00+08:00"],
+            "source_url": ["https://example.invalid/official-notice"],
+            "source_published_on": ["2025-04-30"],
+            "source_statement": ["data will no longer update"],
+            "pollutant": ["PM2.5"],
+            "rows_at_or_after_event": [5880],
+            "numeric_rows_at_or_after_event": [3894],
+            "null_rows_at_or_after_event": [1986],
+            "first_post_event_ts": [datetime(2025, 5, 1, 0)],
+            "last_post_event_ts": [datetime(2025, 12, 31, 23)],
+            "published_after_event": [True],
+        }
+    )
+
+
+def _stub_meta_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stations: pl.DataFrame | None = None,
+    conflicts: pl.DataFrame | None = None,
+) -> None:
+    selected_stations = stations if stations is not None else _meta_stations()
+    monkeypatch.setattr(export, "_read_stations", lambda: selected_stations)
+    monkeypatch.setattr(export, "_read_publication_conflicts", lambda: conflicts)
+    monkeypatch.setattr(export, "documented_pollutants", lambda config=None: {})
+    monkeypatch.setattr(export, "_data_through", lambda: "2025-12-31 23:00:00")
+    monkeypatch.setattr(export, "_hourly_observations", lambda: 1)
+    monkeypatch.setattr(export, "git_state", lambda: ("abc1234", False))
 
 
 @pytest.fixture
@@ -297,6 +362,53 @@ class TestManifest:
 
 
 class TestPublicationBoundary:
+    def test_meta_exports_geography_provenance_and_only_the_five_unresolved_names(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _stub_meta_dependencies(monkeypatch)
+
+        payload = json.loads(export.export_meta(tmp_path).read_text(encoding="utf-8"))
+
+        wanli = next(row for row in payload["stations"] if row["station_name"] == "萬里")
+        assert wanli["geo_source"] == "reviewed_historical"
+        assert wanli["geo_source_record_namespace"] == "AIRTW central station detail"
+        assert wanli["geo_source_record_id"] == "61"
+        assert payload["stations_without_coordinates"] == ["台中", "崇倫", "阿里山", "泰山", "三民"]
+
+    def test_meta_exports_the_measured_publication_conflict_without_recomputing_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        conflict = _publication_conflict()
+        _stub_meta_dependencies(monkeypatch, conflicts=conflict)
+
+        summary = json.loads(export.export_meta(tmp_path).read_text(encoding="utf-8"))[
+            "station_publication_conflicts"
+        ]
+
+        assert summary["status"] == "available"
+        assert summary["records"] == [
+            {
+                **conflict.row(0, named=True),
+                "first_post_event_ts": "2025-05-01T00:00:00",
+                "last_post_event_ts": "2025-12-31T23:00:00",
+            }
+        ]
+
+    def test_meta_marks_a_missing_conflict_artifact_unavailable_instead_of_zero(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _stub_meta_dependencies(monkeypatch, conflicts=None)
+
+        summary = json.loads(export.export_meta(tmp_path).read_text(encoding="utf-8"))[
+            "station_publication_conflicts"
+        ]
+
+        assert summary == {
+            "status": "unavailable",
+            "reason": "qc_artifact_not_available",
+        }
+        assert "records" not in summary
+
     def test_meta_describes_l2_as_local_and_rebuildable_not_remotely_hosted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -308,13 +420,12 @@ class TestPublicationBoundary:
                 "first_year": [2025],
                 "last_year": [2025],
                 "years_present": [1],
+                "geo_source": [None],
+                "geo_source_record_namespace": [None],
+                "geo_source_record_id": [None],
             }
         )
-        monkeypatch.setattr(export, "_read_stations", lambda: stations)
-        monkeypatch.setattr(export, "documented_pollutants", lambda config=None: {})
-        monkeypatch.setattr(export, "_data_through", lambda: "2025-12-31 23:00:00")
-        monkeypatch.setattr(export, "_hourly_observations", lambda: 1)
-        monkeypatch.setattr(export, "git_state", lambda: ("abc1234", False))
+        _stub_meta_dependencies(monkeypatch, stations=stations)
 
         path = export.export_meta(tmp_path)
         layer = json.loads(path.read_text(encoding="utf-8"))["layers"]["L2"]
