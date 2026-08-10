@@ -1,0 +1,20 @@
+"schema_version": 1
+"reviewed_on": "2026-08-10"
+"source_service": "https://airtw.moenv.gov.tw/gis_ajax.aspx?Type=GetAQInfoDetail"
+"stations":
+  - "station_name": "萬里"
+    "station_name_en": "Wanli"
+    "historical_site_id": "3"
+    "source_record_namespace": "AIRTW central station detail"
+    "source_record_id": "61"
+    "source_page": "https://airtw.moenv.gov.tw/CHT/EnvMonitoring/Central/article_station.aspx?SiteID=61"
+    "source_endpoint": "https://airtw.moenv.gov.tw/gis_ajax.aspx?Type=GetAQInfoDetail&SiteID=61"
+    "verified_on": "2026-08-10"
+    "county": "新北市"
+    "township": "萬里區"
+    "address": "新北市萬里區瑪鋉路221號"
+    "lon": 121.689881
+    "lat": 25.179667
+    "monitoring_started_on": "1991-07-17"
+    "station_type_primary": "一般站"
+    "station_type_secondary": "背景站"

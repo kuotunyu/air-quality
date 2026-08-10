@@ -37,13 +37,16 @@ log = logging.getLogger(__name__)
 __all__ = [
     "TAIWAN_BOUNDS",
     "fetch_station_register",
+    "load_historical_station_geo",
     "load_station_geo",
     "reconcile_with_store",
     "refresh_station_geo",
+    "resolve_station_geo",
 ]
 
 API_URL = "https://data.moenv.gov.tw/api/v2/aqx_p_07"
 CONF_NAME = "station_geo"
+HISTORICAL_CONF_NAME = "station_geo_historical"
 
 # Generous enough for Matsu (26.3N, 119.9E) and Lanyu (22.0N, 121.6E), tight
 # enough that a swapped lat/lon pair or a zero fails loudly instead of putting
@@ -66,6 +69,46 @@ FIELDS = {
     "sitetype": "station_type_official",
     "siteid": "site_id",
 }
+
+CURRENT_SCHEMA = {
+    "station_name": pl.Utf8,
+    "station_name_en": pl.Utf8,
+    "airzone_official": pl.Utf8,
+    "county": pl.Utf8,
+    "township": pl.Utf8,
+    "address": pl.Utf8,
+    "lon": pl.Float64,
+    "lat": pl.Float64,
+    "station_type_official": pl.Utf8,
+    "site_id": pl.Utf8,
+}
+
+HISTORICAL_SCHEMA = {
+    "station_name": pl.Utf8,
+    "station_name_en": pl.Utf8,
+    "historical_site_id": pl.Utf8,
+    "source_record_namespace": pl.Utf8,
+    "source_record_id": pl.Utf8,
+    "source_page": pl.Utf8,
+    "source_endpoint": pl.Utf8,
+    "verified_on": pl.Utf8,
+    "county": pl.Utf8,
+    "township": pl.Utf8,
+    "address": pl.Utf8,
+    "lon": pl.Float64,
+    "lat": pl.Float64,
+    "monitoring_started_on": pl.Utf8,
+    "station_type_primary": pl.Utf8,
+    "station_type_secondary": pl.Utf8,
+}
+
+HISTORICAL_PROVENANCE_FIELDS = (
+    "source_record_namespace",
+    "source_record_id",
+    "source_page",
+    "source_endpoint",
+    "verified_on",
+)
 
 
 def fetch_station_register(*, api_key: str | None = None, limit: int = 1000) -> pl.DataFrame:
@@ -171,20 +214,7 @@ def load_station_geo() -> pl.DataFrame:
     raising. The absence is then visible in the output as a station that cannot
     be mapped, which is the honest rendering of "we do not know where this is".
     """
-    empty = pl.DataFrame(
-        schema={
-            "station_name": pl.Utf8,
-            "station_name_en": pl.Utf8,
-            "airzone_official": pl.Utf8,
-            "county": pl.Utf8,
-            "township": pl.Utf8,
-            "address": pl.Utf8,
-            "lon": pl.Float64,
-            "lat": pl.Float64,
-            "station_type_official": pl.Utf8,
-            "site_id": pl.Utf8,
-        }
-    )
+    empty = pl.DataFrame(schema=CURRENT_SCHEMA)
 
     try:
         conf = load_conf(CONF_NAME)
@@ -201,6 +231,126 @@ def load_station_geo() -> pl.DataFrame:
         raise ConfigError(f"conf/{CONF_NAME}.yaml has no `stations`")
 
     return pl.DataFrame(stations, schema=empty.schema)
+
+
+def load_historical_station_geo() -> pl.DataFrame:
+    """Read the reviewed historical supplement without touching the current cache."""
+    empty = pl.DataFrame(schema=HISTORICAL_SCHEMA)
+
+    try:
+        conf = load_conf(HISTORICAL_CONF_NAME)
+    except FileNotFoundError:
+        log.warning(
+            "conf/%s.yaml not found — no historical station geography is available.",
+            HISTORICAL_CONF_NAME,
+        )
+        return empty
+
+    metadata = ("schema_version", "reviewed_on", "source_service")
+    if any(conf.get(field) in (None, "") for field in metadata):
+        raise ConfigError(f"conf/{HISTORICAL_CONF_NAME}.yaml is missing reviewed source provenance")
+    if conf["schema_version"] != 1:
+        raise ConfigError(
+            f"conf/{HISTORICAL_CONF_NAME}.yaml has unsupported schema_version "
+            f"{conf['schema_version']!r}"
+        )
+
+    stations = conf.get("stations")
+    if not isinstance(stations, list):
+        raise ConfigError(f"conf/{HISTORICAL_CONF_NAME}.yaml must contain a `stations` list")
+    if not stations:
+        return empty
+
+    for index, record in enumerate(stations):
+        if not isinstance(record, dict):
+            raise ConfigError(
+                f"conf/{HISTORICAL_CONF_NAME}.yaml station record {index} must be a mapping"
+            )
+        missing = set(HISTORICAL_SCHEMA) - set(record)
+        if missing:
+            raise ConfigError(
+                f"conf/{HISTORICAL_CONF_NAME}.yaml station record {index} "
+                f"is missing field(s) {sorted(missing)}"
+            )
+
+    frame = pl.DataFrame(stations, schema=HISTORICAL_SCHEMA)
+    _validate_historical_source(frame)
+    return frame.sort("station_name")
+
+
+def _require_columns(frame: pl.DataFrame, required: set[str], source: str) -> None:
+    missing = required - set(frame.columns)
+    if missing:
+        raise ConfigError(f"{source} is missing expected field(s) {sorted(missing)}")
+
+
+def _reject_blank_values(frame: pl.DataFrame, fields: tuple[str, ...], label: str) -> None:
+    bad = frame.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(field).is_null()
+                | (pl.col(field).cast(pl.Utf8, strict=False).str.strip_chars() == "")
+                for field in fields
+            )
+        )
+    )
+    if not bad.is_empty():
+        raise ConfigError(f"station geography record is missing {label}")
+
+
+def _reject_duplicates(frame: pl.DataFrame, field: str, source: str) -> None:
+    duplicates = frame.group_by(field).len().filter(pl.col("len") > 1).get_column(field).to_list()
+    if duplicates:
+        raise ConfigError(f"{source} has duplicate {field}: {duplicates}")
+
+
+def _validate_current_source(frame: pl.DataFrame) -> None:
+    _require_columns(frame, set(CURRENT_SCHEMA), "current station register")
+    _validate_coordinates(frame)
+    _reject_blank_values(frame, ("station_name", "site_id"), "current identity")
+    _reject_duplicates(frame, "station_name", "current station register")
+    _reject_duplicates(frame, "site_id", "current station register")
+
+
+def _validate_historical_source(frame: pl.DataFrame) -> None:
+    _require_columns(frame, set(HISTORICAL_SCHEMA), "historical station supplement")
+    _validate_coordinates(frame)
+    _reject_blank_values(frame, ("station_name", "historical_site_id"), "identity")
+    _reject_blank_values(frame, HISTORICAL_PROVENANCE_FIELDS, "provenance")
+    _reject_duplicates(frame, "station_name", "historical station supplement")
+    _reject_duplicates(frame, "historical_site_id", "historical station supplement")
+    _reject_duplicates(frame, "source_record_id", "historical station supplement")
+
+
+def resolve_station_geo(
+    current: pl.DataFrame | None = None,
+    historical: pl.DataFrame | None = None,
+) -> pl.DataFrame:
+    """Combine reviewed geography by canonical name, with the current register first."""
+    current_source = current if current is not None else load_station_geo()
+    historical_source = historical if historical is not None else load_historical_station_geo()
+
+    _validate_current_source(current_source)
+    _validate_historical_source(historical_source)
+
+    current_resolved = current_source.with_columns(
+        pl.lit("current_register").alias("geo_source"),
+        pl.lit("aqx_p_07").alias("geo_source_record_namespace"),
+        pl.col("site_id").alias("geo_source_record_id"),
+    )
+    historical_resolved = historical_source.join(
+        current_source.select("station_name"),
+        on="station_name",
+        how="anti",
+    ).with_columns(
+        pl.lit("reviewed_historical").alias("geo_source"),
+        pl.col("source_record_namespace").alias("geo_source_record_namespace"),
+        pl.col("source_record_id").alias("geo_source_record_id"),
+    )
+
+    return pl.concat([current_resolved, historical_resolved], how="diagonal_relaxed").sort(
+        "station_name"
+    )
 
 
 def reconcile_with_store(
