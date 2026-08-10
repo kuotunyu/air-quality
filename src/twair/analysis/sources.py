@@ -1,9 +1,7 @@
-"""M7 — where the dirty air comes from, without a trajectory model.
+"""M7 — wind patterns during high-concentration hours.
 
-The planned approach was HYSPLIT back-trajectories, which needs gridded
-meteorological reanalysis and a dispersion model. The cheap substitute answers
-most of the same question from data already in the store: the **conditional
-bivariate probability function** (Uria-Tellaetxe & Carslaw, 2014).
+The **conditional bivariate probability function** (Uria-Tellaetxe & Carslaw,
+2014) describes the high-concentration pattern already present in the store.
 
 For every combination of wind direction and wind speed, CBPF asks: *given that
 the wind was blowing from here at this speed, how often was the concentration
@@ -11,12 +9,9 @@ high?*
 
     CBPF(θ, u) = (samples in that bin above the threshold) / (samples in that bin)
 
-The bivariate part is what makes it worth doing. Plain wind-direction roses
-confound two very different situations — a source a few kilometres away shows
-up at **low** wind speed from its bearing, because stronger wind disperses it;
-a source hundreds of kilometres away shows up at **high** wind speed from its
-bearing, because it takes wind to carry it that far. On one axis those look the
-same. On two they separate.
+The bivariate part separates whether high values are observed during weaker or
+stronger winds at each bearing. A plain wind-direction rose cannot show that
+wind-speed pattern.
 
 Three things this module does that a textbook implementation would not:
 
@@ -30,11 +25,12 @@ when pollution accumulates, so those hours matter — but they have no direction
 and cannot go on a polar plot. Reporting the calm fraction beside the plot
 keeps the reader from reading absence as absence of a problem.
 
-**The output carries a concentration statistic.** A station whose high values
-come from one narrow sector at speed is receiving transported pollution; one
-where they are spread across every bearing at low speed is making its own. The
-resultant length of the probability-weighted direction vector distinguishes
-them in a single number, using the same circular machinery as the aggregates.
+**The output carries a concentration statistic.** The resultant length of the
+probability-weighted direction vector measures whether high values concentrate
+at one bearing or are spread across bearings, using the same circular machinery
+as the aggregates. Along with the peak speed, it describes a wind pattern that
+can screen source hypotheses; it does not identify a source's distance, place,
+or contribution.
 
 .. warning::
 
@@ -42,10 +38,11 @@ them in a single number, using the same circular machinery as the aggregates.
 
    A bearing is not an origin. CBPF supports statements of the form "high
    hours at this station arrive on strong winds from the north-north-east";
-   it does not support "this pollution came from *place X*". Distance,
-   intervening sources and the fact that air does not travel in straight
-   lines all sit between the two, and closing that gap is exactly what a
-   trajectory model is for — which is the part deliberately not built here.
+   it does not support "this pollution came from *place X*" or measure its
+   distance or contribution. Intervening sources and the fact that air does
+   not travel in straight lines all sit between a pattern and an origin, and
+   closing that gap is what a trajectory model is for — which is deliberately
+   not built here.
 
    Naming an origin from a bearing alone would be an unsupported inference,
    and in this region a politically loaded one. State the bearing and the
@@ -226,9 +223,9 @@ def directional_concentration(grid: pl.DataFrame) -> float:
     """How tightly the high-concentration probability points one way.
 
     The resultant length of the probability-weighted unit vectors, in [0, 1].
-    Near 1 means high values arrive from a single bearing, which is what
-    transport from a distant source looks like. Near 0 means they arrive from
-    everywhere, which is what a local source looks like.
+    Near 1 means high values concentrate at a single bearing; near 0 means
+    they are spread across bearings. It describes that pattern without
+    identifying its origin or contribution.
 
     This is the same statistic ``circular_resultant_expr`` computes for wind
     direction itself; here the weights are probabilities rather than counts.

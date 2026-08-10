@@ -969,7 +969,7 @@ def analyze_m7(
     percentile: float = typer.Option(75.0, "--percentile", help="What counts as a high hour."),
     stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
 ) -> None:
-    """M7 — where the dirty air comes from (CBPF, no trajectory model)."""
+    """M7 — wind patterns during high PM2.5 hours (CBPF, no trajectory model)."""
     from twair.analysis.sources import run_sources, write_sources_report
 
     span = _parse_year_range(years)
@@ -985,14 +985,12 @@ def analyze_m7(
         ).head(15)
     )
 
-    # A peak at low wind speed points at something nearby; a peak at high speed
-    # points at something far away that needed wind to arrive.
-    transported = summary.filter(pl.col("peak_speed").is_in(["6-8", "8+"]))
-    local = summary.filter(pl.col("peak_speed").is_in(["<0.5", "0.5-1.5"]))
+    high_wind = summary.filter(pl.col("peak_speed").is_in(["6-8", "8+"]))
+    low_wind = summary.filter(pl.col("peak_speed").is_in(["<0.5", "0.5-1.5"]))
     console.print(
         f"\n[bold]{summary.height}[/bold] station(s); "
-        f"[bold]{transported.height}[/bold] peak at high wind (transport signature), "
-        f"[bold]{local.height}[/bold] at low wind (local signature)"
+        f"[bold]{high_wind.height}[/bold] peak in high-wind bins, "
+        f"[bold]{low_wind.height}[/bold] in low-wind bins"
     )
     console.print(
         f"  median calm fraction {as_float(summary['calm_fraction'].median()):.1%} "
