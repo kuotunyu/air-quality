@@ -22,6 +22,39 @@
 import { asset, dataFiles, hourlyObservationsShort, layerBytes, mb } from "../lib/data";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
+
+import meta from "../../public/data/meta.json";
+
+interface PublicationConflictRecord {
+  station_name: string;
+  effective_from: string;
+  source_url: string;
+  pollutant: string;
+  rows_at_or_after_event: number;
+  numeric_rows_at_or_after_event: number;
+  null_rows_at_or_after_event: number;
+  last_post_event_ts: string | null;
+}
+
+interface PublicationConflictSummary {
+  status: "available" | "unavailable";
+  records?: PublicationConflictRecord[];
+  reason?: string;
+}
+
+const publicationConflicts = (meta as { station_publication_conflicts?: PublicationConflictSummary })
+  .station_publication_conflicts;
+const wanliPm25Conflict =
+  publicationConflicts?.status === "available"
+    ? publicationConflicts.records?.find(
+        (record) => record.station_name === "萬里" && record.pollutant === "PM2.5",
+      )
+    : undefined;
+const integer = new Intl.NumberFormat("zh-TW");
+const zhDate = (value: string) => {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  return `${year} 年 ${month} 月 ${day} 日`;
+};
 ---
 
 <section id="data" class="page">
@@ -163,6 +196,33 @@ import ChapterIntro from "./ChapterIntro.astro";
     也不給一個有偏誤的數字。網站上每條線的中斷都是真的中斷。
   </div>
 
+  <details class="publication-disagreement" data-publication-disagreement>
+    <summary>萬里測站：官方停測公告與年度封存值不一致</summary>
+    <div class="publication-disagreement-body" data-publication-disagreement-body>
+      {wanliPm25Conflict ? (
+        <>
+          <p>
+            <a href={wanliPm25Conflict.source_url}>環境部公告</a>記載萬里測站自
+            <time datetime={wanliPm25Conflict.effective_from}>{zhDate(wanliPm25Conflict.effective_from)}</time>
+            起停止更新；但同一機關發布的 2025 年度封存檔，在該時間點之後仍有
+            <strong>{integer.format(wanliPm25Conflict.rows_at_or_after_event)}</strong> 筆 PM2.5 列，
+            其中 <strong>{integer.format(wanliPm25Conflict.numeric_rows_at_or_after_event)}</strong> 筆有數值、
+            <strong>{integer.format(wanliPm25Conflict.null_rows_at_or_after_event)}</strong> 筆保留為 null，
+            最晚到 {wanliPm25Conflict.last_post_event_ts?.replace("T", " ")}。
+          </p>
+          <p>
+            <strong>這是未解的來源歧異。</strong>
+            本專案按來源原樣保留並報告，沒有判定這些值有效或無效，也沒有因此改寫、刪除或補值。
+          </p>
+        </>
+      ) : (
+        <p>
+          本次靜態匯出沒有可用的萬里測站公告後比對結果；這代表證據未提供，不能顯示零筆或替來源下判斷。
+        </p>
+      )}
+    </div>
+  </details>
+
   <div class="note">
     <strong>逐時 PM2.5 的官方但書。</strong>
     環境部 ReadMe 載明：PM2.5 自動監測（貝他射線衰減法）的小時值僅供預警參考，
@@ -233,5 +293,18 @@ import ChapterIntro from "./ChapterIntro.astro";
    rest of the cells give up. */
 .table-wrap a[download] {
   font-weight: 650;
+}
+
+.publication-disagreement-body {
+  max-width: var(--measure);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.publication-disagreement-body p {
+  margin: 0;
+}
+
+.publication-disagreement-body p + p {
+  margin-top: var(--space-3);
 }
 </style>

@@ -70,6 +70,7 @@ const TEXT_ZOOM_ROUTES = [
   "/",
   "/trend/",
   "/stations/",
+  "/space/",
   "/sources/",
   "/detection/",
   "/methods/",
@@ -111,11 +112,11 @@ const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/health/", 0],
   ["/methods/", 6],
   ["/explore/", 0],
-  ["/data/", 0],
+  ["/data/", 1],
 ]);
 const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, route === "/explore/" ? 1 : 0]));
 const EXPECTED_NATIVE_FIGURES = 14;
-const EXPECTED_SECONDARY_DISCLOSURES = 8;
+const EXPECTED_SECONDARY_DISCLOSURES = 9;
 const EXPECTED_SQL_DISCLOSURES = 1;
 const STATIC_TABLE_WRAPS = new Map([
   ["/", 0],
@@ -584,6 +585,104 @@ function detectionClaimBoundaryProblems(text) {
     forbidden.filter((phrase) => text.includes(phrase))
       .map((phrase) => `contains unsupported detection claim ${JSON.stringify(phrase)}`),
   );
+}
+
+const HISTORICAL_STATION_ROUTES = new Set(["/", "/space/", "/data/"]);
+
+function historicalStationCopyProblems(route, text) {
+  const compact = String(text ?? "").replace(/\s+/g, "").trim();
+  const required = new Map([
+    [
+      "/",
+      [
+        "萬里測站不在環境部現行測站清冊",
+        "環境部歷史測站紀錄",
+        "台中、崇倫、阿里山、泰山、三民",
+        "本專案尚未能定位",
+      ],
+    ],
+    [
+      "/space/",
+      [
+        "沿用分析執行時的座標快照",
+        "萬里當時因沒有座標而被排除",
+        "本章結果沒有因此重算",
+      ],
+    ],
+    [
+      "/data/",
+      [
+        "官方停測公告與年度封存值不一致",
+        "2025年5月1日",
+        "未解的來源歧異",
+        "沒有判定這些值有效或無效",
+      ],
+    ],
+  ]).get(route) ?? [];
+  const problems = required.filter((phrase) => !compact.includes(phrase.replace(/\s+/g, "")))
+    .map((phrase) => `missing historical-station disclosure ${JSON.stringify(phrase)}`);
+
+  const forbidden = [
+    {
+      pattern: /萬里(?:測站)?(?:就是|等於|其實是|改名為)富貴角/,
+      label: "aliases Wanli to Fugui Cape",
+    },
+    {
+      pattern: /(?:未繪出|未定位)[^。]{0,160}(?:它們|全部|所有)[^。]{0,80}(?:已|都|全)?停用/,
+      label: "treats every unplaced station as retired",
+    },
+    {
+      pattern: /(?:萬里|停測後|停止監測後)[^。]{0,100}(?:資料|數值)[^。]{0,40}(?:判定為|屬於|就是)(?:無效|錯誤)/,
+      label: "declares the post-announcement values invalid",
+    },
+  ];
+  return problems.concat(
+    forbidden.filter(({ pattern }) => pattern.test(compact))
+      .map(({ label }) => `contains unsupported historical-station claim: ${label}`),
+  );
+}
+
+const HISTORICAL_STATION_DISCLOSURE_PROBE = `(() => {
+  const visible = (element) => {
+    if (!element) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" &&
+      rect.width > 0 && rect.height > 0;
+  };
+  const disclosure = document.querySelector("[data-publication-disagreement]");
+  const summary = disclosure?.querySelector(":scope > summary") ?? null;
+  const body = disclosure?.querySelector("[data-publication-disagreement-body]") ?? null;
+  const defaultCollapsed = disclosure ? !disclosure.open : null;
+  if (disclosure) disclosure.open = true;
+  const result = {
+    text: document.querySelector("main")?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+    disclosure: disclosure ? {
+      defaultCollapsed,
+      summaryVisible: visible(summary),
+      summaryText: summary?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+      bodyVisibleWhenOpen: visible(body),
+      bodyText: body?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+    } : null,
+  };
+  if (disclosure) disclosure.open = !defaultCollapsed;
+  return result;
+})()`;
+
+function publicationDisclosureProblems(state) {
+  const disclosure = state?.disclosure;
+  if (!disclosure) return ["missing expandable publication-disagreement disclosure"];
+  const problems = [];
+  if (!disclosure.defaultCollapsed) {
+    problems.push("publication-disagreement disclosure is not collapsed by default");
+  }
+  if (!disclosure.summaryVisible || !disclosure.summaryText) {
+    problems.push("publication-disagreement summary is not visible");
+  }
+  if (!disclosure.bodyVisibleWhenOpen || !disclosure.bodyText) {
+    problems.push("publication-disagreement body is not readable after opening");
+  }
+  return problems;
 }
 
 const DETECTION_ESTIMATE_TABLE_PROBE = `(() => {
@@ -2396,6 +2495,56 @@ async function lifecycleSelfTest() {
     throw new Error("a failed browser run did not close both resources in order");
   }
   console.log("site quality failure cleanup self-test passed");
+
+  const historicalCopyFixtures = new Map([
+    [
+      "/",
+      "萬里測站不在環境部現行測站清冊，圖上位置來自環境部歷史測站紀錄。" +
+        "台中、崇倫、阿里山、泰山、三民在本專案尚未能定位。",
+    ],
+    [
+      "/space/",
+      "本章沿用分析執行時的座標快照，萬里當時因沒有座標而被排除；" +
+        "網站地圖後來補上位置，但本章結果沒有因此重算。",
+    ],
+    [
+      "/data/",
+      "官方停測公告與年度封存值不一致。自2025年5月1日起的資料形成未解的來源歧異；" +
+        "本專案保留封存值，沒有判定這些值有效或無效。",
+    ],
+  ]);
+  for (const [route, text] of historicalCopyFixtures) {
+    const copyProblems = historicalStationCopyProblems(route, text);
+    if (copyProblems.length) {
+      throw new Error(`${route} precise historical-station copy is rejected: ${copyProblems.join("; ")}`);
+    }
+  }
+  const unsupportedHistoricalClaims = [
+    ["/", "萬里測站就是富貴角。"],
+    ["/", "五個測站未繪出，它們都已停用。"],
+    ["/data/", "停止監測後的資料就是無效。"],
+  ];
+  for (const [route, text] of unsupportedHistoricalClaims) {
+    if (!historicalStationCopyProblems(route, text).some((problem) =>
+      problem.includes("unsupported historical-station claim")
+    )) {
+      throw new Error(`${route} accepts unsupported historical-station copy ${JSON.stringify(text)}`);
+    }
+  }
+  if (
+    publicationDisclosureProblems({
+      disclosure: {
+        defaultCollapsed: true,
+        summaryVisible: true,
+        summaryText: "資料來源為何不一致？",
+        bodyVisibleWhenOpen: true,
+        bodyText: "完整說明",
+      },
+    }).length ||
+    !publicationDisclosureProblems({ disclosure: null }).length
+  ) {
+    throw new Error("the publication-disagreement disclosure predicate is incomplete");
+  }
   return 0;
 }
 
@@ -4944,6 +5093,11 @@ async function main() {
         failures.push(`${route}: no-JavaScript ${problem}`);
       }
     }
+    if (HISTORICAL_STATION_ROUTES.has(route)) {
+      for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
+        failures.push(`${route}: no-JavaScript ${problem}`);
+      }
+    }
     const expectedFigures = STATIC_NATIVE_FIGURES.get(route);
     totals.noScriptNativeFigures += noScript?.figures ?? 0;
     if (
@@ -5212,6 +5366,17 @@ async function main() {
           const estimateTable = await evaluate(DETECTION_ESTIMATE_TABLE_PROBE);
           for (const problem of detectionEstimateTableProblems(estimateTable)) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (HISTORICAL_STATION_ROUTES.has(route)) {
+          const historicalState = await evaluate(HISTORICAL_STATION_DISCLOSURE_PROBE);
+          for (const problem of historicalStationCopyProblems(route, historicalState?.text ?? "")) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+          if (route === "/data/") {
+            for (const problem of publicationDisclosureProblems(historicalState)) {
+              failures.push(`${route} @${width} ${theme}: ${problem}`);
+            }
           }
         }
         if (route === "/" && (width === 768 || width === 1440)) {
@@ -6539,6 +6704,17 @@ async function main() {
       const estimateTable = await evaluate(DETECTION_ESTIMATE_TABLE_PROBE);
       for (const problem of detectionEstimateTableProblems(estimateTable)) {
         failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (HISTORICAL_STATION_ROUTES.has(route)) {
+      const historicalState = await evaluate(HISTORICAL_STATION_DISCLOSURE_PROBE);
+      for (const problem of historicalStationCopyProblems(route, historicalState?.text ?? "")) {
+        failures.push(`${state}: ${problem}`);
+      }
+      if (route === "/data/") {
+        for (const problem of publicationDisclosureProblems(historicalState)) {
+          failures.push(`${state}: ${problem}`);
+        }
       }
     }
     for (const label of zoomed?.clippedLabels ?? []) {

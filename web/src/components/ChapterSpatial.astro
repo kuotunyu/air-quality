@@ -247,10 +247,11 @@ const cellFor = (method: string, buffer: number) =>
     濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
     還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
     千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，
-    {network.placed} 站有座標、{network.complete} 站每月都有值；
+    {network.placed} 站有座標、{network.complete} 站每月都有值；本章沿用分析執行時的座標快照，
     {network.unplaced.length > 0 && (
       <>
-        {network.unplaced.join("、")}因座標缺失而被排除並列名；
+        {network.unplaced.join("、")}當時因沒有座標而被排除。網站地圖後來依審閱過的環境部
+        歷史測站紀錄補上位置，但本章結果沒有因此重算；
       </>
     )}
     虛無分布一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，

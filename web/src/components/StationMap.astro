@@ -42,6 +42,16 @@ const { stations, cards, unplaced } = Astro.props;
 
 const cardByStation = new Map(cards.map((c) => [c.station_name, c]));
 const placed = stations.filter((s) => s.lat != null && s.lon != null);
+const wanliHistorical = stations.find(
+  (s) =>
+    s.station_name === "萬里" &&
+    (s as Station & { geo_source?: string | null }).geo_source === "reviewed_historical",
+) as
+  | (Station & {
+      geo_source_record_namespace?: string | null;
+      geo_source_record_id?: string | null;
+    })
+  | undefined;
 
 // The frame is the boundary data's own bounding box plus a hairline of margin,
 // so no part of the figure is empty by construction.
@@ -414,11 +424,25 @@ const dots = main.map((s) => {
   </p>
 
   {
-    unplaced.length > 0 && (
+    (wanliHistorical || unplaced.length > 0) && (
       <p class="aside">
-        <strong>{unplaced.length} 個測站未繪出</strong>：{unplaced.join("、")}。
-        它們在歷史資料裡有數十年的觀測，但已停用，不在環境部現行的測站清單中，因此沒有座標。
-        缺的是位置，不是資料。
+        {wanliHistorical && (
+          <>
+            <strong>萬里測站不在環境部現行測站清冊</strong>；圖上位置來自
+            <a href="https://airtw.moenv.gov.tw/CHT/EnvMonitoring/Central/article_station.aspx?SiteID=61">
+              環境部歷史測站紀錄
+            </a>
+            （{wanliHistorical.geo_source_record_namespace} SiteID {wanliHistorical.geo_source_record_id}），
+            並未與其他測站合併。
+          </>
+        )}
+        {unplaced.length > 0 && (
+          <>
+            另有 <strong>{unplaced.length} 個測站未繪出</strong>：{unplaced.join("、")}。
+            目前設定的現行清冊與審閱過的歷史紀錄都沒有可直接對應的座標，
+            因此本專案尚未能定位；這不表示其現實位置不存在，也不能據此判定這些測站均已停用。
+          </>
+        )}
       </p>
     )
   }
