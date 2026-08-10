@@ -36,8 +36,8 @@
  * a browser cannot answer, and refusing to answer is not the same as failing.
  */
 
-import { spawn } from "node:child_process";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 
@@ -554,6 +554,46 @@ function sourcesClaimBoundaryProblems(text) {
   return problems.concat(
     forbidden.filter((phrase) => text.includes(phrase))
       .map((phrase) => `contains unsupported source claim ${JSON.stringify(phrase)}`),
+  );
+}
+
+function repositoryClaimBoundaryProblems() {
+  const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer" })
+    .toString("utf8")
+    .split("\0")
+    .filter((path) =>
+      path === "PLAN.md" || path === "README.md" || path === "PRODUCT.md" ||
+      (path.startsWith("docs/") && !path.startsWith("docs/superpowers/")) ||
+      path.startsWith("src/"),
+    );
+  const forbidden = ["來源指紋", "Emission Fingerprint"];
+  const problems = tracked.flatMap((path) => {
+    const text = readFileSync(path, "utf8");
+    return forbidden.filter((phrase) => text.includes(phrase))
+      .map((phrase) => `${path}: contains retired PM-ratio claim ${JSON.stringify(phrase)}`);
+  });
+  const methodology = readFileSync("docs/methodology.md", "utf8");
+  const required = [
+    "粒徑組成指標",
+    "單一比值不能唯一辨識或量化來源",
+    "化學物種分析（chemical speciation）",
+    "受體模式",
+    "軌跡、擴散或排放清冊",
+  ];
+  const chem = readFileSync("src/twair/features/chem.py", "utf8");
+  const chemRequired = [
+    "particle-size composition",
+    "cannot uniquely identify or quantify a source",
+  ];
+  const plan = readFileSync("PLAN.md", "utf8");
+  const planRequired = ["粒徑組成指標", "單一比值不能唯一辨識或量化來源"];
+  return problems.concat(
+    required.filter((phrase) => !methodology.includes(phrase))
+      .map((phrase) => `docs/methodology.md: missing PM-ratio evidence boundary ${JSON.stringify(phrase)}`),
+    chemRequired.filter((phrase) => !chem.includes(phrase))
+      .map((phrase) => `src/twair/features/chem.py: missing PM-ratio claim boundary ${JSON.stringify(phrase)}`),
+    planRequired.filter((phrase) => !plan.includes(phrase))
+      .map((phrase) => `PLAN.md: missing PM-ratio claim boundary ${JSON.stringify(phrase)}`),
   );
 }
 
@@ -1683,6 +1723,12 @@ const PROBE = `(() => {
 // ── run ──────────────────────────────────────────────────────────────────────
 
 async function main() {
+  console.log("site-quality stage: repository claim boundary");
+  const repositoryClaimProblems = repositoryClaimBoundaryProblems();
+  if (repositoryClaimProblems.length) {
+    for (const problem of repositoryClaimProblems) console.log(`  FAIL: ${problem}`);
+    return 1;
+  }
   if (!existsSync(DIST)) {
     console.error(`${DIST} not found — run \`npm --prefix web run build\` first`);
     return 1;

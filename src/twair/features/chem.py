@@ -1,15 +1,14 @@
 """Chemical ratios and combinations.
 
 Individual pollutant concentrations answer "how much"; ratios between them
-answer "from what". A given PM2.5 level means something different when it
-arrives with a high sulphur signature than with a high traffic signature, and
-the 2018 project — which used each pollutant only in isolation, and used PM10
-as a predictor rather than as a reference — had no way to make that distinction.
+describe relative composition. The 2018 project used each pollutant only in
+isolation, and used PM10 as a predictor rather than as a reference.
 
 ``PM10`` appears here, and only here. It is excluded from the predictor set
 because PM2.5 is a physical subset of it, but the *ratio* is not a leak: it
-carries no information about the PM2.5 level on its own, only about particle
-size distribution, which is a source fingerprint.
+carries no information about the PM2.5 level on its own, only about particle-
+size composition. It can screen source hypotheses but cannot uniquely identify
+or quantify a source.
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ def _safe_ratio(numerator: str, denominator: str, name: str) -> pl.Expr:
 
 
 def add_chem_features(frame: pl.DataFrame) -> pl.DataFrame:
-    """Attach source-indicative combinations, where their inputs are present.
+    """Attach chemical combinations, where their inputs are present.
 
     Each feature is added only if the columns it needs exist, so a station or
     era measuring a reduced set still yields whatever is computable rather than
@@ -51,9 +50,8 @@ def add_chem_features(frame: pl.DataFrame) -> pl.DataFrame:
         expressions.append((pl.col("O3") + pl.col("NO2")).alias("ox"))
 
     if {"PM2.5", "PM10"} <= columns:
-        # Fine fraction. Low values indicate coarse dust (Asian dust events,
-        # road and construction dust); high values indicate combustion and
-        # secondary aerosol.
+        # Fine fraction. It records particle-size composition and can screen
+        # source hypotheses, but cannot uniquely identify or quantify a source.
         expressions.append(_safe_ratio("PM2.5", "PM10", "pm_ratio"))
 
     if {"SO2", "NOx"} <= columns:
