@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -19,13 +21,20 @@ from uuid import uuid4
 import numpy as np
 import polars as pl
 
-from twair.ingest.station_inventory import validate_generation_sha256
-from twair.paths import outputs_dir
+from twair.ingest.maiac_import import MaiacResult, read_maiac_result
+from twair.ingest.satellite import SatelliteResult, read_satellite_result
+from twair.ingest.station_inventory import (
+    maiac_generation_result_dir,
+    satellite_generation_dir,
+    validate_generation_sha256,
+)
+from twair.paths import data_root, interim_dir, outputs_dir, processed_dir
 from twair.provenance import git_state
 
 __all__ = [
     "SatelliteAssociationResult",
     "analyse_satellite_frames",
+    "run_satellite_association",
     "satellite_analysis_dir",
     "write_satellite_analysis",
 ]
@@ -56,6 +65,89 @@ def _validate_year(year: int) -> int:
     if isinstance(year, bool) or not isinstance(year, int) or year <= 0:
         raise ValueError("analysis year must be a positive integer")
     return year
+
+
+def _canonical_sha256(payload: object) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
+
+
+def _file_sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _directory_file_sha256s(path: Path) -> dict[str, str]:
+    if not path.is_dir():
+        return {}
+    hashes: dict[str, str] = {}
+    for child in sorted(path.iterdir(), key=lambda item: item.name):
+        if child.is_file():
+            digest = _file_sha256(child)
+            if digest is None:
+                raise RuntimeError(f"source file disappeared while hashing: {child}")
+            hashes[child.name] = digest
+    return hashes
+
+
+def _read_stable_source[ResultT](
+    path: Path,
+    reader: Callable[[Path], ResultT],
+    *,
+    label: str,
+) -> tuple[ResultT, dict[str, str]]:
+    before = _directory_file_sha256s(path)
+    result = reader(path)
+    after = _directory_file_sha256s(path)
+    if not before or before != after:
+        raise RuntimeError(f"{label} changed while it was being read")
+    return result, after
+
+
+def _read_stable_ground(path: Path) -> tuple[pl.DataFrame, str]:
+    before = _file_sha256(path)
+    frame = pl.read_parquet(path)
+    after = _file_sha256(path)
+    if before is None or before != after:
+        raise RuntimeError("ground monthly table changed while it was being read")
+    return frame, after
+
+
+def _data_relative(path: Path) -> str:
+    root = data_root()
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _source_provenance(
+    result: SatelliteResult | MaiacResult,
+    path: Path,
+    files: dict[str, str],
+) -> dict[str, Any]:
+    manifest = result.manifest
+    return {
+        "path": _data_relative(path),
+        "files": files,
+        "manifest_sha256": _canonical_sha256(manifest),
+        "schema_version": manifest.get("schema_version"),
+        "rows": manifest.get("rows"),
+        "null_values": manifest.get("null_values"),
+        "station_inventory_sha256": manifest.get("station_inventory_sha256"),
+        "inventory_generation_sha256": manifest.get("inventory_generation_sha256"),
+    }
 
 
 def satellite_analysis_dir(year: int, generation: str | None = None) -> Path:
@@ -371,6 +463,74 @@ def _context(panel: pl.DataFrame, *, dimension: str) -> pl.DataFrame:
             "spearman_r": pl.Float64,
             "refusal": pl.String,
         }
+    )
+
+
+def run_satellite_association(
+    *,
+    year: int = 2025,
+    generation: str | None = None,
+) -> SatelliteAssociationResult:
+    """Read complete local inputs and build one provisional M8 association result."""
+    selected_year = _validate_year(year)
+    identity = validate_generation_sha256(generation) if generation is not None else None
+    if identity is None:
+        s5p_path = interim_dir("satellite") / f"year={selected_year}"
+        maiac_path = interim_dir("maiac") / f"year={selected_year}" / "result"
+    else:
+        s5p_path = satellite_generation_dir(selected_year, identity)
+        maiac_path = maiac_generation_result_dir(selected_year, identity)
+
+    s5p, s5p_files = _read_stable_source(
+        s5p_path,
+        read_satellite_result,
+        label="S5P result",
+    )
+    maiac, maiac_files = _read_stable_source(
+        maiac_path,
+        read_maiac_result,
+        label="MAIAC result",
+    )
+    source_generations = (
+        s5p.manifest.get("inventory_generation_sha256"),
+        maiac.manifest.get("inventory_generation_sha256"),
+    )
+    if identity is None:
+        if source_generations != (None, None):
+            raise RuntimeError("legacy inputs must not claim an inventory generation")
+    elif source_generations != (identity, identity):
+        raise RuntimeError("both sources must match the requested inventory generation")
+
+    columns = [
+        "station_name",
+        "month",
+        "source",
+        "value",
+        "unit",
+        "collection_id",
+        "band",
+        "sample_scale_m",
+    ]
+    satellite_values = pl.concat(
+        [s5p.values.select(columns), maiac.values.select(columns)],
+        how="vertical_relaxed",
+    )
+    ground_path = processed_dir("monthly") / "monthly.parquet"
+    ground_monthly, ground_sha256 = _read_stable_ground(ground_path)
+    upstream = {
+        "ground": {
+            "path": _data_relative(ground_path),
+            "sha256": ground_sha256,
+        },
+        "s5p": _source_provenance(s5p, s5p_path, s5p_files),
+        "maiac": _source_provenance(maiac, maiac_path, maiac_files),
+    }
+    return analyse_satellite_frames(
+        ground_monthly,
+        satellite_values,
+        year=selected_year,
+        generation=identity,
+        upstream=upstream,
     )
 
 

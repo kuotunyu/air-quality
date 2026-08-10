@@ -8,17 +8,42 @@ cannot stand in for all three questions.
 
 from __future__ import annotations
 
+import shutil
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
+import typer
+from typer.testing import CliRunner
 
+from twair import cli
 from twair.analysis.satellite import (
     SatelliteAssociationResult,
     analyse_satellite_frames,
+    run_satellite_association,
     satellite_analysis_dir,
     write_satellite_analysis,
+)
+from twair.ingest.maiac import plan_exports
+from twair.ingest.maiac_import import (
+    MaiacResult,
+    import_exported_files,
+    write_maiac_result,
+)
+from twair.ingest.satellite import (
+    SatelliteResponse,
+    SatelliteResult,
+    SatelliteSource,
+    acquire_s5p,
+    read_satellite_result,
+    write_satellite_result,
+)
+from twair.ingest.station_inventory import (
+    maiac_generation_result_dir,
+    satellite_generation_dir,
 )
 
 
@@ -102,6 +127,116 @@ def complete_frames() -> tuple[pl.DataFrame, pl.DataFrame]:
             satellite_rows.append((station, month, source_base + source_change))
             ground_rows.append((station, month, ground_base + ground_change, True))
     return ground(ground_rows), satellite(satellite_rows)
+
+
+class CompletedLocalS5PBackend:
+    def fetch(
+        self,
+        source: SatelliteSource,
+        station_frame: pl.DataFrame,
+        *,
+        year: int,
+        months: tuple[int, ...],
+    ) -> SatelliteResponse:
+        assert year == 2025
+        source_offset = 100.0 if source.key == "s5p_so2" else 0.0
+        rows = [
+            {
+                "station_name": station_name,
+                "month": month,
+                "value": source_offset + station_index * 10.0 + month,
+            }
+            for month in months
+            for station_index, station_name in enumerate(station_frame["station_name"].to_list())
+        ]
+        return SatelliteResponse(
+            rows=rows,
+            image_counts=dict.fromkeys(months, 1),
+            wall_seconds=0.01,
+        )
+
+
+def write_validated_local_inputs(
+    root: Path,
+    *,
+    generation: bool,
+) -> tuple[pl.DataFrame, str | None]:
+    ground_frame, _ = complete_frames()
+    ground_path = root / "processed" / "monthly" / "monthly.parquet"
+    ground_path.parent.mkdir(parents=True)
+    ground_frame.write_parquet(ground_path)
+
+    names = ground_frame["station_name"].unique(maintain_order=True).to_list()
+    station_frame = pl.DataFrame(
+        {
+            "station_name": names,
+            "lon": [120.409653, 121.161933, 120.758833],
+            "lat": [23.925175, 23.045083, 24.382942],
+        }
+    )
+    months = (1, 2, 3)
+    s5p = acquire_s5p(
+        station_frame,
+        backend=CompletedLocalS5PBackend(),
+        project="test-project",
+        year=2025,
+        months=months,
+        generated_at="2026-08-11T00:00:00+00:00",
+        inventory_generation=generation,
+    )
+    raw_identity = s5p.manifest.get("inventory_generation_sha256")
+    s5p_destination = (
+        satellite_generation_dir(2025, raw_identity) if isinstance(raw_identity, str) else None
+    )
+    write_satellite_result(s5p, destination=s5p_destination)
+
+    ledger = plan_exports(
+        station_frame,
+        project="test-project",
+        year=2025,
+        months=months,
+        planned_at="2026-08-11T00:00:00+00:00",
+        inventory_generation=generation,
+    )
+    source_dir = root / "maiac-csv"
+    source_dir.mkdir()
+    for entry in ledger.entries:
+        entry.task_id = f"task-{entry.month}"
+        entry.state = "COMPLETED"
+        entry.submitted_at = "2026-08-11T00:01:00+00:00"
+        entry.updated_at = "2026-08-11T00:02:00+00:00"
+        rows = [
+            f"{station_name},2025,{entry.month},{station_index * 0.1 + entry.month * 0.01},1"
+            for station_index, station_name in enumerate(names)
+        ]
+        (source_dir / f"{entry.file_name_prefix}.csv").write_text(
+            "\n".join(
+                [
+                    "station_name,year,month,value,source_images",
+                    *rows,
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+    maiac = import_exported_files(
+        ledger,
+        station_frame,
+        source_dir=source_dir,
+        months=months,
+        imported_at="2026-08-11T00:03:00+00:00",
+    )
+    write_maiac_result(maiac)
+
+    identity = s5p.manifest.get("inventory_generation_sha256")
+    if generation:
+        assert isinstance(identity, str)
+        assert maiac.manifest["inventory_generation_sha256"] == identity
+        return ground_frame, identity
+    assert identity is None
+    assert maiac.manifest.get("inventory_generation_sha256") is None
+    return ground_frame, None
 
 
 def test_coverage_distinguishes_source_null_ground_withheld_and_ground_absent() -> None:
@@ -324,3 +459,217 @@ def test_a_failed_analysis_rewrite_preserves_the_previous_complete_directory(
 
     assert {name: path.read_bytes() for name, path in paths.items()} == before
     assert not list(paths["manifest"].parent.parent.glob(".year=2025.staging-*"))
+
+
+def _source_result(
+    frame: pl.DataFrame,
+    *,
+    kind: str,
+    generation: str | None = None,
+) -> SatelliteResult | MaiacResult:
+    manifest: dict[str, object] = {
+        "schema_version": 3 if kind == "s5p" and generation else 2 if generation else 1,
+        "year": 2025,
+        "rows": frame.height,
+        "null_values": frame["value"].null_count(),
+        "station_inventory_sha256": generation or (kind[0] * 64),
+    }
+    if generation is not None:
+        manifest["inventory_generation_sha256"] = generation
+    if kind == "s5p":
+        return SatelliteResult(values=frame, coverage=pl.DataFrame(), manifest=manifest)
+    return MaiacResult(values=frame, coverage=pl.DataFrame(), manifest=manifest)
+
+
+def test_the_runner_reads_legacy_sources_without_contacting_earth_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from twair.ingest import satellite as acquisition
+
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    write_validated_local_inputs(tmp_path, generation=False)
+    monkeypatch.setattr(
+        acquisition,
+        "EarthEngineBackend",
+        lambda _project: pytest.fail("the local M8 runner contacted Earth Engine"),
+    )
+
+    result = run_satellite_association(year=2025)
+
+    assert result.manifest["mode"] == "legacy"
+    assert result.manifest["sources"] == ["maiac_aod", "s5p_no2", "s5p_so2"]
+    assert set(result.manifest["upstream"]) == {"ground", "maiac", "s5p"}
+    assert result.manifest["upstream"]["ground"]["path"] == ("processed/monthly/monthly.parquet")
+    assert len(result.manifest["upstream"]["ground"]["sha256"]) == 64
+    assert result.manifest["upstream"]["s5p"]["schema_version"] == 2
+    assert result.manifest["upstream"]["s5p"]["rows"] == 18
+    assert len(result.manifest["upstream"]["s5p"]["manifest_sha256"]) == 64
+    assert set(result.manifest["upstream"]["s5p"]["files"]) == {
+        "manifest.json",
+        "s5p_coverage.parquet",
+        "s5p_station_month.parquet",
+    }
+    values_path = tmp_path / "interim" / "satellite" / "year=2025" / "s5p_station_month.parquet"
+    assert result.manifest["upstream"]["s5p"]["files"]["s5p_station_month.parquet"] == (
+        sha256(values_path.read_bytes()).hexdigest()
+    )
+
+
+def test_a_source_rewrite_during_its_validated_read_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from twair.analysis import satellite as module
+
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    write_validated_local_inputs(tmp_path, generation=False)
+    actual_read = read_satellite_result
+
+    def rewriting_read(path: Path) -> SatelliteResult:
+        result = actual_read(path)
+        values_path = path / "s5p_station_month.parquet"
+        values_path.write_bytes(values_path.read_bytes() + b"changed-after-read")
+        return result
+
+    monkeypatch.setattr(module, "read_satellite_result", rewriting_read)
+
+    with pytest.raises(RuntimeError, match="changed while it was being read"):
+        run_satellite_association(year=2025)
+
+
+def test_a_ground_rewrite_during_its_parquet_read_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    write_validated_local_inputs(tmp_path, generation=False)
+    ground_path = tmp_path / "processed" / "monthly" / "monthly.parquet"
+    actual_read = pl.read_parquet
+
+    def rewriting_read(path: Path) -> pl.DataFrame:
+        result = actual_read(path)
+        if Path(path) == ground_path:
+            ground_path.write_bytes(ground_path.read_bytes() + b"changed-after-read")
+        return result
+
+    monkeypatch.setattr(pl, "read_parquet", rewriting_read)
+
+    with pytest.raises(RuntimeError, match="ground monthly table changed while it was being read"):
+        run_satellite_association(year=2025)
+
+
+def test_the_runner_requires_both_sources_to_match_one_requested_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from twair.analysis import satellite as module
+
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    generation = "b" * 64
+    ground_frame, no2 = complete_frames()
+    aod = satellite(
+        [(row["station_name"], row["month"].month, row["value"] * 0.01) for row in no2.to_dicts()],
+        source="maiac_aod",
+    )
+    s5p = _source_result(no2, kind="s5p", generation=generation)
+    wrong_maiac = _source_result(aod, kind="maiac", generation="c" * 64)
+    assert isinstance(s5p, SatelliteResult)
+    assert isinstance(wrong_maiac, MaiacResult)
+    for path in (
+        satellite_generation_dir(2025, generation),
+        maiac_generation_result_dir(2025, generation),
+    ):
+        path.mkdir(parents=True)
+        (path / "fixture.bin").write_bytes(b"stable fixture")
+    monkeypatch.setattr(module, "read_satellite_result", lambda _path: s5p)
+    monkeypatch.setattr(module, "read_maiac_result", lambda _path: wrong_maiac)
+    monkeypatch.setattr(pl, "read_parquet", lambda path: ground_frame)
+
+    with pytest.raises(RuntimeError, match="requested inventory generation"):
+        run_satellite_association(year=2025, generation=generation)
+
+
+def test_the_runner_uses_generation_paths_for_both_validated_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    _, identity = write_validated_local_inputs(tmp_path, generation=True)
+    assert isinstance(identity, str)
+
+    result = run_satellite_association(year=2025, generation=identity)
+
+    assert result.manifest["inventory_generation_sha256"] == identity
+    assert result.manifest["upstream"]["s5p"]["path"] == (
+        f"interim/satellite/generations/{identity}/year=2025"
+    )
+    assert result.manifest["upstream"]["maiac"]["path"] == (
+        f"interim/maiac/generations/{identity}/year=2025/result"
+    )
+
+
+def test_generated_inputs_copied_into_legacy_paths_are_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    _, identity = write_validated_local_inputs(tmp_path, generation=True)
+    assert isinstance(identity, str)
+    shutil.copytree(
+        satellite_generation_dir(2025, identity),
+        tmp_path / "interim" / "satellite" / "year=2025",
+    )
+    shutil.copytree(
+        maiac_generation_result_dir(2025, identity),
+        tmp_path / "interim" / "maiac" / "year=2025" / "result",
+    )
+
+    with pytest.raises(RuntimeError, match="legacy inputs must not claim"):
+        run_satellite_association(year=2025)
+
+
+def test_the_cli_persists_before_explaining_the_provisional_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from twair.analysis import satellite as module
+
+    ground_frame, source_frame = complete_frames()
+    result = analysed(ground_frame, source_frame)
+    events: list[str] = []
+    actual_print = cli.console.print
+
+    def run(**_kwargs: object) -> SatelliteAssociationResult:
+        events.append("run")
+        return result
+
+    def write(_result: SatelliteAssociationResult) -> dict[str, Path]:
+        events.append("write")
+        return {"manifest": tmp_path / "manifest.json"}
+
+    def record_print(*args: object, **kwargs: Any) -> None:
+        events.append("print")
+        actual_print(*args, **kwargs)
+
+    monkeypatch.setattr(module, "run_satellite_association", run)
+    monkeypatch.setattr(module, "write_satellite_analysis", write)
+    monkeypatch.setattr(cli.console, "print", record_print)
+
+    response = CliRunner().invoke(cli.app, ["analyze", "m8", "--year", "2025"])
+
+    assert response.exit_code == 0, response.output
+    assert events[:3] == ["run", "write", "print"]
+    assert "provisional descriptive association" in response.output
+    assert "not calibration" in response.output
+    assert "input identity: year 2025; mode legacy" in response.output
+    assert "within_station" in response.output
+    assert "wrote manifest" in response.output
+
+
+def test_the_cli_rejects_a_bad_generation_before_reading_any_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from twair.analysis import satellite as module
+
+    monkeypatch.setattr(
+        module,
+        "run_satellite_association",
+        lambda **_kwargs: pytest.fail("source loading began before generation validation"),
+    )
+
+    with pytest.raises(typer.BadParameter, match="full 64-character lowercase SHA-256"):
+        cli.analyze_m8(year=2025, generation="short")

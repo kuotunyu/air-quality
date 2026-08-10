@@ -83,6 +83,12 @@ MODULES: tuple[Module, ...] = (
         "observed high-value wind-speed/direction patterns; "
         "not source identity, position, transport distance, or contribution",
     ),
+    Module(
+        "m8_satellite",
+        "twair analyze m8",
+        "provisional descriptive satellite association; not calibration",
+        feeds_web=False,
+    ),
     Module("m9_forecast", "twair analyze m9", "forecasting scored against persistence"),
     Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
     Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),

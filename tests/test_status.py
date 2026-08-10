@@ -66,6 +66,15 @@ class TestTheReproduceTableCannotRot:
 
         assert len(names) == len(set(names))
 
+    def test_m8_satellite_has_a_real_return_command_but_does_not_yet_feed_the_site(
+        self,
+    ) -> None:
+        module = next(item for item in MODULES if item.directory == "m8_satellite")
+
+        assert module.reproduce == "twair analyze m8"
+        assert module.feeds_web is False
+        assert "not calibration" in module.what
+
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""
         status = Status(

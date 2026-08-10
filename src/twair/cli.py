@@ -790,6 +790,45 @@ def analyze_m4(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("m8")
+def analyze_m8(
+    year: int = typer.Option(2025, "--year", "-y", help="Calendar year to analyse."),
+    generation: str | None = typer.Option(
+        None,
+        "--generation",
+        help="Immutable station-inventory SHA-256. Omit to analyse legacy results.",
+    ),
+) -> None:
+    """M8 — provisional satellite/PM2.5 association, not calibration."""
+    from twair.analysis.satellite import run_satellite_association, write_satellite_analysis
+    from twair.ingest.station_inventory import validate_generation_sha256
+
+    identity: str | None = None
+    if generation is not None:
+        try:
+            identity = validate_generation_sha256(generation)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+
+    result = run_satellite_association(year=year, generation=identity)
+    written = write_satellite_analysis(result)
+
+    console.print(
+        "[bold]provisional descriptive association[/bold] — not causal, not calibration, "
+        "and not satellite-estimated PM2.5"
+    )
+    console.print(
+        f"input identity: year {result.manifest['year']}; mode {result.manifest['mode']}; "
+        f"inventory generation {result.manifest['inventory_generation_sha256'] or 'legacy'}"
+    )
+    console.print("\n[bold]joint coverage[/bold]")
+    console.print(result.coverage)
+    console.print("\n[bold]association scopes[/bold]")
+    console.print(result.association)
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m9")
 def analyze_m9(
     years: str = typer.Option("2015:2025", "--years", "-y", help="Period to backtest."),
