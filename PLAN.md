@@ -10,11 +10,12 @@
 哪些原始構想已交付、哪些被實測結果取代、哪些明確延後。程式、測試與產物的證據
 優先於勾選框；規劃若與 [docs/](docs/) 的實測文件牴觸，以後者為準。
 
-## 2026-08-10 實測現況
+## 2026-08-11 實測現況
 
 | 範圍 | 現況 | 可重跑的證據 |
 |---|---|---|
 | Canonical store | 1982–2025、44 年、521 個分區、340,371,384 筆逐時觀測 | `uv run twair status` |
+| 測站地理 | 82 個 canonical 名稱；76 個現行 register + 1 個審查歷史紀錄，共 77 個有座標；台中、崇倫、阿里山、泰山、三民 5 個未解析 | `conf/station_geo*.yaml`、`uv run twair stations geo`、`web/public/data/meta.json` |
 | QA/QC 與分析 | QC、M1–M7、M9–M12 均有實際 Parquet 產物；M8 已取得 2025 S5P 與 MAIAC Stage A 站月來源表，不冒充分析或融合已完成 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/` 與各 `twair analyze …` 指令 |
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
@@ -238,7 +239,11 @@ air-quality/
    - `none` 是 shipped behavior，不發明任何值
    - `interpolate`、`neighbor`、`iterative` 只在 derived frame 上明確呼叫，供 M11 遮罩重建實驗
    - 每個實驗填入值都有 companion flag；任何策略都不回寫 canonical store，也不橋接公開圖表的缺口
-6. **測站生命週期** — 處理測站改名、搬遷、新設、停用（`conf/stations.yaml` 維護別名表與有效期間）
+6. **測站生命週期與地理解析** — `conf/stations.yaml` 維護別名與有效期間；地理資料先採
+   `AQX_P_07` 產生的現行 register，再用經審查的歷史紀錄補足現行來源缺少的名稱。
+   同名現行紀錄優先，解析後保留來源 namespace／record id；未解析座標保持 null。
+7. **公告事件 ledger** — 經審查的公告只定義要量測的事件與生效時間；QC 計算年度檔
+   生效後的列、非空值與 null。結果是來源差異，不是有效性判定，也不修改觀測。
 
 #### 1.3 儲存格式
 
@@ -496,6 +501,9 @@ roadmap 把「能下載」寫成「M8 已完成」。
   2025 年 12 個 batch task 已完成，取得 912 個 station-month row，其中 69 個 masked sample 保留為 null；
   逐月 task、Drive folder bootstrap、durable ledger 與 deterministic description 避免並行競態及中斷後重複送出，
   CSV 只有在完整 station-month key、source contract、checksum 與 task provenance 都通過時才原子合併
+- **測站 inventory 邊界** — 現有 S5P 與 MAIAC generation 各自凍結在 76 個有座標、
+  6 個無座標的 inventory；它們早於歷史地理 fallback。現行 canonical 解析為 77／5，
+  但既有衛星產物不回溯改名、補列或換 hash。
 - **Sentinel-5P** NO2/SO2 柱濃度 vs 地面測值的相關性與偏差分析
 - **MODIS MAIAC AOD → PM2.5** — AOD 與地面 PM2.5 的關係受 BLH 與 RH 調制，建立校正模型
 - **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
@@ -505,6 +513,8 @@ roadmap 把「能下載」寫成「M8 已完成」。
 **驗收**
 - [x] 2025 S5P NO₂／SO₂ 站月來源表、coverage 與 provenance manifest；這是 M8 的輸入，不是分析結論
 - [x] 2025 MAIAC AOD 站月來源表、coverage 與 provenance manifest；null 不補值，AOD 不冒充 PM2.5
+- [ ] **後續獨立任務**：以 77 個有座標測站重跑 2025 S5P／MAIAC；建立新的
+  station inventory generation，保留舊 generation，不覆寫或重新標示既有產物
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
 - [ ] **延後**：微感測器校正前後 RMSE 對照
@@ -646,7 +656,7 @@ npm --prefix web run build         # 產出 web/dist/，由 .github/workflows/pa
 | HYSPLIT 需要額外資料與驗證 | 明確延後；重啟時以獨立設計定義風場、起點高度、軌跡真值與 validation target |
 | 逐時 3.40 億筆記憶體撐不住 | Polars lazy + DuckDB out-of-core；分區處理 |
 | 範圍過大爛尾 | 每階段都要能單獨發布；Phase 6 已明確延後，不為了順序阻擋有資料支持的 M9–M12 |
-| 測站改名/搬遷造成序列斷裂 | `conf/stations.yaml` 維護別名與有效期；斷裂處在報告中明確標註 |
+| 測站改名/搬遷造成序列斷裂 | `conf/stations.yaml` 維護別名與有效期；地理解析採現行 register 優先、審查歷史紀錄後備並保留 provenance，未解析座標保持 null；斷裂處在報告中明確標註 |
 
 ---
 

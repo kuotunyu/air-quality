@@ -69,6 +69,32 @@
   - `aqx_p_488` — AQI 歷史月包候選；目前 canonical ingest 不使用
 - 歷史逐時原始值一律走 airtw 年度包，不用 API 分頁（快得多且完整）。
 
+### 測站地理資料的兩來源解析
+
+測站地理資料不從年度逐時檔猜測。`conf/station_geo.yaml` 是由 `AQX_P_07`
+產生的現行測站 register；`conf/station_geo_historical.yaml` 則只收錄經人工審查、
+且不在現行 register 內的歷史測站紀錄。解析時以正規化後的測站名稱合併，現行
+register 永遠優先，歷史資料不覆蓋同名現行紀錄。
+
+歷史補充中的 `historical_site_id` 與 AIRTW 來源頁面的 `source_record_id` 是兩種
+不同識別碼，不得互相代用。解析後的測站表以 `geo_source`、
+`geo_source_record_namespace`、`geo_source_record_id` 保留實際採用的來源；無法解析
+的測站仍保留列與 null 座標。
+
+2026-08-11 讀取的現行匯出共有 82 個測站：76 個來自現行 register、1 個（萬里）來自
+審查過的歷史紀錄，另有台中、崇倫、阿里山、泰山、三民 5 個名稱未解析。缺少座標
+只表示目前兩個審查來源都沒有可用紀錄，不表示測站不存在、已停用或應被併到其他站。
+`uv run twair stations geo` 會分開報告現行與解析後的數量及來源。
+
+### 官方公告事件 ledger
+
+`conf/station_publication_events.yaml` 記錄經審查的公告 URL、發布日、生效時間與來源
+原文摘要；`twair qc report` 只量測生效後年度檔仍有多少列、非空值與 null，不刪除、
+補值或改寫任何觀測。零列是實際量得的零；在沒有本機 QC 產物的 fresh clone 中，
+網站匯出會標示 `unavailable` 與原因，絕不把缺少產物寫成零。現行實測有 23 個
+測項紀錄；逐項數字與時間範圍由 [data-quality.md](data-quality.md) 的產生器表格提供。
+這些紀錄描述來源之間的差異，不是資料有效性的判定。
+
 ## 3. 中央氣象署 開放資料平臺
 
 - 網址：<https://opendata.cwa.gov.tw/>
@@ -107,9 +133,9 @@ uv run --extra earth twair ingest satellite --year 2025 --months 1:12
 ```
 
 實測產物位於 `data/interim/satellite/year=2025/`：1,824 個 station-month-source row、
-24 個 source-month coverage row。76 個有座標測站中，S5P NO₂ 有 1 個 masked/null
-sample；S5P SO₂ 有 362 個負值，均照原值保留。另有 6 個歷史測站沒有座標，manifest
-明確計數而不送進 Earth Engine。這些是 M8 的來源輸入，不是相關性、校正或融合結論。
+24 個 source-month coverage row。該 generation 的 manifest 固定記錄 76 個有座標、
+6 個沒有座標的測站；S5P NO₂ 有 1 個 masked/null sample，S5P SO₂ 有 362 個負值，
+均照原值保留。這些是 M8 的來源輸入，不是相關性、校正或融合結論。
 
 同年度的部分月份重跑會保留其他月份，但只有在 source contract 與測站名稱／座標
 inventory hash 完全相同時才允許合併。每次取得的月份、source、時間與 Git 狀態都留在
@@ -135,6 +161,13 @@ row，69 個 best-quality QA 後沒有值的 sample 保留為 null；沒有重�
 負值。非 null AOD 的實測範圍為 0.015–0.669，中位數 0.2555。7 月有 24 個 null，明顯
 高於其他月份，因此後續模型必須顯式處理 coverage，而不是先補值。原始 CSV、ledger、
 Parquet 與 manifest 位於 gitignored 的 `data/interim/maiac/year=2025/`。
+
+S5P manifest（2026-08-09T22:43:12Z）與 MAIAC result manifest
+（2026-08-09T23:55:09Z）都產生於歷史地理 fallback 納入之前，因此各自正確凍結為
+82 個測站中的 76 個有座標、6 個無座標。現行 canonical 地理解析已量得 77 個有座標、
+5 個未解析；這不會回頭改寫或重新標示既有衛星表。若要讓第 77 站進入 S5P／MAIAC，
+必須以新的 station inventory hash 建立另一個受審查的 generation，保留舊產物的
+provenance。
 
 AOD 不是 PM2.5；這份站月來源表仍不是衛星推估 PM2.5 或 M8 融合結論。操作順序見
 [registrations.md](registrations.md)。

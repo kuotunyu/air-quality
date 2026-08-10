@@ -21,7 +21,7 @@ That writes four things:
 
 | Path | What | In git |
 |---|---|---|
-| `public/data/meta.json` | stations, measurands, provenance | yes |
+| `public/data/meta.json` | stations with geography provenance, unresolved names, publication-conflict status, measurands, export provenance | yes |
 | `public/data/l0/*.json` | station-month means, one file per measurand | yes |
 | `public/data/story/*.json` | the per-chapter payloads | yes |
 | `public/data/l1/*.parquet` | station-day means, 54.6 MB over 21 files | **PM2.5 and PM10 only** |
@@ -56,6 +56,31 @@ across a gap; the gaps are findings.
 The aggregate payload does not provide enough point-level coverage evidence to
 distinguish those two causes everywhere. Where that evidence is absent, the
 interactive readout says `無資料` and does not guess why the value is null.
+
+## Station geography and source disagreements
+
+`meta.json` resolves station geography from the current MOENV station register
+first, then from a small reviewed historical supplement for canonical names
+that the current register does not contain. The exported fields
+`geo_source`, `geo_source_record_namespace`, and `geo_source_record_id` state
+which record was actually used. This changes presentation and geography-aware
+consumers only; it never changes an observation's station identity, value,
+flag, or null.
+
+The current export, measured on 2026-08-11, contains 82 canonical station
+names: 76 resolve from the current register, Wanli resolves from one reviewed
+historical record, and five remain unresolved (`台中`, `崇倫`, `阿里山`, `泰山`,
+`三民`). A missing coordinate means neither reviewed source supplied one; it
+does not establish that a station was retired or should be merged with another
+name.
+
+`station_publication_conflicts` is a separate QC summary of reviewed official
+announcements versus rows that remain in annual files after an event takes
+effect. `available` means the QC artifact was measured; `unavailable` includes
+a reason and must never be read as zero. The counts preserve numeric and null
+rows separately. They describe a source disagreement, not a verdict that the
+published observations are valid or invalid. The site renders this boundary as
+a compact collapsed disclosure rather than changing the plotted data.
 
 ## Reading the theme
 
