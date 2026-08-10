@@ -1383,8 +1383,8 @@ def _export_detection_limit(root: Path) -> list[Path]:
 
     The payload leads with the placebo spread rather than the estimates,
     because that ordering is the argument. An effect of -0.96 µg/m³ is only
-    interesting once you know the same procedure returns -0.69 in years when
-    nothing happened.
+    interpretable once you know the same procedure returns -0.69 in unmarked
+    control windows.
     """
     source = outputs_dir("m5_causal")
     effects_path = source / "effects.parquet"
@@ -1447,8 +1447,8 @@ def _export_detection_limit(root: Path) -> list[Path]:
                 }
             )
 
-    # The spatial falsification: if the plant's units really stopped, the
-    # stations around the plant are where it would show.
+    # The selected eight-station comparison stays observational because no
+    # dispersion model establishes where a plant effect would have to appear.
     near_taichung = ["沙鹿", "線西", "忠明", "西屯", "大里", "豐原", "彰化", "二林"]
     taichung = effects.filter(
         pl.col("event").str.contains("台中電廠") & pl.col("station").is_in(near_taichung)
@@ -1459,17 +1459,20 @@ def _export_detection_limit(root: Path) -> list[Path]:
             root / "detection-limit.json",
             {
                 "method": {
-                    "window": "視窗外訓練，用視窗當時的實際天氣預測視窗，差額即效應",
+                    "window": (
+                        "事件日曆窗口內「觀測值減去模型預測值」的差額；"
+                        "這是待檢驗的事件訊號，不等同於已識別的因果效應。"
+                    ),
                     "trend_break": "在氣象正規化後的月序列上做分段迴歸，比較斜率",
-                    "placebo": "同一套程序，跑在沒有事件的年份／其他候選斷點上",
+                    "placebo": "同一套程序，跑在未標記為該事件年份的對照窗口／其他候選斷點上",
                     "threshold": "效應要距離安慰劑均值 2 個標準差才算偵測到",
                 },
                 "events": windowed,
                 "spatial_check": {
                     "label": "台中電廠周邊測站",
                     "why": (
-                        "若機組真的停止燃煤，最近的測站是效應該出現的地方。"
-                        "8 站全部落在安慰劑散布之內，其中 4 站效應為正。"
+                        "這項空間檢查比較預先選定的台中電廠周邊 8 站。"
+                        "實測 8 站全部落在安慰劑散布之內，其中 4 站的觀測－預測差額為正。"
                     ),
                     "stations": [
                         {

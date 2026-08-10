@@ -516,27 +516,39 @@ class TestTheSourcesPayload:
             assert term in payload["cannot_say"]
 
 
-class TestPayloadProseIsNotMarkdown:
+class TestPlainTextPayloadClaimBoundaries:
     """The site prints these strings verbatim; nothing renders them.
 
     Three payload strings carried `**emphasis**` written by habit, and the site
     showed the asterisks to the reader. Emphasis belongs in the component,
     which has real markup. This walks every exported payload rather than
-    naming the three, because the next one will be written by habit too.
+    naming the three, because the next one will be written by habit too. The
+    detection payload also supplies prose that must describe observational
+    contrasts without turning them into identified causal effects.
     """
 
-    def test_no_exported_string_contains_markdown_emphasis(self) -> None:
+    def test_verbatim_payload_prose_preserves_plain_text_and_detection_claims(self) -> None:
         import json
 
         from twair.viz.export import web_data_dir
 
+        story_root = web_data_dir() / "story"
         offenders: list[str] = []
-        for path in sorted((web_data_dir() / "story").glob("*.json")):
+        for path in sorted(story_root.glob("*.json")):
             text = path.read_text(encoding="utf-8")
             if "**" in text or "__" in json.dumps(json.loads(text), ensure_ascii=False):
                 offenders.append(path.name)
 
         assert not offenders, f"markdown emphasis in payload prose: {offenders}"
+
+        detection = json.loads((story_root / "detection-limit.json").read_text(encoding="utf-8"))
+        window = detection["method"]["window"]
+        assert "事件日曆窗口內「觀測值減去模型預測值」的差額" in window
+        assert "不等同於已識別的因果效應" in window
+        assert "8 站" in detection["spatial_check"]["why"]
+        assert "全部落在安慰劑散布之內" in detection["spatial_check"]["why"]
+        assert "效應該出現的地方" not in detection["spatial_check"]["why"]
+        assert "真的停止燃煤" not in detection["spatial_check"]["why"]
 
 
 class TestTheSarimaPayload:

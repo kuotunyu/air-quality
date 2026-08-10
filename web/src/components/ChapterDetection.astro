@@ -4,9 +4,9 @@
  *
  * The subject of this chapter is the method, not the government. Three events
  * are tested; none produces an effect distinguishable from what the same
- * procedure finds in years when nothing happened. That is a statement about
- * how large a signal this data can resolve, and it is written that way
- * throughout — see PLAN.md's drafting note.
+ * procedure finds in unmarked control windows. That is a statement about how
+ * large a signal this data can resolve, and it is written that way throughout
+ * — see PLAN.md's drafting note.
  *
  * The chart is the argument: each event's estimate is drawn inside the cloud
  * of its own placebos. Without that cloud, -0.96 µg/m³ looks like a finding.
@@ -358,26 +358,27 @@ const shortName = (name: string) =>
 
   <p>
     測了三個事件：2018 年空氣污染防制法修正、台中電廠 2、3 號機的生煤許可爭議、
-    以及 2021 年的 COVID-19 三級警戒。做法是<strong>反事實</strong>——
-    用事件視窗以外的日子訓練模型，再用視窗當時的<strong>實際天氣</strong>去預測，
-    觀測值與預測值的差額就是天氣與季節解釋不掉的部分。
+    以及 2021 年的 COVID-19 三級警戒。兩個日曆窗口事件都用窗口外的日子訓練模型，
+    再以窗口當時的<strong>實際天氣</strong>預測。以下的<strong>觀測－預測差額</strong>，
+    是事件日曆窗口內觀測值減去模型預測值的差額；它是待檢驗的事件訊號，
+    <strong>不等同於已識別的因果效應</strong>。
   </p>
 
   <div class="note">
-    <strong>然後，同一套程序再跑一次沒有事件的年份。</strong>
-    同樣的日曆窗口、同樣的模型、同樣的計算——只是那些年什麼都沒發生。
-    這叫安慰劑檢定，它問的是：這個方法在應該找不到東西的時候，會找到多少？
+    <strong>然後，同一套程序再跑一次未標記為該事件年份的對照窗口。</strong>
+    同樣的日曆窗口、同樣的模型、同樣的計算。
+    這叫安慰劑檢定，它問的是：在沒有該事件標記的窗口，這個方法會算出多大的差額？
   </div>
 
   <h2>結果</h2>
 
   <div class="table-wrap">
-    <table class="dense">
+    <table class="dense" data-detection-results>
       <thead>
         <tr>
           <th>事件</th>
           <th class="num">測站</th>
-          <th class="num">效應中位數</th>
+          <th class="num">中位估計值</th>
           <th class="num">安慰劑均值</th>
           <th class="num">安慰劑 SD</th>
           <th class="num">通過門檻</th>
@@ -387,10 +388,19 @@ const shortName = (name: string) =>
       <tbody>
         {
           events.map((e) => (
-            <tr>
+            <tr data-event-kind={e.kind}>
               <td>{shortName(e.event)}</td>
               <td class="num">{e.n_stations}</td>
-              <td class="num">{n(e.median_effect, 2)}</td>
+              <td class="num" data-estimate-cell>
+                <span class="dim" data-estimate-label>
+                  {e.kind === "window" ? "觀測－預測差額" : "斜率差"}
+                </span>
+                <br />
+                <span data-estimate-value>{n(e.median_effect, 2)}</span>{" "}
+                <span class="dim" data-estimate-unit>
+                  {e.kind === "window" ? "μg/m³" : "μg/m³/年"}
+                </span>
+              </td>
               <td class="num dim">{n(e.median_placebo_mean, 2)}</td>
               <td class="num dim">{n(e.median_placebo_sd, 2)}</td>
               <td class="num strong">{e.n_credible}</td>
@@ -403,7 +413,7 @@ const shortName = (name: string) =>
   </div>
 
   <p class="small">
-    「通過門檻」是效應距離該站自己的安慰劑均值 2 個標準差以上的測站數。
+    「通過門檻」是估計值距離該站自己的安慰劑均值 2 個標準差以上的測站數。
     「機率預期」是純粹靠運氣就會通過的站數（2 個標準差在常態分布下約留 4.55% 在雙尾）。
     <strong>三個事件的實際通過數都低於機率預期。</strong>
   </p>
@@ -414,8 +424,8 @@ const shortName = (name: string) =>
     下面每一條帶狀圖是一個<strong>日曆窗口</strong>事件，所以是兩張，不是三張：
     空污法修正是制度轉變而不是有前後的視窗，它的檢定在本章最後一節，用的是分段迴歸。
     <span class="k-pl">淡色的短線</span>是安慰劑——
-    同一個方法在沒有事件的年份算出來的「效應」。
-    <span class="k-real">亮色的點</span>是各測站的實際估計值。
+    同一個方法在未標記為該事件年份的對照窗口算出的差額。
+    <span class="k-real">亮色的點</span>是各測站的觀測－預測差額。
     兩張圖共用同一個刻度，零在正中間，所以雲的寬度可以直接比。
   </p>
 
@@ -448,7 +458,7 @@ const shortName = (name: string) =>
               <thead>
                 <tr>
                   <th scope="col">測站</th>
-                  <th scope="col">效應（μg/m³）</th>
+                  <th scope="col">窗口差額（μg/m³）</th>
                 </tr>
               </thead>
               <tbody>
@@ -472,7 +482,7 @@ const shortName = (name: string) =>
     <strong>安慰劑的均值幾乎從不是零，這件事本身就是重點。</strong>
     COVID 那個日曆窗口的安慰劑均值是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)} μg/m³——
     模型在五到七月系統性高估。所以看到某站「下降 0.96」時，
-    真正該問的是：這個方法在沒有封城的年份，平均也會給出多少？
+    真正該問的是：這個方法在未標記為該事件年份的對照窗口，平均也會給出多少？
     答案是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)}。
   </div>
 
@@ -493,7 +503,7 @@ const shortName = (name: string) =>
       <thead>
         <tr>
           <th>測站</th>
-          <th class="num">效應 μg/m³</th>
+          <th class="num">觀測－預測差額<br />（μg/m³）</th>
           <th class="num">z</th>
         </tr>
       </thead>
@@ -512,9 +522,8 @@ const shortName = (name: string) =>
   </div>
 
   <p class="small">
-    而三個事件裡唯一通過門檻的測站，都不在該有效應的地方：
-    COVID 是潮州（屏東鄉村，但封城效應該在交通主導的都會站最明顯）；
-    台中電廠是麥寮（雲林的石化園區，離台中電廠約 50 公里的另一個設施）。
+    單一測站通過門檻，不足以形成跨站一致的空間證據。
+    本分析沒有使用軌跡或擴散模型，因此不依測站位置判定介入訊號應該出現在哪裡。
   </p>
 
   {
@@ -531,9 +540,9 @@ const shortName = (name: string) =>
         <p class="small">
           結果：{breaks[0].n_stations} 站中 {breaks[0].n_credible} 站通過門檻，
           機率預期約 {n(breaks[0].n_expected_by_chance, 1)} 站。
-          斜率變化的中位數是 {n(breaks[0].median_effect, 3)} μg/m³/年²。
-          <strong>普遍的減速幾乎確定是邊際報酬遞減</strong>——
-          濃度從 30 降到 15 之後，不可能維持同樣的絕對降速。
+          斜率變化的中位數是 {n(breaks[0].median_effect, 3)} μg/m³/年。
+          這是氣象正規化月序列在候選斷點前後的斜率差；本分析沒有識別造成轉折的機制，
+          不能由普遍減速推論為邊際報酬遞減或特定政策效果。
         </p>
       </>
     )
@@ -549,11 +558,9 @@ const shortName = (name: string) =>
 
   <div class="note">
     <strong>台中電廠這一筆需要補充說明。</strong>
-    市府的處分後來被環保署撤銷，台電當時聲明將提行政救濟，
-    而機組是否真的降載並沒有公開紀錄——周邊 8 站也確實毫無反應。
-    最合理的解讀是<strong>機組從未真的停止燃煤</strong>。
-    也就是說，這裡的「測不到」比較可能是「事情沒發生」，而不是「事情發生了但沒效果」。
-    這兩件事必須分開。
+    本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分
+    「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或
+    「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。
   </div>
 </section>
 

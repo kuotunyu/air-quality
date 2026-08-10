@@ -66,7 +66,16 @@ const CHAPTER_OPENING_VIEWPORTS = [
   { width: 1920, height: 1080 },
 ];
 const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
-const TEXT_ZOOM_ROUTES = ["/", "/trend/", "/stations/", "/sources/", "/methods/", "/explore/", "/data/"];
+const TEXT_ZOOM_ROUTES = [
+  "/",
+  "/trend/",
+  "/stations/",
+  "/sources/",
+  "/detection/",
+  "/methods/",
+  "/explore/",
+  "/data/",
+];
 
 /**
  * 2026-08-03 — measured from the built route DOM, before these inventories
@@ -557,6 +566,76 @@ function sourcesClaimBoundaryProblems(text) {
   );
 }
 
+function detectionClaimBoundaryProblems(text) {
+  const required = [
+    "觀測－預測差額",
+    "不等同於已識別的因果效應",
+    "沒有驗證機組的逐時操作或燃料狀態",
+  ];
+  const forbidden = [
+    "什麼都沒發生",
+    "幾乎確定是邊際報酬遞減",
+    "從未真的停止燃煤",
+    "事情沒發生",
+  ];
+  const problems = required.filter((phrase) => !text.includes(phrase))
+    .map((phrase) => `missing required detection-limit text ${JSON.stringify(phrase)}`);
+  return problems.concat(
+    forbidden.filter((phrase) => text.includes(phrase))
+      .map((phrase) => `contains unsupported detection claim ${JSON.stringify(phrase)}`),
+  );
+}
+
+const DETECTION_ESTIMATE_TABLE_PROBE = `(() => {
+  const table = document.querySelector("[data-detection-results]");
+  if (!table) return null;
+  return {
+    heading: table.querySelector("thead th:nth-child(3)")?.textContent.trim() ?? "",
+    rows: [...table.querySelectorAll("tbody tr")].map((row) => {
+      const estimate = row.querySelector("[data-estimate-cell]");
+      return {
+        kind: row.dataset.eventKind ?? "",
+        label: estimate?.querySelector("[data-estimate-label]")?.textContent.trim() ?? "",
+        value: estimate?.querySelector("[data-estimate-value]")?.textContent.trim() ?? "",
+        unit: estimate?.querySelector("[data-estimate-unit]")?.textContent.trim() ?? "",
+      };
+    }),
+  };
+})()`;
+
+function detectionEstimateTableProblems(table) {
+  if (!table) return ["missing rendered detection results table contract"];
+  const problems = [];
+  if (table.heading !== "中位估計值") {
+    problems.push(`results estimate heading is ${JSON.stringify(table.heading)}, expected "中位估計值"`);
+  }
+  const expected = new Map([
+    ["window", { count: 2, label: "觀測－預測差額", unit: "μg/m³" }],
+    ["trend_break", { count: 1, label: "斜率差", unit: "μg/m³/年" }],
+  ]);
+  for (const [kind, contract] of expected) {
+    const rows = table.rows?.filter((row) => row.kind === kind) ?? [];
+    if (rows.length !== contract.count) {
+      problems.push(`${kind} estimate rows total ${rows.length}, expected ${contract.count}`);
+    }
+    for (const row of rows) {
+      if (row.label !== contract.label || row.unit !== contract.unit || !row.value) {
+        problems.push(
+          `${kind} estimate is ${JSON.stringify(row)}, expected ` +
+            `${JSON.stringify(contract.label)}, a value, and ${JSON.stringify(contract.unit)}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+function textZoomRouteMatrixProblems() {
+  return TEXT_ZOOM_ROUTES.includes("/detection/")
+    ? []
+    : ["200% text-zoom route matrix does not exercise /detection/"];
+}
+
 function repositoryClaimBoundaryProblems() {
   const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer" })
     .toString("utf8")
@@ -719,9 +798,17 @@ async function lifecycleSelfTest() {
   if (
     !painted ||
     !renderExpression.includes("requestAnimationFrame") ||
-    !renderExpression.includes("setTimeout")
+    !renderExpression.includes("setTimeout") ||
+    !renderExpression.includes("document.getAnimations") ||
+    !renderExpression.includes("animation.timeline !== document.timeline") ||
+    !renderExpression.includes("Number.isFinite(timing.endTime)") ||
+    !renderExpression.includes("animation.finished") ||
+    !renderExpression.includes('style.visibility !== "hidden"') ||
+    !renderExpression.includes("finish(false)")
   ) {
-    throw new Error("the render wait has no timer fallback for a paused frame clock");
+    throw new Error(
+      "the render wait can return while a finite visible document-timeline animation is running",
+    );
   }
   console.log("site quality render wait self-test passed");
 
@@ -1398,17 +1485,44 @@ const READY = `(() => {
 })()`;
 const RENDER_SETTLED = `new Promise((resolve) => {
   let finished = false;
-  const finish = () => {
+  const finish = (value) => {
     if (finished) return;
     finished = true;
-    document.documentElement.getBoundingClientRect();
-    resolve(true);
-  };
-  const timer = setTimeout(finish, 250);
-  requestAnimationFrame(() => requestAnimationFrame(() => {
     clearTimeout(timer);
-    finish();
+    document.documentElement.getBoundingClientRect();
+    resolve(value);
+  };
+  const visibleFiniteAnimations = () => document.getAnimations().filter((animation) => {
+    const effect = animation.effect;
+    const target = effect?.target;
+    const timing = effect?.getComputedTiming();
+    if (
+      !(target instanceof Element) ||
+      animation.timeline !== document.timeline ||
+      !timing ||
+      !Number.isFinite(timing.endTime) ||
+      !["pending", "running"].includes(animation.playState)
+    ) return false;
+    const style = getComputedStyle(target);
+    const box = target.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" &&
+      style.visibility !== "collapse" && box.width > 0 && box.height > 0 &&
+      box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight;
+  });
+  const afterPaint = () => requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (visibleFiniteAnimations().length) wait();
+    else finish(true);
   }));
+  const wait = () => {
+    const animations = visibleFiniteAnimations();
+    if (!animations.length) {
+      afterPaint();
+      return;
+    }
+    Promise.allSettled(animations.map((animation) => animation.finished)).then(afterPaint);
+  };
+  const timer = setTimeout(() => finish(false), 1500);
+  wait();
 })`;
 
 async function settlePaint(evaluate, label = "render wait") {
@@ -1418,10 +1532,11 @@ async function settlePaint(evaluate, label = "render wait") {
 async function settled(evaluate, budgetMs = 8000, label = "page") {
   for (let waited = 0; waited < budgetMs; waited += 100) {
     if (await evaluate(READY, `${label} readiness`)) {
+      // READY can arrive while the opening transform is still moving a boundary
+      // that the next probe is about to measure.
       // One more frame, so a layout invalidated by the last stylesheet has been
       // flushed before anything reads a bounding box off it.
-      await settlePaint(evaluate, `${label} render wait`);
-      return true;
+      return Boolean(await settlePaint(evaluate, `${label} render wait`));
     }
     await sleep(100);
   }
@@ -1727,6 +1842,12 @@ async function main() {
   const repositoryClaimProblems = repositoryClaimBoundaryProblems();
   if (repositoryClaimProblems.length) {
     for (const problem of repositoryClaimProblems) console.log(`  FAIL: ${problem}`);
+    return 1;
+  }
+  console.log("site-quality stage: text-zoom route contract");
+  const textZoomRouteProblems = textZoomRouteMatrixProblems();
+  if (textZoomRouteProblems.length) {
+    for (const problem of textZoomRouteProblems) console.log(`  FAIL: ${problem}`);
     return 1;
   }
   if (!existsSync(DIST)) {
@@ -3656,6 +3777,7 @@ async function main() {
         ),
         mainText: document.querySelector("main")?.innerText
           .replace(/\\s+/g, " ").trim() ?? "",
+        detectionEstimateTable: ${DETECTION_ESTIMATE_TABLE_PROBE},
       };
     })()`);
     totals.noScriptRoutes += 1;
@@ -3699,6 +3821,14 @@ async function main() {
     }
     if (route === "/sources/") {
       for (const problem of sourcesClaimBoundaryProblems(noScript?.mainText ?? "")) {
+        failures.push(`${route}: no-JavaScript ${problem}`);
+      }
+    }
+    if (route === "/detection/") {
+      for (const problem of detectionClaimBoundaryProblems(noScript?.mainText ?? "")) {
+        failures.push(`${route}: no-JavaScript ${problem}`);
+      }
+      for (const problem of detectionEstimateTableProblems(noScript?.detectionEstimateTable)) {
         failures.push(`${route}: no-JavaScript ${problem}`);
       }
     }
@@ -3957,6 +4087,18 @@ async function main() {
             'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
           );
           for (const problem of sourcesClaimBoundaryProblems(mainText ?? "")) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/detection/") {
+          const mainText = await evaluate(
+            'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
+          );
+          for (const problem of detectionClaimBoundaryProblems(mainText ?? "")) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+          const estimateTable = await evaluate(DETECTION_ESTIMATE_TABLE_PROBE);
+          for (const problem of detectionEstimateTableProblems(estimateTable)) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
@@ -5210,6 +5352,7 @@ async function main() {
   console.log("site-quality stage: 200% text zoom");
   const checkTextZoom = async (route, width, height, suffix = "") => {
     const state = `${route} @${width}x${height} 200% text${suffix}`;
+    console.log(`site-quality text zoom: ${state}`);
     await send("Emulation.setDeviceMetricsOverride", {
       width,
       height,
@@ -5271,6 +5414,18 @@ async function main() {
         'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
       );
       for (const problem of sourcesClaimBoundaryProblems(mainText ?? "")) {
+        failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (route === "/detection/") {
+      const mainText = await evaluate(
+        'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
+      );
+      for (const problem of detectionClaimBoundaryProblems(mainText ?? "")) {
+        failures.push(`${state}: ${problem}`);
+      }
+      const estimateTable = await evaluate(DETECTION_ESTIMATE_TABLE_PROBE);
+      for (const problem of detectionEstimateTableProblems(estimateTable)) {
         failures.push(`${state}: ${problem}`);
       }
     }
