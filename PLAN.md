@@ -503,7 +503,9 @@ roadmap 把「能下載」寫成「M8 已完成」。
   CSV 只有在完整 station-month key、source contract、checksum 與 task provenance 都通過時才原子合併
 - **測站 inventory 邊界** — 現有 S5P 與 MAIAC generation 各自凍結在 76 個有座標、
   6 個無座標的 inventory；它們早於歷史地理 fallback。現行 canonical 解析為 77／5，
-  但既有衛星產物不回溯改名、補列或換 hash。
+  但既有衛星產物不回溯改名、補列或換 hash。新的共用 immutable generation 已以
+  完整 SHA-256 綁定 82／77／5 的 canonical inventory；S5P 與 MAIAC 只有在明確指定
+  generation 時才寫入各自的新目錄，legacy 路徑與 manifest 語意維持不變。
 - **Sentinel-5P** NO2/SO2 柱濃度 vs 地面測值的相關性與偏差分析
 - **MODIS MAIAC AOD → PM2.5** — AOD 與地面 PM2.5 的關係受 BLH 與 RH 調制，建立校正模型
 - **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
@@ -513,17 +515,22 @@ roadmap 把「能下載」寫成「M8 已完成」。
 **驗收**
 - [x] 2025 S5P NO₂／SO₂ 站月來源表、coverage 與 provenance manifest；這是 M8 的輸入，不是分析結論
 - [x] 2025 MAIAC AOD 站月來源表、coverage 與 provenance manifest；null 不補值，AOD 不冒充 PM2.5
-- [ ] **後續獨立任務**：以 77 個有座標測站重跑 2025 S5P／MAIAC；建立新的
-  station inventory generation，保留舊 generation，不覆寫或重新標示既有產物
+- [x] **新 generation 安全層**：S5P／MAIAC 共用完整 inventory SHA-256，驗證路徑、
+  manifest、測站數與 unresolved 數後才允許寫入；77 站 MAIAC 的 2025 年 12 個月份已
+  在本機建立 `PLANNED` ledger，沒有 task ID，也沒有送出 Earth Engine batch
+- [ ] **後續外部執行**：以 77 個有座標測站實際重跑 2025 S5P／MAIAC，匯入並驗證新的
+  generation；保留舊 generation，不覆寫或重新標示既有產物
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
 - [ ] **延後**：微感測器校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
 **下一個條件**：S5P 與 MAIAC Stage A 已排除 credential 與基本取得風險，真實 AOD
-站月表也已通過契約驗證。接下來先量測 AOD 與地面 PM2.5 的共同 coverage、相關性與月份／
-測站偏差，再決定是否值得投入 BLH、RH、微型感測器與留出測站模型。沒有獨立驗證前，
-不發布融合濃度場。
+站月表也已通過契約驗證。77 站 MAIAC 目前只完成本機計畫；實際 batch 尚未送出，
+S5P 也尚未查詢，因此不能把新 generation 寫成已取得資料。外部重跑完成前，可先用凍結的
+76 站 legacy 來源量測 AOD 與地面 PM2.5 的共同 coverage、相關性與月份／測站偏差，並將
+結果明確標為 provisional；再決定是否值得投入 BLH、RH、微型感測器與留出測站模型。
+沒有獨立驗證前，不發布融合濃度場。
 
 ---
 

@@ -169,6 +169,18 @@ S5P manifest（2026-08-09T22:43:12Z）與 MAIAC result manifest
 必須以新的 station inventory hash 建立另一個受審查的 generation，保留舊產物的
 provenance。
 
+2026-08-11 已建立共用的 immutable station inventory generation。它以正規化測站名稱、
+座標與三個地理 provenance 欄位計算完整 SHA-256；目前實測 generation 為
+`58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`，對應 82 個
+canonical 測站、77 個有座標與 5 個未解析。新 S5P 與 MAIAC 產物只有在明確指定這個
+generation 時才會寫入 `generations/<sha256>/year=2025/`，路徑、manifest 與測站計數
+不一致時會在寫入前失敗；舊路徑、舊 hash 與既有檔案不變。
+
+同日的 77 站 MAIAC 本機 dry-run 已為 2025 年 1–12 月建立 schema 2 ledger；12 筆 entry
+全為 `PLANNED`，task ID 全為 null。這只證明計畫與 generation 邊界可重現，沒有送出
+Earth Engine batch，也沒有產生或匯入新的 AOD station-month 結果。77 站 S5P 查詢同樣
+尚未執行；在兩者實際完成以前，網站與分析仍使用上述凍結的 76 站 legacy 來源表。
+
 AOD 不是 PM2.5；這份站月來源表仍不是衛星推估 PM2.5 或 M8 融合結論。操作順序見
 [registrations.md](registrations.md)。
 
