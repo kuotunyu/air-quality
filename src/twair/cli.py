@@ -1008,7 +1008,10 @@ def analyze_m5(
     stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
     max_stations: int = typer.Option(None, "--max-stations", help="Cap, for a quick run."),
 ) -> None:
-    """M5 — did the policy do anything? Counterfactuals, checked against placebos."""
+    """M5 — marked-window observed-minus-predicted contrasts.
+
+    Compare them with unmarked controls; they are not identified causal policy effects.
+    """
     from twair.analysis.causal import run_causal, write_causal_report
 
     span = _parse_year_range(years)
@@ -1031,23 +1034,25 @@ def analyze_m5(
         credible = group.filter(pl.col("credible"))
         console.print(
             f"\n[bold]{name[0]}[/bold] — {group.height} station(s), "
-            f"median effect {as_float(group['effect'].median()):+.2f} µg/m³"
+            "median observed-minus-predicted contrast "
+            f"{as_float(group['effect'].median()):+.2f} µg/m³"
         )
-        # The placebo spread is the honest yardstick: it is what this method
-        # finds in years when nothing happened.
+        # The unmarked-control-window spread is the honest yardstick because it
+        # measures same-calendar background variation without this event label.
         console.print(
-            f"  placebo spread (median SD) {as_float(group['placebo_sd'].median()):.2f} µg/m³; "
+            "  unmarked-control-window spread (median SD) "
+            f"{as_float(group['placebo_sd'].median()):.2f} µg/m³; "
             f"[bold]{credible.height}[/bold] station(s) clear it by 2 SD"
         )
         if credible.is_empty():
             console.print(
-                "  [yellow]no station shows an effect distinguishable from the method's "
+                "  [yellow]no station shows a contrast distinguishable from the method's "
                 "own noise — reported as not detected, not as zero[/yellow]"
             )
 
-    # Open-ended policies are regime changes, not windows: what they should
-    # alter is the slope, not the level. Those are tested against M4's
-    # normalised series instead.
+    # Open-ended event labels are screened as possible slope changes rather
+    # than finite windows. The observed slope differences use M4's normalised
+    # series and remain non-causal comparisons.
     from twair.analysis.causal import run_trend_breaks
 
     try:

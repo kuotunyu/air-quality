@@ -121,7 +121,7 @@ flowchart TD
 |---|---|
 | 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025, downloadable from [chapter 10](https://kuotunyu.github.io/air-quality/data/) and packageable as a Hugging Face Dataset. The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | 📊 **Reproducible Science** | Step-by-step replication of the 2018 method, followed by rigorous corrections and quantitative comparisons. |
-| 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, source direction, event-detection limits, forecasting, health assumptions, and method comparisons. |
+| 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
 | 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
 | 🔧 **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
@@ -188,7 +188,7 @@ the relevant public [technical docs](docs/).
 | **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
-| **Phase 5** | M6 spatial structure and M7 CBPF source direction | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
+| **Phase 5** | M6 spatial structure and M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution) | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
 | **Phase 6** | Satellite and low-cost sensor fusion | 🟡 S5P source-acquisition Stage A delivered; analysis, MAIAC, and fusion remain deferred and do not block this release |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |

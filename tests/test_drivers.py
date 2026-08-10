@@ -164,7 +164,10 @@ class TestModellingFrame:
     def test_pm_ratio_is_available_even_though_pm10_is_not_a_predictor(
         self, tmp_path: Path
     ) -> None:
-        """The ratio is a source fingerprint, not a leak."""
+        """The ratio records particle-size composition and can screen source hypotheses.
+
+        It is not a PM2.5 predictor and cannot uniquely identify or quantify a source.
+        """
         root = _store(tmp_path)
 
         frame = build_modelling_frame(root, period=(2015, 2015))

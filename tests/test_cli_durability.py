@@ -16,6 +16,7 @@ displayed so that no display failure of any kind can cost the computation.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -129,7 +130,7 @@ def causal_tables() -> dict[str, pl.DataFrame]:
     }
 
 
-def test_m5_keeps_its_event_study_when_the_optional_trend_break_cannot_run(
+def test_m5_persists_before_optional_trends_and_reports_the_observational_contrast(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """M4 is not a precondition of M5, and used to be able to destroy it.
@@ -159,6 +160,26 @@ def test_m5_keeps_its_event_study_when_the_optional_trend_break_cannot_run(
         "the event study was thrown away by a step that is not a prerequisite"
     )
     assert "skipping trend breaks" in result.output, "the skip has to be visible, not silent"
+    assert "median observed-minus-predicted contrast -1.50 µg/m³" in result.output
+    assert "unmarked-control-window spread (median SD) 0.40 µg/m³" in result.output
+    assert re.search(r"\beffect\b", result.output.lower()) is None
+    assert "median effect" not in result.output.lower()
+    assert "nothing happened" not in result.output.lower()
+
+    no_detection_tables = causal_tables()
+    no_detection_tables["effects"] = no_detection_tables["effects"].with_columns(
+        pl.lit(False).alias("credible")
+    )
+    monkeypatch.setattr(causal, "run_causal", lambda **_: no_detection_tables)
+
+    no_detection = CliRunner().invoke(cli.app, ["analyze", "m5"])
+
+    assert no_detection.exit_code == 0, no_detection.output
+    assert "reported as not detected, not as zero" in no_detection.output.lower()
+    assert re.search(r"\beffect\b", no_detection.output.lower()) is None
+    assert "median effect" not in no_detection.output.lower()
+    assert "shows an effect" not in no_detection.output.lower()
+    assert "nothing happened" not in no_detection.output.lower()
 
 
 def test_m5_still_reports_the_trend_break_when_m4_has_run(

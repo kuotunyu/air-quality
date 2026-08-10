@@ -636,66 +636,671 @@ function textZoomRouteMatrixProblems() {
     : ["200% text-zoom route matrix does not exercise /detection/"];
 }
 
-function repositoryClaimBoundaryProblems() {
+function englishClaimPattern(phrase) {
+  const escaped = phrase
+    .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+    .replace(/\s+/gu, "\\s+");
+  return new RegExp(`(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`, "iu");
+}
+
+const ENGLISH_SOURCE_NONATTRIBUTION_PATTERN = new RegExp(
+  [
+    String.raw`(?:\b(?:do|does)\s+not\s+(?:identify|establish)|`,
+    String.raw`\bcannot\s+(?:identify|establish)|\bnot)[^.!?。！？]{0,80}`,
+    String.raw`\bsource(?:'s)? identit(?:y|ies)\b[^.!?。！？]{0,160}`,
+    String.raw`\b(?:position|location)\b[^.!?。！？]{0,160}`,
+    String.raw`\b(?:transport|travel)[- ]distance\b[^.!?。！？]{0,160}\bcontribution\b`,
+  ].join(""),
+  "iu",
+);
+const ENGLISH_SOURCE_BOUNDARY_PATTERNS = [ENGLISH_SOURCE_NONATTRIBUTION_PATTERN];
+const ENGLISH_OBSERVED_WIND_PATTERNS = [
+  /\b(?:observed|measured|observations?)\b/iu,
+  /\bhigh[- ]value\b/iu,
+  /\bwind[- ]speed\b/iu,
+  /\bdirection\b/iu,
+];
+const ENGLISH_NONCAUSAL_M5_PATTERN = new RegExp(
+  [
+    String.raw`(?:\b(?:not|cannot)\b[^.!?。！？]{0,50}\bidentif(?:y|ied)\b`,
+    String.raw`[^.!?。！？]{0,50}\bcausal\b[^.!?。！？]{0,30}\bpolicy\b`,
+    String.raw`[^.!?。！？]{0,30}\beffects?\b|\bcausal\b[^.!?。！？]{0,30}\bpolicy\b`,
+    String.raw`[^.!?。！？]{0,30}\beffects?\b[^.!?。！？]{0,50}\bnot\b`,
+    String.raw`[^.!?。！？]{0,50}\bidentif(?:y|ied)\b)`,
+  ].join(""),
+  "iu",
+);
+const ENGLISH_M5_BOUNDARY_PATTERNS = [
+  /\bmarked[- ]window\b/iu,
+  /\bobserved[- ]minus[- ]predicted\b/iu,
+  ENGLISH_NONCAUSAL_M5_PATTERN,
+];
+const CJK_NONCAUSAL_M5_PATTERN =
+  /(?:不是|不能|無法)[^。！？]{0,40}識別[^。！？]{0,40}政策因果效應/u;
+const ENGLISH_PM_RATIO_NONATTRIBUTION_PATTERN = new RegExp(
+  [
+    String.raw`\b(?:cannot|does not|do not)\b[^.!?。！？]{0,50}\buniquely\b`,
+    String.raw`[^.!?。！？]{0,50}\b(?:identify|distinguish)\b[^.!?。！？]{0,80}`,
+    String.raw`\bquantify\b[^.!?。！？]{0,50}\b(?:a\s+)?source\b`,
+  ].join(""),
+  "iu",
+);
+const ENGLISH_PM_RATIO_BOUNDARY_PATTERNS = [
+  /\bparticle[- ]size\b/iu,
+  /\b(?:composition|makeup)\b/iu,
+  /\b(?:screen|evaluate)\b/iu,
+  /\bsource hypotheses\b/iu,
+  ENGLISH_PM_RATIO_NONATTRIBUTION_PATTERN,
+];
+
+const NEGATION_SCOPE_MODIFIERS = new Set([
+  "alone",
+  "by",
+  "directly",
+  "independently",
+  "itself",
+  "merely",
+  "reliably",
+  "themselves",
+  "uniquely",
+]);
+
+function containsOnlyNegationModifiers(text) {
+  const words = text.match(/[A-Za-z]+/gu) ?? [];
+  return words.every((word) => NEGATION_SCOPE_MODIFIERS.has(word.toLowerCase()));
+}
+
+function actionIsDirectlyNegated(prefix) {
+  const negators = [...prefix.matchAll(/\b(?:cannot|can't|not)\b/giu)];
+  if (!negators.length) return false;
+  const last = negators.at(-1);
+  const between = prefix.slice((last.index ?? 0) + last[0].length);
+  return containsOnlyNegationModifiers(between);
+}
+
+function actionInheritsCoordinatedNegation(betweenActions, previousActionWasNegated) {
+  if (!previousActionWasNegated) return false;
+  const coordinators = [...betweenActions.matchAll(/\b(?:or|nor)\b/giu)];
+  if (!coordinators.length) return false;
+  const last = coordinators.at(-1);
+  const afterCoordinator = betweenActions.slice((last.index ?? 0) + last[0].length);
+  return containsOnlyNegationModifiers(afterCoordinator);
+}
+
+const CJK_NEGATION_MODIFIERS = /^(?:(?:唯一|直接|獨立|單獨|自行|明確|進一步|再|已|被|能夠|能|可|得))*$/u;
+const CJK_COORDINATED_NEGATION_MODIFIERS =
+  /^(?:(?:唯一|直接|獨立|單獨|自行|明確|進一步|再|已))*$/u;
+
+function cjkActionIsDirectlyNegated(prefix) {
+  const negators = [
+    ...prefix.matchAll(/(?:不能|無法|不是|並非|沒有|不得|不可|未能|未|不|非)/gu),
+  ];
+  if (!negators.length) return false;
+  const last = negators.at(-1);
+  const between = prefix
+    .slice((last.index ?? 0) + last[0].length)
+    .replace(/[\s\u3000]+/gu, "");
+  if (!CJK_NEGATION_MODIFIERS.test(between)) return false;
+
+  let scopedNegatorCount = 1;
+  let currentNegatorStart = last.index ?? 0;
+  for (let index = negators.length - 2; index >= 0; index -= 1) {
+    const candidate = negators[index];
+    const separation = prefix
+      .slice((candidate.index ?? 0) + candidate[0].length, currentNegatorStart)
+      .replace(/[\s\u3000]+/gu, "");
+    if (!CJK_NEGATION_MODIFIERS.test(separation)) break;
+    scopedNegatorCount += 1;
+    currentNegatorStart = candidate.index ?? 0;
+  }
+  return scopedNegatorCount % 2 === 1;
+}
+
+function cjkActionInheritsCoordinatedNegation(
+  betweenActions,
+  previousActionWasNegated,
+) {
+  if (!previousActionWasNegated) return false;
+  const coordinators = [...betweenActions.matchAll(/(?:或者|或)/gu)];
+  if (!coordinators.length) return false;
+  const last = coordinators.at(-1);
+  const afterCoordinator = betweenActions
+    .slice((last.index ?? 0) + last[0].length)
+    .replace(/[\s\u3000]+/gu, "");
+  return CJK_COORDINATED_NEGATION_MODIFIERS.test(afterCoordinator);
+}
+
+function hasAffirmativeAttribution(
+  text,
+  {
+    actions,
+    objects,
+    affirmativePatterns = [],
+    directlyNegated = actionIsDirectlyNegated,
+    inheritsCoordinatedNegation = actionInheritsCoordinatedNegation,
+  },
+) {
+  const clauses = text.split(
+    /[.!?。！？;；]|\r?\n(?=[ \t]*\|)|\b(?:but|however|whereas|although|though|yet)\b|(?:但是|但|然而|可是|不過|不过|卻|却)/iu,
+  );
+  return clauses.some((clause) => {
+    if (affirmativePatterns.some((pattern) => pattern.test(clause))) return true;
+    const flags = actions.flags.includes("g") ? actions.flags : `${actions.flags}g`;
+    let previousActionEnd = null;
+    let previousActionWasNegated = false;
+    for (const action of clause.matchAll(new RegExp(actions.source, flags))) {
+      const start = action.index ?? 0;
+      const proposition = clause.slice(start, start + 240);
+      if (!objects.test(proposition)) continue;
+      const actionDirectlyNegated = directlyNegated(clause.slice(0, start));
+      const betweenActions =
+        previousActionEnd === null ? "" : clause.slice(previousActionEnd, start);
+      const actionIsNegated =
+        actionDirectlyNegated ||
+        inheritsCoordinatedNegation(betweenActions, previousActionWasNegated);
+      if (!actionIsNegated) return true;
+      previousActionEnd = start + action[0].length;
+      previousActionWasNegated = actionIsNegated;
+    }
+    return false;
+  });
+}
+
+const M7_AFFIRMATIVE_ATTRIBUTION_REJECTS = [
+  {
+    description: "affirmative source identity, position, distance, or contribution attribution",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions:
+          /\b(?:identif(?:y|ies)|establish(?:es)?|locat(?:e|es)|attribut(?:e|es)|determin(?:e|es)|infer(?:s)?|quantif(?:y|ies))\b/iu,
+        objects:
+          /\b(?:source(?:'s)? identit(?:y|ies)|position|location|(?:transport|travel)[- ]distance|contribution)\b/iu,
+      }),
+  },
+];
+const M5_AFFIRMATIVE_CAUSAL_REJECTS = [
+  {
+    description: "affirmative causal policy-effect attribution",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions:
+          /\b(?:identif(?:y|ies)|establish(?:es)?|demonstrat(?:e|es)|show(?:s)?|prov(?:e|es))\b/iu,
+        objects: /\bcausal\s+policy\s+effects?\b/iu,
+        affirmativePatterns: [
+          /\b(?:is|are|was|were|constitutes?|represents?)\b(?:(?!\bnot\b)[^.!?。！？;；]){0,100}\bcausal\s+policy\s+effects?\b/iu,
+        ],
+      }),
+  },
+];
+const PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS = [
+  {
+    description: "affirmative source identification or quantification",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions:
+          /\b(?:identif(?:y|ies)|distinguish(?:es)?|quantif(?:y|ies)|attribut(?:e|es))\b/iu,
+        objects: /\b(?:(?:a|an|one|the)\s+)?source\b/iu,
+      }),
+  },
+];
+const CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS = [
+  {
+    description: "affirmative Chinese source identity, position, distance, or contribution attribution",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions: /(?:識別|辨識|定位|判定|推斷|歸因|量化)/u,
+        objects: /(?:來源身分|來源身份|位置|傳輸距離|貢獻)/u,
+        directlyNegated: cjkActionIsDirectlyNegated,
+        inheritsCoordinatedNegation: cjkActionInheritsCoordinatedNegation,
+      }),
+  },
+];
+const CJK_M7_SPACE_AFFIRMATIVE_SOURCE_REJECTS = [
+  ...CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+  {
+    description: "affirmative Chinese pollution-source classification",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions: /是(?=[\s\u3000]*(?:一個|某個)?[\s\u3000]*污染來源(?:[\s\u3000]*(?:$|[，,])))/u,
+        objects: /污染來源/u,
+        directlyNegated: cjkActionIsDirectlyNegated,
+        inheritsCoordinatedNegation: cjkActionInheritsCoordinatedNegation,
+      }),
+  },
+];
+const CJK_M7_SPACE_CLAIM_REQUIREMENT = {
+  description: "observed CBPF peak-wind groups are not source classifications",
+  patterns: [/CBPF/u, /高值/u, /觀測/u, /風速/u, /不是污染來源/u],
+};
+const CJK_M5_AFFIRMATIVE_CAUSAL_REJECTS = [
+  {
+    description: "affirmative Chinese causal policy-effect attribution",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions: /(?:識別|辨識|證明|顯示|判定|是|屬於|構成|代表)/u,
+        objects: /政策(?:的)?因果效應/u,
+        directlyNegated: cjkActionIsDirectlyNegated,
+        inheritsCoordinatedNegation: cjkActionInheritsCoordinatedNegation,
+      }),
+  },
+];
+const CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS = [
+  {
+    description: "affirmative Chinese source identification or quantification",
+    test: (text) =>
+      hasAffirmativeAttribution(text, {
+        actions: /(?:識別|辨識|量化|歸因)/u,
+        objects: /來源/u,
+        directlyNegated: cjkActionIsDirectlyNegated,
+        inheritsCoordinatedNegation: cjkActionInheritsCoordinatedNegation,
+      }),
+  },
+];
+
+function claimRegion(text, claim) {
+  if (!claim) return { text, problem: null };
+  const start = text.indexOf(claim.start);
+  if (start < 0) {
+    return {
+      text: "",
+      problem: `missing claim-region start ${JSON.stringify(claim.start)}`,
+    };
+  }
+  if (text.indexOf(claim.start, start + claim.start.length) >= 0) {
+    return {
+      text: "",
+      problem: `ambiguous claim-region start ${JSON.stringify(claim.start)}`,
+    };
+  }
+  const contentStart = start + claim.start.length;
+  const end = claim.end ? text.indexOf(claim.end, contentStart) : text.length;
+  if (end < 0) {
+    return {
+      text: "",
+      problem: `missing claim-region end ${JSON.stringify(claim.end)}`,
+    };
+  }
+  return { text: text.slice(contentStart, end), problem: null };
+}
+
+function claimSurfaceProblems({
+  path,
+  label,
+  text,
+  retired,
+  claim,
+  required = [],
+  affirmativeRejects = [],
+}) {
+  const retiredProblems = retired.filter((pattern) => pattern.test(text))
+    .map((pattern) => `${path}: contains retired ${label} claim ${pattern}`);
+  const affirmativeRejectProblems = affirmativeRejects
+    .filter((reject) => reject.test(text))
+    .map((reject) => `${path}: ${label} surface contains ${reject.description}`);
+  const requiredProblems = required.flatMap((requirement) => {
+    const region = claimRegion(text, requirement.claim ?? claim);
+    if (region.problem) return [`${path}: ${label} ${region.problem}`];
+    const missing = requirement.patterns.filter((pattern) => !pattern.test(region.text));
+    return missing.length
+      ? [
+        `${path}: ${label} claim region lacks ${requirement.description}: ` +
+          missing.join(", "),
+      ]
+      : [];
+  });
+  return retiredProblems.concat(affirmativeRejectProblems, requiredProblems);
+}
+
+function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
   const trackedPaths = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer" })
     .toString("utf8")
     .split("\0")
     .filter(Boolean);
-  const pmRatioSurfaces = trackedPaths.filter((path) =>
-      path === "PLAN.md" || path === "README.md" || path === "PRODUCT.md" ||
-      (path.startsWith("docs/") && !path.startsWith("docs/superpowers/")) ||
-      path.startsWith("src/"),
-    );
-  const retiredPmRatioClaims = ["來源指紋", "Emission Fingerprint"];
-  const problems = pmRatioSurfaces.flatMap((path) => {
-    const text = readFileSync(path, "utf8");
-    return retiredPmRatioClaims.filter((phrase) => text.includes(phrase))
-      .map((phrase) => `${path}: contains retired PM-ratio claim ${JSON.stringify(phrase)}`);
-  });
   const tracked = new Set(trackedPaths);
-  const cbpfSurfaces = [
+  const inspect = ({ label, surfaces, retired, required, affirmativeRejects }) =>
+    surfaces.flatMap((path) => {
+      if (!tracked.has(path)) {
+        return [`${path}: ${label} claim-boundary surface is not tracked`];
+      }
+      const surfaceAffirmativeRejects = affirmativeRejects[path] ?? [];
+      const wiringProblems = surfaceAffirmativeRejects.length
+        ? []
+        : [`${path}: ${label} claim-boundary surface lacks affirmative rejects`];
+      const text = surfaceTextOverrides.get(path) ?? readFileSync(path, "utf8");
+      return wiringProblems.concat(
+        claimSurfaceProblems({
+          path,
+          label,
+          text,
+          retired,
+          required: required[path],
+          affirmativeRejects: surfaceAffirmativeRejects,
+        }),
+      );
+    });
+
+  const m7Surfaces = [
+    "src/twair/models/deploy.py",
+    "src/twair/status.py",
+    "PLAN.md",
+    "README.md",
+    "README.en.md",
     "spaces/forecast/app.py",
     "spaces/forecast/README.md",
     "web/src/components/ChapterSources.astro",
   ];
-  const retiredCbpfClaims = [
-    "本地型",
-    "傳輸型",
-    "近處的污染源只有在風弱時才顯現",
-  ];
-  const missingCbpfSurfaces = cbpfSurfaces.filter((path) => !tracked.has(path))
-    .map((path) => `${path}: claim-boundary surface is not tracked`);
-  const retiredCbpfProblems = cbpfSurfaces.filter((path) => tracked.has(path))
-    .flatMap((path) => {
-      const text = readFileSync(path, "utf8");
-      return retiredCbpfClaims.filter((phrase) => text.includes(phrase))
-        .map((phrase) => `${path}: contains retired CBPF claim ${JSON.stringify(phrase)}`);
-    });
-  const methodology = readFileSync("docs/methodology.md", "utf8");
-  const required = [
-    "粒徑組成指標",
-    "單一比值不能唯一辨識或量化來源",
-    "化學物種分析（chemical speciation）",
-    "受體模式",
-    "軌跡、擴散或排放清冊",
-  ];
-  const chem = readFileSync("src/twair/features/chem.py", "utf8");
-  const chemRequired = [
-    "particle-size composition",
-    "cannot uniquely identify or quantify a source",
-  ];
-  const plan = readFileSync("PLAN.md", "utf8");
-  const planRequired = ["粒徑組成指標", "單一比值不能唯一辨識或量化來源"];
-  return problems.concat(
-    missingCbpfSurfaces,
-    retiredCbpfProblems,
-    required.filter((phrase) => !methodology.includes(phrase))
-      .map((phrase) => `docs/methodology.md: missing PM-ratio evidence boundary ${JSON.stringify(phrase)}`),
-    chemRequired.filter((phrase) => !chem.includes(phrase))
-      .map((phrase) => `src/twair/features/chem.py: missing PM-ratio claim boundary ${JSON.stringify(phrase)}`),
-    planRequired.filter((phrase) => !plan.includes(phrase))
-      .map((phrase) => `PLAN.md: missing PM-ratio claim boundary ${JSON.stringify(phrase)}`),
-  );
+  const m7Problems = inspect({
+    label: "M7",
+    surfaces: m7Surfaces,
+    retired: [
+      englishClaimPattern("transport-dominated"),
+      englishClaimPattern("locally-dominated"),
+      englishClaimPattern("source direction"),
+      /污染來源方位/u,
+      /污染源方位/u,
+      /本地型/u,
+      /傳輸型/u,
+      /近處的污染源只有在風弱時才顯現/u,
+    ],
+    affirmativeRejects: {
+      "src/twair/models/deploy.py": M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "src/twair/status.py": M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "PLAN.md": CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "README.md": CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "README.en.md": M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "spaces/forecast/app.py": CJK_M7_SPACE_AFFIRMATIVE_SOURCE_REJECTS,
+      "spaces/forecast/README.md": CJK_M7_SPACE_AFFIRMATIVE_SOURCE_REJECTS,
+      "web/src/components/ChapterSources.astro": [
+        ...M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+        ...CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      ],
+    },
+    required: {
+      "src/twair/models/deploy.py": [
+        {
+          claim: { start: "# Six stations chosen", end: "DEMO_STATIONS" },
+          description: "measured high/low-wind station mapping and attribution boundary",
+          patterns: [
+            /measured/iu,
+            /富貴角[\s\S]*馬公[\s\S]*high-wind/iu,
+            /忠明[\s\S]*前金[\s\S]*潮州[\s\S]*埔里[\s\S]*low-wind/iu,
+            ...ENGLISH_SOURCE_BOUNDARY_PATTERNS,
+          ],
+        },
+      ],
+      "src/twair/status.py": [
+        {
+          claim: { start: '"m7_sources",', end: 'Module("m9_forecast"' },
+          description: "observed high-value wind pattern and attribution boundary",
+          patterns: [
+            ...ENGLISH_OBSERVED_WIND_PATTERNS,
+            ...ENGLISH_SOURCE_BOUNDARY_PATTERNS,
+          ],
+        },
+      ],
+      "PLAN.md": [
+        {
+          claim: { start: "#### M7 ", end: "**後續風險**" },
+          description: "M7 observed high-value wind pattern and attribution boundary",
+          patterns: [
+            /高值時段/u,
+            /風速/u,
+            /風向/u,
+            /不識別來源身分/u,
+            /位置/u,
+            /傳輸距離/u,
+            /貢獻/u,
+          ],
+        },
+      ],
+      "README.md": [
+        {
+          claim: { start: "| 🌐 **互動網站**", end: "| 🔮 **預測 demo**" },
+          description: "dashboard M7 observed high-value wind boundary",
+          patterns: [
+            /高值時段/u,
+            /風速/u,
+            /風向/u,
+            /不識別來源身分/u,
+            /位置/u,
+            /傳輸距離/u,
+            /貢獻/u,
+          ],
+        },
+        {
+          claim: { start: "| Phase 5 |", end: "| Phase 6 |" },
+          description: "Phase 5 M7 observed high-value wind boundary",
+          patterns: [
+            /高值時段/u,
+            /風速/u,
+            /風向/u,
+            /不識別來源身分/u,
+            /位置/u,
+            /傳輸距離/u,
+            /貢獻/u,
+          ],
+        },
+      ],
+      "README.en.md": [
+        {
+          claim: { start: "| 🌐 **Interactive Dashboard**", end: "| 🔮 **Forecast Demo**" },
+          description: "dashboard M7 observed high-value wind boundary",
+          patterns: [
+            ...ENGLISH_OBSERVED_WIND_PATTERNS,
+            ...ENGLISH_SOURCE_BOUNDARY_PATTERNS,
+          ],
+        },
+        {
+          claim: { start: "| **Phase 5** |", end: "| **Phase 6** |" },
+          description: "Phase 5 M7 observed high-value wind boundary",
+          patterns: [
+            ...ENGLISH_OBSERVED_WIND_PATTERNS,
+            ...ENGLISH_SOURCE_BOUNDARY_PATTERNS,
+          ],
+        },
+      ],
+      "spaces/forecast/app.py": [
+        {
+          ...CJK_M7_SPACE_CLAIM_REQUIREMENT,
+          claim: { start: "六個測站涵蓋不同監測情境", end: "盆地（空氣容易滯留）。" },
+        },
+      ],
+      "spaces/forecast/README.md": [
+        {
+          ...CJK_M7_SPACE_CLAIM_REQUIREMENT,
+          claim: { start: "六個測站涵蓋不同監測情境", end: "盆地（空氣容易滯留）。" },
+        },
+      ],
+      "web/src/components/ChapterSources.astro": [
+        {
+          claim: { start: "What shipped was", end: "`<noscript>` with a `<style>`" },
+          description: "no-JavaScript mismatch why and observed wind attribution boundary",
+          patterns: [
+            /without JavaScript/iu,
+            /mismatch/iu,
+            ...ENGLISH_OBSERVED_WIND_PATTERNS,
+            ...ENGLISH_SOURCE_BOUNDARY_PATTERNS,
+          ],
+        },
+      ],
+    },
+  });
+
+  const m5Problems = inspect({
+    label: "M5",
+    surfaces: ["src/twair/cli.py", "src/twair/analysis/causal.py", "docs/methodology.md"],
+    retired: [
+      englishClaimPattern("did the policy do anything"),
+      englishClaimPattern("median effect"),
+      /(?<![A-Za-z0-9_])(?:years?\s+)?when\s+nothing\s+happened(?![A-Za-z0-9_])/iu,
+      englishClaimPattern("shows an effect"),
+      /沒有事件的年份/u,
+      /沒有封城的年份/u,
+      /效應中位數/u,
+    ],
+    affirmativeRejects: {
+      "src/twair/cli.py": M5_AFFIRMATIVE_CAUSAL_REJECTS,
+      "src/twair/analysis/causal.py": M5_AFFIRMATIVE_CAUSAL_REJECTS,
+      "docs/methodology.md": CJK_M5_AFFIRMATIVE_CAUSAL_REJECTS,
+    },
+    required: {
+      "src/twair/cli.py": [
+        {
+          claim: { start: '@analysis_app.command("m5")', end: '@analysis_app.command("m3")' },
+          description: "marked-window contrast, unmarked-control yardstick, and non-causal boundary",
+          patterns: [
+            ...ENGLISH_M5_BOUNDARY_PATTERNS,
+            /unmarked/iu,
+            /control/iu,
+            /spread/iu,
+            /median/iu,
+            /not detected/iu,
+            /not as zero/iu,
+          ],
+        },
+      ],
+      "src/twair/analysis/causal.py": [
+        {
+          claim: { start: '"""M5', end: '"""' },
+          description: "marked-window contrast, same-calendar controls, and non-causal boundary",
+          patterns: [
+            ...ENGLISH_M5_BOUNDARY_PATTERNS,
+            /unmarked/iu,
+            /same-calendar/iu,
+            /control windows/iu,
+            /not an identified causal policy effect/iu,
+          ],
+        },
+        {
+          claim: { start: "def placebo_distribution(", end: "def _segmented_slopes(" },
+          description: "unmarked same-calendar control semantics",
+          patterns: [
+            /unmarked/iu,
+            /same-calendar/iu,
+            /nothing else happened/iu,
+            /absence of this[\s\S]{0,60}event label/iu,
+          ],
+        },
+      ],
+      "docs/methodology.md": [
+        {
+          claim: {
+            start: "### 4. 第二個答案：能不能把標記窗口訊號從背景變異中分出來",
+            end: "## D9: GUI 工具不可重現",
+          },
+          description: "implemented marked-window contrast and non-causal interpretation",
+          patterns: [
+            /\[[^\]]*causal\.py\]\(\.\.\/src\/twair\/analysis\/causal\.py\)/u,
+            /標記窗口/u,
+            /觀測－預測差額/u,
+            /未標記/u,
+            /同日曆控制窗口/u,
+            CJK_NONCAUSAL_M5_PATTERN,
+          ],
+        },
+        {
+          claim: {
+            start: "### 4. 第二個答案：能不能把標記窗口訊號從背景變異中分出來",
+            end: "## D9: GUI 工具不可重現",
+          },
+          description: "window-control versus candidate-break reference distributions",
+          patterns: [
+            /參考分布均值/u,
+            /參考分布 SD/u,
+            /前兩列/u,
+            /未標記/u,
+            /同日曆控制窗口/u,
+            /斜率差列/u,
+            /同一正規化序列/u,
+            /其他候選斷點月份/u,
+            /COVID-19[^\n]*μg\/m³/u,
+            /台中電廠[^\n]*μg\/m³/u,
+            /2018 空污法修正[^\n]*μg\/m³\/年/u,
+          ],
+        },
+      ],
+    },
+  });
+
+  const pmRatioProblems = inspect({
+    label: "PM-ratio",
+    surfaces: [
+      "src/twair/features/chem.py",
+      "docs/methodology.md",
+      "PLAN.md",
+      "tests/test_drivers.py",
+    ],
+    retired: [
+      englishClaimPattern("source fingerprint"),
+      englishClaimPattern("emission fingerprint"),
+      /來源指紋/u,
+    ],
+    affirmativeRejects: {
+      "src/twair/features/chem.py": PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "docs/methodology.md": CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "PLAN.md": CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      "tests/test_drivers.py": PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    required: {
+      "src/twair/features/chem.py": [
+        {
+          claim: {
+            start: 'if {"PM2.5", "PM10"} <= columns:',
+            end: 'if {"SO2", "NOx"} <= columns:',
+          },
+          description: "PM ratio composition screen and nonunique-source boundary",
+          patterns: [
+            ...ENGLISH_PM_RATIO_BOUNDARY_PATTERNS,
+            /pm_ratio/u,
+          ],
+        },
+      ],
+      "docs/methodology.md": [
+        {
+          claim: { start: "## D2:", end: "## D3:" },
+          description: "PM ratio composition screen and independent source evidence",
+          patterns: [
+            /\\text\{PM\}_\{2\.5\}\/\\text\{PM\}_\{10\}/u,
+            /粒徑組成指標/u,
+            /篩選來源假說/u,
+            /不能唯一辨識或量化來源/u,
+            /chemical speciation/iu,
+            /受體模式/u,
+            /軌跡/u,
+            /擴散/u,
+            /排放清冊/u,
+          ],
+        },
+      ],
+      "PLAN.md": [
+        {
+          claim: { start: "| D2 |", end: "| D3 |" },
+          description: "D2 PM ratio composition and nonunique-source boundary",
+          patterns: [/PM2\.5\/PM10/u, /粒徑組成指標/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
+        },
+        {
+          claim: { start: "#### M7 ", end: "**後續風險**" },
+          description: "M7 PM ratio cross-check and nonunique-source boundary",
+          patterns: [/PM2\.5\/PM10/u, /組成觀測對照/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
+        },
+      ],
+      "tests/test_drivers.py": [
+        {
+          claim: {
+            start: "def test_pm_ratio_is_available_even_though_pm10_is_not_a_predictor(",
+            end: 'root = _store(tmp_path)',
+          },
+          description: "PM ratio test composition screen, predictor, and source boundary",
+          patterns: [
+            ...ENGLISH_PM_RATIO_BOUNDARY_PATTERNS,
+            /not a PM2\.5 predictor/iu,
+          ],
+        },
+      ],
+    },
+  });
+
+  return m7Problems.concat(m5Problems, pmRatioProblems);
 }
 
 function atlasLayoutProblems({ mode, atlas, opening, map, left, right, routes }) {
@@ -748,6 +1353,491 @@ function atlasLayoutProblems({ mode, atlas, opening, map, left, right, routes })
 }
 
 async function lifecycleSelfTest() {
+  const markdownRowBoundaryProblems = claimSurfaceProblems({
+    path: "synthetic-markdown-table-boundary.md",
+    label: "synthetic",
+    text: [
+      "| 可重現研究 | 逐項修正並量化差異 |",
+      "| M7 | 觀測不識別來源身分、位置、傳輸距離或貢獻 |",
+    ].join("\n"),
+    retired: [],
+    affirmativeRejects: CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+  });
+  if (markdownRowBoundaryProblems.length) {
+    throw new Error("surface-wide affirmative rejects cross Markdown table rows");
+  }
+
+  const causalSurfacePath = "src/twair/analysis/causal.py";
+  const causalSurfaceText = readFileSync(causalSurfacePath, "utf8");
+  const trendBreakLimitation =
+    "It does not by itself identify the marked event as the cause of that shift.";
+  const trendBreakOverclaim = "This analysis demonstrates a causal policy effect.";
+  if (!causalSurfaceText.includes(trendBreakLimitation)) {
+    throw new Error("the actual M5 trend-break limitation mutation target is missing");
+  }
+  const causalSurfaceMutationProblems = repositoryClaimBoundaryProblems(
+    new Map([
+      [
+        causalSurfacePath,
+        causalSurfaceText.replace(trendBreakLimitation, trendBreakOverclaim),
+      ],
+    ]),
+  );
+  const causalSurfaceMutationMatches = causalSurfaceMutationProblems.filter(
+    (problem) =>
+      problem.startsWith(`${causalSurfacePath}:`) &&
+      problem.includes("affirmative causal policy-effect attribution"),
+  );
+  if (causalSurfaceMutationMatches.length !== 1) {
+    throw new Error("the actual M5 trend-break surface bypasses shared affirmative rejects");
+  }
+  if (causalSurfaceMutationProblems.length !== 1) {
+    throw new Error("current claim surfaces trigger unrelated affirmative rejects");
+  }
+
+  const chapterSourcesSurfacePath = "web/src/components/ChapterSources.astro";
+  const chapterSourcesSurfaceText = readFileSync(chapterSourcesSurfacePath, "utf8");
+  const chapterSourcesEnglishBoundary =
+    "    source identity or position, transport distance, or contribution.";
+  const chapterSourcesEnglishOverclaim =
+    "    CBPF identifies source identity, position, transport distance, and contribution.";
+  const chapterSourcesPublicBoundary = "  <h2>尖峰風速是觀測分類</h2>";
+  const chapterSourcesOverclaim = "<p>但可識別來源身分、位置、傳輸距離與貢獻。</p>";
+  if (
+    !chapterSourcesSurfaceText.includes(chapterSourcesEnglishBoundary) ||
+    !chapterSourcesSurfaceText.includes(chapterSourcesPublicBoundary)
+  ) {
+    throw new Error("the actual ChapterSources public-region mutation target is missing");
+  }
+  const chapterSourcesMutationProblems = repositoryClaimBoundaryProblems(
+    new Map([
+      [
+        chapterSourcesSurfacePath,
+        chapterSourcesSurfaceText
+          .replace(
+            chapterSourcesEnglishBoundary,
+            `${chapterSourcesEnglishBoundary}\n${chapterSourcesEnglishOverclaim}`,
+          )
+          .replace(
+            chapterSourcesPublicBoundary,
+            `${chapterSourcesPublicBoundary}\n\n  ${chapterSourcesOverclaim}`,
+          ),
+      ],
+    ]),
+  );
+  const chapterSourcesEnglishMutationMatches = chapterSourcesMutationProblems.filter(
+    (problem) =>
+      problem.startsWith(`${chapterSourcesSurfacePath}:`) &&
+      problem.includes("affirmative source identity, position, distance, or contribution attribution"),
+  );
+  const chapterSourcesChineseMutationMatches = chapterSourcesMutationProblems.filter(
+    (problem) =>
+      problem.startsWith(`${chapterSourcesSurfacePath}:`) &&
+      problem.includes(
+        "affirmative Chinese source identity, position, distance, or contribution attribution",
+      ),
+  );
+  if (chapterSourcesEnglishMutationMatches.length !== 1) {
+    throw new Error(
+      "the actual ChapterSources English technical overclaim bypasses mixed-language M7 rejects",
+    );
+  }
+  if (chapterSourcesChineseMutationMatches.length !== 1) {
+    throw new Error(
+      "the actual ChapterSources Chinese public overclaim bypasses mixed-language M7 rejects",
+    );
+  }
+  if (chapterSourcesMutationProblems.length !== 2) {
+    throw new Error("current claim surfaces trigger unrelated ChapterSources rejects");
+  }
+
+  const sourceDirectionPattern = englishClaimPattern("source direction");
+  const sourceFingerprintPattern = englishClaimPattern("source fingerprint");
+  const englishBoundaryProblems = claimSurfaceProblems({
+    path: "synthetic-boundary.txt",
+    label: "synthetic",
+    text: "resource direction and resource fingerprint",
+    retired: [sourceDirectionPattern, sourceFingerprintPattern],
+  });
+  if (
+    englishBoundaryProblems.length ||
+    !sourceDirectionPattern.test("source direction") ||
+    !sourceFingerprintPattern.test("source fingerprint")
+  ) {
+    throw new Error("English retired-claim matching crosses token boundaries");
+  }
+
+  const scopedFalseGreenProblems = claimSurfaceProblems({
+    path: "synthetic-scope.txt",
+    label: "synthetic",
+    text: [
+      "// observed high-value wind-speed/direction patterns",
+      "BEGIN CLAIM",
+      "high values changed with the weather",
+      "END CLAIM",
+    ].join("\n"),
+    claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+    retired: [],
+    required: [
+      {
+        description: "observed high-value wind pattern",
+        patterns: [/observed/iu, /high-value/iu, /wind-speed/iu, /direction/iu],
+      },
+    ],
+  });
+  if (!scopedFalseGreenProblems.length) {
+    throw new Error("required claim prose can be satisfied by an unrelated comment");
+  }
+
+  const preciseParaphraseProblems = claimSurfaceProblems({
+    path: "synthetic-paraphrase.txt",
+    label: "synthetic",
+    text: [
+      "BEGIN CLAIM",
+      "Measured wind speed and wind direction patterns during high-value hours do not establish",
+      "a source's identity, location, travel distance, or contribution.",
+      "END CLAIM",
+    ].join("\n"),
+    claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+    retired: [],
+    affirmativeRejects: M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    required: [
+      {
+        description: "observed high-value wind pattern and attribution boundary",
+        patterns: [...ENGLISH_OBSERVED_WIND_PATTERNS, ...ENGLISH_SOURCE_BOUNDARY_PATTERNS],
+      },
+    ],
+  });
+  if (preciseParaphraseProblems.length) {
+    throw new Error("an equally precise claim-boundary paraphrase is rejected");
+  }
+
+  const m5ParaphraseProblems = claimSurfaceProblems({
+    path: "synthetic-m5-paraphrase.txt",
+    label: "synthetic",
+    text: [
+      "BEGIN CLAIM",
+      "The observed minus predicted difference in the marked window is compared with unmarked",
+      "control windows. This comparison cannot identify a causal policy effect.",
+      "END CLAIM",
+    ].join("\n"),
+    claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+    retired: [],
+    affirmativeRejects: M5_AFFIRMATIVE_CAUSAL_REJECTS,
+    required: [
+      {
+        description: "observational M5 boundary",
+        patterns: ENGLISH_M5_BOUNDARY_PATTERNS,
+      },
+    ],
+  });
+  const pmRatioParaphraseProblems = claimSurfaceProblems({
+    path: "synthetic-pm-paraphrase.txt",
+    label: "synthetic",
+    text: [
+      "BEGIN CLAIM",
+      "Particle size makeup can evaluate source hypotheses, but does not uniquely distinguish",
+      "or quantify a source.",
+      "END CLAIM",
+    ].join("\n"),
+    claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+    retired: [],
+    affirmativeRejects: PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    required: [
+      {
+        description: "PM ratio hypothesis-screen boundary",
+        patterns: ENGLISH_PM_RATIO_BOUNDARY_PATTERNS,
+      },
+    ],
+  });
+  if (m5ParaphraseProblems.length || pmRatioParaphraseProblems.length) {
+    throw new Error("an equally precise M5 or PM-ratio boundary paraphrase is rejected");
+  }
+
+  const coordinatedNegativeParaphraseProblems = [
+    claimSurfaceProblems({
+      path: "synthetic-m7-coordinated-negative-paraphrase.txt",
+      label: "synthetic",
+      text: [
+        "BEGIN CLAIM",
+        "Observed high-value wind-speed and direction patterns do not identify source identity,",
+        "position, transport distance, or quantify contribution.",
+        "END CLAIM",
+      ].join("\n"),
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      required: [
+        {
+          description: "observed high-value wind pattern and attribution boundary",
+          patterns: [...ENGLISH_OBSERVED_WIND_PATTERNS, ...ENGLISH_SOURCE_BOUNDARY_PATTERNS],
+        },
+      ],
+    }),
+    claimSurfaceProblems({
+      path: "synthetic-pm-coordinated-negative-paraphrase.txt",
+      label: "synthetic",
+      text: [
+        "BEGIN CLAIM",
+        "Particle-size composition can screen source hypotheses but cannot uniquely identify",
+        "one source or quantify a source.",
+        "END CLAIM",
+      ].join("\n"),
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      required: [
+        {
+          description: "PM ratio hypothesis-screen boundary",
+          patterns: ENGLISH_PM_RATIO_BOUNDARY_PATTERNS,
+        },
+      ],
+    }),
+  ].flat();
+  if (coordinatedNegativeParaphraseProblems.length) {
+    throw new Error("a coordinated negative attribution paraphrase is rejected");
+  }
+
+  const cjkCoordinatedNegativeParaphraseProblems = [
+    claimSurfaceProblems({
+      path: "synthetic-m7-zh-coordinated-negative-paraphrase.txt",
+      label: "synthetic",
+      text: "BEGIN CLAIM\n高值時段風速與風向觀測不識別來源身分、位置、傳輸距離或量化貢獻。\nEND CLAIM",
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      required: [
+        {
+          description: "Chinese observed wind non-attribution boundary",
+          patterns: [/高值時段/u, /風速/u, /風向/u, /不識別來源身分/u, /位置/u, /傳輸距離/u, /貢獻/u],
+        },
+      ],
+    }),
+    claimSurfaceProblems({
+      path: "synthetic-m5-zh-coordinated-negative-paraphrase.txt",
+      label: "synthetic",
+      text: "BEGIN CLAIM\n標記窗口比較不能識別或證明政策因果效應。\nEND CLAIM",
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: CJK_M5_AFFIRMATIVE_CAUSAL_REJECTS,
+      required: [
+        {
+          description: "Chinese observational M5 boundary",
+          patterns: [CJK_NONCAUSAL_M5_PATTERN],
+        },
+      ],
+    }),
+    claimSurfaceProblems({
+      path: "synthetic-pm-zh-coordinated-negative-paraphrase.txt",
+      label: "synthetic",
+      text: "BEGIN CLAIM\n粒徑組成指標可篩選來源假說，但不能唯一辨識或量化來源。\nEND CLAIM",
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      required: [
+        {
+          description: "Chinese PM ratio hypothesis-screen boundary",
+          patterns: [/粒徑組成指標/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
+        },
+      ],
+    }),
+  ].flat();
+  if (cjkCoordinatedNegativeParaphraseProblems.length) {
+    throw new Error("a coordinated Chinese negative attribution paraphrase is rejected");
+  }
+
+  const lexicalPrefixNegativeProblems = [
+    claimSurfaceProblems({
+      path: "synthetic-m7-zh-different-methods-negative.txt",
+      label: "synthetic",
+      text: "BEGIN CLAIM\n不同方法不能識別來源身分、位置、傳輸距離或量化貢獻。\nEND CLAIM",
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      required: [
+        {
+          description: "Chinese lexical-prefix negative attribution boundary",
+          patterns: [/不同方法不能識別來源身分/u, /位置/u, /傳輸距離/u, /貢獻/u],
+        },
+      ],
+    }),
+    claimSurfaceProblems({
+      path: "synthetic-m7-zh-future-data-negative.txt",
+      label: "synthetic",
+      text: "BEGIN CLAIM\n未來資料不能識別來源身分、位置、傳輸距離或量化貢獻。\nEND CLAIM",
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+      required: [
+        {
+          description: "Chinese lexical-prefix negative attribution boundary",
+          patterns: [/未來資料不能識別來源身分/u, /位置/u, /傳輸距離/u, /貢獻/u],
+        },
+      ],
+    }),
+  ].flat();
+  const spaceCopularOverclaimProblems = claimSurfaceProblems({
+    path: "synthetic-m7-zh-space-copular-overclaim.txt",
+    label: "synthetic",
+    text: "BEGIN CLAIM\nCBPF 高值時段的風速觀測不是污染來源，但這是污染來源。\nEND CLAIM",
+    claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+    retired: [],
+    affirmativeRejects: CJK_M7_SPACE_AFFIRMATIVE_SOURCE_REJECTS,
+    required: [CJK_M7_SPACE_CLAIM_REQUIREMENT],
+  });
+  const spaceCopularParaphraseProblems = claimSurfaceProblems({
+    path: "synthetic-m7-zh-space-copular-paraphrase.txt",
+    label: "synthetic",
+    text: "BEGIN CLAIM\nCBPF 高值風速觀測是描述性型態，不是污染來源。\nEND CLAIM",
+    claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+    retired: [],
+    affirmativeRejects: CJK_M7_SPACE_AFFIRMATIVE_SOURCE_REJECTS,
+    required: [CJK_M7_SPACE_CLAIM_REQUIREMENT],
+  });
+  const roundFourBoundaryFailures = [];
+  if (lexicalPrefixNegativeProblems.length) {
+    roundFourBoundaryFailures.push("lexical-prefix legitimate negatives are rejected");
+  }
+  if (!spaceCopularOverclaimProblems.length) {
+    roundFourBoundaryFailures.push("the Space copular adversative overclaim is accepted");
+  }
+  if (spaceCopularParaphraseProblems.length) {
+    roundFourBoundaryFailures.push("a precise Space copular-negative paraphrase is rejected");
+  }
+  if (roundFourBoundaryFailures.length) {
+    throw new Error(`round-4 CJK boundary probes failed: ${roundFourBoundaryFailures.join("; ")}`);
+  }
+
+  const affirmativeOverclaims = [
+    {
+      label: "M7",
+      text: [
+        "Observed high-value wind-speed and direction patterns identify source identity,",
+        "position, transport distance, and contribution. This is not merely descriptive.",
+      ].join("\n"),
+      patterns: [...ENGLISH_OBSERVED_WIND_PATTERNS, ...ENGLISH_SOURCE_BOUNDARY_PATTERNS],
+      affirmativeRejects: M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M5",
+      text: [
+        "The marked-window observed-minus-predicted contrast can identify a causal policy effect.",
+        "It is not merely a contrast.",
+      ].join("\n"),
+      patterns: ENGLISH_M5_BOUNDARY_PATTERNS,
+      affirmativeRejects: M5_AFFIRMATIVE_CAUSAL_REJECTS,
+    },
+    {
+      label: "M5-zh",
+      text: "標記窗口差額可識別政策因果效應。這不是單純的差額。",
+      patterns: [CJK_NONCAUSAL_M5_PATTERN],
+      affirmativeRejects: [],
+    },
+    {
+      label: "PM-ratio",
+      text: [
+        "Particle-size composition can screen source hypotheses and uniquely identify and",
+        "quantify a source. This is not merely descriptive.",
+      ].join("\n"),
+      patterns: ENGLISH_PM_RATIO_BOUNDARY_PATTERNS,
+      affirmativeRejects: PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M7-mixed-predicate",
+      text: [
+        "Observed high-value wind-speed and direction patterns do not identify source identity,",
+        "but do establish position, transport distance, and contribution.",
+      ].join("\n"),
+      patterns: [...ENGLISH_OBSERVED_WIND_PATTERNS, ...ENGLISH_SOURCE_BOUNDARY_PATTERNS],
+      affirmativeRejects: M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M5-postpositive-negation",
+      text: [
+        "The marked-window observed-minus-predicted contrast is a causal policy effect not",
+        "identified by this model.",
+      ].join("\n"),
+      patterns: ENGLISH_M5_BOUNDARY_PATTERNS,
+      affirmativeRejects: M5_AFFIRMATIVE_CAUSAL_REJECTS,
+    },
+    {
+      label: "PM-ratio-mixed-predicate",
+      text: [
+        "Particle-size composition can screen source hypotheses and does not uniquely identify",
+        "one source, but it can quantify a source.",
+      ].join("\n"),
+      patterns: ENGLISH_PM_RATIO_BOUNDARY_PATTERNS,
+      affirmativeRejects: PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M7-zh-mixed-predicate",
+      text: [
+        "高值時段風速與風向觀測不識別來源身分、位置、傳輸距離或貢獻，",
+        "但可識別來源身分、位置、傳輸距離與貢獻。",
+      ].join("\n"),
+      patterns: [/高值時段/u, /風速/u, /風向/u, /不識別來源身分/u, /位置/u, /傳輸距離/u, /貢獻/u],
+      affirmativeRejects: CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M5-zh-mixed-predicate",
+      text: "不是已識別的政策因果效應，但可識別政策因果效應。",
+      patterns: [CJK_NONCAUSAL_M5_PATTERN],
+      affirmativeRejects: CJK_M5_AFFIRMATIVE_CAUSAL_REJECTS,
+    },
+    {
+      label: "PM-ratio-zh-mixed-predicate",
+      text: [
+        "PM2.5/PM10 粒徑組成指標可篩選來源假說，不能唯一辨識或量化來源，",
+        "但可唯一辨識並量化來源。",
+      ].join("\n"),
+      patterns: [/粒徑組成指標/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
+      affirmativeRejects: CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M7-zh-double-negation",
+      text: "高值時段風速與風向觀測不是不識別來源身分、位置、傳輸距離或貢獻。",
+      patterns: [/高值時段/u, /風速/u, /風向/u, /不識別來源身分/u, /位置/u, /傳輸距離/u, /貢獻/u],
+      affirmativeRejects: CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+    {
+      label: "M5-zh-double-negation",
+      text: "不是不能識別政策因果效應。",
+      patterns: [CJK_NONCAUSAL_M5_PATTERN],
+      affirmativeRejects: CJK_M5_AFFIRMATIVE_CAUSAL_REJECTS,
+    },
+    {
+      label: "PM-ratio-zh-double-negation",
+      text: "粒徑組成指標可篩選來源假說，並非不能唯一辨識或量化來源。",
+      patterns: [/粒徑組成指標/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
+      affirmativeRejects: CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
+    },
+  ];
+  const acceptedOverclaims = [];
+  for (const overclaim of affirmativeOverclaims) {
+    const problems = claimSurfaceProblems({
+      path: `synthetic-${overclaim.label}-overclaim.txt`,
+      label: "synthetic",
+      text: `BEGIN CLAIM\n${overclaim.text}\nEND CLAIM`,
+      claim: { start: "BEGIN CLAIM", end: "END CLAIM" },
+      retired: [],
+      affirmativeRejects: overclaim.affirmativeRejects,
+      required: [
+        {
+          description: `${overclaim.label} non-attribution boundary`,
+          patterns: overclaim.patterns,
+        },
+      ],
+    });
+    if (!problems.length) {
+      acceptedOverclaims.push(overclaim.label);
+    }
+  }
+  if (acceptedOverclaims.length) {
+    throw new Error(
+      `affirmative overclaims pass their boundary contracts: ${acceptedOverclaims.join(", ")}`,
+    );
+  }
+
   if (
     CHROME_TEST_FLAGS.length !== 4 ||
     !CHROME_TEST_FLAGS.includes("--disable-back-forward-cache") ||

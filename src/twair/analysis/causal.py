@@ -1,10 +1,9 @@
-"""M5 — did the policy do anything?
+"""M5 — can a marked-window contrast clear background variation?
 
-The question every air-quality story wants answered, and the one most likely to
-be answered badly. Concentrations fell during the COVID lockdown; they also fall
-every May as the north-east monsoon gives way to southerly flow. Separating the
-two needs a counterfactual: what would the concentration have been, on those
-particular days, with that particular weather, if the event had not happened?
+Concentrations fell during the COVID-marked window; they also fall every May as
+the north-east monsoon gives way to southerly flow. The narrow measurement is
+whether the marked-window observed-minus-predicted contrast is unusual beside
+same-calendar background variation. It is not an identified causal policy effect.
 
 **This deliberately does not reuse M4's normalised series.** That series is
 built by resampling every predictor except the long-run trend, so its output is
@@ -12,24 +11,24 @@ a smooth function of time — measured on 忠明 it moves about 0.05 µg/m³ per
 month. It resolves a two-decade trend beautifully and a ten-week lockdown not at
 all. Different question, different tool.
 
-The tool here is a plain counterfactual:
+The tool here is a weather-and-calendar prediction contrast:
 
 1. Fit a model of daily PM2.5 on weather and calendar, using **only days
-   outside the event window** (plus a buffer, so the run-up does not leak in).
-2. Predict the event window using the weather that actually occurred.
-3. The gap between observed and predicted is what the weather and the season
-   cannot explain.
+   outside the marked window** (plus a buffer, so adjacent days do not leak in).
+2. Predict the marked window using the weather that actually occurred.
+3. Record observed minus predicted as the marked-window contrast; it also
+   contains any model misspecification and unmodelled influences.
 
 Daily rather than hourly: a ten-week event is not a diurnal question, and the
 aggregation makes the whole thing fast enough to run placebos, which matters
 more than the lost resolution.
 
-**Placebos are not optional here.** The same procedure is run on the same
-calendar window in every other year of the record, where by construction there
-was no event. If those placebo "effects" are as large as the real one, the
-method has measured seasonal misfit rather than a policy, and the honest
-reading is that nothing was detected. The placebo distribution is reported
-beside every estimate for exactly that reason.
+**Control windows are not optional here.** The same procedure is run on
+unmarked same-calendar control windows in other years of the record.
+Unmarked does not establish that nothing else happened; it means only that the
+configured event label is absent. If those control contrasts are as large as the marked one,
+the method cannot distinguish the marked-window signal from its own background
+variation. The honest reading is not detected, not zero.
 """
 
 from __future__ import annotations
@@ -59,8 +58,8 @@ __all__ = [
 TARGET = "PM2.5"
 
 # Weather and calendar only. Chemistry is excluded for the same reason as in
-# M4: NOx and CO fall during a lockdown too, so letting the model see them
-# would explain the effect away using its own consequence.
+# M4: co-pollutants can share a marked-window change with PM2.5, so conditioning
+# on them can absorb the contrast being screened.
 DAILY_FEATURES: tuple[str, ...] = (
     "AMB_TEMP",
     "RH",
@@ -78,15 +77,14 @@ DAILY_FEATURES: tuple[str, ...] = (
 _POLLUTANTS = ("PM2.5", "AMB_TEMP", "RH", "RAINFALL", "WS_HR", "WD_HR")
 
 # Days either side of the event excluded from training. Anticipation and
-# recovery are real — people changed behaviour before the formal announcement
-# and did not resume instantly — and letting either into the training set would
-# teach the model that those days are normal.
+# recovery can extend beyond a formal window, and letting adjacent days into
+# the training set would define them as ordinary.
 DEFAULT_BUFFER_DAYS = 30
 
 
 @dataclass(frozen=True, slots=True)
 class EventEffect:
-    """What happened during the window, against what the weather predicted."""
+    """Marked-window observed-minus-predicted contrast for one station."""
 
     event: str
     station: str
@@ -108,11 +106,11 @@ class EventEffect:
 
     @property
     def credible(self) -> bool:
-        """Distinguishable from what the method finds when nothing happened.
+        """Distinguishable from unmarked same-calendar control-window variation.
 
         A bootstrap interval says the estimate is precise. It cannot say the
         estimate is *right* — a model that misfits every May will misfit this
-        May too, precisely and wrongly. Only the placebos speak to that.
+        May too, precisely and wrongly. Only the control windows speak to that.
         """
         return abs(self.z_against_placebo) >= 2.0
 
@@ -257,7 +255,7 @@ def counterfactual(
     placebo_years: int = 0,
     seed: int = 20260729,
 ) -> EventEffect | None:
-    """Estimate one event's effect at one station.
+    """Compute one marked-window observed-minus-predicted contrast at one station.
 
     ``placebo_years`` is filled in by :func:`placebo_distribution`; callers
     normally use :func:`run_causal`, which wires the two together.
@@ -320,12 +318,13 @@ def placebo_distribution(
     buffer_days: int = DEFAULT_BUFFER_DAYS,
     seed: int = 20260729,
 ) -> list[float]:
-    """The same estimate, on the same calendar window, in years with no event.
+    """The same estimate in unmarked same-calendar control years.
 
     This is the control the 2018 project's methods had no equivalent of. If a
     model systematically misses late May, it will miss late May 2021 too, and
-    the miss will look exactly like a lockdown effect. The only way to know is
-    to ask it about late May in years when nothing happened.
+    the miss will look exactly like a marked-window contrast. Unmarked does not
+    establish that nothing else happened; it records only the absence of this
+    configured event label, while preserving the same calendar window.
     """
     window_end = end or start
     span_days = (window_end - start).days
@@ -422,11 +421,11 @@ def trend_break(
     when: date,
     min_placebo_gap_years: float = 3.0,
 ) -> TrendBreak | None:
-    """Did the *rate* of change shift at this date?
+    """Measure whether the *rate* of change shifts at this marked date.
 
-    The right question for an open-ended policy. A law that takes effect and
-    stays in effect is not a window with a before and an after — it is a regime
-    change, and what it should alter is the slope, not the level.
+    An open-ended event label is not a finite window with a before and an after,
+    so this records the observed slope difference rather than a level contrast.
+    It does not by itself identify the marked event as the cause of that shift.
 
     This runs on **M4's meteorologically normalised monthly series**, which is
     where that series is genuinely the right tool: it is smooth by construction,
@@ -452,8 +451,8 @@ def trend_break(
 
     Three years is the default. Even so this test is **conservative by
     construction** — the null is drawn from the same series as the signal — and
-    it will miss real breaks before it invents one. For asking whether a policy
-    visibly bent a trend, erring that way is correct.
+    it will miss real breaks before it invents one. For screening whether a
+    marked date has an unusual slope difference, erring that way is correct.
     """
     subset = monthly.filter(pl.col("station_name") == station).sort("month")
     if subset.height < 36:

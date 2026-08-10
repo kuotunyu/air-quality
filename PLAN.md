@@ -463,17 +463,17 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
   實測後拒絕發布超出監測網解析度的 1 km 濃度場
 - **人口加權暴露** — 未取得人口網格，因此不發布人口暴露數字，也不預設測站平均偏誤方向
 
-#### M7 境外傳輸（`analysis/trajectory.py`）
-- **CPF / CBPF** — conditional (bivariate) probability function 極座標圖，找高濃度對應的風速風向組合 → 污染源方位
+#### M7 高值時段的風速／風向型態（`analysis/sources.py`）
+- **CPF / CBPF** — conditional (bivariate) probability function 極座標圖，描述高值時段的風速／風向型態；不識別來源身分、位置、傳輸距離或貢獻
 - **HYSPLIT／軌跡分群／PSCF** — 需要尚未取得的外部風場與軌跡資料，明確延後；
-  現行 M7 只回答監測站風速風向條件支持的「來向」，不宣稱跨境源區
+  現行 M7 只回答監測站高值時段的風速／風向型態，不做來源歸因
 - **交叉驗證** — 用 PM2.5/PM10 ratio、SO2/NOx ratio 作為組成觀測對照以篩選來源假說；PM2.5/PM10 單一比值不能唯一辨識或量化來源
 
 **驗收**
 - [x] **已取代**：全台 1 km 濃度場不出；最近鄰 0.6–67 km，1 km 宣稱網絡給不起的解析度，改以緩衝 LOO 實測 `field_skill`
 - [x] Moran's I 顯著性、LISA 圖 ✅（M6：Cliff–Ord 殘差虛無、correlogram 變號、LISA BH 後 0/60）
 - [ ] **延後**：至少 5 年的後推軌跡資料庫與分群；不阻擋現行 M6／M7 發布
-- [x] 網站第 3 章空間結構與第 4 章 CBPF 污染來向上線；沒有資料就不放軌跡動畫
+- [x] 網站第 3 章空間結構與第 4 章 CBPF 高值時段的風速／風向型態上線；沒有資料就不放軌跡動畫
 - [x] **已取代**：`reports/03-spatial.md` 由 M6 Parquet 產物支持；repo 不使用 Quarto
 
 **後續風險**：HYSPLIT 不只是部署問題，還需要可重現的風場、起點高度與 archive contract。

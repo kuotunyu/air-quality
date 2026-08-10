@@ -53,11 +53,11 @@ __all__ = [
     "space_dir",
 ]
 
-# Six stations chosen from M7's own result rather than by population: the CBPF
-# analysis separated transport-dominated sites from locally-dominated ones
-# without being told where any of them were, and these span that finding.
-# 富貴角 and 馬公 are transport-dominated, 忠明 and 前金 are urban and local,
-# 潮州 is rural, 埔里 sits in an inland basin where air stagnates.
+# Six stations chosen from M7's own result rather than by population: their CBPF
+# maxima span the measured high-value wind patterns used in the demo.
+# 富貴角 and 馬公 peak in high-wind bins; 忠明, 前金, 潮州, and 埔里
+# peak in low-wind bins. These observations do not identify source identity or
+# position, transport distance, or contribution.
 #
 # 陽明 was the original sixth and had to be dropped: it has PM2.5 for 2025 but
 # no WS_HR or WD_HR, so every row died on the wind features. That is a real

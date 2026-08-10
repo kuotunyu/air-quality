@@ -62,7 +62,7 @@
 |---|---|
 | 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計，可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載，也可封裝成 Hugging Face Dataset。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | 📊 **可重現研究** | 從復刻 2018 年結果開始，逐項修正並量化差異 |
-| 🌐 **互動網站** | 趨勢、個人化暴露報告、污染來源方位、事件偵測極限、方法學對照 |
+| 🌐 **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
 | 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
 | 🔧 **Python 套件** | `twair` — 資料管線與分析工具 |
 
@@ -125,7 +125,7 @@ uv run twair probe sources
 | Phase 2 | M1 復刻、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
-| Phase 5 | M6 空間結構、M7 CBPF 污染來向 | ✅ 有界完成；HYSPLIT／1 km 場延後 |
+| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻） | ✅ 有界完成；HYSPLIT／1 km 場延後 |
 | Phase 6 | 衛星與微型感測器融合 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；分析與融合仍延後，不阻擋目前 release |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
 | Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 收尾：HF Dataset 與人工讀者試讀待辦；PyPI 選配 |

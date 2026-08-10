@@ -77,7 +77,12 @@ MODULES: tuple[Module, ...] = (
     Module("m3_pitfalls", "twair analyze m3", "six paired method comparisons"),
     Module("m4_deweather", "twair analyze m4", "meteorological normalisation"),
     Module("m5_causal", "twair analyze m5", "event studies with placebo controls"),
-    Module("m7_sources", "twair analyze m7", "CBPF source direction"),
+    Module(
+        "m7_sources",
+        "twair analyze m7",
+        "observed high-value wind-speed/direction patterns; "
+        "not source identity, position, transport distance, or contribution",
+    ),
     Module("m9_forecast", "twair analyze m9", "forecasting scored against persistence"),
     Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
     Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),
