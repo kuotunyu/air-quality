@@ -120,7 +120,7 @@ uv run twair probe sources
 
 | 階段 | 目前交付 | 交付判定 |
 |---|---|---|
-| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；需憑證的加值源延後 |
+| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；GEE 衛星 Stage A 已交付；CWA／ERA5 延後 |
 | Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；L0／L1 Dataset bundle 可本機重建，遠端上架另行人工確認 |
 | Phase 2 | M1 復刻、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |

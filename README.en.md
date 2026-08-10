@@ -73,7 +73,7 @@ flowchart TD
     subgraph Data Sources [Measured Inputs]
         A[MoENV Annual Archive Catalogue] -->|Probe file IDs / gdown| D[Raw ZIP / 7z Archives]
         B[MoENV Station Register] -->|Metadata only| S[Station Metadata]
-        C[CWA / ERA5 / Satellite] -.->|Deferred; absent from current results| X[Future covariates]
+        C[CWA / ERA5 / Satellite] -.->|CWA/ERA5 deferred; satellite Stage A only| X[Future covariates]
     end
 
     subgraph Ingestion [Processing & Pipeline]
@@ -141,7 +141,7 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 | [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
 | [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temp, surface pressure | 1982–Present | ⬜ **not yet acquired** |
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2025 source acquisition implemented; M8 analysis and fusion remain incomplete |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | ⏸ The synchronous pilot timed out; batch acquisition and calibration remain |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2025 station-month batch acquisition completed; AOD/PM2.5 analysis and fusion remain incomplete |
 
 Every meteorological variable in use today is measured by the air-quality stations' own instruments — temperature, humidity, rainfall, wind speed and bearing. Nothing comes from CWA or from a reanalysis yet.
 
@@ -183,13 +183,13 @@ the relevant public [technical docs](docs/).
 
 | Phase | Current delivery | Disposition |
 |---|---|---|
-| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; credentialed value-add sources deferred |
-| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; full HF Dataset publishes at closeout |
+| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; GEE satellite Stage A delivered; CWA/ERA5 deferred |
+| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; L0/L1 Dataset bundle is locally reproducible; remote publication needs owner confirmation |
 | **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
 | **Phase 5** | M6 spatial structure and M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution) | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
-| **Phase 6** | Satellite and low-cost sensor fusion | 🟡 S5P source-acquisition Stage A delivered; analysis, MAIAC, and fusion remain deferred and do not block this release |
+| **Phase 6** | Satellite and low-cost sensor fusion | 🟡 S5P and MAIAC source-acquisition Stage A delivered; analysis and fusion remain deferred and do not block this release |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |
 
