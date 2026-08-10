@@ -22,8 +22,11 @@ import httpx
 import polars as pl
 import pytest
 import respx
+from typer.testing import CliRunner
 
 import twair.ingest.station_meta as station_meta
+import twair.store.stations as station_store
+from twair import cli
 from twair.config import ConfigError
 from twair.ingest.station_meta import (
     API_URL,
@@ -436,3 +439,35 @@ def test_an_empty_historical_supplement_leaves_an_unknown_name_unresolved() -> N
     assert joined.height == 1
     assert joined["lon"].null_count() == 1
     assert joined["lat"].null_count() == 1
+
+
+def test_current_only_and_reviewed_historical_reconciliation_are_distinct() -> None:
+    archive = pl.DataFrame({"station_name": ["萬里", "崇倫"]})
+    current = current_frame()
+    resolved = station_meta.resolve_station_geo(current, historical_frame())
+
+    current_only = reconcile_with_store(archive, current)
+    reviewed = reconcile_with_store(archive, resolved)
+
+    assert names(current_only, "archive_only") == ["崇倫", "萬里"]
+    assert names(reviewed, "both") == ["萬里"]
+    assert names(reviewed, "archive_only") == ["崇倫"]
+
+
+def test_the_cli_does_not_call_historically_placed_wanli_absent_from_reviewed_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(station_meta, "load_station_geo", current_frame)
+    monkeypatch.setattr(
+        station_store,
+        "build_station_table",
+        lambda *, geography=False: pl.DataFrame({"station_name": ["萬里", "崇倫"]}),
+    )
+
+    result = CliRunner().invoke(cli.app, ["stations", "geo"], terminal_width=240)
+
+    assert result.exit_code == 0
+    archive_only = result.stdout[result.stdout.index("archive_only (") :]
+    assert "崇倫" in archive_only
+    assert "萬里" not in archive_only
+    assert "reviewed current and historical sources" in archive_only

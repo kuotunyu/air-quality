@@ -589,7 +589,7 @@ def stations(
     if not unplaced.is_empty():
         console.print(
             f"[yellow]{unplaced.height} station(s) with no coordinates[/yellow] "
-            f"(in the archives, not in MOENV's current register): "
+            f"(in the archives, absent from reviewed current and historical sources): "
             f"{unplaced['station_name'].to_list()}"
         )
 
@@ -612,12 +612,28 @@ def stations_geo(
         load_station_geo,
         reconcile_with_store,
         refresh_station_geo,
+        resolve_station_geo,
     )
     from twair.store.stations import build_station_table
 
-    geo = refresh_station_geo() if refresh else load_station_geo()
-    console.print(geo.select("station_name", "county", "lon", "lat", "station_type_official"))
-    console.print(f"{geo.height} station(s) in the register")
+    current_geo = refresh_station_geo() if refresh else load_station_geo()
+    geo = resolve_station_geo(current=current_geo)
+    console.print(
+        geo.select(
+            "station_name",
+            "county",
+            "lon",
+            "lat",
+            "station_type_official",
+            "geo_source",
+            "geo_source_record_namespace",
+            "geo_source_record_id",
+        )
+    )
+    console.print(
+        f"{current_geo.height} station(s) in the current register; "
+        f"{geo.height} station geography record(s) after reviewed historical sources"
+    )
 
     table = build_station_table(geography=False)
     presence = reconcile_with_store(table, geo)
@@ -625,8 +641,11 @@ def stations_geo(
     console.print(counts)
 
     for kind, note in (
-        ("archive_only", "measured, but not in the current register — no coordinates"),
-        ("register_only", "in the register, but absent from every annual archive"),
+        (
+            "archive_only",
+            "measured, but absent from reviewed current and historical sources — no coordinates",
+        ),
+        ("register_only", "in reviewed geography, but absent from every annual archive"),
     ):
         names = presence.filter(pl.col("presence") == kind)["station_name"].to_list()
         if names:

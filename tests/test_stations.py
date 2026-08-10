@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
 import polars as pl
 import pytest
 
 from twair.config import load_conf
+from twair.store import stations as station_store
 from twair.store.stations import (
     alias_map,
+    attach_geography,
     derive_airzones,
     normalise_name_expr,
     station_type_map,
@@ -43,6 +48,26 @@ def _members(pairs: list[tuple[str, str]]) -> pl.DataFrame:
             "source_member": [p[1] for p in pairs],
         }
     )
+
+
+def _write_observation_partition(
+    root: Path,
+    year: int,
+    month: int,
+    rows: list[tuple[str, datetime, str]],
+) -> Path:
+    path = root / f"year={year}" / f"month={month:02d}" / "part-0.parquet"
+    path.parent.mkdir(parents=True)
+    pl.DataFrame(
+        rows,
+        schema={
+            "station_name": pl.Utf8,
+            "ts_local": pl.Datetime("us"),
+            "source_member": pl.Utf8,
+        },
+        orient="row",
+    ).write_parquet(path)
+    return path
 
 
 class TestNameNormalisation:
@@ -128,6 +153,106 @@ class TestAirzoneRecovery:
         assert zones.height == 1
         assert zones["station_name"].to_list() == ["臺西"]
         assert zones["airzone"].to_list() == ["雲嘉南空品區"]
+
+
+class TestPartitionBoundedStationReduction:
+    def test_an_empty_observation_root_is_reported_not_turned_into_an_empty_table(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        with pytest.raises(
+            FileNotFoundError,
+            match="no observation Parquet partitions",
+        ):
+            station_store._reduce_station_partitions(tmp_path, CONFIG)
+
+    def test_partition_reduction_preserves_station_years_members_and_zones(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        old_member = "99年 雲嘉南空品區/99年台南站_20110329.csv"
+        _write_observation_partition(
+            tmp_path,
+            2010,
+            12,
+            [
+                ("台南", datetime(2010, 12, 31, 22), old_member),
+                ("台南", datetime(2010, 12, 31, 23), old_member),
+            ],
+        )
+        _write_observation_partition(
+            tmp_path,
+            2011,
+            1,
+            [
+                ("臺南", datetime(2011, 1, 1, 0), "臺南_2011.csv"),
+                (
+                    "前鎮",
+                    datetime(2011, 1, 1, 0),
+                    "99年 高屏空品區/99年前鎮站_20110329.csv",
+                ),
+            ],
+        )
+
+        station_years, station_members = station_store._reduce_station_partitions(
+            tmp_path,
+            CONFIG,
+        )
+
+        assert station_years.sort("station_name", "year").rows() == [
+            ("前鎮", 2011),
+            ("臺南", 2010),
+            ("臺南", 2011),
+        ]
+        assert station_members.filter(pl.col("station_name") == "臺南").sort(
+            "source_member"
+        ).rows() == [
+            ("臺南", old_member),
+            ("臺南", "臺南_2011.csv"),
+        ]
+        zones = derive_airzones(station_members, CONFIG)
+        assert dict(zip(zones["station_name"], zones["airzone"], strict=True)) == {
+            "前鎮": "高屏空品區",
+            "臺南": "雲嘉南空品區",
+        }
+
+    def test_partition_reduction_reads_one_concrete_parquet_path_at_a_time(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        first = _write_observation_partition(
+            tmp_path,
+            2010,
+            12,
+            [("台南", datetime(2010, 12, 31, 23), "臺南.csv")],
+        )
+        second = _write_observation_partition(
+            tmp_path,
+            2011,
+            1,
+            [("臺南", datetime(2011, 1, 1, 0), "臺南.csv")],
+        )
+        real_read_parquet = pl.read_parquet
+        reads: list[tuple[Path, list[str] | None]] = []
+
+        def record_read(
+            source: Path,
+            *,
+            columns: list[str] | None = None,
+        ) -> pl.DataFrame:
+            reads.append((Path(source), columns))
+            return real_read_parquet(source, columns=columns)
+
+        monkeypatch.setattr(pl, "read_parquet", record_read)
+
+        station_store._reduce_station_partitions(tmp_path, CONFIG)
+
+        assert reads == [
+            (path, ["station_name", "ts_local", "source_member"])
+            for path in sorted([first, second])
+        ]
+        assert all(path.name == "part-0.parquet" for path, _ in reads)
 
 
 class TestStationTypes:
@@ -229,6 +354,39 @@ class TestAirzoneConflicts:
         second = derive_airzones(_members(list(reversed(rows))), CONFIG)["airzone"].to_list()
 
         assert first == second == ["中部空品區"]
+
+
+class TestStationGeography:
+    def test_attach_geography_uses_the_resolved_register_and_carries_wanli_provenance(
+        self,
+    ) -> None:
+        table = pl.DataFrame({"station_name": ["萬里"]})
+
+        placed = attach_geography(table)
+
+        assert placed.height == 1
+        assert placed["lon"][0] == pytest.approx(121.689881)
+        assert placed["lat"][0] == pytest.approx(25.179667)
+        assert placed["geo_source"][0] == "reviewed_historical"
+        assert placed["geo_source_record_namespace"][0] == "AIRTW central station detail"
+        assert placed["geo_source_record_id"][0] == "61"
+
+    def test_the_remaining_unreviewed_stations_keep_null_coordinates(self) -> None:
+        names = ["台中", "崇倫", "阿里山", "泰山", "三民"]
+        table = pl.DataFrame({"station_name": names})
+
+        unplaced = attach_geography(table)
+
+        assert unplaced.height == len(names)
+        assert unplaced["station_name"].to_list() == names
+        assert unplaced["lon"].null_count() == len(names)
+        assert unplaced["lat"].null_count() == len(names)
+        assert unplaced["geo_source"].null_count() == len(names)
+        assert unplaced["geo_source_record_namespace"].null_count() == len(names)
+        assert unplaced["geo_source_record_id"].null_count() == len(names)
+        assert unplaced.filter(pl.col("station_name") == "台中").select(
+            "lon", "lat", "geo_source"
+        ).row(0) == (None, None, None)
 
 
 @pytest.mark.slow

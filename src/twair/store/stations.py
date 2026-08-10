@@ -24,7 +24,8 @@ from typing import Any
 import polars as pl
 
 from twair.config import ConfigError, load_conf
-from twair.store.writer import scan_observations
+from twair.paths import processed_dir
+from twair.store.writer import OBSERVATIONS
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +80,36 @@ def normalise_name_expr(
     if aliases:
         expr = expr.replace(aliases)
     return expr.alias(column)
+
+
+def _reduce_station_partitions(
+    root: Path | None,
+    config: dict[str, Any],
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Reduce each partition before retaining cross-store station facts."""
+    target = root or processed_dir(OBSERVATIONS)
+    paths = sorted(target.glob("**/*.parquet"))
+    if not paths:
+        raise FileNotFoundError(f"no observation Parquet partitions under {target}")
+
+    station_year_parts: list[pl.DataFrame] = []
+    station_member_parts: list[pl.DataFrame] = []
+    for path in paths:
+        frame = pl.read_parquet(
+            path,
+            columns=["station_name", "ts_local", "source_member"],
+        )
+        normalised = frame.select(
+            normalise_name_expr(config=config),
+            pl.col("ts_local").dt.year().cast(pl.Int16).alias("year"),
+            pl.col("source_member").cast(pl.Utf8),
+        )
+        station_year_parts.append(normalised.select("station_name", "year").unique())
+        station_member_parts.append(normalised.select("station_name", "source_member").unique())
+
+    station_years = pl.concat(station_year_parts).unique().sort("station_name", "year")
+    station_members = pl.concat(station_member_parts).unique().sort("station_name", "source_member")
+    return station_years, station_members
 
 
 def derive_airzones(
@@ -170,23 +201,15 @@ def build_station_table(root: Path | None = None, *, geography: bool = True) -> 
     interesting part.
     """
     conf = load_conf("stations")
-    lazy = scan_observations(root)
+    station_years, station_members = _reduce_station_partitions(root, conf)
 
-    activity = (
-        lazy.select(
-            normalise_name_expr(config=conf),
-            pl.col("ts_local").dt.year().cast(pl.Int16).alias("year"),
-        )
-        .group_by("station_name")
-        .agg(
-            pl.col("year").min().alias("first_year"),
-            pl.col("year").max().alias("last_year"),
-            pl.col("year").n_unique().alias("years_present"),
-        )
-        .collect()
+    activity = station_years.group_by("station_name").agg(
+        pl.col("year").min().alias("first_year"),
+        pl.col("year").max().alias("last_year"),
+        pl.col("year").n_unique().alias("years_present"),
     )
 
-    zones = derive_airzones(lazy, conf)
+    zones = derive_airzones(station_members, conf)
     types = station_type_map(conf)
     default_type = conf.get("default_station_type", "general")
     dual = set(conf.get("dual_role", []) or [])
@@ -227,9 +250,22 @@ def attach_geography(table: pl.DataFrame) -> pl.DataFrame:
     Imported lazily because ``ingest.station_meta`` normalises names with this
     module, and a module-level import in both directions is a cycle.
     """
-    from twair.ingest.station_meta import load_station_geo
+    from twair.ingest.station_meta import resolve_station_geo
 
-    geo = load_station_geo().drop("address")
+    geo = resolve_station_geo().select(
+        "station_name",
+        "station_name_en",
+        "airzone_official",
+        "county",
+        "township",
+        "lon",
+        "lat",
+        "station_type_official",
+        "site_id",
+        "geo_source",
+        "geo_source_record_namespace",
+        "geo_source_record_id",
+    )
     joined = table.join(geo, on="station_name", how="left")
 
     unplaced = joined.filter(pl.col("lat").is_null())["station_name"].to_list()
