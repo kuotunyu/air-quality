@@ -28,7 +28,7 @@ uv run twair doctor
 | Metadata／維運 | `MOENV_API_KEY` | 重抓測站基本資料、唯讀 freshness 檢查 |
 | 延後的氣象加值 | `CWA_API_KEY` | 氣象站觀測 |
 | 延後的氣象加值 | `CDSAPI_KEY` | ERA5 邊界層高度 |
-| Phase 6 Stage A | `GEE_PROJECT_ID` | S5P 站月來源取得；進階 MAIAC／融合仍可延後 |
+| Phase 6 Stage A | `GEE_PROJECT_ID` | S5P 與 MAIAC 站月來源取得；分析／融合仍可延後 |
 | 發布收尾 | `HF_TOKEN` | Hugging Face Dataset 與 Space 更新 |
 
 ---
@@ -81,7 +81,7 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
 
 ## 4. Google Earth Engine — `GEE_PROJECT_ID`
 
-> **S5P Stage A 已使用 GEE 驗證；它仍不是目前 release 的必要依賴。**
+> **S5P 與 MAIAC Stage A 已使用 GEE 驗證；它們仍不是目前 release 的必要依賴。**
 >
 > GEE 只影響 Phase 6 的衛星部分（Sentinel-5P 柱濃度與 MODIS AOD）。
 > Phase 2–5、7、8 完全用不到，

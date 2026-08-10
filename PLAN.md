@@ -102,7 +102,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
 | 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
-| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | credential verification 已有；S5P 站月來源取得已交付，ERA5、MAIAC 與 M8 分析尚未交付 |
+| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | credential verification 已有；S5P 與 MAIAC 站月來源取得已交付，ERA5 與 M8 分析尚未交付 |
 | 報告 | **Markdown** | 表格由 Parquet 產物重生；不維護第二套 Quarto/PDF 工具鏈 |
 | 前端 | **Astro** + TypeScript + handwritten CSS | 靜態產出、部署到 Pages 零成本 |
 | 圖表 | build-time **SVG** + 少量 progressive enhancement | 無繪圖 runtime；沒有 JavaScript 時仍可閱讀與列印 |
@@ -162,7 +162,7 @@ air-quality/
 |---|---|---|
 | **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫、地面氣壓、降水 | ⬜ credential probe 已實作；尚未取得 |
 | **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A 已由 GEE 取得；相關性、偏差與融合分析尚未交付 |
-| **MODIS MAIAC AOD** | 氣膠光學厚度 | ⏸ 同步 station-month pilot 逾時；需改成 batch export／checkpoint 後再做校正研究 |
+| **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint 已完成；AOD／PM2.5 分析與融合尚未交付 |
 | **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
 | **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
