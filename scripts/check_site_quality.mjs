@@ -637,20 +637,40 @@ function textZoomRouteMatrixProblems() {
 }
 
 function repositoryClaimBoundaryProblems() {
-  const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer" })
+  const trackedPaths = execFileSync("git", ["ls-files", "-z"], { encoding: "buffer" })
     .toString("utf8")
     .split("\0")
-    .filter((path) =>
+    .filter(Boolean);
+  const pmRatioSurfaces = trackedPaths.filter((path) =>
       path === "PLAN.md" || path === "README.md" || path === "PRODUCT.md" ||
       (path.startsWith("docs/") && !path.startsWith("docs/superpowers/")) ||
       path.startsWith("src/"),
     );
-  const forbidden = ["來源指紋", "Emission Fingerprint"];
-  const problems = tracked.flatMap((path) => {
+  const retiredPmRatioClaims = ["來源指紋", "Emission Fingerprint"];
+  const problems = pmRatioSurfaces.flatMap((path) => {
     const text = readFileSync(path, "utf8");
-    return forbidden.filter((phrase) => text.includes(phrase))
+    return retiredPmRatioClaims.filter((phrase) => text.includes(phrase))
       .map((phrase) => `${path}: contains retired PM-ratio claim ${JSON.stringify(phrase)}`);
   });
+  const tracked = new Set(trackedPaths);
+  const cbpfSurfaces = [
+    "spaces/forecast/app.py",
+    "spaces/forecast/README.md",
+    "web/src/components/ChapterSources.astro",
+  ];
+  const retiredCbpfClaims = [
+    "本地型",
+    "傳輸型",
+    "近處的污染源只有在風弱時才顯現",
+  ];
+  const missingCbpfSurfaces = cbpfSurfaces.filter((path) => !tracked.has(path))
+    .map((path) => `${path}: claim-boundary surface is not tracked`);
+  const retiredCbpfProblems = cbpfSurfaces.filter((path) => tracked.has(path))
+    .flatMap((path) => {
+      const text = readFileSync(path, "utf8");
+      return retiredCbpfClaims.filter((phrase) => text.includes(phrase))
+        .map((phrase) => `${path}: contains retired CBPF claim ${JSON.stringify(phrase)}`);
+    });
   const methodology = readFileSync("docs/methodology.md", "utf8");
   const required = [
     "粒徑組成指標",
@@ -667,6 +687,8 @@ function repositoryClaimBoundaryProblems() {
   const plan = readFileSync("PLAN.md", "utf8");
   const planRequired = ["粒徑組成指標", "單一比值不能唯一辨識或量化來源"];
   return problems.concat(
+    missingCbpfSurfaces,
+    retiredCbpfProblems,
     required.filter((phrase) => !methodology.includes(phrase))
       .map((phrase) => `docs/methodology.md: missing PM-ratio evidence boundary ${JSON.stringify(phrase)}`),
     chemRequired.filter((phrase) => !chem.includes(phrase))
