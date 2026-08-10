@@ -24,6 +24,10 @@ from uuid import uuid4
 import polars as pl
 
 from twair.config import ConfigError, load_conf
+from twair.ingest.station_inventory import (
+    station_inventory_generation,
+    validate_generation_sha256,
+)
 from twair.paths import interim_dir
 from twair.provenance import git_state
 from twair.scalars import as_int
@@ -260,6 +264,7 @@ def acquire_s5p(
     months: tuple[int, ...] = tuple(range(1, 13)),
     sources: list[SatelliteSource] | None = None,
     generated_at: str | None = None,
+    inventory_generation: bool = False,
 ) -> SatelliteResult:
     if year < 2018:
         raise ValueError("Sentinel-5P OFFL sources do not cover a complete pre-2018 year")
@@ -268,7 +273,12 @@ def acquire_s5p(
     if len(set(months)) != len(months):
         raise ValueError("months must not contain duplicates")
 
-    placed, unplaced_count = _placed_stations(stations)
+    generation = station_inventory_generation(stations) if inventory_generation else None
+    if generation is None:
+        placed, unplaced_count = _placed_stations(stations)
+    else:
+        placed = generation.stations
+        unplaced_count = generation.stations_without_coordinates
     selected_sources = sources if sources is not None else load_s5p_sources()
     if not selected_sources:
         raise RuntimeError("no S5P sources are configured")
@@ -309,7 +319,7 @@ def acquire_s5p(
     values = pl.from_dicts(all_records, schema=VALUE_SCHEMA).sort("source", "month", "station_name")
     coverage = pl.from_dicts(coverage_records, schema=COVERAGE_SCHEMA).sort("source", "month")
     manifest: dict[str, object] = {
-        "schema_version": 2,
+        "schema_version": 3 if generation is not None else 2,
         "generated_at": run_generated_at,
         "gee_project": project,
         "year": year,
@@ -333,6 +343,8 @@ def acquire_s5p(
             }
         ],
     }
+    if generation is not None:
+        manifest["inventory_generation_sha256"] = generation.sha256
     return SatelliteResult(values=values, coverage=coverage, manifest=manifest)
 
 
@@ -403,8 +415,12 @@ def write_satellite_result(
     out = destination or interim_dir("satellite") / f"year={year}"
     if not out.name or out == out.parent:
         raise RuntimeError("satellite destination must be a named year directory")
+    _validate_satellite_result(result)
+    _validate_generation_destination(result.manifest, out)
     stale_backup = _recover_interrupted_swap(out)
     existing = _read_satellite_result(out)
+    if existing is not None:
+        _validate_generation_destination(existing.manifest, out)
     if stale_backup is not None:
         shutil.rmtree(stale_backup)
     combined = _merge_satellite_results(existing, result) if existing is not None else result
@@ -536,13 +552,46 @@ def _validate_satellite_result(result: SatelliteResult) -> None:
         raise RuntimeError("satellite manifest source inventory is inconsistent")
     if not all(isinstance(source, dict) for source in sources.values()):
         raise RuntimeError("satellite manifest source contracts must be mappings")
-    if manifest.get("schema_version") == 2:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in {2, 3}:
+        raise RuntimeError("satellite manifest schema version is not supported")
+    if schema_version in {2, 3}:
         inventory_hash = manifest.get("station_inventory_sha256")
         if not isinstance(inventory_hash, str) or len(inventory_hash) != 64:
             raise RuntimeError("satellite station coordinate inventory hash is missing")
         runs = manifest.get("acquisition_runs")
         if not isinstance(runs, list) or not runs or not all(isinstance(run, dict) for run in runs):
             raise RuntimeError("satellite acquisition run provenance is missing")
+    if schema_version == 3:
+        generation = manifest.get("inventory_generation_sha256")
+        if not isinstance(generation, str):
+            raise RuntimeError("satellite inventory generation identity is missing")
+        try:
+            validate_generation_sha256(generation)
+        except ValueError as exc:
+            raise RuntimeError("satellite inventory generation identity is missing") from exc
+
+
+def _validate_generation_destination(manifest: dict[str, object], destination: Path) -> None:
+    raw_generation = manifest.get("inventory_generation_sha256")
+    path_generation = (
+        destination.parent.name
+        if destination.parent.parent.name == "generations"
+        and destination.name == f"year={manifest.get('year')}"
+        else None
+    )
+    if raw_generation is None:
+        if path_generation is not None:
+            raise RuntimeError("legacy satellite results cannot write to a generation path")
+        return
+    if not isinstance(raw_generation, str):
+        raise RuntimeError("satellite inventory generation identity is invalid")
+    try:
+        generation = validate_generation_sha256(raw_generation)
+    except ValueError as exc:
+        raise RuntimeError("satellite inventory generation identity is invalid") from exc
+    if path_generation != generation:
+        raise RuntimeError("satellite destination generation does not match the manifest")
 
 
 def _merge_satellite_results(

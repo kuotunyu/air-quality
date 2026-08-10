@@ -30,6 +30,7 @@ from twair.ingest.satellite import (
     parse_months,
     write_satellite_result,
 )
+from twair.ingest.station_inventory import station_inventory_generation
 
 NO2_ERLIN_JAN_2025 = 9.133056758755411e-05
 NO2_GUANSHAN_JAN_2025 = 3.559830656738045e-05
@@ -97,9 +98,23 @@ def acquire(
     months: tuple[int, ...] = (1,),
     station_data: pl.DataFrame | None = None,
     project: str = "twair-air-quality",
+    inventory_generation: bool = False,
 ) -> SatelliteResult:
+    source = (
+        station_data if station_data is not None else stations(include_unplaced=include_unplaced)
+    )
+    if inventory_generation:
+        return acquire_s5p(
+            source,
+            backend=backend or FakeBackend(),
+            project=project,
+            year=2025,
+            months=months,
+            generated_at="2026-08-10T00:00:00+00:00",
+            inventory_generation=True,
+        )
     return acquire_s5p(
-        station_data if station_data is not None else stations(include_unplaced=include_unplaced),
+        source,
         backend=backend or FakeBackend(),
         project=project,
         year=2025,
@@ -220,6 +235,25 @@ def test_an_unplaced_station_is_counted_but_never_sent_to_earth_engine() -> None
     assert result.manifest["stations_without_coordinates"] == 1
 
 
+def test_generation_mode_records_the_shared_identity_without_relabelling_legacy_results() -> None:
+    source = stations(include_unplaced=True)
+
+    legacy = acquire(include_unplaced=True)
+    generated = acquire(include_unplaced=True, inventory_generation=True)
+
+    assert legacy.manifest["schema_version"] == 2
+    assert "inventory_generation_sha256" not in legacy.manifest
+    assert generated.manifest["schema_version"] == 3
+    assert (
+        generated.manifest["inventory_generation_sha256"]
+        == station_inventory_generation(source).sha256
+    )
+    assert (
+        generated.manifest["station_inventory_sha256"]
+        == legacy.manifest["station_inventory_sha256"]
+    )
+
+
 def test_a_nonfinite_coordinate_is_rejected_even_when_the_other_coordinate_is_null() -> None:
     station_frame = stations().with_columns(
         pl.when(pl.col("station_name") == "關山")
@@ -256,6 +290,34 @@ def test_the_writer_round_trips_nulls_coverage_and_provenance(tmp_path: Path) ->
     assert written["value"].null_count() == 1
     assert manifest["year"] == 2025
     assert manifest["rows"] == 8
+
+
+def test_a_generation_result_can_only_write_beneath_its_own_full_identity(
+    tmp_path: Path,
+) -> None:
+    result = acquire(inventory_generation=True)
+    wrong = tmp_path / "interim" / "satellite" / "generations" / ("0" * 64) / "year=2025"
+
+    with pytest.raises(RuntimeError, match="destination generation does not match"):
+        write_satellite_result(result, destination=wrong)
+
+    assert not wrong.exists()
+
+
+def test_generation_subset_reruns_keep_the_same_generation_identity(tmp_path: Path) -> None:
+    first = acquire(months=(1, 2), inventory_generation=True)
+    generation = str(first.manifest["inventory_generation_sha256"])
+    destination = tmp_path / "generations" / generation / "year=2025"
+    write_satellite_result(first, destination=destination)
+
+    paths = write_satellite_result(
+        acquire(months=(1,), inventory_generation=True), destination=destination
+    )
+
+    manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 3
+    assert manifest["inventory_generation_sha256"] == generation
+    assert manifest["months"] == [1, 2]
 
 
 def test_a_subset_rerun_replaces_requested_months_without_erasing_other_months(
@@ -361,6 +423,53 @@ def test_the_cli_reuses_the_current_station_snapshot_instead_of_rescanning_the_s
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / "interim" / "satellite" / "year=2025" / "manifest.json").exists()
+
+
+def test_the_cli_only_uses_an_immutable_generation_path_when_explicitly_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("GEE_PROJECT_ID", "test-project")
+    get_settings.cache_clear()
+    snapshot = tmp_path / "outputs" / "qc" / "stations.parquet"
+    snapshot.parent.mkdir(parents=True)
+    source = stations(include_unplaced=True)
+    source.write_parquet(snapshot)
+    generation = station_inventory_generation(source).sha256
+
+    from twair.ingest import satellite
+
+    monkeypatch.setattr(satellite, "EarthEngineBackend", lambda _: FakeBackend())
+
+    try:
+        result = CliRunner().invoke(
+            cli.app,
+            [
+                "ingest",
+                "satellite",
+                "--year",
+                "2025",
+                "--months",
+                "1",
+                "--inventory-generation",
+            ],
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert result.exit_code == 0, result.output
+    generated = (
+        tmp_path
+        / "interim"
+        / "satellite"
+        / "generations"
+        / generation
+        / "year=2025"
+        / "manifest.json"
+    )
+    assert generated.exists()
+    assert not (tmp_path / "interim" / "satellite" / "year=2025").exists()
+    assert generation in result.output
 
 
 def test_the_cli_reports_the_merged_output_after_a_subset_rerun(

@@ -214,6 +214,11 @@ def ingest_satellite(
         "--months",
         help="Comma-separated months or inclusive ranges, e.g. 1,3,6:8.",
     ),
+    inventory_generation: bool = typer.Option(
+        False,
+        "--inventory-generation",
+        help="Write to a new immutable station-inventory generation path.",
+    ),
 ) -> None:
     """Acquire S5P monthly atmospheric columns at standard-station locations."""
     from twair.ingest.satellite import (
@@ -222,6 +227,7 @@ def ingest_satellite(
         parse_months,
         write_satellite_result,
     )
+    from twair.ingest.station_inventory import satellite_generation_dir
 
     try:
         selected_months = parse_months(months)
@@ -242,14 +248,23 @@ def ingest_satellite(
         project = get_settings().require("gee_project_id")
     except RuntimeError as exc:
         raise typer.BadParameter(str(exc), param_hint="GEE_PROJECT_ID") from exc
+    generation_mode = inventory_generation is True
     result = acquire_s5p(
         pl.read_parquet(station_path),
         backend=EarthEngineBackend(project),
         project=project,
         year=year,
         months=selected_months,
+        inventory_generation=generation_mode,
     )
-    paths = write_satellite_result(result)
+    destination = None
+    if generation_mode:
+        generation = result.manifest["inventory_generation_sha256"]
+        if not isinstance(generation, str):
+            raise RuntimeError("S5P generation acquisition produced no generation identity")
+        destination = satellite_generation_dir(year, generation)
+        console.print(f"inventory generation: [cyan]{generation}[/cyan]")
+    paths = write_satellite_result(result, destination=destination)
     written = pl.read_parquet(paths["values"])
     console.print(
         f"S5P: [green]{written.height:,}[/green] station-month rows, "
