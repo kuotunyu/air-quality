@@ -19,6 +19,7 @@ from twair.ingest.maiac import ExportLedger, MaiacConfig, load_maiac_config, pla
 from twair.ingest.maiac_import import (
     MaiacResult,
     import_exported_files,
+    read_maiac_result,
     write_maiac_result,
 )
 from twair.ingest.station_inventory import station_inventory_generation
@@ -280,6 +281,32 @@ def test_the_result_writer_round_trips_values_coverage_and_manifest(tmp_path: Pa
     assert pl.read_parquet(paths["values"]).equals(result.values)
     assert pl.read_parquet(paths["coverage"]).equals(result.coverage)
     assert json.loads(paths["manifest"].read_text(encoding="utf-8"))["months"] == [1]
+
+
+def test_the_public_reader_returns_only_a_fully_validated_maiac_result(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "result"
+    expected = imported_month(tmp_path, 1)
+    write_maiac_result(expected, destination=destination)
+
+    observed = read_maiac_result(destination)
+
+    assert observed.values.equals(expected.values)
+    assert observed.coverage.equals(expected.coverage)
+    assert observed.manifest == expected.manifest
+
+    manifest_path = destination / "manifest.json"
+    damaged = json.loads(manifest_path.read_text(encoding="utf-8"))
+    damaged["null_values"] += 1
+    manifest_path.write_text(json.dumps(damaged), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="null count is inconsistent"):
+        read_maiac_result(destination)
+
+
+def test_the_public_maiac_reader_distinguishes_an_absent_result(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="MAIAC result not found"):
+        read_maiac_result(tmp_path / "missing")
 
 
 def test_a_generation_import_keeps_the_ledger_identity_through_its_result_path(

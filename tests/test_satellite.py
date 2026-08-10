@@ -28,6 +28,7 @@ from twair.ingest.satellite import (
     acquire_s5p,
     load_s5p_sources,
     parse_months,
+    read_satellite_result,
     write_satellite_result,
 )
 from twair.ingest.station_inventory import station_inventory_generation
@@ -290,6 +291,34 @@ def test_the_writer_round_trips_nulls_coverage_and_provenance(tmp_path: Path) ->
     assert written["value"].null_count() == 1
     assert manifest["year"] == 2025
     assert manifest["rows"] == 8
+
+
+def test_the_public_reader_returns_only_a_fully_validated_satellite_result(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "year=2025"
+    expected = acquire(months=(1, 2))
+    write_satellite_result(expected, destination=destination)
+
+    observed = read_satellite_result(destination)
+
+    assert observed.values.equals(expected.values)
+    assert observed.coverage.equals(expected.coverage)
+    assert observed.manifest == expected.manifest
+
+    manifest_path = destination / "manifest.json"
+    damaged = json.loads(manifest_path.read_text(encoding="utf-8"))
+    damaged["rows"] += 1
+    manifest_path.write_text(json.dumps(damaged), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="row count is inconsistent"):
+        read_satellite_result(destination)
+
+
+def test_the_public_satellite_reader_distinguishes_an_absent_result(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(FileNotFoundError, match="satellite result not found"):
+        read_satellite_result(tmp_path / "missing")
 
 
 def test_a_generation_result_can_only_write_beneath_its_own_full_identity(

@@ -37,6 +37,7 @@ from twair.scalars import as_int
 __all__ = [
     "MaiacResult",
     "import_exported_files",
+    "read_maiac_result",
     "write_maiac_result",
 ]
 
@@ -472,6 +473,14 @@ def _read_maiac_result(destination: Path) -> MaiacResult | None:
         manifest=manifest,
     )
     _validate_maiac_result(result)
+    return result
+
+
+def read_maiac_result(destination: Path) -> MaiacResult:
+    """Read one complete result after applying the import contract."""
+    result = _read_maiac_result(destination)
+    if result is None:
+        raise FileNotFoundError(f"MAIAC result not found: {destination}")
     return result
 
 

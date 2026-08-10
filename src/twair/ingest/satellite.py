@@ -40,6 +40,7 @@ __all__ = [
     "acquire_s5p",
     "load_s5p_sources",
     "parse_months",
+    "read_satellite_result",
     "write_satellite_result",
 ]
 
@@ -506,6 +507,14 @@ def _read_satellite_result(destination: Path) -> SatelliteResult | None:
         manifest=manifest,
     )
     _validate_satellite_result(result)
+    return result
+
+
+def read_satellite_result(destination: Path) -> SatelliteResult:
+    """Read one complete result after applying the acquisition contract."""
+    result = _read_satellite_result(destination)
+    if result is None:
+        raise FileNotFoundError(f"satellite result not found: {destination}")
     return result
 
 
