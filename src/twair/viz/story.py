@@ -1101,6 +1101,14 @@ def _export_forecast(root: Path) -> list[Path]:
     ]
 
 
+def wind_peak_class(peak_speed: str | None) -> str:
+    if peak_speed in {"6-8", "8+"}:
+        return "high_wind_peak"
+    if peak_speed in {"<0.5", "0.5-1.5"}:
+        return "low_wind_peak"
+    return "mid_wind_peak"
+
+
 def _export_sources(root: Path) -> list[Path]:
     """Chapter 3: the CBPF grid for every station, plus its reading.
 
@@ -1134,13 +1142,6 @@ def _export_sources(root: Path) -> list[Path]:
     ]
     sectors = sorted({int(s) for s in grid["sector"]})
 
-    def signature(peak_speed: str | None) -> str:
-        if peak_speed in {"6-8", "8+"}:
-            return "transport"
-        if peak_speed in {"<0.5", "0.5-1.5"}:
-            return "local"
-        return "mixed"
-
     by_station: dict[str, Any] = {}
     for row in summary.iter_rows(named=True):
         name = row["station_name"]
@@ -1152,7 +1153,7 @@ def _export_sources(root: Path) -> list[Path]:
             "resultant": _round(row["resultant"], 3),
             "peak_sector": row["peak_sector"],
             "peak_speed": row["peak_speed"],
-            "signature": signature(row["peak_speed"]),
+            "wind_peak_class": wind_peak_class(row["peak_speed"]),
             **{k: row.get(k) for k in geo_columns},
             # Row-major over (sector, speed). null means the bin had too few
             # hours to report, which is not the same as a low probability.
@@ -1165,31 +1166,26 @@ def _export_sources(root: Path) -> list[Path]:
             ],
         }
 
-    counts = dict.fromkeys(("transport", "local", "mixed"), 0)
+    counts = dict.fromkeys(("low_wind_peak", "mid_wind_peak", "high_wind_peak"), 0)
     for entry in by_station.values():
-        counts[entry["signature"]] += 1
+        counts[entry["wind_peak_class"]] += 1
 
     return [
         write_json(
             root / "sources.json",
             {
                 "method": "CBPF (Uria-Tellaetxe & Carslaw, 2014)",
-                "explains": (
-                    "給定風從某方位、以某風速吹來，該小時濃度落在高值區的機率。"
-                    "近處的污染源在低風速時顯現（風大就吹散），"
-                    "遠處的在高風速時顯現（要有風才送得到）。"
-                ),
+                "explains": "給定風從某方位、以某風速吹來，該小時濃度落在高值區的機率。",
                 "percentile": _round(summary["percentile"][0], 0),
                 "min_bin_count": 20,
                 "null_means": "該格觀測時數不足 20 小時，機率不予報告（不是機率為零）",
                 "cannot_say": (
-                    "方位不是來源地。這張圖支撐「高值在強風、風從某方位來時出現」，"
-                    "不支撐「污染來自某地」——距離、沿途其他污染源、"
-                    "以及空氣不走直線，都在中間。"
+                    "這張圖不能判定來源地、距離、來源身分或各來源的貢獻。"
+                    "歸因需要化學成分、受體模式、軌跡／擴散模式或排放清冊等獨立證據。"
                 ),
                 "sectors": sectors,
                 "speed_bins": speed_order,
-                "signature_counts": counts,
+                "wind_peak_counts": counts,
                 "median_calm_fraction": _round(summary["calm_fraction"].median(), 4),
                 "n_suppressed_bins": int(summary["n_suppressed_bins"].sum()),
                 "stations": by_station,

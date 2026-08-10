@@ -449,6 +449,73 @@ class TestTheDeweatheredSeries:
         assert panel == {}
 
 
+class TestTheSourcesPayload:
+    def _payload(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        import json
+
+        source = tmp_path / "m7_sources"
+        source.mkdir()
+        pl.DataFrame(
+            {
+                "station_name": ["低風站", "中風站", "高風站"],
+                "threshold": [20.0, 30.0, 40.0],
+                "calm_fraction": [0.1, 0.2, 0.3],
+                "resultant": [0.4, 0.5, 0.6],
+                "peak_sector": [0, 30, 60],
+                "peak_speed": ["0.5-1.5", "2.5-4", "8+"],
+                "percentile": [75.0, 75.0, 75.0],
+                "n_suppressed_bins": [1, 2, 3],
+            }
+        ).write_parquet(source / "summary.parquet")
+        pl.DataFrame(
+            {
+                "station_name": ["低風站", "中風站", "高風站"],
+                "sector": [0, 30, 60],
+                "speed_bin": ["0.5-1.5", "2.5-4", "8+"],
+                "probability": [0.2, 0.3, 0.4],
+                "n": [20, 30, 40],
+            }
+        ).write_parquet(source / "grid.parquet")
+        monkeypatch.setattr(story, "outputs_dir", lambda name: tmp_path / name)
+        monkeypatch.setattr(story, "_stations", lambda: pl.DataFrame({"station_name": []}))
+
+        written = story._export_sources(tmp_path)
+
+        assert written
+        payload = json.loads(written[0].read_text(encoding="utf-8"))
+        assert isinstance(payload, dict)
+        return payload
+
+    def test_peak_speed_classes_name_observed_wind_groups(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert {name: row["wind_peak_class"] for name, row in payload["stations"].items()} == {
+            "低風站": "low_wind_peak",
+            "中風站": "mid_wind_peak",
+            "高風站": "high_wind_peak",
+        }
+
+    def test_the_sources_payload_names_wind_patterns_without_attribution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = self._payload(tmp_path, monkeypatch)
+
+        assert set(payload["wind_peak_counts"]) == {
+            "low_wind_peak",
+            "mid_wind_peak",
+            "high_wind_peak",
+        }
+        assert "signature_counts" not in payload
+        assert all("wind_peak_class" in row for row in payload["stations"].values())
+        assert all("signature" not in row for row in payload["stations"].values())
+        assert sum(payload["wind_peak_counts"].values()) == len(payload["stations"])
+        assert payload["explains"] == "給定風從某方位、以某風速吹來，該小時濃度落在高值區的機率。"
+        for term in ("來源地", "距離", "來源身分", "貢獻", "化學成分", "軌跡", "擴散", "排放清冊"):
+            assert term in payload["cannot_say"]
+
+
 class TestPayloadProseIsNotMarkdown:
     """The site prints these strings verbatim; nothing renders them.
 
