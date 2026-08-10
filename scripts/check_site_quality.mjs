@@ -66,7 +66,7 @@ const CHAPTER_OPENING_VIEWPORTS = [
   { width: 1920, height: 1080 },
 ];
 const READOUT_ROUTES = new Set(["/trend/", "/forecast/", "/health/", "/methods/"]);
-const TEXT_ZOOM_ROUTES = ["/", "/trend/", "/stations/", "/methods/", "/explore/", "/data/"];
+const TEXT_ZOOM_ROUTES = ["/", "/trend/", "/stations/", "/sources/", "/methods/", "/explore/", "/data/"];
 
 /**
  * 2026-08-03 — measured from the built route DOM, before these inventories
@@ -530,6 +530,31 @@ function mobileHandleTitleProblems(state, expectedTitle = "") {
     problems.push("mobile handle long title does not use a real ellipsis");
   }
   return problems;
+}
+
+function sourcesClaimBoundaryProblems(text) {
+  const required = [
+    "低風速高值型",
+    "中風速高值型",
+    "高風速高值型",
+    "不等於來源距離",
+    "軌跡",
+    "排放清冊",
+    "化學組成",
+  ];
+  const forbidden = [
+    "本地型",
+    "傳輸型",
+    "近處的污染源只有",
+    "遠處的污染源要有風",
+    "高值時數只能是風送來的",
+  ];
+  const problems = required.filter((phrase) => !text.includes(phrase))
+    .map((phrase) => `missing required claim-boundary text ${JSON.stringify(phrase)}`);
+  return problems.concat(
+    forbidden.filter((phrase) => text.includes(phrase))
+      .map((phrase) => `contains unsupported source claim ${JSON.stringify(phrase)}`),
+  );
 }
 
 function atlasLayoutProblems({ mode, atlas, opening, map, left, right, routes }) {
@@ -3626,6 +3651,11 @@ async function main() {
         failures.push("/trend/: weather-normalised comparison is described as direct emissions");
       }
     }
+    if (route === "/sources/") {
+      for (const problem of sourcesClaimBoundaryProblems(noScript?.mainText ?? "")) {
+        failures.push(`${route}: no-JavaScript ${problem}`);
+      }
+    }
     const expectedFigures = STATIC_NATIVE_FIGURES.get(route);
     totals.noScriptNativeFigures += noScript?.figures ?? 0;
     if (
@@ -3876,6 +3906,14 @@ async function main() {
           continue;
         }
         console.log(`site-quality route styled: ${route} @${width}px ${theme}`);
+        if (route === "/sources/") {
+          const mainText = await evaluate(
+            'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
+          );
+          for (const problem of sourcesClaimBoundaryProblems(mainText ?? "")) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
         if (route === "/" && (width === 768 || width === 1440)) {
           for (const problem of await homepageFirstViewport()) {
             failures.push(`${route} @${width}x${height} ${theme}: ${problem}`);
@@ -5181,6 +5219,14 @@ async function main() {
     totals.zoomRoutes += 1;
     if (zoomed?.overflow > 0) {
       failures.push(`${state}: document scrolls sideways by ${zoomed.overflow}px`);
+    }
+    if (route === "/sources/") {
+      const mainText = await evaluate(
+        'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
+      );
+      for (const problem of sourcesClaimBoundaryProblems(mainText ?? "")) {
+        failures.push(`${state}: ${problem}`);
+      }
     }
     for (const label of zoomed?.clippedLabels ?? []) {
       failures.push(`${state}: clipped label ${JSON.stringify(label)}`);

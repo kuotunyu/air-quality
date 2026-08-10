@@ -69,14 +69,13 @@ export const SYNTHETIC_DATA: Record<string, string> = {
 };
 
 /**
- * CBPF source signatures.
+ * CBPF peak wind-speed classes.
  *
- * Which bin a station's probability peaks in says something about distance:
- * near sources show at low wind speed because stronger wind disperses them,
- * distant ones at high speed because it takes wind to carry pollution far.
+ * The class names the wind-speed bin containing the maximum reportable
+ * conditional high-value probability; it does not identify a source.
  */
-export const SIGNATURE: Record<string, string> = {
-  transport: "傳輸型",
-  local: "本地型",
-  mixed: "中間型",
+export const WIND_PEAK_CLASS: Record<string, string> = {
+  low_wind_peak: "低風速高值型",
+  mid_wind_peak: "中風速高值型",
+  high_wind_peak: "高風速高值型",
 };

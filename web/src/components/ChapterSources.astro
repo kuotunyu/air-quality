@@ -14,7 +14,7 @@
  * "Rarely windy from there" must not look like "clean when windy from there".
  */
 import sourcesData from "../../public/data/story/sources.json";
-import { bearingName, compass, SIGNATURE } from "../lib/labels";
+import { bearingName, compass, WIND_PEAK_CLASS } from "../lib/labels";
 import { n } from "../lib/chart";
 import { groupByCountyNorthToSouth } from "../lib/data";
 import ChapterIntro from "./ChapterIntro.astro";
@@ -28,7 +28,7 @@ const data = sourcesData as {
   cannot_say: string;
   sectors: number[];
   speed_bins: string[];
-  signature_counts: Record<string, number>;
+  wind_peak_counts: Record<string, number>;
   median_calm_fraction: number;
   n_suppressed_bins: number;
   stations: Record<
@@ -39,7 +39,7 @@ const data = sourcesData as {
       resultant: number;
       peak_sector: number | null;
       peak_speed: string | null;
-      signature: string;
+      wind_peak_class: string;
       county?: string | null;
       airzone?: string | null;
       probability: (number | null)[][];
@@ -117,10 +117,7 @@ const cells = data.sectors.flatMap((sector, si) =>
 );
 
 const start = data.stations[initial];
-const counts = data.signature_counts;
-const explainsAt = data.explains.indexOf("。") + 1;
-const cbpfOrientation = data.explains.slice(0, explainsAt);
-const transportThesis = data.explains.slice(explainsAt);
+const counts = data.wind_peak_counts;
 
 const legend = BREAKS.map((b, i) => ({
   colour: `var(${RAMP[i]})`,
@@ -130,7 +127,7 @@ const legend = BREAKS.map((b, i) => ({
 
 <section id="sources" class="page">
   <ChapterIntro slug="sources">
-  <p class="lede">{transportThesis}</p>
+  <p class="lede">{data.explains}</p>
   </ChapterIntro>
 
   {/*
@@ -178,7 +175,7 @@ const legend = BREAKS.map((b, i) => ({
   </noscript>
 
   <p class="note cbpf-nojs">
-    這張圖的測站選單需要 JavaScript。目前顯示的是<strong>{initial}</strong>（{SIGNATURE[start.signature] ?? start.signature}）。
+    這張圖的測站選單需要 JavaScript。目前顯示的是<strong>{initial}</strong>（{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}）。
     每個測站的 CBPF 與下方所有數字都可以從
     <code>twair analyze m7</code> 重算。
   </p>
@@ -207,7 +204,7 @@ const legend = BREAKS.map((b, i) => ({
         }
       </select>
     </label>
-    <span id="cbpf-signature" class="badge">{SIGNATURE[start.signature] ?? start.signature}</span>
+    <span id="cbpf-wind-peak-class" class="badge">{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>
   </div>
 
   {/*
@@ -412,43 +409,64 @@ const legend = BREAKS.map((b, i) => ({
     </span></Fragment>
   </EvidenceFigure>
 
-  <p>{cbpfOrientation}</p>
-
   <p>
     這張圖叫 CBPF。角度是<strong>風吹來的方位</strong>，半徑是<strong>風速</strong>——
     圓心附近是微風，外圈是強風。每一格的顏色是：風從這個方位、以這個速度吹來時，
     該小時的 PM2.5 落在最高四分之一的機率。
   </p>
 
-  <h2>近源與遠源的風速特徵</h2>
+  <h2>尖峰風速是觀測分類</h2>
 
   <p>
-    這就是要用二維而不是傳統風花圖的原因。近處的污染源只有在<strong>風弱</strong>時才顯現，
-    風一大就吹散了——圖上是<strong>靠近圓心</strong>的亮塊。
-    遠處的污染源要有風才送得到，所以顯現在<strong>強風</strong>時——圖上是<strong>靠近外圈</strong>的亮塊。
-    一維的風花圖會把兩者畫在同一個角度上，說不出距離。
+    每個測站只依最高、且可報告的條件機率所在風速區間分類；這個尖峰風速不等於來源距離。
+    它描述圖上的模式，沒有判定污染從哪裡來。
   </p>
 
   <div class="grid grid-3">
     <div class="card stat">
-      <span class="stat-value">{counts.local}</span>
-      <span class="stat-label">本地型（尖峰在低風速）</span>
+      <span class="stat-value">{counts.low_wind_peak}</span>
+      <span class="stat-label">低風速高值型</span>
+      <span class="stat-note">最高機率出現在低風速區間</span>
     </div>
     <div class="card stat">
-      <span class="stat-value">{counts.mixed}</span>
-      <span class="stat-label">中間型</span>
+      <span class="stat-value">{counts.mid_wind_peak}</span>
+      <span class="stat-label">中風速高值型</span>
+      <span class="stat-note">最高機率出現在中風速區間</span>
     </div>
     <div class="card stat">
-      <span class="stat-value" style="color:var(--c1-ink)">{counts.transport}</span>
-      <span class="stat-label">傳輸型（尖峰在強風）</span>
+      <span class="stat-value" style="color:var(--c1-ink)">{counts.high_wind_peak}</span>
+      <span class="stat-label">高風速高值型</span>
+      <span class="stat-note">最高機率出現在高風速區間</span>
     </div>
   </div>
 
-  <div class="note">
-    <strong>傳輸型的 7 站裡，有 4 站是地理極端點或離島</strong>——
-    富貴角（本島最北端岬角）、馬公、金門、恆春（最南端）。
-    那正是幾乎沒有本地污染源的地方，所以它們的高值時數只能是風送來的。
-    這個方法並不知道任何測站的位置，是資料自己指出來的。
+  <div class="note caveat">
+    <strong>這張圖的界線：</strong>{data.cannot_say}
+    尖峰風速不等於來源距離。
+  </div>
+
+  <h2>可能的替代機制</h2>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>低風速高值型</h3>
+      <p>可能與附近低層排放、停滯、擴散不良或回流有關；這些只是待檢驗的機制。</p>
+    </div>
+    <div class="card">
+      <h3>高風速高值型</h3>
+      <p>可能與區域傳送、高架排放／下洗、再懸浮、海鹽或地形導流有關；這些機制也不能由 CBPF 單獨區分。</p>
+    </div>
+  </div>
+
+  <h2>歸因需要的證據</h2>
+
+  <div class="card">
+    <ul>
+      <li>軌跡或擴散模式；</li>
+      <li>排放清冊與操作紀錄；</li>
+      <li>化學組成與受體模式；</li>
+      <li>多個測站之間一致的結果。</li>
+    </ul>
   </div>
 
   <div class="note">
@@ -458,9 +476,6 @@ const legend = BREAKS.map((b, i) => ({
     列在每張圖旁邊的讀數欄裡。<strong>圖上沒有，不代表問題沒有。</strong>
   </div>
 
-  <div class="note caveat">
-    <strong>這張圖說不出來的事：{data.cannot_say}</strong>
-  </div>
 </section>
 
 <script type="application/json" id="cbpf-data" is:inline set:html={JSON.stringify({
@@ -482,10 +497,10 @@ const legend = BREAKS.map((b, i) => ({
       stations: Record<string, any>;
     };
 
-    const SIGNATURE: Record<string, string> = {
-      transport: "傳輸型",
-      local: "本地型",
-      mixed: "中間型",
+    const WIND_PEAK_CLASS: Record<string, string> = {
+      low_wind_peak: "低風速高值型",
+      mid_wind_peak: "中風速高值型",
+      high_wind_peak: "高風速高值型",
     };
 
     const COMPASS: Record<number, string> = {
@@ -542,10 +557,10 @@ const legend = BREAKS.map((b, i) => ({
       set("cbpf-resultant", s.resultant.toFixed(3));
       set("cbpf-calm", `${(s.calm_fraction * 100).toFixed(1)}%`);
 
-      const badge = document.getElementById("cbpf-signature");
+      const badge = document.getElementById("cbpf-wind-peak-class");
       if (badge) {
-        badge.textContent = SIGNATURE[s.signature] ?? s.signature;
-        badge.dataset.signature = s.signature;
+        badge.textContent = WIND_PEAK_CLASS[s.wind_peak_class] ?? s.wind_peak_class;
+        badge.dataset.windPeakClass = s.wind_peak_class;
       }
 
       /*
