@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click import unstyle
+from typer import rich_utils
 from typer.testing import CliRunner
 
 from twair import cli
@@ -17,6 +19,8 @@ from .test_era5 import FakeEra5Backend, _stations
 def test_cli_refuses_download_without_confirmation_before_initialising_cds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", True)
+    monkeypatch.setattr(rich_utils, "COLOR_SYSTEM", "standard")
     monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
     get_settings.cache_clear()
     from twair.ingest import era5
@@ -35,10 +39,14 @@ def test_cli_refuses_download_without_confirmation_before_initialising_cds(
         get_settings.cache_clear()
 
     assert result.exit_code == 2
-    assert "--confirm-download" in result.output
+    assert "--confirm-download" in unstyle(result.output)
 
 
-def test_cli_requires_an_immutable_inventory_generation(tmp_path: Path) -> None:
+def test_cli_requires_an_immutable_inventory_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", True)
+    monkeypatch.setattr(rich_utils, "COLOR_SYSTEM", "standard")
     result = CliRunner().invoke(
         cli.app,
         ["ingest", "era5", "--year", "2025", "--months", "1", "--confirm-download"],
@@ -46,7 +54,7 @@ def test_cli_requires_an_immutable_inventory_generation(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 2
-    assert "--inventory-generation" in result.output
+    assert "--inventory-generation" in unstyle(result.output)
 
 
 def test_cli_writes_the_confirmed_generation_from_the_station_snapshot(

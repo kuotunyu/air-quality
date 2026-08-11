@@ -6,6 +6,8 @@ from typing import Any
 
 import polars as pl
 import pytest
+from click import unstyle
+from typer import rich_utils
 from typer.testing import CliRunner
 
 from twair import cli
@@ -26,11 +28,15 @@ def _result() -> Any:
     )
 
 
-def test_the_satellite_robustness_cli_requires_an_inventory_generation() -> None:
+def test_the_satellite_robustness_cli_requires_an_inventory_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", True)
+    monkeypatch.setattr(rich_utils, "COLOR_SYSTEM", "standard")
     result = CliRunner().invoke(cli.app, ["analyze", "satellite-robustness"])
 
     assert result.exit_code != 0
-    assert "--generation" in result.output
+    assert "--generation" in unstyle(result.output)
 
 
 def test_the_satellite_robustness_cli_rejects_a_malformed_generation(
