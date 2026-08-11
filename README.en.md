@@ -140,8 +140,8 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 | [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time | ✅ in use (station register, freshness check) |
 | [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
 | [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 1940–Present | ✅ 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2025 source acquisition plus M8 association and held-out predictive-value diagnostics delivered; calibration/fusion not done |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2025 source acquisition plus M8 association and held-out predictive-value diagnostics delivered; AOD calibration/fusion not done |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
 The 2025 M8 association and held-out predictive-value diagnostics delivered use
 851 common complete station-months, 76 stations, and 12 months. Relative to a baseline containing
@@ -153,6 +153,19 @@ overall median ΔRMSE was −0.588 µg/m³ and median ΔR² was +0.147. These 54
 reuse the same 851 rows under three designs; they are not 54 independent years or stations, and
 this is not future-year transfer. The evidence supports held-out predictive value within 2025 only,
 not causality, calibration, fusion, or replacement of M4; calibration and fusion remain deferred.
+
+The follow-up satellite multi-year robustness analysis used 76 common stations and
+848 / 851 common complete station-months in 2024/2025; every baseline/candidate comparison
+paired identical test rows. In all/AOD/NO₂/SO₂ order, within-year quarter replication improved
+both RMSE and R² in 3/4, 4/4, 3/4, 3/4 folds in 2024 and 3/4, 3/4, 2/4, 1/4 in 2025;
+the remaining folds worsened both metrics. The genuine future-year `2024_to_2025` test was
+forward: improve / improve / improve / improve, with all-satellite at
+−0.378 µg/m³ / +0.057 R². `2025_to_2024` is reverse-direction replication, not prediction of the past:
+reverse: improve / improve / worsen / worsen, with all-satellite at −0.179 µg/m³ / +0.024 R².
+When station and year were both held out, the forward direction improved in
+10/10, 10/10, 9/10, 6/10 folds and the reverse in 10/10, 10/10, 9/10, 7/10.
+This is predictive robustness only: not causal, calibration, fusion, satellite-estimated PM2.5,
+and not a spatial-resolution claim or an M4 replacement.
 
 ERA5 2025 source acquisition delivered 674,520 station-hour rows for 77 stations and
 8,760 hours, with zero source nulls across all six variables. A separate value-add experiment

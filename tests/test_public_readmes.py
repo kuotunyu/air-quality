@@ -57,13 +57,15 @@ def test_public_docs_record_measured_era5_value_without_reframing_the_published_
     assert "1 個未分類 air-zone stratum" in sources
 
 
-def test_public_satellite_docs_record_the_measured_2025_held_out_value_without_overclaiming() -> (
+def test_public_satellite_docs_record_measured_held_out_and_multiyear_value_without_overclaiming() -> (
     None
 ):
     zh, en = _readmes()
     plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+    zh_prose = " ".join(zh.split())
     en_prose = " ".join(en.split())
+    plan_prose = " ".join(plan.split())
     sources_prose = " ".join(sources.split())
 
     assert "S5P 與 MAIAC 來源取得 Stage A 已交付" in zh
@@ -132,6 +134,81 @@ def test_public_satellite_docs_record_the_measured_2025_held_out_value_without_o
     assert "combined all-satellite feature set 在多數 2025 held-out folds 顯示增量預測資訊" in plan
     assert "實際 batch 尚未送出" not in plan
     assert "S5P 查詢同樣尚未執行" not in sources
+    for text in (zh, en, plan, sources):
+        assert "848 / 851 common complete station-months" in text
+        assert "2024_to_2025" in text
+        assert "2025_to_2024" in text
+        assert "all/AOD/NO₂/SO₂" in text
+        assert "predictive robustness only" in text
+        assert "not causal, calibration, fusion, satellite-estimated PM2.5" in text
+        assert "not a spatial-resolution claim or an M4 replacement" in text
+    assert "所有 baseline／candidate 比較都配對同一批 test rows" in zh_prose
+    assert (
+        "同年度 quarter replication 在 2024 同時改善 RMSE 與 R² 的 fold 數為 3/4, 4/4, 3/4, 3/4，2025 為 3/4, 3/4, 2/4, 1/4"
+        in zh_prose
+    )
+    assert (
+        "真正的 future-year `2024_to_2025` 對四組特徵是 forward: improve / improve / improve / improve，all-satellite 的配對結果為 −0.378 µg/m³ / +0.057 R²"
+        in zh_prose
+    )
+    assert (
+        "`2025_to_2024` 是反向複驗，不是預測過去；四組結果是 reverse: improve / improve / worsen / worsen，all-satellite 為 −0.179 µg/m³ / +0.024 R²"
+        in zh_prose
+    )
+    assert (
+        "同時留出測站與年份時，`2024_to_2025` 的改善 fold 數為 10/10, 10/10, 9/10, 6/10， `2025_to_2024` 為 10/10, 10/10, 9/10, 7/10"
+        in zh_prose
+    )
+    assert "every baseline/candidate comparison paired identical test rows" in en_prose
+    assert (
+        "within-year quarter replication improved both RMSE and R² in 3/4, 4/4, 3/4, 3/4 folds in 2024 and 3/4, 3/4, 2/4, 1/4 in 2025"
+        in en_prose
+    )
+    assert (
+        "future-year `2024_to_2025` test was forward: improve / improve / improve / improve, with all-satellite at −0.378 µg/m³ / +0.057 R²"
+        in en_prose
+    )
+    assert (
+        "`2025_to_2024` is reverse-direction replication, not prediction of the past: reverse: improve / improve / worsen / worsen, with all-satellite at −0.179 µg/m³ / +0.024 R²"
+        in en_prose
+    )
+    assert (
+        "station and year were both held out, the forward direction improved in 10/10, 10/10, 9/10, 6/10 folds and the reverse in 10/10, 10/10, 9/10, 7/10"
+        in en_prose
+    )
+    assert "baseline／candidate 均配對相同 test rows" in plan_prose
+    assert "同年度 replication 改善數為 3/4, 4/4, 3/4, 3/4 與 3/4, 3/4, 2/4, 1/4" in plan_prose
+    assert (
+        "future-year `2024_to_2025` 是 forward: improve / improve / improve / improve（all-satellite −0.378 µg/m³ / +0.057 R²）"
+        in plan_prose
+    )
+    assert (
+        "`2025_to_2024` 是反向複驗，不是預測過去，為 reverse: improve / improve / worsen / worsen （all-satellite −0.179 µg/m³ / +0.024 R²）"
+        in plan_prose
+    )
+    assert (
+        "同時留出測站與年份的改善數分別為 10/10, 10/10, 9/10, 6/10 與 10/10, 10/10, 9/10, 7/10"
+        in plan_prose
+    )
+    assert "每一個 candidate 都與 baseline 配對完全相同的 train/test rows" in sources_prose
+    assert (
+        "同年度 quarter replication 在 2024 同時改善 RMSE 與 R² 的 fold 數為 3/4, 4/4, 3/4, 3/4，2025 為 3/4, 3/4, 2/4, 1/4"
+        in sources_prose
+    )
+    assert (
+        "future-year `2024_to_2025` 為 forward: improve / improve / improve / improve； all-satellite 的配對 ΔRMSE／ΔR² 是 −0.378 µg/m³ / +0.057 R²"
+        in sources_prose
+    )
+    assert (
+        "`2025_to_2024` 是反向複驗，不是預測過去，結果為 reverse: improve / improve / worsen / worsen；all-satellite 為 −0.179 µg/m³ / +0.024 R²"
+        in sources_prose
+    )
+    assert (
+        "同時留出測站與年份的 10 個 air-zone-aware fold 中，`2024_to_2025` 四組特徵的改善數為 10/10, 10/10, 9/10, 6/10，`2025_to_2024` 為 10/10, 10/10, 9/10, 7/10"
+        in sources_prose
+    )
+    assert "cross-year common-station cohort 的額外排除列與排除站均為 0" in sources_prose
+    assert "76／73 筆 incomplete/null station-months 仍保留並計數在 source panels" in sources_prose
 
 
 def test_both_readmes_keep_hugging_face_to_l0_l1_and_owner_confirmed_publication() -> None:

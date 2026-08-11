@@ -350,4 +350,30 @@ held-quarter 只在 2025 年內按季度留出；held-station 與 joint transfer
 結果只支持 2025 年內的 held-out predictive value，不支持因果、衛星 PM2.5 校正、融合場、
 未來年度泛化、空間解析度或 M4 replacement。校正與融合仍延後。
 
+### 2026-08-12 M8 multi-year predictive robustness
+
+`twair analyze satellite-robustness --generation
+58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`
+只讀取同一 immutable generation 的 2024／2025 M8 panel 與測站 inventory，並以 `n_jobs=1`
+完成一次 serial run。兩年完整分母各為 924 個 station-month；2024 的 MAIAC／NO₂／SO₂ null
+為 72／1／7，地面 absent／withheld 為 0／0；2025 對應為 69／1／0 與 2／2，座標缺失皆為 0。
+共同完整 cohort 有 76 站，兩年各是 848 / 851 common complete station-months；兩年各自的
+完整測站都在共同 cohort，因此 cross-year common-station cohort 的額外排除列與排除站均為 0。
+前述 76／73 筆 incomplete/null station-months 仍保留並計數在 source panels，只是不進入
+complete-case model cohort；null 未被補值、插值、刪除或改成零。
+
+每一個 candidate 都與 baseline 配對完全相同的 train/test rows。按 all/AOD/NO₂/SO₂ 順序，
+同年度 quarter replication 在 2024 同時改善 RMSE 與 R² 的 fold 數為
+3/4, 4/4, 3/4, 3/4，2025 為 3/4, 3/4, 2/4, 1/4；其餘 fold 同時變差。
+真正的 future-year `2024_to_2025` 為 forward: improve / improve / improve / improve；
+all-satellite 的配對 ΔRMSE／ΔR² 是 −0.378 µg/m³ / +0.057 R²。
+`2025_to_2024` 是反向複驗，不是預測過去，結果為
+reverse: improve / improve / worsen / worsen；all-satellite 為 −0.179 µg/m³ / +0.024 R²。
+
+同時留出測站與年份的 10 個 air-zone-aware fold 中，`2024_to_2025` 四組特徵的改善數為
+10/10, 10/10, 9/10, 6/10，`2025_to_2024` 為 10/10, 10/10, 9/10, 7/10；
+其餘 fold 同時變差。正向與反向的每一列各恰好進入 test set 一次，反向結果不能重述成
+對過去的預測。這是 predictive robustness only；not causal, calibration, fusion, satellite-estimated PM2.5，
+且 not a spatial-resolution claim or an M4 replacement。
+
 見 [registrations.md](registrations.md) 取得各項憑證。

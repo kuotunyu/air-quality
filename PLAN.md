@@ -549,6 +549,15 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   10 個 air-zone-aware held-station fold 與 40 個 joint fold 各完整評估一次；all-satellite 整體 median
   ΔRMSE −0.588 µg/m³、ΔMAE −0.407 µg/m³、ΔR² +0.147。三種設計的 2,553 個
   test-row appearances 來自同一批 851 筆資料，不是 2,553 筆獨立觀測
+- [x] **M8 2024–2025 predictive robustness**：76 個共同測站，2024／2025 為
+  848 / 851 common complete station-months，baseline／candidate 均配對相同 test rows。按
+  all/AOD/NO₂/SO₂ 順序，同年度 replication 改善數為 3/4, 4/4, 3/4, 3/4 與
+  3/4, 3/4, 2/4, 1/4；future-year `2024_to_2025` 是
+  forward: improve / improve / improve / improve（all-satellite −0.378 µg/m³ / +0.057 R²），
+  `2025_to_2024` 是反向複驗，不是預測過去，為 reverse: improve / improve / worsen / worsen
+  （all-satellite −0.179 µg/m³ / +0.024 R²）。同時留出測站與年份的改善數分別為
+  10/10, 10/10, 9/10, 6/10 與 10/10, 10/10, 9/10, 7/10。這是 predictive robustness only；
+  not causal, calibration, fusion, satellite-estimated PM2.5，且 not a spatial-resolution claim or an M4 replacement
 - [x] **ERA5 2025 source acquisition**：12 個月、77 站、674,520 station-hour；六個來源變數皆為 0 個 null，
   request／checksum／coverage 與 inventory generation 均可重現；此項不等於模型成效
 - [x] **ERA5 held-out value-add**：77 站皆有 target 與 ERA5 join；三重、淡水、陽明因站內氣象
