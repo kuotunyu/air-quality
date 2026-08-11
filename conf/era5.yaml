@@ -1,0 +1,31 @@
+"single_levels":
+  "dataset": "reanalysis-era5-single-levels"
+  "product_type": "reanalysis"
+  "data_format": "netcdf"
+  "download_format": "unarchived"
+  "area": [26.5, 118.0, 21.75, 122.0]
+  "variables":
+    "blh_m":
+      "request_name": "boundary_layer_height"
+      "netcdf_name": "blh"
+      "unit": "m"
+    "u10_m_s":
+      "request_name": "10m_u_component_of_wind"
+      "netcdf_name": "u10"
+      "unit": "m s**-1"
+    "v10_m_s":
+      "request_name": "10m_v_component_of_wind"
+      "netcdf_name": "v10"
+      "unit": "m s**-1"
+    "t2m_k":
+      "request_name": "2m_temperature"
+      "netcdf_name": "t2m"
+      "unit": "K"
+    "d2m_k":
+      "request_name": "2m_dewpoint_temperature"
+      "netcdf_name": "d2m"
+      "unit": "K"
+    "sp_pa":
+      "request_name": "surface_pressure"
+      "netcdf_name": "sp"
+      "unit": "Pa"

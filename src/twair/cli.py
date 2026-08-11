@@ -274,6 +274,76 @@ def ingest_satellite(
         console.print(f"wrote {name}: {path}")
 
 
+@ingest_app.command("era5")
+def ingest_era5(
+    year: int = typer.Option(2025, "--year", help="Calendar year to acquire."),
+    months: str = typer.Option(
+        "1,7",
+        "--months",
+        help="Comma-separated months or inclusive ranges, e.g. 1,3,6:8.",
+    ),
+    inventory_generation: bool = typer.Option(
+        False,
+        "--inventory-generation",
+        help="Bind the output to the immutable reviewed station inventory.",
+    ),
+    confirm_download: bool = typer.Option(
+        False,
+        "--confirm-download",
+        help="Confirm that this command may submit CDS requests and download NetCDF files.",
+    ),
+) -> None:
+    """Acquire generation-scoped ERA5 hourly fields at station grid cells."""
+    if not confirm_download:
+        raise typer.BadParameter(
+            "ERA5 acquisition requires --confirm-download",
+            param_hint="--confirm-download",
+        )
+    if not inventory_generation:
+        raise typer.BadParameter(
+            "ERA5 acquisition requires --inventory-generation",
+            param_hint="--inventory-generation",
+        )
+    from twair.ingest.era5 import CdsEra5Backend, acquire_era5
+    from twair.ingest.satellite import parse_months
+
+    try:
+        selected_months = parse_months(months)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--months") from exc
+    station_path = outputs_dir("qc") / "stations.parquet"
+    if not station_path.exists():
+        raise typer.BadParameter(
+            f"{station_path} not found — run `twair stations` first",
+            param_hint="station snapshot",
+        )
+    settings = get_settings()
+    try:
+        key = settings.require("cdsapi_key")
+    except RuntimeError as exc:
+        raise typer.BadParameter(str(exc), param_hint="CDSAPI_KEY") from exc
+    result = acquire_era5(
+        pl.read_parquet(station_path),
+        backend=CdsEra5Backend(settings.cdsapi_url, key),
+        year=year,
+        months=selected_months,
+        inventory_generation=True,
+        confirm_download=True,
+    )
+    generation = str(result.manifest["inventory_generation_sha256"])
+    null_counts = result.manifest.get("null_values")
+    if not isinstance(null_counts, dict) or any(
+        isinstance(value, bool) or not isinstance(value, int) for value in null_counts.values()
+    ):
+        raise RuntimeError("ERA5 acquisition produced invalid null counts")
+    nulls = sum(null_counts.values())
+    console.print(f"inventory generation: [cyan]{generation}[/cyan]")
+    console.print(
+        f"ERA5: [green]{result.values.height:,}[/green] station-hour rows, "
+        f"[yellow]{nulls:,}[/yellow] source null values"
+    )
+
+
 def _maiac_months(spec: str) -> tuple[int, ...]:
     from twair.ingest.satellite import parse_months
 
