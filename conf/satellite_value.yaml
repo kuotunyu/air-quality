@@ -1,0 +1,11 @@
+"analysis":
+  "year": 2025
+  "quarter_folds": 4
+  "station_folds": 10
+  "model":
+    "n_estimators": 200
+    "learning_rate": 0.05
+    "num_leaves": 31
+    "min_child_samples": 10
+    "n_jobs": 1
+    "seed": 20260811

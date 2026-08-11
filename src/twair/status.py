@@ -90,6 +90,14 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "m8_satellite_value",
+        "twair analyze satellite-value "
+        "--generation 58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788 "
+        "--year 2025",
+        "held-out satellite predictive value within 2025",
+        feeds_web=False,
+    ),
+    Module(
         "m8_era5_value",
         "twair analyze era5-value",
         "held-out ERA5 weather value beyond station measurements",
@@ -416,5 +424,6 @@ def declared_reproduce_targets() -> dict[str, bool]:
         if target.startswith("python "):
             results[target] = (REPO_ROOT / target.removeprefix("python ").strip()).exists()
         else:
-            results[target] = target in known
+            command_path = " ".join(target.split()[:3])
+            results[target] = command_path in known
     return results

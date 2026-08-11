@@ -90,6 +90,18 @@ class TestTheReproduceTableCannotRot:
         assert module.reproduce == "twair analyze era5-robustness"
         assert module.feeds_web is False
 
+    def test_satellite_value_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(item for item in MODULES if item.directory == "m8_satellite_value")
+
+        assert module.reproduce == (
+            "twair analyze satellite-value "
+            "--generation 58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788 "
+            "--year 2025"
+        )
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "held-out" in module.what
+
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""
         status = Status(

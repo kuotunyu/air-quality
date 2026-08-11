@@ -946,6 +946,55 @@ def analyze_era5_value(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("satellite-value")
+def analyze_satellite_value(
+    generation: str = typer.Option(
+        ...,
+        "--generation",
+        help="Immutable station-inventory SHA-256 shared by S5P and MAIAC.",
+    ),
+    year: int = typer.Option(2025, "--year", "-y", help="Calendar year to evaluate."),
+) -> None:
+    """Test held-out satellite predictive value without creating a fused product."""
+    from twair.analysis.satellite_value import (
+        load_satellite_value_config,
+        run_satellite_value,
+        write_satellite_value_result,
+    )
+    from twair.ingest.station_inventory import validate_generation_sha256
+    from twair.paths import data_root
+
+    try:
+        identity = validate_generation_sha256(generation)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+    selected = load_satellite_value_config()
+    if year != selected.year:
+        raise typer.BadParameter(
+            f"satellite value config is reviewed for {selected.year}",
+            param_hint="--year",
+        )
+    result = run_satellite_value(
+        data_root=data_root(),
+        generation_sha256=identity,
+        config=selected,
+    )
+    # A console/display failure must not discard completed serial model fits.
+    written = write_satellite_value_result(result)
+
+    console.print(
+        f"Satellite held-out value: year {result.manifest['year']}; "
+        f"{int(result.manifest['common_complete_rows']):,} common station-month rows"
+    )
+    console.print(
+        "Seasonal-block and held-out-station prediction only; not causal attribution, "
+        "calibration, fusion, future-year transfer, or an M4 replacement."
+    )
+    console.print(result.deltas)
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("era5-robustness")
 def analyze_era5_robustness(
     generation: str = typer.Option(
