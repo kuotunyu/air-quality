@@ -15,3 +15,12 @@
     - "temperature"
   "archive_filename_pattern": "^(?P<prefix>.+)_(?P<variable>pm25|humidity|temperature)_(?P<date>[0-9]{8})\\.zip$"
   "max_directory_entries": 1000
+  "observation_pilot":
+    "max_archive_bytes": 250000000
+    "max_total_bytes": 700000000
+    "allowed_content_types":
+      - "application/zip"
+      - "application/x-zip-compressed"
+      - "application/octet-stream"
+    "max_zip_members": 8
+    "max_uncompressed_bytes_per_archive": 4000000000

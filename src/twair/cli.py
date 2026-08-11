@@ -251,6 +251,59 @@ def ingest_micro_sensor_catalog(
     console.print(f"wrote normalized: {written.interim_directory}")
 
 
+@ingest_app.command("micro-sensor-day")
+def ingest_micro_sensor_day(
+    catalog_generation: str = typer.Option(
+        ...,
+        "--catalog-generation",
+        help="Immutable micro-sensor catalogue generation SHA-256.",
+    ),
+    day: str = typer.Option(..., "--date", help="Calendar day in YYYY-MM-DD form."),
+    confirm_download: bool = typer.Option(
+        False,
+        "--confirm-download",
+        help="Confirm download of the three catalogue-selected daily ZIP archives.",
+    ),
+) -> None:
+    """Acquire one reviewed low-cost-sensor day without parsing observations."""
+    if not confirm_download:
+        raise typer.BadParameter(
+            "micro-sensor observation acquisition requires --confirm-download",
+            param_hint="--confirm-download",
+        )
+    from twair.config import ConfigError
+    from twair.ingest import micro_sensors
+
+    source = micro_sensors.load_micro_sensor_source()
+    try:
+        catalog = micro_sensors.load_catalog_generation(
+            catalog_generation,
+            source=source,
+        )
+        micro_sensors.select_observation_archives(catalog, day=day, source=source)
+    except (ConfigError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint="--catalog-generation/--date",
+        ) from exc
+    with micro_sensors.FileGatorHistoryBackend(source) as backend:
+        written = micro_sensors.acquire_micro_sensor_day(
+            catalog_generation,
+            day=day,
+            backend=backend,
+            source=source,
+        )
+    members = written.manifest["members"]
+    total_bytes = sum(int(identity["bytes"]) for identity in members.values())
+    console.print(f"generation: [cyan]{written.generation_sha256}[/cyan]")
+    console.print(f"date: [green]{day}[/green]")
+    console.print(
+        f"archives: [green]{len(members):,}[/green] archive files; "
+        f"[green]{total_bytes:,}[/green] bytes"
+    )
+    console.print(f"wrote raw: {written.directory}")
+
+
 @ingest_app.command("satellite")
 def ingest_satellite(
     year: int = typer.Option(2025, "--year", help="Calendar year to acquire."),

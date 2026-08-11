@@ -25,6 +25,7 @@ import pytest
 import respx
 
 from twair.net import (
+    DownloadContractError,
     PoliteClient,
     _HostThrottle,
     _is_retryable,
@@ -37,6 +38,12 @@ from twair.net import (
 )
 
 URL = "https://airtw.moenv.gov.tw/probe"
+
+
+class _InterruptingStream(httpx.SyncByteStream):
+    def __iter__(self) -> Iterator[bytes]:
+        yield b"partial"
+        raise KeyboardInterrupt
 
 
 @pytest.fixture
@@ -338,3 +345,93 @@ def test_a_stream_that_fails_leaves_no_file_under_the_real_name(
             client.stream_to_file(URL, dest)
 
     assert not dest.exists()
+
+
+def test_a_stream_rejects_an_unreviewed_content_type_before_writing(
+    ledger: Path, client: PoliteClient
+) -> None:
+    dest = ledger / "a.zip"
+    with respx.mock:
+        respx.get(URL).mock(
+            return_value=httpx.Response(
+                200,
+                content=b"PK\x03\x04body",
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        )
+        with pytest.raises(DownloadContractError, match="content type"):
+            client.stream_to_file(
+                URL,
+                dest,
+                allowed_content_types=frozenset({"application/zip"}),
+            )
+
+    assert not dest.exists()
+    assert not dest.with_suffix(".zip.part").exists()
+
+
+def test_a_declared_stream_beyond_the_byte_ceiling_is_rejected_before_writing(
+    ledger: Path, client: PoliteClient
+) -> None:
+    dest = ledger / "a.zip"
+    with respx.mock:
+        respx.get(URL).mock(
+            return_value=httpx.Response(
+                200,
+                stream=httpx.ByteStream(b"too large"),
+                headers={"Content-Length": "9"},
+            )
+        )
+        with pytest.raises(DownloadContractError, match="maximum byte count"):
+            client.stream_to_file(URL, dest, max_bytes=8)
+
+    assert not dest.exists()
+    assert not dest.with_suffix(".zip.part").exists()
+
+
+def test_a_stream_without_content_length_is_accepted_only_after_exact_counting(
+    ledger: Path, client: PoliteClient
+) -> None:
+    dest = ledger / "a.zip"
+    with respx.mock:
+        respx.get(URL).mock(return_value=httpx.Response(200, stream=httpx.ByteStream(b"12345678")))
+        assert client.stream_to_file(URL, dest, expected_bytes=8, max_bytes=8) == dest
+
+    assert dest.read_bytes() == b"12345678"
+
+
+def test_an_unannounced_stream_overrun_removes_the_partial_file(
+    ledger: Path, client: PoliteClient
+) -> None:
+    dest = ledger / "a.zip"
+    with respx.mock:
+        respx.get(URL).mock(return_value=httpx.Response(200, stream=httpx.ByteStream(b"123456789")))
+        with pytest.raises(DownloadContractError, match="maximum byte count"):
+            client.stream_to_file(URL, dest, max_bytes=8)
+
+    assert not dest.exists()
+    assert not dest.with_suffix(".zip.part").exists()
+
+
+def test_an_exact_byte_mismatch_never_replaces_an_existing_destination(
+    ledger: Path, client: PoliteClient
+) -> None:
+    dest = written(ledger, "a.zip", b"reviewed old bytes")
+    with respx.mock:
+        respx.get(URL).mock(return_value=httpx.Response(200, stream=httpx.ByteStream(b"short")))
+        with pytest.raises(DownloadContractError, match="expected byte count"):
+            client.stream_to_file(URL, dest, expected_bytes=8)
+
+    assert dest.read_bytes() == b"reviewed old bytes"
+    assert not dest.with_suffix(".zip.part").exists()
+
+
+def test_a_base_exception_removes_only_the_partial_file(ledger: Path, client: PoliteClient) -> None:
+    dest = written(ledger, "a.zip", b"reviewed old bytes")
+    with respx.mock:
+        respx.get(URL).mock(return_value=httpx.Response(200, stream=_InterruptingStream()))
+        with pytest.raises(KeyboardInterrupt):
+            client.stream_to_file(URL, dest)
+
+    assert dest.read_bytes() == b"reviewed old bytes"
+    assert not dest.with_suffix(".zip.part").exists()

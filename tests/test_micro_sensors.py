@@ -5,6 +5,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import struct
+import zipfile
+import zlib
+from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -18,10 +23,14 @@ from twair.config import ConfigError
 from twair.ingest.micro_sensors import (
     FileGatorHistoryBackend,
     MicroSensorCatalogSnapshot,
+    acquire_micro_sensor_day,
     build_catalog_snapshot,
+    inspect_observation_zip,
+    load_catalog_generation,
     load_micro_sensor_source,
     normalize_month_catalog,
     parse_station_metadata,
+    select_observation_archives,
     write_catalog_snapshot,
 )
 
@@ -72,6 +81,15 @@ def test_the_shipped_source_contract_names_the_official_guest_history_service() 
     assert source.station_metadata_filename == "MOENV_iot_station.csv"
     assert source.required_variables == ("pm25", "humidity", "temperature")
     assert source.max_directory_entries == 1000
+    assert source.max_archive_bytes == 250_000_000
+    assert source.max_total_bytes == 700_000_000
+    assert source.allowed_archive_content_types == (
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/octet-stream",
+    )
+    assert source.max_zip_members == 8
+    assert source.max_uncompressed_bytes_per_archive == 4_000_000_000
 
 
 def test_station_rows_keep_empty_descriptions_and_duplicate_coordinates() -> None:
@@ -201,6 +219,10 @@ def test_the_later_observed_filename_prefix_is_captured_not_hard_coded() -> None
         (
             _directory(_file("README.zip", size=1, time=1)),
             "unrecognised archive entry",
+        ),
+        (
+            _directory(_file("../moenv_micro_pm25_20250101.zip", size=1, time=1)),
+            "invalid provider filename",
         ),
         (
             {"data": {"location": "wrong", "files": []}},
@@ -334,6 +356,37 @@ def test_an_html_download_page_is_not_parsed_as_station_csv() -> None:
         pytest.raises(ConfigError, match="CSV content type"),
     ):
         backend.fetch_station_metadata()
+
+
+@respx.mock
+def test_the_guest_adapter_streams_only_the_catalogue_selected_archive_path(
+    tmp_path: Path,
+) -> None:
+    source = load_micro_sensor_source()
+    _guest_routes(source.history_base_url)
+    provider_path = source.month_path("202501") + "/moenv_micro_pm25_20250101.zip"
+    encoded_path = quote(base64.b64encode(provider_path.encode()).decode(), safe="")
+    route = respx.get(f"{source.history_base_url}?r=%2Fdownload&path={encoded_path}").mock(
+        return_value=httpx.Response(
+            200,
+            content=b"PK\x03\x04body",
+            headers={"Content-Type": "application/zip"},
+        )
+    )
+    destination = tmp_path / "source.zip"
+
+    with FileGatorHistoryBackend(source, min_interval=0) as backend:
+        backend.download_archive(
+            provider_path,
+            destination,
+            expected_bytes=8,
+            max_bytes=10,
+            allowed_content_types=frozenset(source.allowed_archive_content_types),
+        )
+
+    assert destination.read_bytes() == b"PK\x03\x04body"
+    assert route.call_count == 1
+    assert route.calls[0].request.headers["Accept-Encoding"] == "identity"
 
 
 def _catalog_snapshot(
@@ -514,3 +567,288 @@ def test_an_interrupted_interim_rename_keeps_raw_and_can_resume(
 
     assert written.raw_directory == raw_generation
     assert written.interim_directory == interim_generation
+
+
+def _zip_bytes(*members: tuple[str, bytes]) -> bytes:
+    payload = BytesIO()
+    with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, body in members:
+            archive.writestr(name, body)
+    return payload.getvalue()
+
+
+def _encrypted_zip_bytes() -> bytes:
+    payload = bytearray(_zip_bytes(("observations.csv", b"value\n1\n")))
+    local = payload.index(b"PK\x03\x04")
+    central = payload.index(b"PK\x01\x02")
+    struct.pack_into("<H", payload, local + 6, struct.unpack_from("<H", payload, local + 6)[0] | 1)
+    struct.pack_into(
+        "<H", payload, central + 8, struct.unpack_from("<H", payload, central + 8)[0] | 1
+    )
+    return bytes(payload)
+
+
+def _observation_payloads() -> dict[str, bytes]:
+    return {
+        "humidity": _zip_bytes(("humidity.csv", b"device_id,time,value\n1,t,50\n")),
+        "pm25": _zip_bytes(("pm25.csv", b"device_id,time,value\n1,t,12\n")),
+        "temperature": _zip_bytes(("temperature.csv", b"device_id,time,value\n1,t,25\n")),
+    }
+
+
+def _observation_catalog_snapshot(payloads: dict[str, bytes]) -> MicroSensorCatalogSnapshot:
+    listing = _directory(
+        *(
+            _file(
+                f"moenv_micro_{variable}_20250101.zip",
+                size=len(payload),
+                time=1_735_754_400 + index,
+            )
+            for index, (variable, payload) in enumerate(sorted(payloads.items()))
+        )
+    )
+    return build_catalog_snapshot(
+        _station_csv("1,L1,device,25.0,121.5,area,type,town,county,project"),
+        listing,
+        month="202501",
+        generated_at="2026-08-12T02:00:00+00:00",
+        git_sha="abc1234",
+        git_dirty=False,
+    )
+
+
+def _written_observation_catalog(
+    tmp_path: Path, payloads: dict[str, bytes]
+) -> tuple[MicroSensorCatalogSnapshot, Path, Path]:
+    snapshot = _observation_catalog_snapshot(payloads)
+    raw_root = tmp_path / "catalog-raw"
+    interim_root = tmp_path / "catalog-interim"
+    write_catalog_snapshot(snapshot, raw_root=raw_root, interim_root=interim_root)
+    return snapshot, raw_root, interim_root
+
+
+class _ArchiveBackend:
+    def __init__(self, payloads: dict[str, bytes]) -> None:
+        self.payloads = payloads
+        self.calls: list[str] = []
+
+    def download_archive(
+        self,
+        provider_path: str,
+        destination: Path,
+        *,
+        expected_bytes: int,
+        max_bytes: int,
+        allowed_content_types: frozenset[str],
+    ) -> Path:
+        del allowed_content_types
+        variable = next(name for name in self.payloads if f"_{name}_" in provider_path)
+        payload = self.payloads[variable]
+        assert len(payload) == expected_bytes
+        assert len(payload) <= max_bytes
+        self.calls.append(provider_path)
+        destination.write_bytes(payload)
+        return destination
+
+
+def test_a_catalog_generation_is_reloaded_and_selects_one_present_archive_per_variable(
+    tmp_path: Path,
+) -> None:
+    payloads = _observation_payloads()
+    snapshot, raw_root, interim_root = _written_observation_catalog(tmp_path, payloads)
+
+    generation = load_catalog_generation(
+        snapshot.generation_sha256,
+        raw_root=raw_root,
+        interim_root=interim_root,
+    )
+    selected = select_observation_archives(generation, day="2025-01-01")
+
+    assert [archive.variable for archive in selected] == [
+        "pm25",
+        "humidity",
+        "temperature",
+    ]
+    assert sum(archive.bytes for archive in selected) == sum(map(len, payloads.values()))
+    assert generation.manifest["generation_sha256"] == snapshot.generation_sha256
+
+
+def test_an_absent_catalogue_day_stops_before_any_observation_download(tmp_path: Path) -> None:
+    payloads = _observation_payloads()
+    snapshot, raw_root, interim_root = _written_observation_catalog(tmp_path, payloads)
+    generation = load_catalog_generation(
+        snapshot.generation_sha256,
+        raw_root=raw_root,
+        interim_root=interim_root,
+    )
+
+    with pytest.raises(ConfigError, match="archive is absent"):
+        select_observation_archives(generation, day="2025-01-02")
+
+
+def test_catalogue_declared_bytes_must_fit_both_observation_guards(tmp_path: Path) -> None:
+    payloads = _observation_payloads()
+    snapshot, raw_root, interim_root = _written_observation_catalog(tmp_path, payloads)
+    generation = load_catalog_generation(
+        snapshot.generation_sha256,
+        raw_root=raw_root,
+        interim_root=interim_root,
+    )
+    source = replace(load_micro_sensor_source(), max_total_bytes=1)
+
+    with pytest.raises(ConfigError, match="total byte ceiling"):
+        select_observation_archives(generation, day="2025-01-01", source=source)
+
+    source = replace(load_micro_sensor_source(), max_archive_bytes=1)
+    with pytest.raises(ConfigError, match="per-archive byte ceiling"):
+        select_observation_archives(generation, day="2025-01-01", source=source)
+
+
+def test_a_valid_zip_records_member_identity_without_extracting_it(tmp_path: Path) -> None:
+    archive = tmp_path / "source.zip"
+    archive.write_bytes(_zip_bytes(("observations.csv", b"value\n1\n")))
+
+    members = inspect_observation_zip(
+        archive,
+        max_members=2,
+        max_uncompressed_bytes=100,
+    )
+
+    assert [member["name"] for member in members] == ["observations.csv"]
+    assert members[0]["uncompressed_bytes"] == len(b"value\n1\n")
+    assert members[0]["crc32"] == zlib.crc32(b"value\n1\n")
+
+
+@pytest.mark.parametrize(
+    "payload, max_members, max_uncompressed_bytes, message",
+    [
+        (_zip_bytes(("../escape.csv", b"x")), 2, 100, "unsafe member path"),
+        (_zip_bytes(("folder/", b"")), 2, 100, "directory member"),
+        (_zip_bytes(("a.csv", b"1"), ("b.csv", b"2")), 1, 100, "member count"),
+        (_zip_bytes(("a.csv", b"1234")), 2, 3, "uncompressed byte ceiling"),
+        (_encrypted_zip_bytes(), 2, 100, "encrypted member"),
+    ],
+)
+def test_unsafe_zip_structures_are_rejected_before_any_extraction(
+    tmp_path: Path,
+    payload: bytes,
+    max_members: int,
+    max_uncompressed_bytes: int,
+    message: str,
+) -> None:
+    archive = tmp_path / "source.zip"
+    archive.write_bytes(payload)
+
+    with pytest.raises(ConfigError, match=message):
+        inspect_observation_zip(
+            archive,
+            max_members=max_members,
+            max_uncompressed_bytes=max_uncompressed_bytes,
+        )
+
+
+def test_one_day_acquisition_is_immutable_and_a_second_call_uses_no_network(
+    tmp_path: Path,
+) -> None:
+    payloads = _observation_payloads()
+    snapshot, raw_root, interim_root = _written_observation_catalog(tmp_path, payloads)
+    backend = _ArchiveBackend(payloads)
+    observation_root = tmp_path / "observations"
+
+    written = acquire_micro_sensor_day(
+        snapshot.generation_sha256,
+        day="2025-01-01",
+        backend=backend,
+        raw_catalog_root=raw_root,
+        interim_catalog_root=interim_root,
+        observation_root=observation_root,
+        generated_at="2026-08-12T03:00:00+00:00",
+        git_sha="abc1234",
+        git_dirty=False,
+    )
+
+    assert len(backend.calls) == 3
+    assert written.directory.parent == observation_root
+    manifest = json.loads((written.directory / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["kind"] == "raw_micro_sensor_observation_day"
+    assert manifest["catalog_generation_sha256"] == snapshot.generation_sha256
+    assert manifest["date"] == "2025-01-01"
+    assert set(manifest["members"]) == {
+        "moenv_micro_humidity_20250101.zip",
+        "moenv_micro_pm25_20250101.zip",
+        "moenv_micro_temperature_20250101.zip",
+    }
+    for name, identity in manifest["members"].items():
+        member = written.directory / name
+        assert identity["bytes"] == member.stat().st_size
+        assert identity["sha256"] == hashlib.sha256(member.read_bytes()).hexdigest()
+
+    second_backend = _ArchiveBackend({})
+    second = acquire_micro_sensor_day(
+        snapshot.generation_sha256,
+        day="2025-01-01",
+        backend=second_backend,
+        raw_catalog_root=raw_root,
+        interim_catalog_root=interim_root,
+        observation_root=observation_root,
+    )
+
+    assert second.directory == written.directory
+    assert second_backend.calls == []
+
+
+def test_an_interrupted_observation_publish_leaves_no_generation_or_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payloads = _observation_payloads()
+    snapshot, raw_root, interim_root = _written_observation_catalog(tmp_path, payloads)
+    observation_root = tmp_path / "observations"
+    original_replace = Path.replace
+
+    def interrupt_publish(self: Path, target: Path) -> Path:
+        if observation_root in target.parents and self.name.startswith(".staging-"):
+            raise KeyboardInterrupt
+        return original_replace(self, target)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "replace", interrupt_publish)
+        with pytest.raises(KeyboardInterrupt):
+            acquire_micro_sensor_day(
+                snapshot.generation_sha256,
+                day="2025-01-01",
+                backend=_ArchiveBackend(payloads),
+                raw_catalog_root=raw_root,
+                interim_catalog_root=interim_root,
+                observation_root=observation_root,
+            )
+
+    assert list(observation_root.glob(".staging-*")) == []
+    assert [path for path in observation_root.iterdir() if path.is_dir()] == []
+
+
+def test_an_existing_observation_generation_with_changed_bytes_is_rejected(
+    tmp_path: Path,
+) -> None:
+    payloads = _observation_payloads()
+    snapshot, raw_root, interim_root = _written_observation_catalog(tmp_path, payloads)
+    observation_root = tmp_path / "observations"
+    written = acquire_micro_sensor_day(
+        snapshot.generation_sha256,
+        day="2025-01-01",
+        backend=_ArchiveBackend(payloads),
+        raw_catalog_root=raw_root,
+        interim_catalog_root=interim_root,
+        observation_root=observation_root,
+    )
+    archive = written.directory / "moenv_micro_pm25_20250101.zip"
+    archive.write_bytes(archive.read_bytes() + b"changed")
+
+    with pytest.raises(RuntimeError, match="checksum changed"):
+        acquire_micro_sensor_day(
+            snapshot.generation_sha256,
+            day="2025-01-01",
+            backend=_ArchiveBackend({}),
+            raw_catalog_root=raw_root,
+            interim_catalog_root=interim_root,
+            observation_root=observation_root,
+        )

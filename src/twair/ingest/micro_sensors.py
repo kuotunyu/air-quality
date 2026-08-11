@@ -9,18 +9,19 @@ import hashlib
 import json
 import re
 import shutil
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from io import StringIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from uuid import uuid4
 
 import polars as pl
 
 from twair.config import ConfigError, load_conf
-from twair.net import PoliteClient
+from twair.net import PoliteClient, sha256_file
 from twair.paths import interim_dir, raw_dir
 from twair.provenance import git_state
 from twair.scalars import as_int
@@ -71,6 +72,11 @@ class MicroSensorSource:
     required_variables: tuple[str, ...]
     archive_filename_pattern: str
     max_directory_entries: int
+    max_archive_bytes: int
+    max_total_bytes: int
+    allowed_archive_content_types: tuple[str, ...]
+    max_zip_members: int
+    max_uncompressed_bytes_per_archive: int
 
     @property
     def station_metadata_path(self) -> str:
@@ -100,10 +106,46 @@ class MicroSensorCatalogWrite:
     manifest: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class MicroSensorCatalogGeneration:
+    generation_sha256: str
+    directory: Path
+    catalog: pl.DataFrame
+    manifest: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class MicroSensorArchive:
+    variable: str
+    filename: str
+    path: str
+    bytes: int
+    modified_unix: int
+
+
+@dataclass(frozen=True, slots=True)
+class MicroSensorDayWrite:
+    generation_sha256: str
+    directory: Path
+    manifest: dict[str, Any]
+
+
 class MicroSensorHistoryBackend(Protocol):
     def fetch_station_metadata(self) -> bytes: ...
 
     def list_month(self, month: str) -> dict[str, Any]: ...
+
+
+class MicroSensorObservationBackend(Protocol):
+    def download_archive(
+        self,
+        provider_path: str,
+        destination: Path,
+        *,
+        expected_bytes: int,
+        max_bytes: int,
+        allowed_content_types: frozenset[str],
+    ) -> Path: ...
 
 
 class FileGatorHistoryBackend:
@@ -190,6 +232,28 @@ class FileGatorHistoryBackend:
             raise ConfigError("micro-sensor station download is empty")
         return response.content
 
+    def download_archive(
+        self,
+        provider_path: str,
+        destination: Path,
+        *,
+        expected_bytes: int,
+        max_bytes: int,
+        allowed_content_types: frozenset[str],
+    ) -> Path:
+        """Stream one catalogue-selected ZIP through the shared guarded client."""
+        encoded_path = base64.b64encode(provider_path.encode()).decode()
+        headers = {**self._guest_headers(), "Accept-Encoding": "identity"}
+        return self._client.stream_to_file(
+            self.source.history_base_url,
+            destination,
+            params=self._route_params("download", path=encoded_path),
+            headers=headers,
+            expected_bytes=expected_bytes,
+            max_bytes=max_bytes,
+            allowed_content_types=allowed_content_types,
+        )
+
 
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
@@ -204,12 +268,23 @@ def _required_string(mapping: dict[str, Any], key: str, *, label: str) -> str:
     return value
 
 
+def _required_positive_int(mapping: dict[str, Any], key: str, *, label: str) -> int:
+    value = mapping.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{label}.{key} must be a positive integer")
+    return value
+
+
 def load_micro_sensor_source() -> MicroSensorSource:
     """Load the reviewed, credential-free history source contract."""
     config = _mapping(load_conf("micro_sensors"), label="micro_sensors")
     if config.get("schema_version") != 1:
         raise ConfigError("micro_sensors.schema_version must be 1")
     source = _mapping(config.get("source"), label="micro_sensors.source")
+    pilot = _mapping(
+        source.get("observation_pilot"),
+        label="micro_sensors.source.observation_pilot",
+    )
     routes = _mapping(source.get("routes"), label="micro_sensors.source.routes")
     required_route_names = ("get_config", "get_user", "get_directory", "download")
     selected_routes = {
@@ -244,6 +319,23 @@ def load_micro_sensor_source() -> MicroSensorSource:
         raise ConfigError("micro-sensor history_base_url must be an HTTPS directory URL")
     if not root_path.startswith("/") or root_path.endswith("/"):
         raise ConfigError("micro-sensor history_root_path must be an absolute provider path")
+    content_types = pilot.get("allowed_content_types")
+    if (
+        not isinstance(content_types, list)
+        or not content_types
+        or not all(
+            isinstance(value, str)
+            and value == value.strip().lower()
+            and value.startswith("application/")
+            and ";" not in value
+            for value in content_types
+        )
+        or len(set(content_types)) != len(content_types)
+    ):
+        raise ConfigError(
+            "micro_sensors.source.observation_pilot.allowed_content_types "
+            "must be unique reviewed application media types"
+        )
     return MicroSensorSource(
         provider=_required_string(source, "provider", label="micro_sensors.source"),
         history_base_url=base_url,
@@ -257,6 +349,27 @@ def load_micro_sensor_source() -> MicroSensorSource:
         required_variables=tuple(variables),
         archive_filename_pattern=pattern,
         max_directory_entries=limit,
+        max_archive_bytes=_required_positive_int(
+            pilot,
+            "max_archive_bytes",
+            label="micro_sensors.source.observation_pilot",
+        ),
+        max_total_bytes=_required_positive_int(
+            pilot,
+            "max_total_bytes",
+            label="micro_sensors.source.observation_pilot",
+        ),
+        allowed_archive_content_types=tuple(content_types),
+        max_zip_members=_required_positive_int(
+            pilot,
+            "max_zip_members",
+            label="micro_sensors.source.observation_pilot",
+        ),
+        max_uncompressed_bytes_per_archive=_required_positive_int(
+            pilot,
+            "max_uncompressed_bytes_per_archive",
+            label="micro_sensors.source.observation_pilot",
+        ),
     )
 
 
@@ -371,6 +484,8 @@ def normalize_month_catalog(
         path = entry.get("path")
         if not isinstance(filename, str) or not filename:
             raise ConfigError("micro-sensor directory entry has no filename")
+        if "/" in filename or "\\" in filename:
+            raise ConfigError(f"micro-sensor archive {filename} has an invalid provider filename")
         if not isinstance(path, str) or path != f"{location}/{filename}":
             raise ConfigError(f"micro-sensor archive {filename} has an invalid provider path")
         match = pattern.fullmatch(filename)
@@ -448,6 +563,16 @@ def _source_contract(source: MicroSensorSource) -> dict[str, object]:
         "required_variables": list(source.required_variables),
         "archive_filename_pattern": source.archive_filename_pattern,
         "max_directory_entries": source.max_directory_entries,
+    }
+
+
+def _observation_contract(source: MicroSensorSource) -> dict[str, object]:
+    return {
+        "max_archive_bytes": source.max_archive_bytes,
+        "max_total_bytes": source.max_total_bytes,
+        "allowed_content_types": list(source.allowed_archive_content_types),
+        "max_zip_members": source.max_zip_members,
+        "max_uncompressed_bytes_per_archive": source.max_uncompressed_bytes_per_archive,
     }
 
 
@@ -549,8 +674,7 @@ def build_catalog_snapshot(
 
 
 def _member_identity(path: Path) -> dict[str, object]:
-    payload = path.read_bytes()
-    return {"bytes": len(payload), "sha256": _sha256(payload)}
+    return {"bytes": path.stat().st_size, "sha256": sha256_file(path)}
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -762,4 +886,472 @@ def acquire_micro_sensor_catalog(
         snapshot,
         raw_root=raw_root,
         interim_root=interim_root,
+    )
+
+
+def _validated_generation_sha256(value: str, *, label: str) -> str:
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ConfigError(f"{label} must be a lowercase SHA-256")
+    return value
+
+
+def _catalog_identity_from_manifest(manifest: dict[str, Any]) -> dict[str, object]:
+    station = _mapping(manifest.get("station_metadata"), label="catalog station_metadata")
+    directory = _mapping(manifest.get("directory_response"), label="catalog directory_response")
+    catalog = _mapping(manifest.get("archive_catalog"), label="catalog archive_catalog")
+    return {
+        "schema_version": manifest.get("schema_version"),
+        "month": catalog.get("month"),
+        "source_contract_sha256": manifest.get("source_contract_sha256"),
+        "station_metadata_sha256": station.get("sha256"),
+        "directory_response_sha256": directory.get("sha256"),
+        "station_schema": list(STATION_OUTPUT_COLUMNS),
+        "catalog_schema": list(CATALOG_SCHEMA),
+    }
+
+
+def load_catalog_generation(
+    generation_sha256: str,
+    *,
+    source: MicroSensorSource | None = None,
+    raw_root: Path | None = None,
+    interim_root: Path | None = None,
+) -> MicroSensorCatalogGeneration:
+    """Reload and fully bind an immutable catalogue before selecting observations."""
+    generation = _validated_generation_sha256(
+        generation_sha256,
+        label="micro-sensor catalogue generation",
+    )
+    selected = source or load_micro_sensor_source()
+    selected_raw_root = raw_root or raw_dir("micro_sensors") / "catalog" / "generations"
+    selected_interim_root = interim_root or interim_dir("micro_sensors") / "catalog" / "generations"
+    raw_directory = selected_raw_root / generation
+    directory = selected_interim_root / generation
+    if not raw_directory.is_dir() or not directory.is_dir():
+        raise ConfigError("micro-sensor catalogue generation is missing")
+
+    raw_manifest = _manifest(raw_directory / "manifest.json")
+    manifest = _manifest(directory / "manifest.json")
+    if raw_manifest.get("kind") != "raw_micro_sensor_catalog":
+        raise RuntimeError(f"catalog raw generation kind is invalid: {raw_directory}")
+    if manifest.get("kind") != "normalized_micro_sensor_catalog":
+        raise RuntimeError(f"catalog normalized generation kind is invalid: {directory}")
+    if (
+        raw_manifest.get("generation_sha256") != generation
+        or manifest.get("generation_sha256") != generation
+    ):
+        raise RuntimeError("catalog generation identity changed")
+    _validate_member_identities(raw_directory, raw_manifest)
+    _validate_member_identities(directory, manifest)
+    raw_manifest_sha = _sha256((raw_directory / "manifest.json").read_bytes())
+    if manifest.get("raw_manifest_sha256") != raw_manifest_sha:
+        raise RuntimeError("catalog normalized generation raw identity changed")
+    stable_keys = (
+        "schema_version",
+        "generation_sha256",
+        "source_contract",
+        "source_contract_sha256",
+        "station_metadata_path",
+        "directory_path",
+        "directory_response",
+        "station_metadata",
+        "archive_catalog",
+    )
+    if any(raw_manifest.get(key) != manifest.get(key) for key in stable_keys):
+        raise RuntimeError("raw and normalized catalog manifests disagree")
+    current_contract_sha = _sha256(_canonical_json(_source_contract(selected)))
+    if manifest.get("source_contract_sha256") != current_contract_sha:
+        raise RuntimeError("catalog source contract changed")
+    if _sha256(_canonical_json(_catalog_identity_from_manifest(manifest))) != generation:
+        raise RuntimeError("catalog generation SHA-256 is not reproducible")
+    try:
+        catalog = pl.read_parquet(directory / "archive_catalog.parquet")
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError(f"catalog normalized generation is unreadable: {directory}") from exc
+    if catalog.schema != pl.Schema(CATALOG_SCHEMA):
+        raise RuntimeError("catalog normalized schema changed")
+    catalog_summary = _mapping(manifest.get("archive_catalog"), label="catalog archive_catalog")
+    present = catalog.filter(pl.col("archive_present"))
+    if (
+        catalog.height != catalog_summary.get("rows")
+        or present.height != catalog_summary.get("present")
+        or catalog.height - present.height != catalog_summary.get("absent")
+        or as_int(present["bytes"].sum(), what="present archive bytes")
+        != catalog_summary.get("present_bytes")
+    ):
+        raise RuntimeError("catalog normalized counts changed")
+    return MicroSensorCatalogGeneration(
+        generation_sha256=generation,
+        directory=directory,
+        catalog=catalog,
+        manifest=manifest,
+    )
+
+
+def _parse_day(value: str) -> date:
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ConfigError("micro-sensor day must use YYYY-MM-DD") from exc
+    if parsed.isoformat() != value:
+        raise ConfigError("micro-sensor day must use YYYY-MM-DD")
+    return parsed
+
+
+def select_observation_archives(
+    generation: MicroSensorCatalogGeneration,
+    *,
+    day: str,
+    source: MicroSensorSource | None = None,
+) -> tuple[MicroSensorArchive, ...]:
+    """Select a complete configured variable set without treating absence as zero."""
+    selected_source = source or load_micro_sensor_source()
+    parsed_day = _parse_day(day)
+    month = _mapping(
+        generation.manifest.get("archive_catalog"),
+        label="catalog archive_catalog",
+    ).get("month")
+    if month != parsed_day.strftime("%Y%m"):
+        raise ConfigError("micro-sensor day is outside the catalogue month")
+    rows = generation.catalog.filter(pl.col("date") == parsed_day)
+    archives: list[MicroSensorArchive] = []
+    for variable in selected_source.required_variables:
+        match = rows.filter(pl.col("variable") == variable)
+        if match.height != 1:
+            raise RuntimeError(f"catalogue has no unique row for {day} {variable}")
+        record = match.row(0, named=True)
+        if record["archive_present"] is not True:
+            raise ConfigError(f"micro-sensor {variable} archive is absent for {day}")
+        filename = record["filename"]
+        provider_path = record["path"]
+        declared_bytes = record["bytes"]
+        modified_unix = record["modified_unix"]
+        if (
+            not isinstance(filename, str)
+            or not filename
+            or not isinstance(provider_path, str)
+            or not provider_path
+            or isinstance(declared_bytes, bool)
+            or not isinstance(declared_bytes, int)
+            or declared_bytes <= 0
+            or isinstance(modified_unix, bool)
+            or not isinstance(modified_unix, int)
+            or modified_unix < 0
+        ):
+            raise RuntimeError(f"catalogue metadata is invalid for {day} {variable}")
+        if declared_bytes > selected_source.max_archive_bytes:
+            raise ConfigError(
+                f"micro-sensor {variable} archive exceeds the per-archive byte ceiling"
+            )
+        archives.append(
+            MicroSensorArchive(
+                variable=variable,
+                filename=filename,
+                path=provider_path,
+                bytes=declared_bytes,
+                modified_unix=modified_unix,
+            )
+        )
+    if sum(archive.bytes for archive in archives) > selected_source.max_total_bytes:
+        raise ConfigError("micro-sensor day exceeds the total byte ceiling")
+    return tuple(archives)
+
+
+def inspect_observation_zip(
+    path: Path,
+    *,
+    max_members: int,
+    max_uncompressed_bytes: int,
+) -> list[dict[str, object]]:
+    """Validate only the ZIP directory; observation rows remain untouched."""
+    if max_members <= 0 or max_uncompressed_bytes <= 0:
+        raise ValueError("ZIP safety ceilings must be positive")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+    except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+        raise ConfigError(f"micro-sensor observation archive is not a valid ZIP: {path}") from exc
+    if not infos:
+        raise ConfigError("micro-sensor observation ZIP has no members")
+    if len(infos) > max_members:
+        raise ConfigError("micro-sensor observation ZIP exceeds the member count ceiling")
+    seen: set[str] = set()
+    members: list[dict[str, object]] = []
+    uncompressed_total = 0
+    for info in infos:
+        name = info.filename
+        member_path = PurePosixPath(name)
+        if not name or "\\" in name or member_path.is_absolute() or ".." in member_path.parts:
+            raise ConfigError("micro-sensor observation ZIP has an unsafe member path")
+        if info.is_dir():
+            raise ConfigError("micro-sensor observation ZIP has a directory member")
+        if name in seen:
+            raise ConfigError("micro-sensor observation ZIP has a duplicate member path")
+        seen.add(name)
+        if info.flag_bits & 0x1:
+            raise ConfigError("micro-sensor observation ZIP has an encrypted member")
+        uncompressed_total += info.file_size
+        if uncompressed_total > max_uncompressed_bytes:
+            raise ConfigError("micro-sensor observation ZIP exceeds the uncompressed byte ceiling")
+        members.append(
+            {
+                "name": name,
+                "compressed_bytes": info.compress_size,
+                "uncompressed_bytes": info.file_size,
+                "crc32": info.CRC,
+                "compression_method": info.compress_type,
+            }
+        )
+    return sorted(members, key=lambda member: str(member["name"]))
+
+
+def _archive_dict(archive: MicroSensorArchive) -> dict[str, object]:
+    return {
+        "variable": archive.variable,
+        "filename": archive.filename,
+        "path": archive.path,
+        "bytes": archive.bytes,
+        "modified_unix": archive.modified_unix,
+    }
+
+
+def _observation_request_identity(
+    catalog_generation: str,
+    day: str,
+    archives: tuple[MicroSensorArchive, ...],
+    source: MicroSensorSource,
+) -> dict[str, object]:
+    observation_contract = _observation_contract(source)
+    return {
+        "schema_version": 1,
+        "catalog_generation_sha256": catalog_generation,
+        "date": day,
+        "source_contract_sha256": _sha256(_canonical_json(_source_contract(source))),
+        "observation_contract": observation_contract,
+        "observation_contract_sha256": _sha256(_canonical_json(observation_contract)),
+        "selected_archives": [_archive_dict(archive) for archive in archives],
+    }
+
+
+def _observation_generation_identity(manifest: dict[str, Any]) -> dict[str, object]:
+    return {
+        "schema_version": manifest.get("schema_version"),
+        "request_sha256": manifest.get("request_sha256"),
+        "catalog_generation_sha256": manifest.get("catalog_generation_sha256"),
+        "date": manifest.get("date"),
+        "source_contract_sha256": manifest.get("source_contract_sha256"),
+        "observation_contract_sha256": manifest.get("observation_contract_sha256"),
+        "selected_archives": manifest.get("selected_archives"),
+        "members": manifest.get("members"),
+    }
+
+
+def _validate_observation_generation(
+    directory: Path,
+    *,
+    request_identity: dict[str, object],
+    request_sha256: str,
+    source: MicroSensorSource,
+    require_directory_name: bool = True,
+) -> dict[str, Any]:
+    manifest = _manifest(directory / "manifest.json")
+    if manifest.get("kind") != "raw_micro_sensor_observation_day":
+        raise RuntimeError(f"micro-sensor observation generation kind is invalid: {directory}")
+    if manifest.get("request_sha256") != request_sha256:
+        raise RuntimeError("micro-sensor observation request identity changed")
+    for key, expected in request_identity.items():
+        if manifest.get(key) != expected:
+            raise RuntimeError(f"micro-sensor observation manifest changed: {key}")
+    members = _mapping(manifest.get("members"), label="micro-sensor observation members")
+    selected_archives = request_identity.get("selected_archives")
+    if not isinstance(selected_archives, list) or not all(
+        isinstance(record, dict) and isinstance(record.get("filename"), str)
+        for record in selected_archives
+    ):
+        raise RuntimeError("micro-sensor observation request archives are invalid")
+    selected_names = {str(record["filename"]) for record in selected_archives}
+    selected_by_name = {str(record["filename"]): record for record in selected_archives}
+    if set(members) != selected_names:
+        raise RuntimeError("micro-sensor observation member names changed")
+    if {path.name for path in directory.iterdir()} != {"manifest.json", *selected_names}:
+        raise RuntimeError("micro-sensor observation generation members changed")
+    for name, recorded in members.items():
+        identity = _mapping(recorded, label=f"micro-sensor observation member {name}")
+        path = directory / name
+        current = _member_identity(path)
+        if any(identity.get(key) != current[key] for key in ("bytes", "sha256")):
+            raise RuntimeError(f"micro-sensor observation checksum changed: {path}")
+        if identity.get("bytes") != selected_by_name[name].get("bytes"):
+            raise RuntimeError(f"micro-sensor observation byte count changed: {path}")
+        zip_members = inspect_observation_zip(
+            path,
+            max_members=source.max_zip_members,
+            max_uncompressed_bytes=source.max_uncompressed_bytes_per_archive,
+        )
+        if identity.get("zip_members") != zip_members:
+            raise RuntimeError(f"micro-sensor observation ZIP metadata changed: {path}")
+    generation = _sha256(_canonical_json(_observation_generation_identity(manifest)))
+    if manifest.get("generation_sha256") != generation or (
+        require_directory_name and directory.name != generation
+    ):
+        raise RuntimeError("micro-sensor observation generation identity changed")
+    return manifest
+
+
+def _existing_observation_generation(
+    root: Path,
+    *,
+    request_identity: dict[str, object],
+    request_sha256: str,
+    source: MicroSensorSource,
+) -> MicroSensorDayWrite | None:
+    if not root.exists():
+        return None
+    matches: list[Path] = []
+    for candidate in root.iterdir():
+        if not candidate.is_dir() or re.fullmatch(r"[0-9a-f]{64}", candidate.name) is None:
+            continue
+        try:
+            manifest = _manifest(candidate / "manifest.json")
+        except RuntimeError:
+            continue
+        if manifest.get("request_sha256") == request_sha256:
+            matches.append(candidate)
+    if len(matches) > 1:
+        raise RuntimeError("multiple micro-sensor observation generations claim one request")
+    if not matches:
+        return None
+    manifest = _validate_observation_generation(
+        matches[0],
+        request_identity=request_identity,
+        request_sha256=request_sha256,
+        source=source,
+    )
+    return MicroSensorDayWrite(
+        generation_sha256=str(manifest["generation_sha256"]),
+        directory=matches[0],
+        manifest=manifest,
+    )
+
+
+def acquire_micro_sensor_day(
+    catalog_generation_sha256: str,
+    *,
+    day: str,
+    backend: MicroSensorObservationBackend,
+    source: MicroSensorSource | None = None,
+    raw_catalog_root: Path | None = None,
+    interim_catalog_root: Path | None = None,
+    observation_root: Path | None = None,
+    generated_at: str | None = None,
+    git_sha: str | None = None,
+    git_dirty: bool | None = None,
+) -> MicroSensorDayWrite:
+    """Download one complete day into an immutable raw-only generation."""
+    selected_source = source or load_micro_sensor_source()
+    catalog_generation = load_catalog_generation(
+        catalog_generation_sha256,
+        source=selected_source,
+        raw_root=raw_catalog_root,
+        interim_root=interim_catalog_root,
+    )
+    archives = select_observation_archives(
+        catalog_generation,
+        day=day,
+        source=selected_source,
+    )
+    request_identity = _observation_request_identity(
+        catalog_generation.generation_sha256,
+        day,
+        archives,
+        selected_source,
+    )
+    request_sha = _sha256(_canonical_json(request_identity))
+    root = observation_root or raw_dir("micro_sensors") / "observations" / "generations"
+    existing = _existing_observation_generation(
+        root,
+        request_identity=request_identity,
+        request_sha256=request_sha,
+        source=selected_source,
+    )
+    if existing is not None:
+        return existing
+
+    root.mkdir(parents=True, exist_ok=True)
+    staged = root / f".staging-{request_sha}"
+    if staged.exists():
+        if not staged.is_dir():
+            raise RuntimeError(
+                f"micro-sensor observation staging path is not a directory: {staged}"
+            )
+        shutil.rmtree(staged)
+    staged.mkdir()
+    try:
+        member_records: dict[str, dict[str, object]] = {}
+        for archive in archives:
+            destination = staged / archive.filename
+            backend.download_archive(
+                archive.path,
+                destination,
+                expected_bytes=archive.bytes,
+                max_bytes=selected_source.max_archive_bytes,
+                allowed_content_types=frozenset(selected_source.allowed_archive_content_types),
+            )
+            member_records[archive.filename] = {
+                **_member_identity(destination),
+                "zip_members": inspect_observation_zip(
+                    destination,
+                    max_members=selected_source.max_zip_members,
+                    max_uncompressed_bytes=selected_source.max_uncompressed_bytes_per_archive,
+                ),
+            }
+        measured_sha, measured_dirty = git_state()
+        manifest: dict[str, Any] = {
+            **request_identity,
+            "kind": "raw_micro_sensor_observation_day",
+            "request_sha256": request_sha,
+            "members": member_records,
+            "generated_at": generated_at or datetime.now(UTC).isoformat(timespec="seconds"),
+            "git_sha": measured_sha if git_sha is None else git_sha,
+            "git_dirty": measured_dirty if git_dirty is None else git_dirty,
+        }
+        generation = _sha256(_canonical_json(_observation_generation_identity(manifest)))
+        manifest["generation_sha256"] = generation
+        _write_json(staged / "manifest.json", manifest)
+        destination = root / generation
+        _validate_observation_generation(
+            staged,
+            request_identity=request_identity,
+            request_sha256=request_sha,
+            source=selected_source,
+            require_directory_name=False,
+        )
+        if destination.exists():
+            existing_manifest = _validate_observation_generation(
+                destination,
+                request_identity=request_identity,
+                request_sha256=request_sha,
+                source=selected_source,
+            )
+            shutil.rmtree(staged)
+            return MicroSensorDayWrite(
+                generation_sha256=generation,
+                directory=destination,
+                manifest=existing_manifest,
+            )
+        staged.replace(destination)
+    except BaseException:
+        if staged.exists():
+            shutil.rmtree(staged)
+        raise
+    final_manifest = _validate_observation_generation(
+        destination,
+        request_identity=request_identity,
+        request_sha256=request_sha,
+        source=selected_source,
+    )
+    return MicroSensorDayWrite(
+        generation_sha256=generation,
+        directory=destination,
+        manifest=final_manifest,
     )
