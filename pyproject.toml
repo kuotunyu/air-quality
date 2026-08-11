@@ -112,6 +112,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/twair"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"conf" = "twair/_conf"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/.env.example",
+    "/conf",
+    "/src/twair",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

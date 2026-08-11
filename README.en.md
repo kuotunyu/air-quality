@@ -171,6 +171,14 @@ uv run twair doctor
 ```bash
 uv run twair probe sources
 ```
+In a source checkout, the repository root is the workspace. When running an
+installed wheel elsewhere, set `TWAIR_WORKSPACE_DIR` in the process environment
+before startup; otherwise the current working directory is used. Relative
+`data/`, `.env`, `conf/`, report, and probe paths stay in that external
+workspace. If a `conf/*.yaml` override is absent, `twair` reads the reviewed,
+read-only defaults packaged in the wheel. Refresh and probe commands create
+workspace overrides and never rewrite the installed package.
+
 The `probe sources` utility parses the live airtw annual catalogue, resolves current Google Drive identifiers, downloads one real archive sample, and populates `conf/sources.yaml` and `docs/data-sources.md`. Credentialed value-add sources remain explicitly unprobed when no credential is configured. Since government links change periodically, the catalogue is rediscovered rather than treated as a permanent hardcoded URL list.
 
 ---

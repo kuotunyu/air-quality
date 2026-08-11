@@ -108,6 +108,12 @@ uv run twair doctor
 uv run twair probe sources
 ```
 
+從 source checkout 執行時，repository root 就是 workspace。若從安裝好的
+wheel 執行，可在啟動前以 process environment 設定 `TWAIR_WORKSPACE_DIR`；未設定時
+使用目前工作目錄。相對的 `data/`、`.env`、`conf/`、報告與 probe 輸出都留在這個
+外部 workspace。`conf/*.yaml` 若不存在，程式會讀取 wheel 內隨版本審查過的
+read-only defaults；refresh 或 probe 只會建立 workspace override，不會改寫安裝套件。
+
 `probe sources` 會實地解析 airtw 年度目錄與當前下載連結、抓取一個真實 archive 樣本，
 並把結果寫進 `conf/sources.yaml` 與 `docs/data-sources.md`；需要憑證的加值來源若未設定，
 會明確保留為未驗證。

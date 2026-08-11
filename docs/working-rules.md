@@ -657,6 +657,21 @@ Incremental artefacts must **merge, not replace**. `year_summary.csv` used to
 be rewritten wholesale, so rebuilding one year erased the record of the other
 forty-three. Anything written per-run needs the same treatment.
 
+### A wheel runs in a workspace, not in its installation directory
+
+In a source checkout, the repository root is the workspace. An installed wheel
+uses the current working directory unless `TWAIR_WORKSPACE_DIR` is set in the
+process environment before startup. Relative `TWAIR_DATA_DIR`, `.env`,
+`conf/`, `docs/`, `reports/`, and `web/` paths are rooted there.
+
+The wheel carries a reviewed, read-only snapshot of every tracked
+`conf/*.yaml`. `load_conf()` first looks for a workspace override and otherwise
+uses that packaged snapshot. `write_conf()` always writes the workspace
+override; a probe or register refresh must never mutate `site-packages`.
+`scripts/check_python_package.py` builds a direct wheel and sdist, rebuilds a
+wheel from the sdist, and exercises both outside the checkout. Run it before a
+Python package release; `twair --help` is not a sufficient package test.
+
 ## Conventions
 
 - **Python 3.12, uv.** `uv run --no-sync ...` when a background job holds

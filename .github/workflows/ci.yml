@@ -79,6 +79,13 @@ jobs:
           uv run mypy src tests
           uv run mypy scripts
 
+      # Importing from the checkout hid two packaging defects: wheels omitted
+      # every reviewed YAML config, and the default sdist carried the complete
+      # website and public data. Build both routes and execute the wheels from
+      # an external workspace so this gate exercises what a user installs.
+      - name: Python artifacts are self-contained and workspace-safe
+        run: uv run python scripts/check_python_package.py
+
       # The palette's published numbers are solved by this file, and nothing
       # ran it — so PRODUCT.md quoted two dark-theme figures it does not
       # produce. It also used to exit 0 whatever it found; it now fails when a

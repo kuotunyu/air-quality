@@ -11,6 +11,9 @@ Two kinds of configuration, kept deliberately separate:
 from __future__ import annotations
 
 from functools import cache, lru_cache
+from importlib.resources import files
+from importlib.resources.abc import Traversable
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -18,6 +21,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from twair.paths import CONF_DIR, REPO_ROOT
+
+PACKAGED_CONF_PACKAGE = "twair"
+PACKAGED_CONF_DIRECTORY = "_conf"
 
 
 class Settings(BaseSettings):
@@ -65,6 +71,10 @@ class ConfigError(RuntimeError):
     """Raised when a config file is structurally unusable."""
 
 
+def _packaged_conf_file(name: str) -> Traversable:
+    return files(PACKAGED_CONF_PACKAGE).joinpath(PACKAGED_CONF_DIRECTORY, f"{name}.yaml")
+
+
 def _reject_boolean_keys(node: Any, path: str = "") -> None:
     """Guard against YAML 1.1's implicit boolean keys.
 
@@ -90,22 +100,32 @@ def _reject_boolean_keys(node: Any, path: str = "") -> None:
 
 @cache
 def load_conf(name: str) -> dict[str, Any]:
-    """Load ``conf/<name>.yaml``. Cached; call ``load_conf.cache_clear()`` in tests."""
-    path = CONF_DIR / f"{name}.yaml"
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open(encoding="utf-8") as fh:
+    """Load a workspace override or the wheel's reviewed config snapshot."""
+    workspace_path = CONF_DIR / f"{name}.yaml"
+    packaged_path = _packaged_conf_file(name)
+    if workspace_path.is_file():
+        source: Path | Traversable = workspace_path
+        source_label = str(workspace_path)
+    elif packaged_path.is_file():
+        source = packaged_path
+        source_label = f"{PACKAGED_CONF_PACKAGE}/{PACKAGED_CONF_DIRECTORY}/{name}.yaml"
+    else:
+        raise FileNotFoundError(
+            "Config file not found in workspace or package: "
+            f"{workspace_path}; {PACKAGED_CONF_PACKAGE}/{PACKAGED_CONF_DIRECTORY}/{name}.yaml"
+        )
+    with source.open(encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise TypeError(f"{path} must contain a YAML mapping at the top level.")
+        raise TypeError(f"{source_label} must contain a YAML mapping at the top level.")
     _reject_boolean_keys(data, name)
     return data
 
 
 def write_conf(name: str, data: dict[str, Any], *, header: str | None = None) -> None:
-    """Write ``conf/<name>.yaml``. Used by the Phase 0 probe to record discovered sources."""
+    """Write a workspace override without mutating packaged defaults."""
     path = CONF_DIR / f"{name}.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=100)

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import yaml
 
+import twair.config as config_module
+import twair.paths as paths_module
 from twair.config import (
     ConfigError,
     _reject_boolean_keys,
     load_conf,
+    write_conf,
 )
 
 
@@ -59,3 +64,105 @@ class TestShippedConfigs:
         keys = load_conf("pollutants")["pollutants"].keys()
 
         assert all(isinstance(k, str) for k in keys)
+
+
+class TestWorkspaceBoundary:
+    def test_process_data_dir_overrides_workspace_dotenv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspace = tmp_path / "workspace"
+        elsewhere = tmp_path / "elsewhere"
+        workspace.mkdir()
+        elsewhere.mkdir()
+        (workspace / ".env").write_text("TWAIR_DATA_DIR=dotenv-store\n", encoding="utf-8")
+        monkeypatch.chdir(elsewhere)
+        selected = paths_module._resolve_workspace_root(
+            str(workspace), elsewhere, paths_module.REPO_ROOT
+        )
+        monkeypatch.setattr(paths_module, "_WORKSPACE_ROOT", selected)
+        monkeypatch.setenv("TWAIR_DATA_DIR", "store")
+
+        assert paths_module.workspace_root() == workspace
+        assert paths_module.data_root() == workspace / "store"
+
+    def test_an_installed_process_defaults_to_its_current_workspace(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("TWAIR_WORKSPACE_DIR", raising=False)
+
+        assert paths_module._resolve_workspace_root(None, tmp_path, None) == tmp_path
+
+    def test_workspace_selection_cannot_split_after_the_process_has_started(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        started_in = paths_module.REPO_ROOT
+        monkeypatch.setenv("TWAIR_WORKSPACE_DIR", str(tmp_path / "late-workspace"))
+        monkeypatch.setenv("TWAIR_DATA_DIR", "store")
+
+        assert paths_module.workspace_root() == started_in
+        assert paths_module.data_root() == started_in / "store"
+
+    def test_relative_data_dir_from_workspace_dotenv_is_not_ignored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(paths_module, "_WORKSPACE_ROOT", tmp_path)
+        monkeypatch.delenv("TWAIR_DATA_DIR", raising=False)
+        (tmp_path / ".env").write_text("TWAIR_DATA_DIR=dotenv-store\n", encoding="utf-8")
+
+        assert paths_module.data_root() == tmp_path / "dotenv-store"
+
+
+class TestPackagedConfigBoundary:
+    def setup_method(self) -> None:
+        load_conf.cache_clear()
+
+    def teardown_method(self) -> None:
+        load_conf.cache_clear()
+
+    def test_a_missing_workspace_config_falls_back_to_the_packaged_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        packaged = tmp_path / "packaged.yaml"
+        packaged.write_text("origin: packaged\n", encoding="utf-8")
+        workspace_conf = tmp_path / "workspace" / "conf"
+        monkeypatch.setattr(config_module, "CONF_DIR", workspace_conf)
+        monkeypatch.setattr(
+            config_module, "_packaged_conf_file", lambda _name: packaged, raising=False
+        )
+
+        assert load_conf("example") == {"origin": "packaged"}
+
+    def test_a_workspace_config_overrides_the_packaged_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspace_conf = tmp_path / "workspace" / "conf"
+        workspace_conf.mkdir(parents=True)
+        (workspace_conf / "example.yaml").write_text("origin: workspace\n", encoding="utf-8")
+        packaged = tmp_path / "packaged.yaml"
+        packaged.write_text("origin: packaged\n", encoding="utf-8")
+        monkeypatch.setattr(config_module, "CONF_DIR", workspace_conf)
+        monkeypatch.setattr(
+            config_module, "_packaged_conf_file", lambda _name: packaged, raising=False
+        )
+
+        assert load_conf("example") == {"origin": "workspace"}
+
+    def test_writing_config_creates_only_an_external_override(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspace_conf = tmp_path / "workspace" / "conf"
+        packaged = tmp_path / "packaged.yaml"
+        packaged.write_text("origin: packaged\n", encoding="utf-8")
+        monkeypatch.setattr(config_module, "CONF_DIR", workspace_conf)
+        monkeypatch.setattr(
+            config_module, "_packaged_conf_file", lambda _name: packaged, raising=False
+        )
+
+        write_conf("example", {"origin": "workspace"})
+
+        assert yaml.safe_load((workspace_conf / "example.yaml").read_text(encoding="utf-8")) == {
+            "origin": "workspace"
+        }
+        assert packaged.read_text(encoding="utf-8") == "origin: packaged\n"
+        assert load_conf("example") == {"origin": "workspace"}
