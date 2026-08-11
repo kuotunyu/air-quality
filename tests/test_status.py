@@ -102,6 +102,17 @@ class TestTheReproduceTableCannotRot:
         assert module.feeds_web is False
         assert "held-out" in module.what
 
+    def test_satellite_robustness_has_an_exact_non_web_return_command(self) -> None:
+        module = next(item for item in MODULES if item.directory == "m8_satellite_robustness")
+
+        assert module.reproduce == (
+            "twair analyze satellite-robustness "
+            "--generation 58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
+        )
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "multi-year" in module.what
+
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""
         status = Status(

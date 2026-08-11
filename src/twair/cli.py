@@ -995,6 +995,43 @@ def analyze_satellite_value(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("satellite-robustness")
+def analyze_satellite_robustness(
+    generation: str = typer.Option(
+        ...,
+        "--generation",
+        help="Immutable station-inventory SHA-256 shared by both M8 association years.",
+    ),
+) -> None:
+    """Test held-out satellite prediction across the reviewed association years."""
+    from twair.analysis.satellite_robustness import (
+        run_satellite_robustness,
+        write_satellite_robustness_result,
+    )
+    from twair.ingest.station_inventory import validate_generation_sha256
+    from twair.paths import data_root
+
+    try:
+        identity = validate_generation_sha256(generation)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+    result = run_satellite_robustness(
+        data_root=data_root(),
+        generation_sha256=identity,
+    )
+    written = write_satellite_robustness_result(result)
+
+    common_stations = len(result.manifest.get("common_stations", []))
+    console.print(f"Satellite robustness: 2024 and 2025; {common_stations} common station(s)")
+    console.print(
+        "Year replication plus cross-year and held-out-station cross-year prediction; "
+        "not causal attribution, calibration, fusion, or an M4 replacement."
+    )
+    console.print(result.deltas)
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("era5-robustness")
 def analyze_era5_robustness(
     generation: str = typer.Option(

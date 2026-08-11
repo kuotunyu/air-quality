@@ -98,6 +98,13 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "m8_satellite_robustness",
+        "twair analyze satellite-robustness "
+        "--generation 58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788",
+        "multi-year held-out satellite predictive value",
+        feeds_web=False,
+    ),
+    Module(
         "m8_era5_value",
         "twair analyze era5-value",
         "held-out ERA5 weather value beyond station measurements",
