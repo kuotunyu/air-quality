@@ -95,6 +95,12 @@ MODULES: tuple[Module, ...] = (
         "held-out ERA5 weather value beyond station measurements",
         feeds_web=False,
     ),
+    Module(
+        "m8_era5_robustness",
+        "twair analyze era5-robustness",
+        "ERA5 value transfer across years and held-out stations",
+        feeds_web=False,
+    ),
     Module("m9_forecast", "twair analyze m9", "forecasting scored against persistence"),
     Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
     Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),

@@ -84,6 +84,12 @@ class TestTheReproduceTableCannotRot:
         assert module.feeds_web is False
         assert "held-out" in module.what
 
+    def test_era5_robustness_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(item for item in MODULES if item.directory == "m8_era5_robustness")
+
+        assert module.reproduce == "twair analyze era5-robustness"
+        assert module.feeds_web is False
+
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""
         status = Status(

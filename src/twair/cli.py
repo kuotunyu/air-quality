@@ -946,6 +946,52 @@ def analyze_era5_value(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("era5-robustness")
+def analyze_era5_robustness(
+    generation: str = typer.Option(
+        ...,
+        "--generation",
+        help="Immutable station-inventory SHA-256 shared by every ERA5 UTC year.",
+    ),
+    pilot: bool = typer.Option(
+        False,
+        "--pilot/--full",
+        help="Run the reviewed six-station CPU pilot instead of all eligible stations.",
+    ),
+) -> None:
+    """Test whether ERA5 prediction value transfers across years and stations."""
+    from twair.analysis.era5_robustness import (
+        run_era5_robustness,
+        write_era5_robustness_result,
+    )
+    from twair.ingest.station_inventory import validate_generation_sha256
+    from twair.paths import data_root
+
+    try:
+        identity = validate_generation_sha256(generation)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+
+    result = run_era5_robustness(
+        data_root=data_root(),
+        generation_sha256=identity,
+        pilot=pilot,
+    )
+    # A console/display failure must not discard completed serial model fits.
+    written = write_era5_robustness_result(result)
+
+    mode = str(result.manifest["mode"])
+    common_stations = len(result.manifest.get("common_stations", []))
+    console.print(f"ERA5 robustness [bold]{mode}[/bold]: {common_stations} common station(s)")
+    console.print(
+        "Year replication plus temporal, held-out-station, and combined transfer; "
+        "descriptive prediction, not causal attribution or calibration."
+    )
+    console.print(result.deltas)
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m9")
 def analyze_m9(
     years: str = typer.Option("2015:2025", "--years", "-y", help="Period to backtest."),
