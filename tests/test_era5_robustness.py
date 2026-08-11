@@ -149,12 +149,30 @@ def test_station_folds_are_deterministic_balanced_and_hold_every_station_once() 
         assert first.filter(pl.col("airzone_official") == zone)["station_fold"].n_unique() > 1
 
 
+def test_a_station_without_an_official_airzone_remains_in_a_deterministic_fold() -> None:
+    inventory = pl.DataFrame(
+        {
+            "station_name": ["甲", "萬里", "乙"],
+            "airzone_official": ["北", None, "北"],
+        }
+    )
+
+    first = assign_station_folds(inventory, fold_count=2)
+    second = assign_station_folds(inventory.reverse(), fold_count=2)
+
+    assert first.equals(second)
+    assert first["station_name"].to_list() == ["乙", "甲", "萬里"]
+    wanli = first.filter(pl.col("station_name") == "萬里").row(0, named=True)
+    assert wanli["airzone_official"] is None
+    assert wanli["station_fold"] in {0, 1}
+
+
 @pytest.mark.parametrize(
     ("inventory", "message"),
     [
         (
-            pl.DataFrame({"station_name": ["甲", "乙"], "airzone_official": ["北", None]}),
-            "air zone",
+            pl.DataFrame({"station_name": ["甲", None], "airzone_official": ["北", "北"]}),
+            "name",
         ),
         (
             pl.DataFrame({"station_name": ["甲", "甲"], "airzone_official": ["北", "北"]}),
@@ -468,6 +486,10 @@ def test_the_runner_binds_both_years_station_inventory_and_all_evaluation_design
         "spatiotemporal_transfer",
     }
     assert result.manifest["paired_rows_by_year"] == {"2024": 732, "2025": 730}
+    assert result.manifest["station_fold_method"] == (
+        "airzone_sorted_round_robin_with_unclassified_stratum"
+    )
+    assert result.manifest["unclassified_airzone_station_count"] == 0
     assert len(result.manifest["input_files"]) == 3
     assert result.station_folds.height == 2
     assert result.coverage.height == 4

@@ -191,27 +191,35 @@ def assign_station_folds(inventory: pl.DataFrame, *, fold_count: int) -> pl.Data
     invalid = selected.filter(
         pl.col("station_name").is_null()
         | (pl.col("station_name").cast(pl.Utf8, strict=False).str.strip_chars() == "")
-        | pl.col("airzone_official").is_null()
-        | (pl.col("airzone_official").cast(pl.Utf8, strict=False).str.strip_chars() == "")
     )
     if not invalid.is_empty():
-        raise RuntimeError("ERA5 robustness station membership has a missing name or air zone")
+        raise RuntimeError("ERA5 robustness station membership has a missing name")
     if selected.height < fold_count:
         raise RuntimeError("ERA5 robustness has fewer stations than station folds")
 
+    selected = selected.with_columns(
+        pl.when(
+            pl.col("airzone_official").is_null()
+            | (pl.col("airzone_official").cast(pl.Utf8, strict=False).str.strip_chars() == "")
+        )
+        .then(pl.lit(None, dtype=pl.Utf8))
+        .otherwise(pl.col("airzone_official").cast(pl.Utf8, strict=False).str.strip_chars())
+        .alias("_fold_stratum")
+    )
     rows: list[dict[str, object]] = []
     position = 0
-    for zone in sorted(selected["airzone_official"].cast(pl.Utf8).unique().to_list()):
-        names = sorted(
-            selected.filter(pl.col("airzone_official") == zone)["station_name"]
-            .cast(pl.Utf8)
-            .to_list()
+    strata = selected.select("_fold_stratum").unique().sort("_fold_stratum", nulls_last=True)
+    for stratum in strata["_fold_stratum"].to_list():
+        in_stratum = selected.filter(
+            pl.col("_fold_stratum").is_null()
+            if stratum is None
+            else pl.col("_fold_stratum") == stratum
         )
-        for name in names:
+        for item in in_stratum.sort("station_name").iter_rows(named=True):
             rows.append(
                 {
-                    "station_name": name,
-                    "airzone_official": zone,
+                    "station_name": item["station_name"],
+                    "airzone_official": item["airzone_official"],
                     "station_fold": position % fold_count,
                 }
             )
@@ -752,7 +760,11 @@ def run_era5_robustness(
         "common_stations": list(common_stations),
         "transfer_exclusions": transfer_exclusions,
         "station_fold_count": effective_fold_count,
-        "station_fold_method": "airzone_sorted_round_robin",
+        "station_fold_method": "airzone_sorted_round_robin_with_unclassified_stratum",
+        "unclassified_airzone_station_count": membership.filter(
+            pl.col("airzone_official").is_null()
+            | (pl.col("airzone_official").cast(pl.Utf8, strict=False).str.strip_chars() == "")
+        ).height,
         "inventory_generation_sha256": generation_sha256,
         "feature_sets": {
             name: list(features) for name, features in ERA5_VALUE_FEATURE_SETS.items()
