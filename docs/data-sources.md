@@ -313,7 +313,41 @@ MAIAC 完整 pair 覆蓋 76 站，S5P NO₂／SO₂ 各覆蓋 77 站。
 `pooled` 同時包含測站間的穩定差異與月份變化；`within-station` 先移除各測站
 在完整 pair 中的平均值，`within-month` 則先移除各月的平均值。三者回答不同問題，
 不應從單一係數挑選故事。這些數字是 2025 年的 descriptive association：不是因果、
-不是校正，也不是衛星推估 PM2.5。沒有 BLH、RH 與獨立留出驗證，不報告 calibration
-performance、濃度 bias、排放、來源歸因或融合濃度場。
+不是校正，也不是衛星推估 PM2.5。單靠這些關聯係數沒有 BLH、RH 或 held-out evidence，
+因此不報告 calibration performance、濃度 bias、排放、來源歸因或融合濃度場；下一節另行
+回答同年度 held-out predictive value，沒有回頭替關聯係數增加因果或校正意義。
+
+### 2026-08-11 M8 held-out predictive-value 診斷
+
+`twair analyze satellite-value --generation
+58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788 --year 2025`
+只讀取通過 manifest、input hash、station inventory generation 與 schema 驗證的本機產物，
+不連線 Earth Engine。完整分母是 924 個 station-month；其中 MAIAC null 69 筆、S5P NO₂
+null 1 筆、S5P SO₂ null 0 筆、地面列缺席 2 筆、地面 coverage 不足而 withheld 2 筆、
+座標缺失 0 筆。排除條件有重疊，因此共同完整資料是 851 筆共同完整站月、76 站、12 個月份，
+不是把各類 null 數目直接相加後得到的差。null 沒有被補值、插值或當成零。
+
+模型比較使用相同的共同完整 rows。baseline 只含月份週期與測站經緯度；candidate 在其上
+分別加入 AOD、NO₂、SO₂ 或三者全部。held-quarter 有 4 個 fold，air-zone-aware
+held-station 有 10 個 fold，兩者組合的 joint transfer 有 40 個 fold。每一種設計都讓
+851 筆資料恰好進入 test set 一次；三種設計合計 2,553 個 test-row appearances，但不是
+2,553 筆獨立觀測。
+
+| candidate vs baseline | fold-evaluations | RMSE 與 R² 同時改善 | 同時變差 | median ΔRMSE（µg/m³） | median ΔMAE（µg/m³） | median ΔR² |
+|---|---:|---:|---:|---:|---:|---:|
+| AOD | 54 | 44／54 | 10／54 | −0.244 | −0.253 | +0.055 |
+| NO₂ | 54 | 48／54 | 6／54 | −0.379 | −0.266 | +0.103 |
+| SO₂ | 54 | 25／54 | 29／54 | +0.020 | +0.015 | −0.003 |
+| all-satellite | 54 | 49／54 | 5／54 | −0.588 | −0.407 | +0.147 |
+
+all-satellite 在 held-quarter、held-station、joint transfer 分別有 3／4、9／10、37／40
+個 fold 同時改善 RMSE 與 R²；median ΔRMSE 分別是 −0.317、−0.375、−0.600
+µg/m³，median ΔR² 分別是 +0.188、+0.050、+0.204。SO₂ 單獨使用時改善 25／54、
+變差 29／54，因此不能宣稱每一種衛星變數都穩定增加預測資訊。
+
+這 54 個 fold-evaluations 不是 54 個獨立年份或測站，也不是未來年度 transfer。
+held-quarter 只在 2025 年內按季度留出；held-station 與 joint transfer 也仍使用同年度資料。
+結果只支持 2025 年內的 held-out predictive value，不支持因果、衛星 PM2.5 校正、融合場、
+未來年度泛化、空間解析度或 M4 replacement。校正與融合仍延後。
 
 見 [registrations.md](registrations.md) 取得各項憑證。

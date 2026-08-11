@@ -57,15 +57,19 @@ def test_public_docs_record_measured_era5_value_without_reframing_the_published_
     assert "1 個未分類 air-zone stratum" in sources
 
 
-def test_public_satellite_docs_keep_m8_provisional_and_record_the_completed_generation() -> None:
+def test_public_satellite_docs_record_the_measured_2025_held_out_value_without_overclaiming() -> (
+    None
+):
     zh, en = _readmes()
     plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+    en_prose = " ".join(en.split())
+    sources_prose = " ".join(sources.split())
 
     assert "S5P 與 MAIAC 來源取得 Stage A 已交付" in zh
     assert "S5P and MAIAC source-acquisition Stage A delivered" in en
-    assert "2025 provisional M8 關聯診斷已交付" in zh
-    assert "2025 provisional M8 association diagnostic delivered" in en
+    assert "2025 M8 關聯與 held-out predictive-value 診斷已交付" in zh
+    assert "2025 M8 association and held-out predictive-value diagnostics delivered" in en
     assert "校正與融合仍延後" in zh
     assert "calibration and fusion remain deferred" in en
     assert "不是因果、不是校正，也不是衛星推估 PM2.5" in zh
@@ -80,6 +84,52 @@ def test_public_satellite_docs_keep_m8_provisional_and_record_the_completed_gene
     assert "851（92.1%）" in sources
     assert "919（99.5%）" in sources
     assert "920（99.6%）" in sources
+    for text in (zh, plan, sources):
+        assert "851 筆共同完整站月、76 站、12 個月份" in text
+        assert "3／4、9／10、37／40" in text
+        assert "49／54" in text
+        assert "44／54" in text
+        assert "48／54" in text
+        assert "25／54" in text
+        assert "29／54" in text
+        assert "−0.588" in text
+        assert "+0.147" in text
+        assert "不是 54 個獨立年份或測站" in text
+        assert "不是未來年度 transfer" in text
+    assert "851 common complete station-months, 76 stations, and 12 months" in en
+    assert "3/4, 9/10, and 37/40" in en
+    assert "49/54" in en
+    assert "44/54" in en
+    assert "48/54" in en
+    assert "25/54" in en
+    assert "29/54" in en
+    assert "−0.588" in en
+    assert "+0.147" in en
+    assert "For the combined all-satellite feature set, the overall median ΔRMSE" in en_prose
+    assert "For all satellite features, the overall median" not in en_prose
+    assert "not 54 independent years or stations" in en
+    assert "not future-year transfer" in en
+    assert "MAIAC null 69 筆" in sources_prose
+    assert "S5P NO₂ null 1 筆" in sources_prose
+    assert "S5P SO₂ null 0 筆" in sources_prose
+    assert "地面列缺席 2 筆" in sources_prose
+    assert "地面 coverage 不足而 withheld 2 筆" in sources_prose
+    assert "held-quarter 有 4 個 fold" in sources
+    assert "held-station 有 10 個 fold" in sources
+    assert "joint transfer 有 40 個 fold" in sources
+    assert "2,553 個 test-row appearances" in sources
+    assert "−0.317、−0.375、−0.600" in sources
+    assert "+0.188、+0.050、+0.204" in sources
+    assert "| AOD | 54 | 44／54 | 10／54 | −0.244 | −0.253 | +0.055 |" in sources
+    assert "| NO₂ | 54 | 48／54 | 6／54 | −0.379 | −0.266 | +0.103 |" in sources
+    assert "| SO₂ | 54 | 25／54 | 29／54 | +0.020 | +0.015 | −0.003 |" in sources
+    assert "| all-satellite | 54 | 49／54 | 5／54 | −0.588 | −0.407 | +0.147 |" in sources
+    assert "baseline 只含月份週期與測站經緯度" in sources
+    assert "不支持因果、衛星 PM2.5 校正、融合場" in sources
+    assert "或 M4 replacement" in sources
+    assert "10 個 air-zone-aware held-station fold" in plan
+    assert "10 個 air-zone-aware 測站" not in plan
+    assert "combined all-satellite feature set 在多數 2025 held-out folds 顯示增量預測資訊" in plan
     assert "實際 batch 尚未送出" not in plan
     assert "S5P 查詢同樣尚未執行" not in sources
 

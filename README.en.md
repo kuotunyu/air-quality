@@ -140,8 +140,19 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 | [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time | ✅ in use (station register, freshness check) |
 | [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
 | [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 1940–Present | ✅ 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2025 source acquisition and provisional M8 association diagnostic delivered; calibration/fusion not done |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2025 source acquisition and provisional M8 association diagnostic delivered; AOD calibration/fusion not done |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2025 source acquisition plus M8 association and held-out predictive-value diagnostics delivered; calibration/fusion not done |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2025 source acquisition plus M8 association and held-out predictive-value diagnostics delivered; AOD calibration/fusion not done |
+
+The 2025 M8 association and held-out predictive-value diagnostics delivered use
+851 common complete station-months, 76 stations, and 12 months. Relative to a baseline containing
+calendar seasonality and station geography, the combined all-satellite feature set improved both RMSE and R² in
+3/4, 9/10, and 37/40 folds under held-quarter, held-station, and joint transfer, respectively.
+Across the three designs, all satellite, AOD, NO₂, and SO₂ improved both metrics in 49/54,
+44/54, 48/54, and 25/54 folds; SO₂ worsened both in 29/54. For the combined all-satellite feature set, the
+overall median ΔRMSE was −0.588 µg/m³ and median ΔR² was +0.147. These 54 fold-evaluations
+reuse the same 851 rows under three designs; they are not 54 independent years or stations, and
+this is not future-year transfer. The evidence supports held-out predictive value within 2025 only,
+not causality, calibration, fusion, or replacement of M4; calibration and fusion remain deferred.
 
 ERA5 2025 source acquisition delivered 674,520 station-hour rows for 77 stations and
 8,760 hours, with zero source nulls across all six variables. A separate value-add experiment
@@ -213,7 +224,7 @@ the relevant public [technical docs](docs/).
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
 | **Phase 5** | M6 spatial structure and M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution) | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
-| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 provisional M8 association diagnostic delivered; ERA5 2024–2025 robustness delivered; calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
+| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |
 

@@ -16,7 +16,7 @@
 |---|---|---|
 | Canonical store | 1982–2025、44 年、521 個分區、340,371,384 筆逐時觀測 | `uv run twair status` |
 | 測站地理 | 82 個 canonical 名稱；76 個現行 register + 1 個審查歷史紀錄，共 77 個有座標；台中、崇倫、阿里山、泰山、三民 5 個未解析 | `conf/station_geo*.yaml`、`uv run twair stations geo`、`web/public/data/meta.json` |
-| QA/QC 與分析 | QC 與 M1–M12 均有實際 Parquet 產物；M8 以 2025 S5P、MAIAC 與地面 PM2.5 交付 provisional 關聯診斷，ERA5 交付 2024–2025 多年度／留出測站 robustness，兩者都不冒充因果、校正或融合 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/`、`data/interim/era5/` 與各 `twair analyze …` 指令 |
+| QA/QC 與分析 | QC 與 M1–M12 均有實際 Parquet 產物；M8 以 2025 S5P、MAIAC 與地面 PM2.5 交付關聯與 held-out predictive-value 診斷，ERA5 交付 2024–2025 多年度／留出測站 robustness，兩者都不冒充因果、校正或融合 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/`、`data/interim/era5/` 與各 `twair analyze …` 指令 |
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
 | 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
@@ -103,7 +103,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
 | 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
-| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | S5P／MAIAC 與 ERA5 2024–2025 來源取得、M8 provisional 關聯診斷與 ERA5 robustness 已交付；校正與融合尚未交付 |
+| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | S5P／MAIAC 與 ERA5 2024–2025 來源取得、M8 關聯與 held-out predictive-value 診斷、ERA5 robustness 已交付；校正與融合尚未交付 |
 | 報告 | **Markdown** | 表格由 Parquet 產物重生；不維護第二套 Quarto/PDF 工具鏈 |
 | 前端 | **Astro** + TypeScript + handwritten CSS | 靜態產出、部署到 Pages 零成本 |
 | 圖表 | build-time **SVG** + 少量 progressive enhancement | 無繪圖 runtime；沒有 JavaScript 時仍可閱讀與列印 |
@@ -162,8 +162,8 @@ air-quality/
 | 來源 | 內容 | 取得 |
 |---|---|---|
 | **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
-| **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A 與 M8 provisional 關聯診斷已交付；校正與融合尚未交付 |
-| **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint 與 M8 provisional 關聯診斷已交付；AOD 校正與融合尚未交付 |
+| **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A、M8 關聯與 held-out predictive-value 診斷已交付；校正與融合尚未交付 |
+| **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint、M8 關聯與 held-out predictive-value 診斷已交付；AOD 校正與融合尚未交付 |
 | **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
 | **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
@@ -225,7 +225,7 @@ generalisation，不是因果、校正、融合或 M4 replacement；同年留站
 
 - `twair ingest airtw` — 依 `conf/sources.yaml` 下載年度包，落地 `data/raw/airtw/`
 - `twair stations geo` — 取得測站 metadata；歷史名稱與生命週期另由 canonical register 管理
-- CWA 尚未取得；ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已完成但尚未納入 M4；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 僅以本機表量測 provisional 關聯，不納入 canonical store 也不宣稱校正或融合
+- CWA 尚未取得；ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已完成但尚未納入 M4；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 只以本機表量測關聯與 2025 held-out predictive value，不納入 canonical store，也不宣稱因果、校正、融合或未來年度 transfer
 - 所有下載存 checksum 到 `data/raw/_manifest.jsonl`，重跑時跳過已存在且 checksum 相符者
 - 全部走 `registry.py` 統一的重試 / rate limit / 快取
 
@@ -495,7 +495,7 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 
 ### Phase 6 — 衛星 + 微型感測器融合
 
-**交付判定：Stage A 來源、M8 Stage B provisional 關聯診斷與 ERA5 2024–2025
+**交付判定：Stage A 來源、M8 Stage B 關聯與 held-out predictive-value 診斷、ERA5 2024–2025
 robustness 已交付；校正與融合仍延後。** 2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
 generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 `--generation` 版本分開量測共同 coverage 與 pooled／within-station／within-month
@@ -518,6 +518,12 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 - **Stage B provisional association（已交付）** — `twair analyze m8 --year 2025`
   以來源表為分母，分開報告 satellite null、地面缺列、coverage 不足而保留的 null
   與完整 pair；只計算 descriptive Pearson／Spearman 關聯，不作 p-value、bias 或 calibration 宣稱
+- **Stage C held-out predictive value（已交付）** — 以 851 筆共同完整站月、76 站、12 個月份，
+  比較只含月份週期與測站地理的 baseline 與 AOD／NO₂／SO₂。held-quarter、held-station、
+  joint transfer 的 all-satellite 分別有 3／4、9／10、37／40 個 fold 同時改善 RMSE 與 R²；
+  三種設計合併後，all-satellite、AOD、NO₂、SO₂ 分別為 49／54、44／54、48／54、25／54，
+  SO₂ 另有 29／54 個 fold 變差。54 個 fold-evaluations 不是 54 個獨立年份或測站，
+  也不是未來年度 transfer；這不建立因果、校正、融合、未來年度泛化或 M4 replacement
 - **ERA5 2024–2025 source acquisition（已交付）** — 2025 為 77 站、8,760 小時、674,520 筆
   station-hour；另取得完整 2024 與兩個前置 UTC 12 月，六變數來源與 sampling contract 已驗證
 - **ERA5 多年度／留出測站 robustness（已交付）** — 固定 74 站；2024 年 636,244 筆、
@@ -539,6 +545,10 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   S5P SO₂ 分別量得 842／912、910／912、911／912 個完整 pair，並分開報告三種關聯尺度
 - [x] **77 站外部重跑**：新 M8 的完整 pair 為 MAIAC 851／924、S5P NO₂ 919／924、S5P SO₂ 920／924；
   76 站共同 panel 的 2,736 列與所有 null／coverage flags 完全相同，legacy 未被覆寫或重新標示
+- [x] **M8 held-out predictive value**：851 筆共同完整站月、76 站、12 個月份在 4 個季度、
+  10 個 air-zone-aware held-station fold 與 40 個 joint fold 各完整評估一次；all-satellite 整體 median
+  ΔRMSE −0.588 µg/m³、ΔMAE −0.407 µg/m³、ΔR² +0.147。三種設計的 2,553 個
+  test-row appearances 來自同一批 851 筆資料，不是 2,553 筆獨立觀測
 - [x] **ERA5 2025 source acquisition**：12 個月、77 站、674,520 station-hour；六個來源變數皆為 0 個 null，
   request／checksum／coverage 與 inventory generation 均可重現；此項不等於模型成效
 - [x] **ERA5 held-out value-add**：77 站皆有 target 與 ERA5 join；三重、淡水、陽明因站內氣象
@@ -552,10 +562,11 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 - [ ] **延後**：微感測器校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
-**下一個條件**：ERA5 的多年度／留出測站 robustness 已顯示可轉移的增量資訊，
-但 combined 相對 ERA5-only 的跨年留站結果正好 37／74 改善、37／74 變差，因此仍不直接改寫 M4。
-校正與融合必須另有獨立 calibration target、留出測站與 coverage／null contract；在這些條件完成前，
-不發布融合濃度場。微型感測器可作為獨立資料與校正 track 評估，不把 ERA5 robustness 當成替代證據。
+**下一個條件**：M8 的 combined all-satellite feature set 在多數 2025 held-out folds 顯示增量預測資訊，
+但這不是未來年度 transfer；ERA5 的 combined 相對 ERA5-only 跨年留站結果也正好 37／74 改善、
+37／74 變差，因此仍不直接改寫 M4。校正與融合必須另有獨立 calibration target、留出測站與
+coverage／null contract；在這些條件完成前，不發布融合濃度場。微型感測器可作為獨立資料與
+校正 track 評估，不把 ERA5 robustness 或 M8 predictive value 當成替代證據。
 
 ---
 
