@@ -296,6 +296,20 @@ def test_the_source_doc_does_not_describe_a_read_only_probe_as_incremental_inges
     assert "不寫回 canonical store" in text
 
 
+def test_the_generated_source_doc_preserves_the_measured_era5_release_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("twair.ingest.probe.DOCS_DIR", tmp_path)
+
+    write_sources_doc(_catalog_summary([archive()]), None)
+    text = (tmp_path / "data-sources.md").read_text(encoding="utf-8")
+
+    assert "674,520 筆 station-hour" in text
+    assert "六個來源變數皆為 0 個 null" in text
+    assert "尚未納入已發布的 M4" in text
+    assert "尚未取得" not in text[text.index("| Copernicus ERA5") : text.index("| Sentinel-5P")]
+
+
 def test_the_conf_keeps_every_resolved_file_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

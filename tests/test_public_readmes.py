@@ -12,13 +12,29 @@ def _readmes() -> tuple[str, str]:
     )
 
 
-def test_both_readmes_distinguish_the_delivered_gee_stage_from_deferred_weather_sources() -> None:
+def test_both_readmes_distinguish_delivered_era5_acquisition_from_deferred_analysis() -> None:
     zh, en = _readmes()
 
-    assert "GEE 衛星 Stage A 已交付；CWA／ERA5 延後" in zh
-    assert "GEE satellite Stage A delivered; CWA/ERA5 deferred" in en
-    assert "CWA/ERA5 deferred; satellite bounded Stage B diagnostic" in en
+    assert "ERA5 2025 來源取得已交付；CWA 延後" in zh
+    assert "ERA5 2025 source acquisition delivered; CWA deferred" in en
+    assert "ERA5 analysis and calibration remain deferred" in en
+    assert "CWA／ERA5 延後" not in zh
+    assert "CWA/ERA5 deferred" not in en
     assert "Deferred; absent from current results" not in en
+
+
+def test_public_docs_record_measured_era5_evidence_without_claiming_model_use() -> None:
+    zh, en = _readmes()
+    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
+    sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+
+    for text in (zh, plan, sources):
+        assert "674,520 筆 station-hour" in text
+        assert "六個來源變數皆為 0 個 null" in text
+        assert "尚未納入已發布的 M4" in text
+    assert "674,520 station-hour rows" in en
+    assert "zero source nulls across all six variables" in en
+    assert "has not been added to the published M4 model" in en
 
 
 def test_public_satellite_docs_keep_m8_provisional_and_record_the_completed_generation() -> None:

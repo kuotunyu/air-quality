@@ -103,7 +103,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
 | 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
-| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | credential verification 已有；S5P 與 MAIAC 站月來源與 M8 provisional 關聯診斷已交付，ERA5、校正與融合尚未交付 |
+| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | S5P／MAIAC 與 ERA5 2025 來源取得、M8 provisional 關聯診斷已交付；ERA5 分析、校正與融合尚未交付 |
 | 報告 | **Markdown** | 表格由 Parquet 產物重生；不維護第二套 Quarto/PDF 工具鏈 |
 | 前端 | **Astro** + TypeScript + handwritten CSS | 靜態產出、部署到 Pages 零成本 |
 | 圖表 | build-time **SVG** + 少量 progressive enhancement | 無繪圖 runtime；沒有 JavaScript 時仍可閱讀與列印 |
@@ -161,16 +161,17 @@ air-quality/
 
 | 來源 | 內容 | 取得 |
 |---|---|---|
-| **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫、地面氣壓、降水 | ⬜ credential probe 已實作；尚未取得 |
+| **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源取得已完成；分析與校正尚未交付 |
 | **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A 與 M8 provisional 關聯診斷已交付；校正與融合尚未交付 |
 | **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint 與 M8 provisional 關聯診斷已交付；AOD 校正與融合尚未交付 |
 | **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
 | **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
 
-> **BLH（邊界層高度）是原專題最關鍵的缺失變數。** 污染物濃度 ≈ 排放量 / 混合層體積。
-> 沒有 BLH，任何「氣象因子對 PM2.5 影響」的討論都缺一塊。M4 因此把 holdout
-> 表現與限制一起公開；補入 BLH 是後續研究，不是目前成果的隱藏前提。
+2025 ERA5 acquisition 已量得 77 站 × 8,760 小時＝674,520 筆 station-hour；
+六個來源變數皆為 0 個 null。它尚未納入已發布的 M4，也沒有被當成 PM2.5 校正或
+因果證據。下一步會先衍生 BLH、relative humidity 與風場，再以獨立時間 holdout
+判斷它們是否提供增量資訊；沒有通過前，現行 M4 的限制敘述保持不變。
 
 ---
 
@@ -218,7 +219,7 @@ air-quality/
 
 - `twair ingest airtw` — 依 `conf/sources.yaml` 下載年度包，落地 `data/raw/airtw/`
 - `twair stations geo` — 取得測站 metadata；歷史名稱與生命週期另由 canonical register 管理
-- CWA／ERA5 尚未取得；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 僅以本機表量測 provisional 關聯，不納入 canonical store 也不宣稱校正或融合
+- CWA 尚未取得；ERA5 2025 來源取得已完成但尚未納入 M4；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 僅以本機表量測 provisional 關聯，不納入 canonical store 也不宣稱校正或融合
 - 所有下載存 checksum 到 `data/raw/_manifest.jsonl`，重跑時跳過已存在且 checksum 相符者
 - 全部走 `registry.py` 統一的重試 / rate limit / 快取
 
@@ -316,7 +317,7 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 | 時間解析度 | 月平均 N=7,286 | 逐時；M2 實際可建模樣本 5,136,594 列 |
 | 風向 | 線性 0–360 | `sin(θ)`, `cos(θ)`，另加 u/v 分量與風速交互 |
 | PM10 | 當解釋變數 | **移出**；PM2.5/PM10 ratio 當作粒徑組成指標衍生變數，可篩選來源假說，但單一比值不能唯一辨識或量化來源 |
-| 氣象 | 溫度/濕度/雨量/風 | 同一批站內量測 + 風向 sin/cos 與 u/v；**BLH 尚未取得，明列限制** |
+| 氣象 | 溫度/濕度/雨量/風 | 已發布 M4 仍用同一批站內量測 + 風向 sin/cos 與 u/v；ERA5 BLH 已取得、尚未進入模型 |
 | 時間效應 | 無 | hour/dow/doy 循環編碼與長期趨勢 |
 | 化學 | 單一污染物 | Ox = O3 + NO2、SO2/NOx ratio、NOx/CO ratio |
 | 共線性 | 逐步剔除 | 不讓 NO、NO2、NOx 同時進模；以 NOx level + NO2/NOx ratio 建模 |
@@ -511,7 +512,9 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 - **Stage B provisional association（已交付）** — `twair analyze m8 --year 2025`
   以來源表為分母，分開報告 satellite null、地面缺列、coverage 不足而保留的 null
   與完整 pair；只計算 descriptive Pearson／Spearman 關聯，不作 p-value、bias 或 calibration 宣稱
-- **AOD／柱濃度校正（延後）** — 尚缺 BLH、RH 與獨立留出驗證；不用單一年份的關聯代替校正效能
+- **ERA5 2025 source acquisition（已交付）** — 77 站、8,760 小時、674,520 筆 station-hour；
+  六變數來源與 sampling contract 已驗證，但尚未納入 M4、校正或融合
+- **AOD／柱濃度校正（延後）** — 尚未把 BLH／RH 納入 calibration protocol，也未完成獨立留出驗證；不用單一年份的關聯代替校正效能
 - **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
 - **資料融合** — 地面站（準但稀疏）+ 衛星（廣但粗）+ 微感測器（密但雜）→ 高解析度濃度場
   - 方法：geostatistical fusion / RF with satellite covariates / Bayesian hierarchical model
@@ -526,6 +529,8 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   S5P SO₂ 分別量得 842／912、910／912、911／912 個完整 pair，並分開報告三種關聯尺度
 - [x] **77 站外部重跑**：新 M8 的完整 pair 為 MAIAC 851／924、S5P NO₂ 919／924、S5P SO₂ 920／924；
   76 站共同 panel 的 2,736 列與所有 null／coverage flags 完全相同，legacy 未被覆寫或重新標示
+- [x] **ERA5 2025 source acquisition**：12 個月、77 站、674,520 station-hour；六個來源變數皆為 0 個 null，
+  request／checksum／coverage 與 inventory generation 均可重現；此項不等於模型成效
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
 - [ ] **延後**：微感測器校正前後 RMSE 對照
@@ -533,8 +538,9 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 
 **下一個條件**：76 站 legacy 與 77 站 immutable generation 已依相同契約完成比較；
 新增萬里沒有改變共同 76 站的來源值或 null 語意，三種關聯尺度也沒有出現足以改寫
-provisional 邊界的變化。下一步先做小範圍 ERA5 BLH／RH pilot，再決定是否投入
-微型感測器與留出測站的校正模型。沒有獨立驗證前，不發布融合濃度場。
+provisional 邊界的變化。ERA5 BLH／風場／溫度／露點／氣壓的 2025 全年來源取得已通過；
+下一步以獨立時間 holdout 比較站內氣象 baseline 與加入 ERA5 衍生量後的增量資訊，再決定
+是否投入微型感測器與留出測站的校正模型。沒有獨立驗證前，不發布融合濃度場。
 
 ---
 

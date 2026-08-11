@@ -278,10 +278,22 @@ def write_sources_doc(summary: dict[str, Any], sample: Path | None) -> None:
 
 | 來源 | 用途 | 取得 |
 |---|---|---|
-| Copernicus ERA5 | 邊界層高度、風場、氣壓 | `cdsapi`，需免費帳號 |
+| Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源取得已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
 | 智慧城鄉微型感測器 | 高密度 PM2.5 | 環境部開放平臺 |
+
+### 2026-08-11 ERA5 2025 來源取得邊界
+
+`twair ingest era5 --year 2025 --months 1:12 --inventory-generation <sha256>
+--confirm-download` 已取得並獨立重讀 12 個 Copernicus CDS NetCDF。輸出綁定 77 站
+immutable inventory generation，共 8,760 小時、674,520 筆 station-hour；
+六個來源變數皆為 0 個 null。原始檔合計 37,520,309 bytes，manifest 逐月保存 request、byte count 與
+SHA-256。最近 ERA5 grid cell 距測站的中位數為 9.244 km，範圍 0.432–17.467 km。
+
+這是來源取得與 sampling contract，不是模型結果。ERA5 尚未納入已發布的 M4，亦未用於
+衛星校正、融合或 PM2.5 推估。BLH、relative humidity 與風場的增量價值必須另以獨立時間
+holdout 量測；未通過前不改寫現有趨勢結論。
 
 見 [registrations.md](registrations.md) 取得各項憑證。
 """,
