@@ -30,3 +30,19 @@
       "pm25": "PM2.5"
       "humidity": "humidity"
       "temperature": "temperature"
+"analysis":
+  "coverage_thresholds": [15, 30, 45, 60]
+  "primary_minimum_rows": 45
+  "distance_bands_km": [0.5, 1, 2, 3, 5, 10]
+  "primary_distance_km": 1
+  "threads": 1
+  "extreme_ranges":
+    "pm25":
+      "minimum": 0
+      "maximum": 1000
+    "humidity":
+      "minimum": 0
+      "maximum": 100
+    "temperature":
+      "minimum": -100
+      "maximum": 100

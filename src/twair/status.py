@@ -105,6 +105,12 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "micro_sensor_calibration_readiness",
+        "twair analyze micro-sensor-readiness",
+        "ground-micro pairing readiness; not calibration or fusion",
+        feeds_web=False,
+    ),
+    Module(
         "m8_era5_value",
         "twair analyze era5-value",
         "held-out ERA5 weather value beyond station measurements",

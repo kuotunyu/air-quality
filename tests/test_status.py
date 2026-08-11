@@ -113,6 +113,16 @@ class TestTheReproduceTableCannotRot:
         assert module.feeds_web is False
         assert "multi-year" in module.what
 
+    def test_micro_sensor_readiness_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(
+            item for item in MODULES if item.directory == "micro_sensor_calibration_readiness"
+        )
+
+        assert module.reproduce == "twair analyze micro-sensor-readiness"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "not calibration or fusion" in module.what
+
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""
         status = Status(

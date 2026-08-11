@@ -497,6 +497,51 @@ def _existing_generation(
     )
 
 
+def load_micro_sensor_observation_generation(
+    generation_sha256: str,
+    *,
+    contract: MicroSensorParserContract | None = None,
+    interim_observation_root: Path | None = None,
+) -> MicroSensorObservationWrite:
+    """Validate and read one parsed generation without creating any path."""
+    if re.fullmatch(r"[0-9a-f]{64}", generation_sha256) is None:
+        raise ValueError("micro-sensor generation must be a 64-character lowercase SHA-256")
+    selected_contract = contract or load_micro_sensor_parser_contract()
+    root = interim_observation_root or interim_dir("micro_sensors") / "observations" / "generations"
+    directory = root / generation_sha256
+    if not directory.is_dir():
+        raise FileNotFoundError(f"micro-sensor parsed generation not found: {directory}")
+    manifest = _manifest(directory / "manifest.json")
+    parser = _parser_contract(selected_contract)
+    request_identity: dict[str, object] = {
+        "schema_version": 1,
+        "raw_observation_generation_sha256": manifest.get("raw_observation_generation_sha256"),
+        "date": manifest.get("date"),
+        "parser_contract": parser,
+        "parser_contract_sha256": _sha256(_canonical_json(parser)),
+        "raw_members": manifest.get("raw_members"),
+    }
+    raw_generation = request_identity["raw_observation_generation_sha256"]
+    if not isinstance(raw_generation, str) or re.fullmatch(r"[0-9a-f]{64}", raw_generation) is None:
+        raise RuntimeError("micro-sensor parsed raw generation identity is invalid")
+    if not isinstance(request_identity["date"], str):
+        raise RuntimeError("micro-sensor parsed date is invalid")
+    if not isinstance(request_identity["raw_members"], dict):
+        raise RuntimeError("micro-sensor parsed raw member identity is invalid")
+    request_sha = _sha256(_canonical_json(request_identity))
+    validated = _validate_parsed_generation(
+        directory,
+        request_identity=request_identity,
+        request_sha256=request_sha,
+        contract=selected_contract,
+    )
+    return MicroSensorObservationWrite(
+        generation_sha256=generation_sha256,
+        directory=directory,
+        manifest=validated,
+    )
+
+
 def _extract_only_member(archive_path: Path, destination: Path) -> None:
     try:
         with zipfile.ZipFile(archive_path) as archive:

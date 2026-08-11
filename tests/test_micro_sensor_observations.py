@@ -13,6 +13,7 @@ from twair.config import ConfigError
 from twair.ingest import micro_sensor_observations
 from twair.ingest.micro_sensor_observations import (
     OBSERVATION_OUTPUT_SCHEMA,
+    load_micro_sensor_observation_generation,
     load_micro_sensor_parser_contract,
     parse_micro_sensor_observation_generation,
     parse_observation_csv,
@@ -458,3 +459,67 @@ def test_the_shipped_parser_contract_names_only_the_three_measured_csv_headers()
         "humidity": "humidity",
         "temperature": "temperature",
     }
+
+
+def test_the_read_only_loader_validates_and_returns_one_existing_generation(
+    tmp_path: Path,
+) -> None:
+    raw_generation, raw_root, raw_catalog_root, interim_catalog_root = _raw_generation(tmp_path)
+    interim_root = tmp_path / "parsed-observations"
+    written = parse_micro_sensor_observation_generation(
+        raw_generation,
+        raw_observation_root=raw_root,
+        raw_catalog_root=raw_catalog_root,
+        interim_catalog_root=interim_catalog_root,
+        interim_observation_root=interim_root,
+    )
+
+    loaded = load_micro_sensor_observation_generation(
+        written.generation_sha256,
+        interim_observation_root=interim_root,
+    )
+
+    assert loaded.generation_sha256 == written.generation_sha256
+    assert loaded.directory == written.directory
+    assert loaded.manifest == written.manifest
+
+
+def test_the_read_only_loader_never_creates_a_missing_generation(tmp_path: Path) -> None:
+    root = tmp_path / "parsed-observations"
+
+    with pytest.raises(FileNotFoundError, match="parsed generation"):
+        load_micro_sensor_observation_generation("a" * 64, interim_observation_root=root)
+
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("identity", ["short", "g" * 64, "A" * 64])
+def test_the_read_only_loader_requires_a_lowercase_sha256_identity(
+    tmp_path: Path,
+    identity: str,
+) -> None:
+    with pytest.raises(ValueError, match="64-character lowercase SHA-256"):
+        load_micro_sensor_observation_generation(
+            identity,
+            interim_observation_root=tmp_path / "parsed-observations",
+        )
+
+
+def test_the_read_only_loader_rejects_a_tampered_member(tmp_path: Path) -> None:
+    raw_generation, raw_root, raw_catalog_root, interim_catalog_root = _raw_generation(tmp_path)
+    interim_root = tmp_path / "parsed-observations"
+    written = parse_micro_sensor_observation_generation(
+        raw_generation,
+        raw_observation_root=raw_root,
+        raw_catalog_root=raw_catalog_root,
+        interim_catalog_root=interim_catalog_root,
+        interim_observation_root=interim_root,
+    )
+    member = written.directory / "temperature.parquet"
+    member.write_bytes(member.read_bytes() + b"changed")
+
+    with pytest.raises(RuntimeError, match="checksum changed"):
+        load_micro_sensor_observation_generation(
+            written.generation_sha256,
+            interim_observation_root=interim_root,
+        )

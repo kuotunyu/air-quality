@@ -1167,6 +1167,30 @@ def analyze_satellite_robustness(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-readiness")
+def analyze_micro_sensor_readiness() -> None:
+    """Measure calibration-test readiness without fitting or fusing values."""
+    from twair.analysis.micro_sensor_calibration import (
+        run_micro_sensor_calibration_readiness,
+        write_micro_sensor_calibration_readiness_result,
+    )
+
+    result = run_micro_sensor_calibration_readiness()
+    written = write_micro_sensor_calibration_readiness_result(result)
+
+    primary = result.summary["primary"]
+    console.print(
+        "Micro-sensor calibration readiness: "
+        f"{int(primary['eligible_pairs']):,} eligible ground-micro device-hours"
+    )
+    console.print(
+        "Coverage and pairing evidence only; not calibration or fusion, and satellite "
+        "values remain reference-station monthly context."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("era5-robustness")
 def analyze_era5_robustness(
     generation: str = typer.Option(
