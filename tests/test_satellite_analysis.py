@@ -338,6 +338,7 @@ def test_too_few_pairs_and_constant_values_are_refused_as_null_not_zero() -> Non
         ("nonfinite_satellite", "satellite values must be finite or null"),
         ("duplicate_ground", "duplicate PM2.5 station-month"),
         ("inconsistent_ground_null", "withheld PM2.5 means must be null"),
+        ("null_ground_threshold", "ground monthly meets_threshold must not be null"),
     ],
 )
 def test_invalid_input_cannot_become_an_association(mutation: str, message: str) -> None:
@@ -353,10 +354,17 @@ def test_invalid_input_cannot_become_an_association(mutation: str, message: str)
         )
     elif mutation == "duplicate_ground":
         ground_frame = pl.concat([ground_frame, ground_frame.head(1)])
-    else:
+    elif mutation == "inconsistent_ground_null":
         ground_frame = ground_frame.with_columns(
             pl.when(pl.int_range(pl.len()) == 0)
             .then(False)
+            .otherwise(pl.col("meets_threshold"))
+            .alias("meets_threshold")
+        )
+    else:
+        ground_frame = ground_frame.with_columns(
+            pl.when(pl.int_range(pl.len()) == 0)
+            .then(pl.lit(None, dtype=pl.Boolean))
             .otherwise(pl.col("meets_threshold"))
             .alias("meets_threshold")
         )

@@ -189,6 +189,8 @@ def _validated_ground(frame: pl.DataFrame, *, year: int) -> pl.DataFrame:
     )
     if selected.is_empty():
         raise RuntimeError(f"ground monthly table has no {TARGET} rows for {year}")
+    if selected["ground_meets_threshold"].null_count():
+        raise RuntimeError("ground monthly meets_threshold must not be null")
     if selected.filter(
         pl.col("station_name").is_null() | (pl.col("station_name").str.strip_chars() == "")
     ).height:

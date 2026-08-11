@@ -169,8 +169,10 @@ S5P manifest（2026-08-09T22:43:12Z）與 MAIAC result manifest
 必須以新的 station inventory hash 建立另一個受審查的 generation，保留舊產物的
 provenance。
 
-2026-08-11 已建立共用的 immutable station inventory generation。它以正規化測站名稱、
-座標與三個地理 provenance 欄位計算完整 SHA-256；目前實測 generation 為
+2026-08-11 已建立共用的 immutable station inventory generation。它只以正規化測站名稱
+與座標（`station_name`、`lon`、`lat`）計算完整 SHA-256；地理 provenance 仍保留在
+canonical 測站表，但不是這個空間測站 inventory identity 的雜湊欄位。目前實測
+generation 為
 `58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`，對應 82 個
 canonical 測站、77 個有座標與 5 個未解析。新 S5P 與 MAIAC 產物只有在明確指定這個
 generation 時才會寫入 `generations/<sha256>/year=2025/`，路徑、manifest 與測站計數
