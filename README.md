@@ -77,7 +77,7 @@ Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.
 | [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–2025 | ✅ **全部 44 年已取得**，本專案所有結果都出自這裡 |
 | [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時 | ✅ 使用中（測站登錄、資料新鮮度檢查） |
 | [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 | ⬜ **尚未取得** |
-| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、10m 風、2m 溫度／露點、地面氣壓 | 1940– | ✅ 2025 年 77 站來源取得與 held-out value-add 分析已完成；校正尚未交付 |
+| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、10m 風、2m 溫度／露點、地面氣壓 | 1940– | ✅ 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 🟡 2025 站月來源與 provisional M8 關聯診斷已交付；校正／融合未做 |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | 🟡 2025 站月來源與 provisional M8 關聯診斷已交付；AOD 校正／融合未做 |
 
@@ -87,9 +87,16 @@ station-hour、三個 forward local-time folds，比較 temporal-only、站內�
 四種資訊集。combined 相對站內氣象在 205／222 個 station-fold 同時改善 RMSE 與 R²；
 median RMSE delta 為 −0.758 µg/m³，median R² delta 為 +0.249。
 
-三重、淡水、陽明有 PM2.5 target，但 2025 全部 target rows 都缺至少一個站內氣象 feature，
-因此沒有被塞值或強行納入。這是單年、非因果的 held-out predictive-value 測量，不是校正或融合。
-ERA5 尚未納入已發布的 M4；網站上的氣象正規化仍只使用站內觀測。
+後續 robustness 以相同 74 站量得 2024 年 636,244 筆、2025 年 632,760 筆
+paired rows。combined 相對站內氣象在跨年同站、2025 同年留站、跨年留站三種 transfer
+設計中，分別有 63／74、66／74、70／74 個測站同時改善 RMSE 與 R²；同年 replication
+在 2024、2025 年則為 177／222、205／222 個 station-time-fold。ERA5-only 相對站內氣象
+也分別改善 59／74、64／74、72／74 個 transfer 測站，顯示主要增量不是單純來自 feature 變多。
+
+三重、淡水、陽明有 PM2.5 target，但兩年都沒有四組資訊集可共同使用的完整 rows，
+因此沒有被塞值或強行納入。spatial transfer 使用同年度資料，只量測留出測站的
+predictive generalisation；整組結果不是因果歸因、校正或融合。ERA5 尚未納入已發布的 M4；
+網站上的氣象正規化仍只使用站內觀測。
 
 ## 快速開始
 
@@ -127,13 +134,13 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 
 | 階段 | 目前交付 | 交付判定 |
 |---|---|---|
-| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；GEE 衛星 Stage A 已交付；ERA5 2025 來源取得與 held-out value-add 分析已交付；CWA 延後 |
+| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；GEE 衛星 Stage A 已交付；ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已交付；CWA 延後 |
 | Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；L0／L1 Dataset bundle 可本機重建，遠端上架另行人工確認 |
 | Phase 2 | M1 復刻、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
 | Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻） | ✅ 有界完成；HYSPLIT／1 km 場延後 |
-| Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 provisional M8 關聯診斷已交付；ERA5 來源取得與 held-out value-add 分析已交付；校正與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5 |
+| Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 provisional M8 關聯診斷已交付；ERA5 2024–2025 robustness 已交付；校正與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5 |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
 | Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 收尾：HF Dataset 與人工讀者試讀待辦；PyPI 選配 |
 

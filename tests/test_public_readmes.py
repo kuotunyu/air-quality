@@ -12,12 +12,15 @@ def _readmes() -> tuple[str, str]:
     )
 
 
-def test_both_readmes_distinguish_delivered_era5_value_from_deferred_calibration() -> None:
+def test_both_readmes_distinguish_delivered_era5_robustness_from_deferred_calibration() -> None:
     zh, en = _readmes()
 
-    assert "ERA5 2025 來源取得與 held-out value-add 分析已交付；CWA 延後" in zh
-    assert "ERA5 2025 acquisition and held-out value-add analysis delivered; CWA deferred" in en
-    assert "held-out value-add analysis complete; calibration not delivered" in en
+    assert "ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已交付；CWA 延後" in zh
+    assert (
+        "ERA5 2024–2025 acquisition and multi-year/held-out-station robustness delivered; "
+        "CWA deferred"
+    ) in en
+    assert "multi-year and held-out-station robustness complete; calibration not delivered" in en
     assert "ERA5 analysis and calibration remain deferred" not in en
     assert "value-add analyses deferred" not in en
     assert "CWA／ERA5 延後" not in zh
@@ -35,13 +38,23 @@ def test_public_docs_record_measured_era5_value_without_reframing_the_published_
         assert "六個來源變數皆為 0 個 null" in text
         assert "632,760 筆" in text
         assert "205／222" in text
+        assert "2024 年 636,244 筆、2025 年 632,760 筆" in text
+        assert "63／74、66／74、70／74" in text
+        assert "177／222、205／222" in text
         assert "尚未納入已發布的 M4" in text
     assert "674,520 station-hour rows" in en
     assert "zero source nulls across all six variables" in en
     assert "632,760" in en
     assert "205 of 222" in en
+    assert "636,244 paired rows in 2024 and 632,760 in 2025" in en
+    assert "63/74, 66/74, and 70/74" in en
+    assert "177/222 and 205/222" in en
     assert "has not been added to the published M4 model" in en
     assert "not causal attribution, calibration, or fusion" in en
+    assert "one-year held-out predictive value" not in en
+    assert "676,368 筆" in sources
+    assert "57,288 筆" in sources
+    assert "1 個未分類 air-zone stratum" in sources
 
 
 def test_public_satellite_docs_keep_m8_provisional_and_record_the_completed_generation() -> None:

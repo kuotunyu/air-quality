@@ -107,7 +107,7 @@ register 永遠優先，歷史資料不覆蓋同名現行紀錄。
 
 | 來源 | 用途 | 取得 |
 |---|---|---|
-| Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源與 held-out value-add 分析已完成 |
+| Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源與多年度／留出測站 robustness 已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
 | 智慧城鄉微型感測器 | 高密度 PM2.5 | 環境部開放平臺 |
@@ -123,6 +123,11 @@ SHA-256。最近 ERA5 grid cell 距測站的中位數為 9.244 km，範圍 0.432
 為完整組成臺北時間的 2025 年，分析另取得 2024 年 12 月 744 個 UTC 小時、
 57,288 筆 station-hour。其中 8 個 UTC 小時，共 616 筆轉換後落在臺北時間
 2025-01-01 00:00–07:00；不把 UTC year 直接當成 local-calendar year。
+
+為後續 robustness 另取得 2024 年 12 個 UTC 月，共 8,784 小時、676,368 筆
+station-hour，並取得 2023 年 12 月 744 個 UTC 小時、57,288 筆 station-hour，
+以同一個 immutable 77 站 generation 組成完整的臺北時間 2024 年。六個來源變數在
+這兩個新增來源檔也都是 0 個 null；原有 2024 年 12 月 raw NetCDF 的 checksum 在合併後保持不變。
 
 這一節是來源取得與 sampling contract。ERA5 尚未納入已發布的 M4，亦未用於
 衛星校正、融合或 PM2.5 推估。
@@ -146,6 +151,42 @@ PM2.5 target、站內氣象與 ERA5 feature 都完整的 rows；不填值、不�
 
 這些是單一年度、非因果的 held-out predictive-value 結果：不是趨勢因果歸因、
 不是 satellite calibration、不是融合濃度場，也沒有改寫已發布的 M4。
+
+### 2026-08-11 ERA5 2024–2025 robustness 邊界
+
+`twair analyze era5-robustness --generation <sha256> --full` 把上述單年結果延伸成
+四種 evaluation：逐年重跑相同的三個 expanding folds、同站由 2024 訓練並測試 2025、
+2025 同年訓練其他測站並留出一站，以及同時留出年份與測站。四組資訊集在每個比較中
+仍使用完全相同的 rows；2024 年 636,244 筆、2025 年 632,760 筆。三重、淡水、陽明
+在兩年都因四組資訊集沒有共同完整 rows 而排除，沒有以 ERA5 或其他測站回填。
+
+74 個共同測站分成 10 個 deterministic folds。73 站依官方空品區排序；萬里的
+`airzone_official` 仍是 null，保留在 1 個未分類 air-zone stratum，而不是杜撰分類或
+排除測站。完整 run 以 `n_jobs=1` serial 執行，產生 2,664 筆 score 與 1,998 筆
+paired delta。
+
+下表的 transfer 列以測站為單位；replication 列以測站 × 三個時間 fold 為單位。
+delta 均為 `combined - local_weather`，所以 RMSE 小於 0、R² 大於 0 代表改善。
+
+| evaluation | train → test | 同時改善 RMSE 與 R² | 同時變差 | median RMSE delta (µg/m³) | median R² delta |
+|---|---|---:|---:|---:|---:|
+| 同站跨年 | 2024 → 2025 | 63／74 | 11／74 | −0.308 | +0.066 |
+| 同年留站 | 2025 → 2025 | 66／74 | 8／74 | −0.576 | +0.078 |
+| 跨年留站 | 2024 → 2025 | 70／74 | 4／74 | −0.876 | +0.197 |
+| 同年 replication | 2024 → 2024 | 177／222 | 45／222 | −0.584 | +0.195 |
+| 同年 replication | 2025 → 2025 | 205／222 | 17／222 | −0.758 | +0.249 |
+
+三種 transfer 的 combined 同時改善數依序為 63／74、66／74、70／74；兩年的
+replication 為 177／222、205／222。`era5_weather - local_weather` 在三種 transfer
+也有 59／74、64／74、72／74 個測站同時改善，顯示主要增量不是單純來自 combined
+增加 feature 數量。反過來比較 `combined - era5_weather`，同站跨年、同年留站與跨年
+留站分別只有 49／74、40／74、37／74 個測站同時改善；跨年留站正好 37／74 改善、
+37／74 變差，因此不能宣稱加入站內氣象總會提升可轉移性。
+
+這些結果支持 ERA5 在目前資料與四種 evaluation 下具有 predictive value，但不是因果
+歸因、PM2.5 calibration、sensor fusion 或 M4 replacement。同年留站的 spatial transfer
+使用 contemporaneous 2025 rows，不等於未來年份的預測；跨年留站才同時改變年份與測站。
+ERA5 尚未納入已發布的 M4，也沒有用來改寫網站現有的氣象正規化結果。
 
 ### 2026-08-10 GEE 實測與 Stage A 邊界
 
