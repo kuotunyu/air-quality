@@ -178,10 +178,11 @@ canonical 測站、77 個有座標與 5 個未解析。新 S5P 與 MAIAC 產物�
 generation 時才會寫入 `generations/<sha256>/year=2025/`，路徑、manifest 與測站計數
 不一致時會在寫入前失敗；舊路徑、舊 hash 與既有檔案不變。
 
-同日的 77 站 MAIAC 本機 dry-run 已為 2025 年 1–12 月建立 schema 2 ledger；12 筆 entry
-全為 `PLANNED`，task ID 全為 null。這只證明計畫與 generation 邊界可重現，沒有送出
-Earth Engine batch，也沒有產生或匯入新的 AOD station-month 結果。77 站 S5P 查詢同樣
-尚未執行；在兩者實際完成以前，網站與分析仍使用上述凍結的 76 站 legacy 來源表。
+同日已完成 77 站 S5P 查詢與 12 個 MAIAC Earth Engine monthly batch。MAIAC ledger 的
+12 筆 task 均為 `COMPLETED`，逐月 CSV checksum、task ID、source contract 與 generation
+identity 通過 importer 後才形成新的 924 列 AOD 表；S5P 亦形成 77 × 12 × 2 的完整 key
+grid。這些產物與下述 M8 結果都寫入 generation 專屬路徑，網站使用的 76 站 legacy
+表與 manifest 沒有被覆寫或重新標示。
 
 AOD 不是 PM2.5；這份站月來源表不是衛星推估 PM2.5 或融合結論。操作順序見
 [registrations.md](registrations.md)。
@@ -208,6 +209,30 @@ S5P／MAIAC 來源檔的 SHA-256，避免將不同輸入的結果混在一起。
 | MAIAC AOD | 0.456／0.475 | 0.257／0.281 | 0.555／0.613 |
 | S5P NO₂ | 0.586／0.609 | 0.699／0.743 | 0.420／0.325 |
 | S5P SO₂ | 0.101／0.101 | 0.038／0.044 | 0.131／0.131 |
+
+#### 77 站 immutable generation 已完成
+
+`twair analyze m8 --year 2025 --generation
+58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788` 已以同一份
+77 站 inventory 重跑 S5P、MAIAC 與 M8。萬里是相對 legacy 唯一新增的測站；共同
+76 站的 2,736 個 panel row 在 satellite value、ground value 與全部觀測／withheld／
+pair flags 上完全相同。
+
+| 來源 | 來源列 | 衛星 null | 地面列缺席 | 地面 coverage 不足而保留的 null | 完整 pair |
+|---|---:|---:|---:|---:|---:|
+| MAIAC AOD | 924 | 69 | 2 | 1 | 851（92.1%） |
+| S5P NO₂ | 924 | 1 | 2 | 1 | 919（99.5%） |
+| S5P SO₂ | 924 | 0 | 2 | 1 | 920（99.6%） |
+
+三個來源仍各覆蓋 12 個月份。萬里的 12 個月份中，每個來源有 9 個完整 pair、1 個
+coverage 不足而 withheld 的地面月值，以及 2 個沒有地面列的月份；這三種狀態保持分開。
+MAIAC 完整 pair 覆蓋 76 站，S5P NO₂／SO₂ 各覆蓋 77 站。
+
+| 來源 | pooled Pearson／Spearman | within-station Pearson／Spearman | within-month Pearson／Spearman |
+|---|---:|---:|---:|
+| MAIAC AOD | 0.460／0.480 | 0.261／0.286 | 0.556／0.614 |
+| S5P NO₂ | 0.588／0.612 | 0.700／0.744 | 0.423／0.333 |
+| S5P SO₂ | 0.099／0.099 | 0.038／0.045 | 0.130／0.129 |
 
 `pooled` 同時包含測站間的穩定差異與月份變化；`within-station` 先移除各測站
 在完整 pair 中的平均值，`within-month` 則先移除各月的平均值。三者回答不同問題，

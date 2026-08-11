@@ -489,9 +489,10 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 ### Phase 6 — 衛星 + 微型感測器融合
 
 **交付判定：Stage A 來源與 M8 Stage B provisional 關聯診斷已交付；
-校正與融合仍延後。** 2025 legacy S5P／MAIAC 站月表保留 null 與
-provenance；`twair analyze m8 --year 2025` 另以地面 PM2.5 量測共同 coverage 與
-pooled／within-station／within-month 關聯。這不是因果、不是校正，
+校正與融合仍延後。** 2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
+generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
+`--generation` 版本分開量測共同 coverage 與 pooled／within-station／within-month
+關聯。這不是因果、不是校正，
 也不是衛星推估 PM2.5；沒有獨立驗證前不發布融合濃度場。
 
 #### M8（`analysis/satellite.py`）
@@ -519,22 +520,21 @@ pooled／within-station／within-month 關聯。這不是因果、不是校正�
 - [x] 2025 S5P NO₂／SO₂ 站月來源表、coverage 與 provenance manifest；這是 M8 的輸入，不是分析結論
 - [x] 2025 MAIAC AOD 站月來源表、coverage 與 provenance manifest；null 不補值，AOD 不冒充 PM2.5
 - [x] **新 generation 安全層**：S5P／MAIAC 共用完整 inventory SHA-256，驗證路徑、
-  manifest、測站數與 unresolved 數後才允許寫入；77 站 MAIAC 的 2025 年 12 個月份已
-  在本機建立 `PLANNED` ledger，沒有 task ID，也沒有送出 Earth Engine batch
+  manifest、測站數與 unresolved 數後才允許寫入；77 站 S5P／MAIAC generation 已完成，
+  2025 年 12 個 MAIAC task、輸入 checksum 與 generation identity 均留在獨立 ledger／manifest
 - [x] **M8 Stage B provisional 診斷**：legacy 76 站、12 個月份；MAIAC、S5P NO₂、
   S5P SO₂ 分別量得 842／912、910／912、911／912 個完整 pair，並分開報告三種關聯尺度
-- [ ] **後續外部執行**：以 77 個有座標測站實際重跑 2025 S5P／MAIAC，匯入並驗證新的
-  generation；保留舊 generation，不覆寫或重新標示既有產物
+- [x] **77 站外部重跑**：新 M8 的完整 pair 為 MAIAC 851／924、S5P NO₂ 919／924、S5P SO₂ 920／924；
+  76 站共同 panel 的 2,736 列與所有 null／coverage flags 完全相同，legacy 未被覆寫或重新標示
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
 - [ ] **延後**：微感測器校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
-**下一個條件**：76 站 legacy 來源的 provisional 關聯與 coverage 已量得；
-77 站 MAIAC 目前只完成本機計畫，實際 batch 尚未送出，S5P 也尚未查詢，
-因此不能把新 generation 寫成已取得資料。外部重跑完成後，先依相同契約
-比較共同 coverage 與三種關聯尺度，再決定是否投入 BLH、RH、微型感測器與
-留出測站的校正模型。沒有獨立驗證前，不發布融合濃度場。
+**下一個條件**：76 站 legacy 與 77 站 immutable generation 已依相同契約完成比較；
+新增萬里沒有改變共同 76 站的來源值或 null 語意，三種關聯尺度也沒有出現足以改寫
+provisional 邊界的變化。下一步先做小範圍 ERA5 BLH／RH pilot，再決定是否投入
+微型感測器與留出測站的校正模型。沒有獨立驗證前，不發布融合濃度場。
 
 ---
 

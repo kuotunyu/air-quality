@@ -21,8 +21,10 @@ def test_both_readmes_distinguish_the_delivered_gee_stage_from_deferred_weather_
     assert "Deferred; absent from current results" not in en
 
 
-def test_both_readmes_keep_m8_provisional_and_defer_calibration_and_fusion() -> None:
+def test_public_satellite_docs_keep_m8_provisional_and_record_the_completed_generation() -> None:
     zh, en = _readmes()
+    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
+    sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
 
     assert "S5P 與 MAIAC 來源取得 Stage A 已交付" in zh
     assert "S5P and MAIAC source-acquisition Stage A delivered" in en
@@ -36,6 +38,14 @@ def test_both_readmes_keep_m8_provisional_and_defer_calibration_and_fusion() -> 
     assert "analysis and fusion remain deferred" not in en
     assert "batch acquisition and calibration remain" not in en
     assert "analysis, MAIAC, and fusion remain deferred" not in en
+    assert "77 站 S5P／MAIAC generation 已完成" in plan
+    assert "MAIAC 851／924、S5P NO₂ 919／924、S5P SO₂ 920／924" in plan
+    assert "77 站 immutable generation 已完成" in sources
+    assert "851（92.1%）" in sources
+    assert "919（99.5%）" in sources
+    assert "920（99.6%）" in sources
+    assert "實際 batch 尚未送出" not in plan
+    assert "S5P 查詢同樣尚未執行" not in sources
 
 
 def test_both_readmes_keep_hugging_face_to_l0_l1_and_owner_confirmed_publication() -> None:
