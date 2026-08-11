@@ -11,7 +11,7 @@ from typer import rich_utils
 from typer.testing import CliRunner
 
 from twair import cli
-from twair.ingest import micro_sensors
+from twair.ingest import micro_sensor_observations, micro_sensors
 
 from .test_micro_sensors import (
     _ArchiveBackend,
@@ -20,6 +20,7 @@ from .test_micro_sensors import (
     _observation_catalog_snapshot,
     _observation_payloads,
     _station_csv,
+    _zip_bytes,
 )
 
 
@@ -233,3 +234,78 @@ def test_day_cli_reports_only_after_all_three_archives_are_persisted(
     )
     assert len(generations) == 1
     assert (generations[0] / "manifest.json").is_file()
+
+
+def test_parse_cli_refuses_work_before_explicit_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        micro_sensor_observations,
+        "parse_micro_sensor_observation_generation",
+        lambda *_args, **_kwargs: pytest.fail("parser started without confirmation"),
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["ingest", "micro-sensor-parse", "--generation", "a" * 64],
+    )
+
+    assert result.exit_code == 2
+    assert "--confirm-parse" in unstyle(result.output)
+    assert not (tmp_path / "interim" / "micro_sensors" / "observations").exists()
+
+
+def test_parse_cli_reports_only_after_three_parquet_members_are_persisted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+    payloads = {
+        variable: _zip_bytes(
+            (
+                f"moenv_micro_{variable}_20250101.csv",
+                (
+                    f'"deviceId","{value_column}","time","lon","lat"\r\n'
+                    '"device-a","1","2025-01-01 00:00:00","120","23"\r\n'
+                ).encode(),
+            )
+        )
+        for variable, value_column in {
+            "pm25": "PM2.5",
+            "humidity": "humidity",
+            "temperature": "temperature",
+        }.items()
+    }
+    snapshot = _observation_catalog_snapshot(payloads)
+    micro_sensors.write_catalog_snapshot(snapshot)
+    raw = micro_sensors.acquire_micro_sensor_day(
+        snapshot.generation_sha256,
+        day="2025-01-01",
+        backend=FakeObservationBackend(payloads),
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "ingest",
+            "micro-sensor-parse",
+            "--generation",
+            raw.generation_sha256,
+            "--confirm-parse",
+        ],
+    )
+
+    output = unstyle(result.output)
+    assert result.exit_code == 0, output
+    assert "3 Parquet members" in output
+    assert "3 source rows" in output
+    generations = list(
+        (tmp_path / "interim" / "micro_sensors" / "observations" / "generations").iterdir()
+    )
+    assert len(generations) == 1
+    assert {path.name for path in generations[0].iterdir()} == {
+        "manifest.json",
+        "humidity.parquet",
+        "pm25.parquet",
+        "temperature.parquet",
+    }

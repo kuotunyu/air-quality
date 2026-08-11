@@ -24,3 +24,9 @@
       - "application/octet-stream"
     "max_zip_members": 8
     "max_uncompressed_bytes_per_archive": 4000000000
+  "parser":
+    "timestamp_format": "%Y-%m-%d %H:%M:%S"
+    "value_columns":
+      "pm25": "PM2.5"
+      "humidity": "humidity"
+      "temperature": "temperature"

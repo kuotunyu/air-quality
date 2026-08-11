@@ -1355,3 +1355,55 @@ def acquire_micro_sensor_day(
         directory=destination,
         manifest=final_manifest,
     )
+
+
+def load_observation_generation(
+    generation_sha256: str,
+    *,
+    source: MicroSensorSource | None = None,
+    raw_catalog_root: Path | None = None,
+    interim_catalog_root: Path | None = None,
+    observation_root: Path | None = None,
+) -> MicroSensorDayWrite:
+    """Reload one raw observation generation through its catalogue request."""
+    generation = _validated_generation_sha256(
+        generation_sha256,
+        label="micro-sensor observation generation",
+    )
+    selected_source = source or load_micro_sensor_source()
+    root = observation_root or raw_dir("micro_sensors") / "observations" / "generations"
+    directory = root / generation
+    if not directory.is_dir():
+        raise ConfigError("micro-sensor observation generation is missing")
+    manifest = _manifest(directory / "manifest.json")
+    catalog_generation = manifest.get("catalog_generation_sha256")
+    day = manifest.get("date")
+    if not isinstance(catalog_generation, str) or not isinstance(day, str):
+        raise RuntimeError("micro-sensor observation source identity is invalid")
+    catalog = load_catalog_generation(
+        catalog_generation,
+        source=selected_source,
+        raw_root=raw_catalog_root,
+        interim_root=interim_catalog_root,
+    )
+    archives = select_observation_archives(catalog, day=day, source=selected_source)
+    request_identity = _observation_request_identity(
+        catalog.generation_sha256,
+        day,
+        archives,
+        selected_source,
+    )
+    request_sha = _sha256(_canonical_json(request_identity))
+    validated = _validate_observation_generation(
+        directory,
+        request_identity=request_identity,
+        request_sha256=request_sha,
+        source=selected_source,
+    )
+    if validated.get("generation_sha256") != generation:
+        raise RuntimeError("micro-sensor observation generation identity changed")
+    return MicroSensorDayWrite(
+        generation_sha256=generation,
+        directory=directory,
+        manifest=validated,
+    )

@@ -304,6 +304,43 @@ def ingest_micro_sensor_day(
     console.print(f"wrote raw: {written.directory}")
 
 
+@ingest_app.command("micro-sensor-parse")
+def ingest_micro_sensor_parse(
+    generation: str = typer.Option(
+        ...,
+        "--generation",
+        help="Immutable raw micro-sensor observation generation SHA-256.",
+    ),
+    confirm_parse: bool = typer.Option(
+        False,
+        "--confirm-parse",
+        help="Confirm parsing of the three verified daily observation archives.",
+    ),
+) -> None:
+    """Parse one verified low-cost-sensor day without repairing observations."""
+    if not confirm_parse:
+        raise typer.BadParameter(
+            "micro-sensor observation parsing requires --confirm-parse",
+            param_hint="--confirm-parse",
+        )
+    from twair.config import ConfigError
+    from twair.ingest import micro_sensor_observations
+
+    try:
+        written = micro_sensor_observations.parse_micro_sensor_observation_generation(generation)
+    except (ConfigError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+    members = written.manifest["members"]
+    total_rows = sum(int(identity["summary"]["rows"]) for identity in members.values())
+    console.print(f"generation: [cyan]{written.generation_sha256}[/cyan]")
+    console.print(f"date: [green]{written.manifest['date']}[/green]")
+    console.print(
+        f"parsed: [green]{len(members):,}[/green] Parquet members; "
+        f"[green]{total_rows:,}[/green] source rows"
+    )
+    console.print(f"wrote interim: {written.directory}")
+
+
 @ingest_app.command("satellite")
 def ingest_satellite(
     year: int = typer.Option(2025, "--year", help="Calendar year to acquire."),
