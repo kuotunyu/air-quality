@@ -8,6 +8,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 import typer
+from click import unstyle
 from typer.testing import CliRunner
 
 from twair import cli
@@ -125,7 +126,7 @@ def test_submit_requires_the_explicit_drive_export_flag_before_remote_access(
         get_settings.cache_clear()
 
     assert result.exit_code != 0
-    assert "--confirm-drive-export" in result.output
+    assert "--confirm-drive-export" in unstyle(result.output)
 
 
 def test_submit_starts_only_the_configured_account_wide_capacity_and_persists_ids(
