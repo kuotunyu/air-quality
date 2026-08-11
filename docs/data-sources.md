@@ -181,7 +181,36 @@ generation 時才會寫入 `generations/<sha256>/year=2025/`，路徑、manifest
 Earth Engine batch，也沒有產生或匯入新的 AOD station-month 結果。77 站 S5P 查詢同樣
 尚未執行；在兩者實際完成以前，網站與分析仍使用上述凍結的 76 站 legacy 來源表。
 
-AOD 不是 PM2.5；這份站月來源表仍不是衛星推估 PM2.5 或 M8 融合結論。操作順序見
+AOD 不是 PM2.5；這份站月來源表不是衛星推估 PM2.5 或融合結論。操作順序見
 [registrations.md](registrations.md)。
+
+### 2026-08-11 M8 provisional 關聯診斷
+
+`twair analyze m8 --year 2025` 已以上述凍結的 76 站 legacy S5P／MAIAC
+來源表與 canonical 地面 PM2.5 月表完成本機 Stage B 量測。這個指令只讀取
+已通過 manifest 與 schema 驗證的本機檔案，不連線 Earth Engine。輸出位於
+`data/outputs/m8_satellite/legacy/year=2025/`；manifest 記錄地面表與每個
+S5P／MAIAC 來源檔的 SHA-256，避免將不同輸入的結果混在一起。
+
+| 來源 | 來源列 | 衛星 null | 地面 coverage 不足而保留的 null | 完整 pair |
+|---|---:|---:|---:|---:|
+| MAIAC AOD | 912 | 69 | 1 | 842（92.3%） |
+| S5P NO₂ | 912 | 1 | 1 | 910（99.8%） |
+| S5P SO₂ | 912 | 0 | 1 | 911（99.9%） |
+
+三個來源的地面列缺席數都是 0，並都覆蓋 12 個月份。MAIAC 完整 pair
+覆蓋 75 站，S5P NO₂／SO₂ 各覆蓋 76 站。null 沒有被補值、插值、刪除或當成零。
+
+| 來源 | pooled Pearson／Spearman | within-station Pearson／Spearman | within-month Pearson／Spearman |
+|---|---:|---:|---:|
+| MAIAC AOD | 0.456／0.475 | 0.257／0.281 | 0.555／0.613 |
+| S5P NO₂ | 0.586／0.609 | 0.699／0.743 | 0.420／0.325 |
+| S5P SO₂ | 0.101／0.101 | 0.038／0.044 | 0.131／0.131 |
+
+`pooled` 同時包含測站間的穩定差異與月份變化；`within-station` 先移除各測站
+在完整 pair 中的平均值，`within-month` 則先移除各月的平均值。三者回答不同問題，
+不應從單一係數挑選故事。這些數字是 2025 年的 descriptive association：不是因果、
+不是校正，也不是衛星推估 PM2.5。沒有 BLH、RH 與獨立留出驗證，不報告 calibration
+performance、濃度 bias、排放、來源歸因或融合濃度場。
 
 見 [registrations.md](registrations.md) 取得各項憑證。

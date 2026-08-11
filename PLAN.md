@@ -16,7 +16,7 @@
 |---|---|---|
 | Canonical store | 1982–2025、44 年、521 個分區、340,371,384 筆逐時觀測 | `uv run twair status` |
 | 測站地理 | 82 個 canonical 名稱；76 個現行 register + 1 個審查歷史紀錄，共 77 個有座標；台中、崇倫、阿里山、泰山、三民 5 個未解析 | `conf/station_geo*.yaml`、`uv run twair stations geo`、`web/public/data/meta.json` |
-| QA/QC 與分析 | QC、M1–M7、M9–M12 均有實際 Parquet 產物；M8 已取得 2025 S5P 與 MAIAC Stage A 站月來源表，不冒充分析或融合已完成 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/` 與各 `twair analyze …` 指令 |
+| QA/QC 與分析 | QC 與 M1–M12 均有實際 Parquet 產物；M8 以 2025 legacy S5P、MAIAC 與地面 PM2.5 交付 provisional 關聯診斷，不冒充因果、校正或融合 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/` 與各 `twair analyze …` 指令 |
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
 | 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
@@ -103,7 +103,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
 | 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
-| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | credential verification 已有；S5P 與 MAIAC 站月來源取得已交付，ERA5 與 M8 分析尚未交付 |
+| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | credential verification 已有；S5P 與 MAIAC 站月來源與 M8 provisional 關聯診斷已交付，ERA5、校正與融合尚未交付 |
 | 報告 | **Markdown** | 表格由 Parquet 產物重生；不維護第二套 Quarto/PDF 工具鏈 |
 | 前端 | **Astro** + TypeScript + handwritten CSS | 靜態產出、部署到 Pages 零成本 |
 | 圖表 | build-time **SVG** + 少量 progressive enhancement | 無繪圖 runtime；沒有 JavaScript 時仍可閱讀與列印 |
@@ -162,8 +162,8 @@ air-quality/
 | 來源 | 內容 | 取得 |
 |---|---|---|
 | **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫、地面氣壓、降水 | ⬜ credential probe 已實作；尚未取得 |
-| **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A 已由 GEE 取得；相關性、偏差與融合分析尚未交付 |
-| **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint 已完成；AOD／PM2.5 分析與融合尚未交付 |
+| **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A 與 M8 provisional 關聯診斷已交付；校正與融合尚未交付 |
+| **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint 與 M8 provisional 關聯診斷已交付；AOD 校正與融合尚未交付 |
 | **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
 | **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
@@ -218,7 +218,7 @@ air-quality/
 
 - `twair ingest airtw` — 依 `conf/sources.yaml` 下載年度包，落地 `data/raw/airtw/`
 - `twair stations geo` — 取得測站 metadata；歷史名稱與生命週期另由 canonical register 管理
-- CWA／ERA5 尚未取得；GEE 只取得後述 S5P Stage A 來源表，尚未納入 canonical store 或分析宣稱
+- CWA／ERA5 尚未取得；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 僅以本機表量測 provisional 關聯，不納入 canonical store 也不宣稱校正或融合
 - 所有下載存 checksum 到 `data/raw/_manifest.jsonl`，重跑時跳過已存在且 checksum 相符者
 - 全部走 `registry.py` 統一的重試 / rate limit / 快取
 
@@ -488,10 +488,11 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 
 ### Phase 6 — 衛星 + 微型感測器融合
 
-**交付判定：來源取得已開始，M8 研究交付仍延後。** GEE 註冊與 2025 年 S5P
-station-month Stage A 已完成；它只建立可重跑、保留 null 與 provenance 的來源表，
-不包含相關性、校正、空間驗證或融合。其餘 blueprint 保留為後續研究，不為了填滿
-roadmap 把「能下載」寫成「M8 已完成」。
+**交付判定：Stage A 來源與 M8 Stage B provisional 關聯診斷已交付；
+校正與融合仍延後。** 2025 legacy S5P／MAIAC 站月表保留 null 與
+provenance；`twair analyze m8 --year 2025` 另以地面 PM2.5 量測共同 coverage 與
+pooled／within-station／within-month 關聯。這不是因果、不是校正，
+也不是衛星推估 PM2.5；沒有獨立驗證前不發布融合濃度場。
 
 #### M8（`analysis/satellite.py`）
 - **Stage A source acquisition（已交付）** — `twair ingest satellite --year 2025 --months 1:12`
@@ -506,8 +507,10 @@ roadmap 把「能下載」寫成「M8 已完成」。
   但既有衛星產物不回溯改名、補列或換 hash。新的共用 immutable generation 已以
   完整 SHA-256 綁定 82／77／5 的 canonical inventory；S5P 與 MAIAC 只有在明確指定
   generation 時才寫入各自的新目錄，legacy 路徑與 manifest 語意維持不變。
-- **Sentinel-5P** NO2/SO2 柱濃度 vs 地面測值的相關性與偏差分析
-- **MODIS MAIAC AOD → PM2.5** — AOD 與地面 PM2.5 的關係受 BLH 與 RH 調制，建立校正模型
+- **Stage B provisional association（已交付）** — `twair analyze m8 --year 2025`
+  以來源表為分母，分開報告 satellite null、地面缺列、coverage 不足而保留的 null
+  與完整 pair；只計算 descriptive Pearson／Spearman 關聯，不作 p-value、bias 或 calibration 宣稱
+- **AOD／柱濃度校正（延後）** — 尚缺 BLH、RH 與獨立留出驗證；不用單一年份的關聯代替校正效能
 - **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
 - **資料融合** — 地面站（準但稀疏）+ 衛星（廣但粗）+ 微感測器（密但雜）→ 高解析度濃度場
   - 方法：geostatistical fusion / RF with satellite covariates / Bayesian hierarchical model
@@ -518,6 +521,8 @@ roadmap 把「能下載」寫成「M8 已完成」。
 - [x] **新 generation 安全層**：S5P／MAIAC 共用完整 inventory SHA-256，驗證路徑、
   manifest、測站數與 unresolved 數後才允許寫入；77 站 MAIAC 的 2025 年 12 個月份已
   在本機建立 `PLANNED` ledger，沒有 task ID，也沒有送出 Earth Engine batch
+- [x] **M8 Stage B provisional 診斷**：legacy 76 站、12 個月份；MAIAC、S5P NO₂、
+  S5P SO₂ 分別量得 842／912、910／912、911／912 個完整 pair，並分開報告三種關聯尺度
 - [ ] **後續外部執行**：以 77 個有座標測站實際重跑 2025 S5P／MAIAC，匯入並驗證新的
   generation；保留舊 generation，不覆寫或重新標示既有產物
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
@@ -525,12 +530,11 @@ roadmap 把「能下載」寫成「M8 已完成」。
 - [ ] **延後**：微感測器校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
-**下一個條件**：S5P 與 MAIAC Stage A 已排除 credential 與基本取得風險，真實 AOD
-站月表也已通過契約驗證。77 站 MAIAC 目前只完成本機計畫；實際 batch 尚未送出，
-S5P 也尚未查詢，因此不能把新 generation 寫成已取得資料。外部重跑完成前，可先用凍結的
-76 站 legacy 來源量測 AOD 與地面 PM2.5 的共同 coverage、相關性與月份／測站偏差，並將
-結果明確標為 provisional；再決定是否值得投入 BLH、RH、微型感測器與留出測站模型。
-沒有獨立驗證前，不發布融合濃度場。
+**下一個條件**：76 站 legacy 來源的 provisional 關聯與 coverage 已量得；
+77 站 MAIAC 目前只完成本機計畫，實際 batch 尚未送出，S5P 也尚未查詢，
+因此不能把新 generation 寫成已取得資料。外部重跑完成後，先依相同契約
+比較共同 coverage 與三種關聯尺度，再決定是否投入 BLH、RH、微型感測器與
+留出測站的校正模型。沒有獨立驗證前，不發布融合濃度場。
 
 ---
 
