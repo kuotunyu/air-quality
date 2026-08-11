@@ -89,6 +89,12 @@ MODULES: tuple[Module, ...] = (
         "provisional descriptive satellite association; not calibration",
         feeds_web=False,
     ),
+    Module(
+        "m8_era5_value",
+        "twair analyze era5-value",
+        "held-out ERA5 weather value beyond station measurements",
+        feeds_web=False,
+    ),
     Module("m9_forecast", "twair analyze m9", "forecasting scored against persistence"),
     Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
     Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),

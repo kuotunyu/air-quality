@@ -899,6 +899,53 @@ def analyze_m8(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("era5-value")
+def analyze_era5_value(
+    generation: str = typer.Option(
+        ...,
+        "--generation",
+        help="Immutable station-inventory SHA-256 shared by both ERA5 UTC years.",
+    ),
+    pilot: bool = typer.Option(
+        False,
+        "--pilot/--full",
+        help="Run the reviewed six-station CPU pilot instead of all eligible stations.",
+    ),
+) -> None:
+    """Measure ERA5 weather value on future local-calendar quarters."""
+    from twair.analysis.era5_value import run_era5_value, write_era5_value_result
+    from twair.ingest.station_inventory import validate_generation_sha256
+    from twair.paths import data_root
+
+    try:
+        identity = validate_generation_sha256(generation)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+
+    result = run_era5_value(
+        data_root=data_root(),
+        generation_sha256=identity,
+        pilot=pilot,
+    )
+    # A console/display failure must not discard hundreds of completed fits.
+    written = write_era5_value_result(result)
+
+    mode = str(result.manifest["mode"])
+    station_count = len(result.manifest.get("stations", []))
+    paired_rows = int(result.manifest.get("paired_rows", 0))
+    console.print(
+        f"ERA5 value-add [bold]{mode}[/bold]: {station_count} station(s), "
+        f"{paired_rows:,} paired station-hour rows"
+    )
+    console.print(
+        "Same rows and forward local-time folds; descriptive predictive value, "
+        "not causal attribution or calibration."
+    )
+    console.print(result.deltas)
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("m9")
 def analyze_m9(
     years: str = typer.Option("2015:2025", "--years", "-y", help="Period to backtest."),
