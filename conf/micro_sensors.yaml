@@ -1,0 +1,17 @@
+"schema_version": 1
+"source":
+  "provider": "Ministry of Environment Civil IoT Taiwan Data Service Platform"
+  "history_base_url": "https://history.colife.org.tw/"
+  "history_root_path": "/空氣品質/環境部_智慧城鄉空品微型感測器"
+  "station_metadata_filename": "MOENV_iot_station.csv"
+  "routes":
+    "get_config": "/getconfig"
+    "get_user": "/getuser"
+    "get_directory": "/getdir"
+    "download": "/download"
+  "required_variables":
+    - "pm25"
+    - "humidity"
+    - "temperature"
+  "archive_filename_pattern": "^(?P<prefix>.+)_(?P<variable>pm25|humidity|temperature)_(?P<date>[0-9]{8})\\.zip$"
+  "max_directory_entries": 1000

@@ -206,6 +206,51 @@ def ingest_airtw(
     )
 
 
+@ingest_app.command("micro-sensor-catalog")
+def ingest_micro_sensor_catalog(
+    month: str = typer.Option(..., "--month", help="Calendar month in YYYYMM form."),
+    confirm_network: bool = typer.Option(
+        False,
+        "--confirm-network",
+        help="Confirm the small official station-metadata and directory requests.",
+    ),
+) -> None:
+    """Snapshot official low-cost-sensor metadata and one archive directory."""
+    if not confirm_network:
+        raise typer.BadParameter(
+            "micro-sensor catalogue acquisition requires --confirm-network",
+            param_hint="--confirm-network",
+        )
+    from twair.config import ConfigError
+    from twair.ingest import micro_sensors
+
+    source = micro_sensors.load_micro_sensor_source()
+    try:
+        source.month_path(month)
+    except ConfigError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--month") from exc
+    with micro_sensors.FileGatorHistoryBackend(source) as backend:
+        written = micro_sensors.acquire_micro_sensor_catalog(
+            month,
+            backend=backend,
+            source=source,
+        )
+    station = written.manifest["station_metadata"]
+    archive = written.manifest["archive_catalog"]
+    console.print(f"generation: [cyan]{written.generation_sha256}[/cyan]")
+    console.print(
+        f"stations: [green]{int(station['rows']):,}[/green] station rows; "
+        f"[yellow]{int(station['rows_in_duplicate_coordinates']):,}[/yellow] "
+        "rows in duplicate coordinates"
+    )
+    console.print(
+        f"archives: [green]{int(archive['present']):,}[/green] archive files present; "
+        f"[yellow]{int(archive['absent']):,}[/yellow] archive files absent"
+    )
+    console.print(f"wrote raw: {written.raw_directory}")
+    console.print(f"wrote normalized: {written.interim_directory}")
+
+
 @ingest_app.command("satellite")
 def ingest_satellite(
     year: int = typer.Option(2025, "--year", help="Calendar year to acquire."),
