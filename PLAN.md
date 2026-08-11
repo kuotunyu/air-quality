@@ -164,7 +164,7 @@ air-quality/
 | **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
 | **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A、M8 關聯與 held-out predictive-value 診斷已交付；校正與融合尚未交付 |
 | **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint、M8 關聯與 held-out predictive-value 診斷已交付；AOD 校正與融合尚未交付 |
-| **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
+| **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | 🟡 官方站點清冊與 2025-01 archive catalogue pilot 已完成；觀測 ZIP、校正與融合未交付 |
 | **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
 
@@ -496,7 +496,8 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 ### Phase 6 — 衛星 + 微型感測器融合
 
 **交付判定：Stage A 來源、M8 Stage B 關聯與 held-out predictive-value 診斷、ERA5 2024–2025
-robustness 已交付；校正與融合仍延後。** 2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
+robustness，以及微型感測器來源目錄 pilot 已交付；觀測值、校正與融合仍延後。**
+2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
 generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 `--generation` 版本分開量測共同 coverage 與 pooled／within-station／within-month
 關聯。這不是因果、不是校正，
@@ -531,7 +532,11 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   兩年 replication 為 177／222、205／222
 - **AOD／柱濃度校正（延後）** — ERA5 的 predictive generalisation 不是 satellite calibration performance；
   不用它代替獨立 calibration target 或融合場留出測站評估
-- **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
+- **微型感測器來源目錄（已交付）** — `twair ingest micro-sensor-catalog --month 202501
+  --confirm-network` 量得 10,999 筆站點清冊，75／93 個預期日別變數檔案存在、18 個缺席；
+  尚未下載任何觀測 ZIP，目錄檔案存在不能解讀為感測器回報完整率
+- **微型感測器校正（延後）** — 低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），
+  量化校正前後誤差；站點數與可配對樣本都要從下載後的觀測實測，不沿用清冊列數
 - **資料融合** — 地面站（準但稀疏）+ 衛星（廣但粗）+ 微感測器（密但雜）→ 高解析度濃度場
   - 方法：geostatistical fusion / RF with satellite covariates / Bayesian hierarchical model
 
@@ -566,6 +571,9 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 - [x] **ERA5 2024–2025 robustness**：74 個共同測站完成逐年 replication、同站跨年、同年留站與
   跨年留站；兩年共同 rows 為 636,244／632,760，2,664 次 serial fit 綁定完整 input checksum；
   三種 transfer 的 combined 同時改善數為 63／74、66／74、70／74
+- [x] **微型感測器來源目錄 pilot**：2025-01 量得 10,999 筆站點清冊、75／93 個預期日別變數
+  檔案存在、18 個缺席；只保存來源 metadata 與 checksum，尚未下載任何觀測 ZIP，不能解讀為
+  感測器回報完整率、校正成果或融合成果
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
 - [ ] **延後**：微感測器校正前後 RMSE 對照
@@ -575,7 +583,8 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 但這不是未來年度 transfer；ERA5 的 combined 相對 ERA5-only 跨年留站結果也正好 37／74 改善、
 37／74 變差，因此仍不直接改寫 M4。校正與融合必須另有獨立 calibration target、留出測站與
 coverage／null contract；在這些條件完成前，不發布融合濃度場。微型感測器可作為獨立資料與
-校正 track 評估，不把 ERA5 robustness 或 M8 predictive value 當成替代證據。
+校正 track 評估；先以容量上限約束單日 PM2.5／溫度／相對濕度 pilot，量測缺值、時空重疊與
+濕度效應，再決定 calibration design。不把 ERA5 robustness 或 M8 predictive value 當成替代證據。
 
 ---
 

@@ -110,7 +110,30 @@ register 永遠優先，歷史資料不覆蓋同名現行紀錄。
 | Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源與多年度／留出測站 robustness 已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
-| 智慧城鄉微型感測器 | 高密度 PM2.5 | 環境部開放平臺 |
+| 智慧城鄉微型感測器 | 高密度低成本 PM2.5 觀測候選來源 | ✅ 官方站點清冊與 2025-01 archive catalogue pilot 已完成；觀測值、校正與融合未交付 |
+
+### 2026-08-12 智慧城鄉微型感測器來源目錄 pilot
+
+來源為環境部「[民生公共物聯網－空氣品質](https://ci.taiwan.gov.tw/dsp/Views/dataset/air.aspx)」的
+站點清冊，以及其「[歷史資料](https://history.colife.org.tw/)」瀏覽器公開的 archive catalogue。
+下列指令只擷取清冊與目錄 metadata，不下載日別觀測 ZIP：
+
+```bash
+uv run twair ingest micro-sensor-catalog --month 202501 --confirm-network
+```
+
+這次來源目錄 pilot 產生 immutable generation
+`c841ef16d7cc55920b6ab5b7b274c2f8b5e68e754d8cce4e1a5677f997e8e05b`。
+獨立重讀後量得 10,999 筆站點清冊；其中 232 組重複座標涵蓋 806 筆站點列，均照來源原樣保留，
+沒有合併或刪除。2025-01 以 31 日 × PM2.5／溫度／相對濕度建立 93 列完整日曆：
+75／93 個預期日別變數檔案存在，18 個缺席；三個變數都只有 1 月 1–25 日出現在來源目錄，
+1 月 26–31 日缺席。
+
+`archive_present` 只表示官方歷史目錄列出該 ZIP，不能解讀為感測器回報完整率；本 pilot
+尚未下載任何觀測 ZIP，也沒有讀取 ZIP 內的測值。低成本感測器會受濕度、位置與儀器狀態影響，
+不能視為標準監測站的等價替代。下一個 gate 是先以容量上限約束單日 PM2.5／溫度／相對濕度下載，
+保留原始缺值並量測和標準站的時空重疊；在獨立 calibration target 與留出測站驗證完成前，
+不報告校正成效或融合濃度場。
 
 ### 2026-08-11 ERA5 2025 來源取得邊界
 

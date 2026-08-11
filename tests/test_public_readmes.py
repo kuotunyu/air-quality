@@ -220,3 +220,35 @@ def test_both_readmes_keep_hugging_face_to_l0_l1_and_owner_confirmed_publication
         in en
     )
     assert "full HF Dataset publishes at closeout" not in en
+
+
+def test_public_docs_distinguish_the_micro_sensor_catalogue_pilot_from_observation_delivery() -> (
+    None
+):
+    zh, en = _readmes()
+    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
+    sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+    zh_prose = " ".join(zh.split())
+    en_prose = " ".join(en.split())
+    plan_prose = " ".join(plan.split())
+    sources_prose = " ".join(sources.split())
+
+    assert "微型感測器來源目錄 pilot 已完成" in zh_prose
+    assert "micro-sensor source-catalogue pilot is complete" in en_prose
+    assert "觀測 ZIP 尚未下載，校正與融合仍延後" in zh_prose
+    assert (
+        "observation ZIPs have not been downloaded; calibration and fusion remain deferred"
+        in en_prose
+    )
+
+    for text in (plan_prose, sources_prose):
+        assert "10,999 筆站點清冊" in text
+        assert "75／93 個預期日別變數檔案存在" in text
+        assert "18 個缺席" in text
+        assert "尚未下載任何觀測 ZIP" in text
+        assert "不能解讀為感測器回報完整率" in text
+
+    assert "twair ingest micro-sensor-catalog --month 202501 --confirm-network" in sources
+    assert "c841ef16d7cc55920b6ab5b7b274c2f8b5e68e754d8cce4e1a5677f997e8e05b" in sources
+    assert "https://history.colife.org.tw/" in sources
+    assert "https://ci.taiwan.gov.tw/dsp/Views/dataset/air.aspx" in sources
