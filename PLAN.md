@@ -16,7 +16,7 @@
 |---|---|---|
 | Canonical store | 1982–2025、44 年、521 個分區、340,371,384 筆逐時觀測 | `uv run twair status` |
 | 測站地理 | 82 個 canonical 名稱；76 個現行 register + 1 個審查歷史紀錄，共 77 個有座標；台中、崇倫、阿里山、泰山、三民 5 個未解析 | `conf/station_geo*.yaml`、`uv run twair stations geo`、`web/public/data/meta.json` |
-| QA/QC 與分析 | QC 與 M1–M12 均有實際 Parquet 產物；M8 以 2025 legacy S5P、MAIAC 與地面 PM2.5 交付 provisional 關聯診斷，不冒充因果、校正或融合 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/` 與各 `twair analyze …` 指令 |
+| QA/QC 與分析 | QC 與 M1–M12 均有實際 Parquet 產物；M8 以 2025 S5P、MAIAC 與地面 PM2.5 交付 provisional 關聯診斷，ERA5 交付 held-out predictive-value 分析，兩者都不冒充因果、校正或融合 | `data/outputs/`、`data/interim/satellite/`、`data/interim/maiac/`、`data/interim/era5/` 與各 `twair analyze …` 指令 |
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
 | 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
@@ -103,7 +103,7 @@ K-S 常態檢定 → Pearson/偏相關 → OLS(VIF) → 殘差分析 → **Mixed
 | ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
 | 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
-| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | S5P／MAIAC 與 ERA5 2025 來源取得、M8 provisional 關聯診斷已交付；ERA5 分析、校正與融合尚未交付 |
+| 地科 SDK（選配） | **xarray** + **cdsapi** + **earthengine-api** | S5P／MAIAC 與 ERA5 2025 來源取得、M8 provisional 關聯診斷與 ERA5 held-out value-add 已交付；校正與融合尚未交付 |
 | 報告 | **Markdown** | 表格由 Parquet 產物重生；不維護第二套 Quarto/PDF 工具鏈 |
 | 前端 | **Astro** + TypeScript + handwritten CSS | 靜態產出、部署到 Pages 零成本 |
 | 圖表 | build-time **SVG** + 少量 progressive enhancement | 無繪圖 runtime；沒有 JavaScript 時仍可閱讀與列印 |
@@ -161,7 +161,7 @@ air-quality/
 
 | 來源 | 內容 | 取得 |
 |---|---|---|
-| **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源取得已完成；分析與校正尚未交付 |
+| **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源取得與 held-out value-add 已完成；校正尚未交付 |
 | **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A 與 M8 provisional 關聯診斷已交付；校正與融合尚未交付 |
 | **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint 與 M8 provisional 關聯診斷已交付；AOD 校正與融合尚未交付 |
 | **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
@@ -169,9 +169,9 @@ air-quality/
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
 
 2025 ERA5 acquisition 已量得 77 站 × 8,760 小時＝674,520 筆 station-hour；
-六個來源變數皆為 0 個 null。它尚未納入已發布的 M4，也沒有被當成 PM2.5 校正或
-因果證據。下一步會先衍生 BLH、relative humidity 與風場，再以獨立時間 holdout
-判斷它們是否提供增量資訊；沒有通過前，現行 M4 的限制敘述保持不變。
+六個來源變數皆為 0 個 null。held-out value-add 已以 74 站、632,760 筆共同 rows
+與三個 forward folds 測量；`combined - local_weather` 有 205／222 個 station-fold
+同時改善 RMSE 與 R²。它尚未納入已發布的 M4，也沒有被當成 PM2.5 校正、融合或因果證據。
 
 ---
 
@@ -219,7 +219,7 @@ air-quality/
 
 - `twair ingest airtw` — 依 `conf/sources.yaml` 下載年度包，落地 `data/raw/airtw/`
 - `twair stations geo` — 取得測站 metadata；歷史名稱與生命週期另由 canonical register 管理
-- CWA 尚未取得；ERA5 2025 來源取得已完成但尚未納入 M4；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 僅以本機表量測 provisional 關聯，不納入 canonical store 也不宣稱校正或融合
+- CWA 尚未取得；ERA5 2025 來源取得與 held-out value-add 已完成但尚未納入 M4；GEE 取得後述 S5P／MAIAC Stage A 來源表，M8 僅以本機表量測 provisional 關聯，不納入 canonical store 也不宣稱校正或融合
 - 所有下載存 checksum 到 `data/raw/_manifest.jsonl`，重跑時跳過已存在且 checksum 相符者
 - 全部走 `registry.py` 統一的重試 / rate limit / 快取
 
@@ -317,7 +317,7 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 | 時間解析度 | 月平均 N=7,286 | 逐時；M2 實際可建模樣本 5,136,594 列 |
 | 風向 | 線性 0–360 | `sin(θ)`, `cos(θ)`，另加 u/v 分量與風速交互 |
 | PM10 | 當解釋變數 | **移出**；PM2.5/PM10 ratio 當作粒徑組成指標衍生變數，可篩選來源假說，但單一比值不能唯一辨識或量化來源 |
-| 氣象 | 溫度/濕度/雨量/風 | 已發布 M4 仍用同一批站內量測 + 風向 sin/cos 與 u/v；ERA5 BLH 已取得、尚未進入模型 |
+| 氣象 | 溫度/濕度/雨量/風 | 已發布 M4 仍用同一批站內量測 + 風向 sin/cos 與 u/v；ERA5 BLH 另以 held-out value-add 驗證，尚未進入 M4 |
 | 時間效應 | 無 | hour/dow/doy 循環編碼與長期趨勢 |
 | 化學 | 單一污染物 | Ox = O3 + NO2、SO2/NOx ratio、NOx/CO ratio |
 | 共線性 | 逐步剔除 | 不讓 NO、NO2、NOx 同時進模；以 NOx level + NO2/NOx ratio 建模 |
@@ -514,7 +514,9 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   與完整 pair；只計算 descriptive Pearson／Spearman 關聯，不作 p-value、bias 或 calibration 宣稱
 - **ERA5 2025 source acquisition（已交付）** — 77 站、8,760 小時、674,520 筆 station-hour；
   六變數來源與 sampling contract 已驗證，但尚未納入 M4、校正或融合
-- **AOD／柱濃度校正（延後）** — 尚未把 BLH／RH 納入 calibration protocol，也未完成獨立留出驗證；不用單一年份的關聯代替校正效能
+- **ERA5 held-out value-add（已交付）** — 固定 74 站、632,760 筆共同 rows與三個 forward folds；
+  `combined - local_weather` 有 205／222 個 station-fold 同時改善 RMSE 與 R²，但 17／222 個同時變差
+- **AOD／柱濃度校正（延後）** — BLH／RH 的單年 held-out predictive value 不是 calibration performance；不用它代替留出測站與多年驗證
 - **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
 - **資料融合** — 地面站（準但稀疏）+ 衛星（廣但粗）+ 微感測器（密但雜）→ 高解析度濃度場
   - 方法：geostatistical fusion / RF with satellite covariates / Bayesian hierarchical model
@@ -531,16 +533,17 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   76 站共同 panel 的 2,736 列與所有 null／coverage flags 完全相同，legacy 未被覆寫或重新標示
 - [x] **ERA5 2025 source acquisition**：12 個月、77 站、674,520 station-hour；六個來源變數皆為 0 個 null，
   request／checksum／coverage 與 inventory generation 均可重現；此項不等於模型成效
+- [x] **ERA5 held-out value-add**：77 站皆有 target 與 ERA5 join；三重、淡水、陽明因站內氣象
+  feature 全年不完整而明確排除，其餘 74 站用 632,760 筆共同 rows 完成 888 次 serial fit；
+  combined 相對 local weather 的 median RMSE delta −0.758 µg/m³、median R² delta +0.249
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
 - [ ] **延後**：微感測器校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
-**下一個條件**：76 站 legacy 與 77 站 immutable generation 已依相同契約完成比較；
-新增萬里沒有改變共同 76 站的來源值或 null 語意，三種關聯尺度也沒有出現足以改寫
-provisional 邊界的變化。ERA5 BLH／風場／溫度／露點／氣壓的 2025 全年來源取得已通過；
-下一步以獨立時間 holdout 比較站內氣象 baseline 與加入 ERA5 衍生量後的增量資訊，再決定
-是否投入微型感測器與留出測站的校正模型。沒有獨立驗證前，不發布融合濃度場。
+**下一個條件**：ERA5 的 2025 單年 forward holdout 已顯示增量資訊，但 17／222 個
+station-fold 同時變差，因此不直接改寫 M4。先延伸到多年與留出測站驗證，再決定是否投入
+微型感測器與衛星 calibration；沒有這些獨立驗證前，不發布融合濃度場。
 
 ---
 

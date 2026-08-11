@@ -73,7 +73,7 @@ flowchart TD
     subgraph Data Sources [Measured Inputs]
         A[MoENV Annual Archive Catalogue] -->|Probe file IDs / gdown| D[Raw ZIP / 7z Archives]
         B[MoENV Station Register] -->|Metadata only| S[Station Metadata]
-        C[CWA / ERA5 / Satellite] -.->|ERA5 2025 acquisition delivered; CWA and value-add analyses deferred| X[Future covariates]
+        C[CWA / ERA5 / Satellite] -.->|ERA5 2025 acquisition and held-out value-add delivered; CWA deferred| X[Future covariates]
     end
 
     subgraph Ingestion [Processing & Pipeline]
@@ -139,18 +139,21 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 | [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | 1982–2025 | ✅ **all 44 years held**; every result here comes from this |
 | [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time | ✅ in use (station register, freshness check) |
 | [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
-| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 1940–Present | ✅ 2025 source acquisition complete for 77 stations; analysis and calibration not delivered |
+| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 1940–Present | ✅ 2025 source acquisition and held-out value-add analysis complete; calibration not delivered |
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2025 source acquisition and provisional M8 association diagnostic delivered; calibration/fusion not done |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2025 source acquisition and provisional M8 association diagnostic delivered; AOD calibration/fusion not done |
 
 ERA5 2025 source acquisition delivered 674,520 station-hour rows for 77 stations and
-8,760 hours, with zero source nulls across all six variables. That proves the source
-and reproducible acquisition path, **not a model improvement**.
-ERA5 has not been added to the published M4 model; the released meteorological normalisation still uses only
-temperature, humidity, rainfall, wind speed, and bearing measured at air-quality stations.
-BLH, relative humidity, and wind fields must pass an independent temporal holdout before
-the project reports whether they improve prediction or change the trend decomposition.
-ERA5 analysis and calibration remain deferred until that holdout is complete.
+8,760 hours, with zero source nulls across all six variables. A separate value-add experiment
+then compared temporal-only, station-weather, ERA5-weather, and combined information on the
+same 632,760 complete station-hour rows from 74 stations and three forward local-time folds.
+Combined versus station weather improved both RMSE and R² in 205 of 222 station-folds;
+the median RMSE delta was −0.758 µg/m³ and the median R² delta was +0.249.
+
+Sanchong, Tamsui, and Yangming had PM2.5 targets but no row with every required station-weather
+feature, so no value was filled and those stations were excluded. This is one-year held-out
+predictive value, not causal attribution, calibration, or fusion. ERA5 has not been added to the published M4 model;
+the released meteorological normalisation still uses station measurements.
 
 ---
 
@@ -196,13 +199,13 @@ the relevant public [technical docs](docs/).
 
 | Phase | Current delivery | Disposition |
 |---|---|---|
-| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; GEE satellite Stage A and ERA5 2025 source acquisition delivered; CWA deferred |
+| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; GEE satellite Stage A delivered; ERA5 2025 acquisition and held-out value-add analysis delivered; CWA deferred |
 | **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; L0/L1 Dataset bundle is locally reproducible; remote publication needs owner confirmation |
 | **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
 | **Phase 5** | M6 spatial structure and M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution) | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
-| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; ERA5 2025 source acquisition delivered; 2025 provisional M8 association diagnostic delivered; calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
+| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 provisional M8 association diagnostic delivered; ERA5 acquisition plus held-out value-add analysis delivered; calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |
 

@@ -107,7 +107,7 @@ register 永遠優先，歷史資料不覆蓋同名現行紀錄。
 
 | 來源 | 用途 | 取得 |
 |---|---|---|
-| Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源取得已完成 |
+| Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2025 年 77 站逐時來源與 held-out value-add 分析已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
 | 智慧城鄉微型感測器 | 高密度 PM2.5 | 環境部開放平臺 |
@@ -120,9 +120,32 @@ immutable inventory generation，共 8,760 小時、674,520 筆 station-hour；
 六個來源變數皆為 0 個 null。原始檔合計 37,520,309 bytes，manifest 逐月保存 request、byte count 與
 SHA-256。最近 ERA5 grid cell 距測站的中位數為 9.244 km，範圍 0.432–17.467 km。
 
-這是來源取得與 sampling contract，不是模型結果。ERA5 尚未納入已發布的 M4，亦未用於
-衛星校正、融合或 PM2.5 推估。BLH、relative humidity 與風場的增量價值必須另以獨立時間
-holdout 量測；未通過前不改寫現有趨勢結論。
+為完整組成臺北時間的 2025 年，分析另取得 2024 年 12 月 744 個 UTC 小時、
+57,288 筆 station-hour。其中 8 個 UTC 小時，共 616 筆轉換後落在臺北時間
+2025-01-01 00:00–07:00；不把 UTC year 直接當成 local-calendar year。
+
+這一節是來源取得與 sampling contract。ERA5 尚未納入已發布的 M4，亦未用於
+衛星校正、融合或 PM2.5 推估。
+
+### 2026-08-11 ERA5 2025 held-out value-add 邊界
+
+`twair analyze era5-value --generation <sha256> --full` 以測站為單位、固定 `n_jobs=1` 的
+LightGBM，在三個 expanding forward local-time folds 上比較四種資訊集：
+temporal-only、站內氣象、ERA5 氣象，以及兩者 combined。每個模型只使用同一批
+PM2.5 target、站內氣象與 ERA5 feature 都完整的 rows；不填值、不插值、不讓模型各自挑 rows。
+
+77 站均有 PM2.5 target 與完整 ERA5 join；ERA5 join 缺失與 ERA5 feature 不完整均為 0 筆。
+但三重、淡水、陽明在 2025 年每筆 target row 都缺至少一個站內氣象 feature，
+因此明確排除，沒有以 ERA5 回填。其餘 74 站共有 632,760 筆 paired rows；
+662,267 筆 PM2.5 target rows 中有 29,507 筆因站內氣象 feature 不完整而不列入。
+
+主要比較 `combined - local_weather` 在 205／222 個 station-fold 同時改善 RMSE 與 R²，
+17／222 個同時變差；median RMSE delta 為 −0.758 µg/m³，median R² delta 為 +0.249。
+三個 folds 的 median RMSE delta 均小於 0，其中最弱的 q3 為 −0.568 µg/m³。
+`era5_weather - local_weather` 則有 171／222 個同時改善，顯示 ERA5 不是在每站每季都可取代站內觀測。
+
+這些是單一年度、非因果的 held-out predictive-value 結果：不是趨勢因果歸因、
+不是 satellite calibration、不是融合濃度場，也沒有改寫已發布的 M4。
 
 ### 2026-08-10 GEE 實測與 Stage A 邊界
 
