@@ -20,7 +20,12 @@ from twair.ingest.micro_sensor_observations import (
     parse_micro_sensor_observation_generation,
     parse_observation_csv,
 )
-from twair.ingest.micro_sensors import acquire_micro_sensor_day
+from twair.ingest.micro_sensors import (
+    acquire_micro_sensor_day,
+    build_catalog_snapshot,
+    load_micro_sensor_source,
+    write_catalog_snapshot,
+)
 
 from .test_micro_sensors import (
     _ArchiveBackend,
@@ -88,6 +93,92 @@ def _raw_generation_from_payloads(
     written = acquire_micro_sensor_day(
         snapshot.generation_sha256,
         day="2025-01-01",
+        backend=_ArchiveBackend(payloads),
+        raw_catalog_root=raw_catalog_root,
+        interim_catalog_root=interim_catalog_root,
+        observation_root=raw_observation_root,
+        generated_at="2026-08-12T04:00:00+00:00",
+        git_sha="abc1234",
+        git_dirty=False,
+    )
+    return (
+        written.generation_sha256,
+        raw_observation_root,
+        raw_catalog_root,
+        interim_catalog_root,
+    )
+
+
+def _raw_generation_for_measured_day(
+    tmp_path: Path,
+    *,
+    day: str,
+    records: dict[
+        str,
+        tuple[tuple[str, str, str, str, str], tuple[str, str, str, str, str]],
+    ],
+) -> tuple[str, Path, Path, Path]:
+    compact_day = day.replace("-", "")
+    month = compact_day[:6]
+    source = load_micro_sensor_source()
+    location = source.month_path(month)
+    payloads = {
+        variable: _zip_bytes(
+            (
+                f"moenviot_{variable}_{compact_day}.csv",
+                _reviewed_csv_bytes(header, row),
+            )
+        )
+        for variable, (header, row) in records.items()
+    }
+    directory_payload = {
+        "data": {
+            "location": location,
+            "files": [
+                {
+                    "type": "back",
+                    "path": source.history_root_path,
+                    "name": "..",
+                    "size": 0,
+                    "time": 0,
+                    "permissions": -1,
+                },
+                *(
+                    {
+                        "type": "file",
+                        "path": f"{location}/moenviot_{variable}_{compact_day}.zip",
+                        "name": f"moenviot_{variable}_{compact_day}.zip",
+                        "size": len(payload),
+                        "time": 1_700_000_000 + index,
+                        "permissions": 644,
+                    }
+                    for index, (variable, payload) in enumerate(sorted(payloads.items()))
+                ),
+            ],
+        }
+    }
+    snapshot = build_catalog_snapshot(
+        (
+            b"deviceId,locationId,desc,lat,lon,area,areatype,town,county,project_name\n"
+            b"1,L1,device,23,120,,,,,\n"
+        ),
+        directory_payload,
+        month=month,
+        generated_at="2026-08-12T04:00:00+00:00",
+        git_sha="abc1234",
+        git_dirty=False,
+    )
+    raw_catalog_root = tmp_path / "catalog-raw"
+    interim_catalog_root = tmp_path / "catalog-interim"
+    write_catalog_snapshot(
+        snapshot,
+        raw_root=raw_catalog_root,
+        interim_root=interim_catalog_root,
+    )
+    raw_observation_root = tmp_path / "raw-observations"
+    written = acquire_micro_sensor_day(
+        snapshot.generation_sha256,
+        day=day,
         backend=_ArchiveBackend(payloads),
         raw_catalog_root=raw_catalog_root,
         interim_catalog_root=interim_catalog_root,
@@ -259,6 +350,7 @@ def test_a_provider_header_change_stops_before_any_parquet_is_written(tmp_path: 
 @pytest.mark.parametrize(
     (
         "variable",
+        "day",
         "header",
         "row",
         "expected_device",
@@ -269,6 +361,7 @@ def test_a_provider_header_change_stops_before_any_parquet_is_written(tmp_path: 
     [
         (
             "pm25",
+            "2025-02-05",
             (
                 "stationID",
                 "phenomenonTime",
@@ -284,6 +377,7 @@ def test_a_provider_header_change_stops_before_any_parquet_is_written(tmp_path: 
         ),
         (
             "humidity",
+            "2025-02-05",
             (
                 "stationID",
                 "Relative humidity",
@@ -299,6 +393,7 @@ def test_a_provider_header_change_stops_before_any_parquet_is_written(tmp_path: 
         ),
         (
             "temperature",
+            "2025-02-05",
             (
                 "stationID",
                 "phenomenonTime",
@@ -312,11 +407,60 @@ def test_a_provider_header_change_stops_before_any_parquet_is_written(tmp_path: 
             121.193344,
             25.077933,
         ),
+        (
+            "humidity",
+            "2025-09-10",
+            (
+                "stationID",
+                "phenomenonTime",
+                "Relative humidity",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("7515126810", "2025-09-10 00:00:00", "76.866", "120.3335", "22.597633"),
+            "7515126810",
+            76.866,
+            120.3335,
+            22.597633,
+        ),
+        (
+            "pm25",
+            "2025-11-27",
+            (
+                "stationID",
+                "PM2.5",
+                "phenomenonTime",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("13034585888", "12.58", "2025-11-27 00:00:00", "120.44586", "23.46671"),
+            "13034585888",
+            12.58,
+            120.44586,
+            23.46671,
+        ),
+        (
+            "temperature",
+            "2025-11-27",
+            (
+                "stationID",
+                "Temperature",
+                "phenomenonTime",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("13183306292", "24.13", "2025-11-27 00:00:00", "120.56368", "22.685762"),
+            "13183306292",
+            24.13,
+            120.56368,
+            22.685762,
+        ),
     ],
 )
 def test_each_measured_moenviot_header_maps_to_the_existing_canonical_schema(
     tmp_path: Path,
     variable: str,
+    day: str,
     header: tuple[str, str, str, str, str],
     row: tuple[str, str, str, str, str],
     expected_device: str,
@@ -331,15 +475,16 @@ def test_each_measured_moenviot_header_maps_to_the_existing_canonical_schema(
         source,
         destination,
         variable=variable,
-        day="2025-02-05",
+        day=day,
     )
 
     parsed = pl.read_parquet(destination)
     assert parsed.schema == pl.Schema(OBSERVATION_OUTPUT_SCHEMA)
     assert parsed["device_id"].to_list() == [expected_device]
     assert parsed["value"].to_list() == [expected_value]
+    source_timestamp = "phenomenonTime" if "phenomenonTime" in header else "time"
     assert parsed["ts_local"].dt.to_string("%Y-%m-%d %H:%M:%S").to_list() == [
-        row[1] if variable != "humidity" else row[2]
+        row[header.index(source_timestamp)]
     ]
     assert parsed["lon"].to_list() == [expected_lon]
     assert parsed["lat"].to_list() == [expected_lat]
@@ -353,11 +498,11 @@ def test_a_reordered_moenviot_header_is_not_guessed_from_column_names(tmp_path: 
         header=(
             "stationID",
             "PM2.5",
-            "phenomenonTime",
             "StationLongitude",
+            "phenomenonTime",
             "StationLatitude",
         ),
-        row=("11803873982", "24.12", "2025-02-05 00:00:00", "120", "23"),
+        row=("11803873982", "24.12", "120", "2025-02-05 00:00:00", "23"),
     )
     destination = tmp_path / "pm25.parquet"
 
@@ -496,6 +641,181 @@ def test_a_new_header_generation_binds_only_the_three_selected_source_schemas(
         "longitude": "StationLongitude",
         "latitude": "StationLatitude",
     }
+    assert "schemas" not in written.manifest["parser_contract"]
+
+
+@pytest.mark.parametrize(
+    ("day", "records", "expected_headers"),
+    [
+        (
+            "2025-09-10",
+            {
+                "pm25": (
+                    (
+                        "stationID",
+                        "phenomenonTime",
+                        "PM2.5",
+                        "StationLongitude",
+                        "StationLatitude",
+                    ),
+                    ("9364062553", "2025-09-10 00:00:00", "8.52278", "120.30618", "22.831991"),
+                ),
+                "humidity": (
+                    (
+                        "stationID",
+                        "phenomenonTime",
+                        "Relative humidity",
+                        "StationLongitude",
+                        "StationLatitude",
+                    ),
+                    (
+                        "7515126810",
+                        "2025-09-10 00:00:00",
+                        "76.866",
+                        "120.3335",
+                        "22.597633",
+                    ),
+                ),
+                "temperature": (
+                    (
+                        "stationID",
+                        "phenomenonTime",
+                        "Temperature",
+                        "StationLongitude",
+                        "StationLatitude",
+                    ),
+                    (
+                        "9031487915",
+                        "2025-09-10 00:00:00",
+                        "27.923",
+                        "120.300224",
+                        "22.810982",
+                    ),
+                ),
+            },
+            {
+                "pm25": (
+                    "stationID",
+                    "phenomenonTime",
+                    "PM2.5",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "humidity": (
+                    "stationID",
+                    "phenomenonTime",
+                    "Relative humidity",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "temperature": (
+                    "stationID",
+                    "phenomenonTime",
+                    "Temperature",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+            },
+        ),
+        (
+            "2025-11-27",
+            {
+                "pm25": (
+                    (
+                        "stationID",
+                        "PM2.5",
+                        "phenomenonTime",
+                        "StationLongitude",
+                        "StationLatitude",
+                    ),
+                    (
+                        "13034585888",
+                        "12.58",
+                        "2025-11-27 00:00:00",
+                        "120.44586",
+                        "23.46671",
+                    ),
+                ),
+                "humidity": (
+                    (
+                        "stationID",
+                        "Relative humidity",
+                        "phenomenonTime",
+                        "StationLongitude",
+                        "StationLatitude",
+                    ),
+                    ("9114032359", "67.142", "2025-11-27 00:00:00", "", ""),
+                ),
+                "temperature": (
+                    (
+                        "stationID",
+                        "Temperature",
+                        "phenomenonTime",
+                        "StationLongitude",
+                        "StationLatitude",
+                    ),
+                    (
+                        "13183306292",
+                        "24.13",
+                        "2025-11-27 00:00:00",
+                        "120.56368",
+                        "22.685762",
+                    ),
+                ),
+            },
+            {
+                "pm25": (
+                    "stationID",
+                    "PM2.5",
+                    "phenomenonTime",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "humidity": (
+                    "stationID",
+                    "Relative humidity",
+                    "phenomenonTime",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "temperature": (
+                    "stationID",
+                    "Temperature",
+                    "phenomenonTime",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+            },
+        ),
+    ],
+    ids=("2025-09-10", "2025-11-27"),
+)
+def test_each_late_measured_generation_binds_only_its_three_selected_source_schemas(
+    tmp_path: Path,
+    day: str,
+    records: dict[
+        str,
+        tuple[tuple[str, str, str, str, str], tuple[str, str, str, str, str]],
+    ],
+    expected_headers: dict[str, tuple[str, str, str, str, str]],
+) -> None:
+    raw_generation, raw_root, raw_catalog_root, interim_catalog_root = (
+        _raw_generation_for_measured_day(tmp_path, day=day, records=records)
+    )
+
+    written = parse_micro_sensor_observation_generation(
+        raw_generation,
+        raw_observation_root=raw_root,
+        raw_catalog_root=raw_catalog_root,
+        interim_catalog_root=interim_catalog_root,
+        interim_observation_root=tmp_path / "parsed-observations",
+    )
+
+    source_schemas = written.manifest["parser_contract"]["source_schemas"]
+    assert set(source_schemas) == {"pm25", "humidity", "temperature"}
+    assert {
+        variable: tuple(schema["header"]) for variable, schema in source_schemas.items()
+    } == expected_headers
     assert "schemas" not in written.manifest["parser_contract"]
 
 
@@ -724,6 +1044,20 @@ def test_the_shipped_parser_contract_names_only_the_reviewed_schema_variants() -
                 "longitude": "StationLongitude",
                 "latitude": "StationLatitude",
             },
+            {
+                "header": (
+                    "stationID",
+                    "PM2.5",
+                    "phenomenonTime",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "device_id": "stationID",
+                "value": "PM2.5",
+                "timestamp": "phenomenonTime",
+                "longitude": "StationLongitude",
+                "latitude": "StationLatitude",
+            },
         ],
         "humidity": [
             {
@@ -748,6 +1082,20 @@ def test_the_shipped_parser_contract_names_only_the_reviewed_schema_variants() -
                 "longitude": "StationLongitude",
                 "latitude": "StationLatitude",
             },
+            {
+                "header": (
+                    "stationID",
+                    "phenomenonTime",
+                    "Relative humidity",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "device_id": "stationID",
+                "value": "Relative humidity",
+                "timestamp": "phenomenonTime",
+                "longitude": "StationLongitude",
+                "latitude": "StationLatitude",
+            },
         ],
         "temperature": [
             {
@@ -763,6 +1111,20 @@ def test_the_shipped_parser_contract_names_only_the_reviewed_schema_variants() -
                     "stationID",
                     "phenomenonTime",
                     "Temperature",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "device_id": "stationID",
+                "value": "Temperature",
+                "timestamp": "phenomenonTime",
+                "longitude": "StationLongitude",
+                "latitude": "StationLatitude",
+            },
+            {
+                "header": (
+                    "stationID",
+                    "Temperature",
+                    "phenomenonTime",
                     "StationLongitude",
                     "StationLatitude",
                 ),

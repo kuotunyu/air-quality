@@ -46,6 +46,13 @@
             "timestamp": "phenomenonTime"
             "longitude": "StationLongitude"
             "latitude": "StationLatitude"
+        - "header": ["stationID", "PM2.5", "phenomenonTime", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "PM2.5"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
       "humidity":
         - "header": ["deviceId", "humidity", "time", "lon", "lat"]
           "fields":
@@ -61,6 +68,13 @@
             "timestamp": "phenomenonTime"
             "longitude": "StationLongitude"
             "latitude": "StationLatitude"
+        - "header": ["stationID", "phenomenonTime", "Relative humidity", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "Relative humidity"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
       "temperature":
         - "header": ["deviceId", "temperature", "time", "lon", "lat"]
           "fields":
@@ -70,6 +84,13 @@
             "longitude": "lon"
             "latitude": "lat"
         - "header": ["stationID", "phenomenonTime", "Temperature", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "Temperature"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+        - "header": ["stationID", "Temperature", "phenomenonTime", "StationLongitude", "StationLatitude"]
           "fields":
             "device_id": "stationID"
             "value": "Temperature"
