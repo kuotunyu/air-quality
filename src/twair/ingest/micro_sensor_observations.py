@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -38,9 +39,20 @@ OBSERVATION_OUTPUT_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ..
 
 
 @dataclass(frozen=True, slots=True)
+class MicroSensorCsvSchema:
+    header: tuple[str, ...]
+    device_id: str
+    value: str
+    timestamp: str
+    longitude: str
+    latitude: str
+
+
+@dataclass(frozen=True, slots=True)
 class MicroSensorParserContract:
     timestamp_format: str
     value_columns: dict[str, str]
+    schemas: dict[str, tuple[MicroSensorCsvSchema, ...]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,9 +102,69 @@ def load_micro_sensor_parser_contract() -> MicroSensorParserContract:
         raise ConfigError("micro-sensor parser value columns must match required variables")
     if len(set(value_columns.values())) != len(value_columns):
         raise ConfigError("micro-sensor parser value columns must be unique")
+    raw_schemas = _mapping(
+        parser.get("schemas"),
+        label="micro_sensors.source.parser.schemas",
+    )
+    if set(raw_schemas) != set(required):
+        raise ConfigError("micro-sensor parser schemas must match required variables")
+    schemas: dict[str, tuple[MicroSensorCsvSchema, ...]] = {}
+    semantic_fields = {"device_id", "value", "timestamp", "longitude", "latitude"}
+    for variable in required:
+        raw_variants = raw_schemas[variable]
+        if not isinstance(raw_variants, list) or not raw_variants:
+            raise ConfigError(f"micro-sensor parser {variable} schemas must be a nonempty list")
+        variants: list[MicroSensorCsvSchema] = []
+        observed_headers: set[tuple[str, ...]] = set()
+        for index, raw_variant in enumerate(raw_variants):
+            variant = _mapping(
+                raw_variant,
+                label=f"micro_sensors.source.parser.schemas.{variable}[{index}]",
+            )
+            if set(variant) != {"header", "fields"}:
+                raise ConfigError(
+                    f"micro-sensor parser {variable} schema must contain header and fields"
+                )
+            raw_header = variant["header"]
+            if (
+                not isinstance(raw_header, list)
+                or len(raw_header) != 5
+                or not all(isinstance(name, str) and name for name in raw_header)
+            ):
+                raise ConfigError(
+                    f"micro-sensor parser {variable} schema header must contain five names"
+                )
+            header = tuple(raw_header)
+            if len(set(header)) != len(header) or header in observed_headers:
+                raise ConfigError(f"micro-sensor parser {variable} schema headers must be unique")
+            fields = _mapping(
+                variant["fields"],
+                label=f"micro_sensors.source.parser.schemas.{variable}[{index}].fields",
+            )
+            if (
+                set(fields) != semantic_fields
+                or not all(isinstance(fields[name], str) for name in semantic_fields)
+                or set(fields.values()) != set(header)
+            ):
+                raise ConfigError(
+                    f"micro-sensor parser {variable} schema fields must map the five header names"
+                )
+            observed_headers.add(header)
+            variants.append(
+                MicroSensorCsvSchema(
+                    header=header,
+                    device_id=fields["device_id"],
+                    value=fields["value"],
+                    timestamp=fields["timestamp"],
+                    longitude=fields["longitude"],
+                    latitude=fields["latitude"],
+                )
+            )
+        schemas[variable] = tuple(variants)
     return MicroSensorParserContract(
         timestamp_format=timestamp_format,
         value_columns={variable: str(value_columns[variable]) for variable in required},
+        schemas=schemas,
     )
 
 
@@ -153,41 +225,158 @@ def _parser_contract(contract: MicroSensorParserContract) -> dict[str, object]:
     }
 
 
+def _schema_identity(schema: MicroSensorCsvSchema) -> dict[str, object]:
+    return {**asdict(schema), "header": list(schema.header)}
+
+
+def _is_legacy_schema(
+    variable: str,
+    schema: MicroSensorCsvSchema,
+    contract: MicroSensorParserContract,
+) -> bool:
+    value = contract.value_columns[variable]
+    return schema == MicroSensorCsvSchema(
+        header=("deviceId", value, "time", "lon", "lat"),
+        device_id="deviceId",
+        value=value,
+        timestamp="time",
+        longitude="lon",
+        latitude="lat",
+    )
+
+
+def _selected_parser_contract(
+    contract: MicroSensorParserContract,
+    selected_schemas: dict[str, MicroSensorCsvSchema],
+) -> dict[str, object]:
+    if set(selected_schemas) != set(contract.value_columns):
+        raise RuntimeError("micro-sensor selected parser schemas changed")
+    parser = _parser_contract(contract)
+    if all(
+        _is_legacy_schema(variable, selected_schemas[variable], contract)
+        for variable in contract.value_columns
+    ):
+        return parser
+    parser["source_schemas"] = {
+        variable: _schema_identity(selected_schemas[variable])
+        for variable in contract.value_columns
+    }
+    return parser
+
+
+def _supported_parser_contract(
+    value: object,
+    contract: MicroSensorParserContract,
+) -> dict[str, object]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise RuntimeError("micro-sensor parsed parser contract is invalid")
+    legacy = _parser_contract(contract)
+    if value == legacy:
+        return legacy
+    if set(value) != {*legacy, "source_schemas"} or any(
+        value.get(key) != expected for key, expected in legacy.items()
+    ):
+        raise RuntimeError("micro-sensor parsed parser contract changed")
+    raw_schemas = value.get("source_schemas")
+    if not isinstance(raw_schemas, dict) or set(raw_schemas) != set(contract.schemas):
+        raise RuntimeError("micro-sensor parsed source schemas changed")
+    selected: dict[str, MicroSensorCsvSchema] = {}
+    for variable, supported in contract.schemas.items():
+        matches = [
+            schema for schema in supported if _schema_identity(schema) == raw_schemas[variable]
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(f"micro-sensor parsed {variable} source schema changed")
+        selected[variable] = matches[0]
+    expected = _selected_parser_contract(contract, selected)
+    if value != expected:
+        raise RuntimeError("micro-sensor parsed source schema identity changed")
+    return expected
+
+
 def _nonempty(column: str) -> pl.Expr:
     return pl.col(column).is_not_null() & pl.col(column).str.len_bytes().gt(0)
 
 
-def _validate_csv_shape(path: Path, *, expected_header: list[str], variable: str) -> None:
+def _validate_csv_shape(
+    path: Path,
+    *,
+    schemas: tuple[MicroSensorCsvSchema, ...],
+    variable: str,
+) -> MicroSensorCsvSchema:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as source:
             records = csv.reader(source)
-            if next(records, None) != expected_header:
-                raise ConfigError(f"micro-sensor {variable} observation header changed")
+            observed_header = next(records, None)
+            selected = _schema_for_header(
+                observed_header,
+                schemas=schemas,
+                variable=variable,
+            )
             for source_row_number, record in enumerate(records, start=1):
-                if len(record) != len(expected_header):
+                if len(record) != len(selected.header):
                     raise ConfigError(
                         "micro-sensor observation row "
                         f"{source_row_number} must contain exactly five fields"
                     )
     except (OSError, UnicodeError, csv.Error) as exc:
         raise ConfigError(f"micro-sensor observation CSV is unreadable: {path}") from exc
+    return selected
 
 
-def _source_lazy(path: Path, *, value_column: str) -> pl.LazyFrame:
+def _schema_for_header(
+    observed_header: list[str] | None,
+    *,
+    schemas: tuple[MicroSensorCsvSchema, ...],
+    variable: str,
+) -> MicroSensorCsvSchema:
+    matches = [schema for schema in schemas if list(schema.header) == observed_header]
+    if len(matches) != 1:
+        raise ConfigError(f"micro-sensor {variable} observation header changed")
+    return matches[0]
+
+
+def _schema_from_archive(
+    archive_path: Path,
+    *,
+    schemas: tuple[MicroSensorCsvSchema, ...],
+    variable: str,
+) -> MicroSensorCsvSchema:
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            infos = archive.infolist()
+            if len(infos) != 1 or infos[0].is_dir():
+                raise ConfigError("micro-sensor parser requires exactly one CSV member")
+            with (
+                archive.open(infos[0]) as binary,
+                io.TextIOWrapper(binary, encoding="utf-8-sig", newline="") as source,
+            ):
+                header = next(csv.reader(source), None)
+    except (OSError, UnicodeError, csv.Error, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+        raise ConfigError(f"micro-sensor observation CSV is unreadable: {archive_path}") from exc
+    return _schema_for_header(header, schemas=schemas, variable=variable)
+
+
+def _source_lazy(
+    path: Path,
+    *,
+    value_column: str,
+    schema: MicroSensorCsvSchema,
+) -> pl.LazyFrame:
     return pl.scan_csv(
         path,
         has_header=True,
-        schema={
-            "deviceId": pl.String,
-            value_column: pl.String,
-            "time": pl.String,
-            "lon": pl.String,
-            "lat": pl.String,
-        },
+        schema=dict.fromkeys(schema.header, pl.String),
         empty_string_is_null=True,
         ignore_errors=False,
         try_parse_dates=False,
         truncate_ragged_lines=False,
+    ).select(
+        pl.col(schema.device_id).alias("deviceId"),
+        pl.col(schema.value).alias(value_column),
+        pl.col(schema.timestamp).alias("time"),
+        pl.col(schema.longitude).alias("lon"),
+        pl.col(schema.latitude).alias("lat"),
     )
 
 
@@ -313,15 +502,15 @@ def parse_observation_csv(
     value_column = selected.value_columns[variable]
     if destination.exists():
         raise RuntimeError(f"micro-sensor parsed destination already exists: {destination}")
-    _validate_csv_shape(
+    schema = _validate_csv_shape(
         source_path,
-        expected_header=["deviceId", value_column, "time", "lon", "lat"],
+        schemas=selected.schemas[variable],
         variable=variable,
     )
     part = destination.with_suffix(destination.suffix + ".part")
     part.unlink(missing_ok=True)
     try:
-        source = _source_lazy(source_path, value_column=value_column)
+        source = _source_lazy(source_path, value_column=value_column, schema=schema)
         _validate_source_values(
             source,
             value_column=value_column,
@@ -386,8 +575,9 @@ def _request_identity(
     *,
     raw_generation: str,
     contract: MicroSensorParserContract,
+    selected_schemas: dict[str, MicroSensorCsvSchema],
 ) -> dict[str, object]:
-    parser = _parser_contract(contract)
+    parser = _selected_parser_contract(contract, selected_schemas)
     members = raw_manifest.get("members")
     if not isinstance(members, dict):
         raise RuntimeError("raw micro-sensor observation manifest has no members")
@@ -512,7 +702,7 @@ def load_micro_sensor_observation_generation(
     if not directory.is_dir():
         raise FileNotFoundError(f"micro-sensor parsed generation not found: {directory}")
     manifest = _manifest(directory / "manifest.json")
-    parser = _parser_contract(selected_contract)
+    parser = _supported_parser_contract(manifest.get("parser_contract"), selected_contract)
     request_identity: dict[str, object] = {
         "schema_version": 1,
         "raw_observation_generation_sha256": manifest.get("raw_observation_generation_sha256"),
@@ -581,22 +771,6 @@ def parse_micro_sensor_observation_generation(
         interim_catalog_root=interim_catalog_root,
         observation_root=raw_observation_root,
     )
-    request_identity = _request_identity(
-        raw.manifest,
-        raw_generation=raw.generation_sha256,
-        contract=selected_contract,
-    )
-    request_sha = _sha256(_canonical_json(request_identity))
-    root = interim_observation_root or interim_dir("micro_sensors") / "observations" / "generations"
-    existing = _existing_generation(
-        root,
-        request_identity=request_identity,
-        request_sha256=request_sha,
-        contract=selected_contract,
-    )
-    if existing is not None:
-        return existing
-
     day = raw.manifest.get("date")
     selected_archives = raw.manifest.get("selected_archives")
     if not isinstance(day, str) or not isinstance(selected_archives, list):
@@ -608,8 +782,34 @@ def parse_micro_sensor_observation_generation(
     }
     if set(records) != set(selected_contract.value_columns):
         raise RuntimeError("raw micro-sensor observation variables changed")
-
+    root = interim_observation_root or interim_dir("micro_sensors") / "observations" / "generations"
     root.mkdir(parents=True, exist_ok=True)
+    selected_schemas: dict[str, MicroSensorCsvSchema] = {}
+    for variable in selected_contract.value_columns:
+        filename = records[variable].get("filename")
+        if not isinstance(filename, str):
+            raise RuntimeError(f"raw micro-sensor {variable} filename is invalid")
+        selected_schemas[variable] = _schema_from_archive(
+            raw.directory / filename,
+            schemas=selected_contract.schemas[variable],
+            variable=variable,
+        )
+    request_identity = _request_identity(
+        raw.manifest,
+        raw_generation=raw.generation_sha256,
+        contract=selected_contract,
+        selected_schemas=selected_schemas,
+    )
+    request_sha = _sha256(_canonical_json(request_identity))
+    existing = _existing_generation(
+        root,
+        request_identity=request_identity,
+        request_sha256=request_sha,
+        contract=selected_contract,
+    )
+    if existing is not None:
+        return existing
+
     staged = root / f".staging-{request_sha}"
     if staged.exists():
         if not staged.is_dir():

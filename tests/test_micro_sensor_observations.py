@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 from pathlib import Path
 
@@ -49,16 +51,35 @@ def _write_csv(
     return path
 
 
-def _raw_generation(tmp_path: Path) -> tuple[str, Path, Path, Path]:
-    payloads = {
-        variable: _zip_bytes(
-            (
-                f"moenv_micro_{variable}_20250101.csv",
-                _csv(variable, ("1", "1", "2025-01-01 00:00:00", "120", "23")),
-            )
-        )
-        for variable in VALUE_COLUMNS
-    }
+def _write_reviewed_csv(
+    tmp_path: Path,
+    *,
+    header: tuple[str, str, str, str, str],
+    row: tuple[str, str, str, str, str],
+) -> Path:
+    path = tmp_path / "reviewed.csv"
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(header)
+        writer.writerow(row)
+    return path
+
+
+def _reviewed_csv_bytes(
+    header: tuple[str, str, str, str, str],
+    row: tuple[str, str, str, str, str],
+) -> bytes:
+    text = io.StringIO(newline="")
+    writer = csv.writer(text)
+    writer.writerow(header)
+    writer.writerow(row)
+    return text.getvalue().encode()
+
+
+def _raw_generation_from_payloads(
+    tmp_path: Path,
+    payloads: dict[str, bytes],
+) -> tuple[str, Path, Path, Path]:
     snapshot, raw_catalog_root, interim_catalog_root = _written_observation_catalog(
         tmp_path,
         payloads,
@@ -81,6 +102,58 @@ def _raw_generation(tmp_path: Path) -> tuple[str, Path, Path, Path]:
         raw_catalog_root,
         interim_catalog_root,
     )
+
+
+def _raw_generation(tmp_path: Path) -> tuple[str, Path, Path, Path]:
+    payloads = {
+        variable: _zip_bytes(
+            (
+                f"moenv_micro_{variable}_20250101.csv",
+                _csv(variable, ("1", "1", "2025-01-01 00:00:00", "120", "23")),
+            )
+        )
+        for variable in VALUE_COLUMNS
+    }
+    return _raw_generation_from_payloads(tmp_path, payloads)
+
+
+def _new_schema_raw_generation(tmp_path: Path) -> tuple[str, Path, Path, Path]:
+    records = {
+        "pm25": (
+            ("stationID", "phenomenonTime", "PM2.5", "StationLongitude", "StationLatitude"),
+            ("1", "2025-01-01 00:00:00", "12.5", "120", "23"),
+        ),
+        "humidity": (
+            (
+                "stationID",
+                "Relative humidity",
+                "phenomenonTime",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("1", "50", "2025-01-01 00:00:00", "120", "23"),
+        ),
+        "temperature": (
+            (
+                "stationID",
+                "phenomenonTime",
+                "Temperature",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("1", "2025-01-01 00:00:00", "20", "120", "23"),
+        ),
+    }
+    payloads = {
+        variable: _zip_bytes(
+            (
+                f"moenv_micro_{variable}_20250101.csv",
+                _reviewed_csv_bytes(header, row),
+            )
+        )
+        for variable, (header, row) in records.items()
+    }
+    return _raw_generation_from_payloads(tmp_path, payloads)
 
 
 def test_source_rows_nulls_repeated_keys_and_invalid_coordinates_are_preserved(
@@ -183,6 +256,122 @@ def test_a_provider_header_change_stops_before_any_parquet_is_written(tmp_path: 
     assert not destination.exists()
 
 
+@pytest.mark.parametrize(
+    (
+        "variable",
+        "header",
+        "row",
+        "expected_device",
+        "expected_value",
+        "expected_lon",
+        "expected_lat",
+    ),
+    [
+        (
+            "pm25",
+            (
+                "stationID",
+                "phenomenonTime",
+                "PM2.5",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("11803873982", "2025-02-05 00:00:00", "24.12", "", ""),
+            "11803873982",
+            24.12,
+            None,
+            None,
+        ),
+        (
+            "humidity",
+            (
+                "stationID",
+                "Relative humidity",
+                "phenomenonTime",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("12662618508", "54.68", "2025-02-05 00:00:00", "120.1520600", "23.6341300"),
+            "12662618508",
+            54.68,
+            120.15206,
+            23.63413,
+        ),
+        (
+            "temperature",
+            (
+                "stationID",
+                "phenomenonTime",
+                "Temperature",
+                "StationLongitude",
+                "StationLatitude",
+            ),
+            ("13430718225", "2025-02-05 00:00:03", "12.38", "121.1933440", "25.0779330"),
+            "13430718225",
+            12.38,
+            121.193344,
+            25.077933,
+        ),
+    ],
+)
+def test_each_measured_moenviot_header_maps_to_the_existing_canonical_schema(
+    tmp_path: Path,
+    variable: str,
+    header: tuple[str, str, str, str, str],
+    row: tuple[str, str, str, str, str],
+    expected_device: str,
+    expected_value: float,
+    expected_lon: float | None,
+    expected_lat: float | None,
+) -> None:
+    source = _write_reviewed_csv(tmp_path, header=header, row=row)
+    destination = tmp_path / f"{variable}.parquet"
+
+    summary = parse_observation_csv(
+        source,
+        destination,
+        variable=variable,
+        day="2025-02-05",
+    )
+
+    parsed = pl.read_parquet(destination)
+    assert parsed.schema == pl.Schema(OBSERVATION_OUTPUT_SCHEMA)
+    assert parsed["device_id"].to_list() == [expected_device]
+    assert parsed["value"].to_list() == [expected_value]
+    assert parsed["ts_local"].dt.to_string("%Y-%m-%d %H:%M:%S").to_list() == [
+        row[1] if variable != "humidity" else row[2]
+    ]
+    assert parsed["lon"].to_list() == [expected_lon]
+    assert parsed["lat"].to_list() == [expected_lat]
+    assert summary.rows == 1
+    assert summary.null_counts["value"] == 0
+
+
+def test_a_reordered_moenviot_header_is_not_guessed_from_column_names(tmp_path: Path) -> None:
+    source = _write_reviewed_csv(
+        tmp_path,
+        header=(
+            "stationID",
+            "PM2.5",
+            "phenomenonTime",
+            "StationLongitude",
+            "StationLatitude",
+        ),
+        row=("11803873982", "24.12", "2025-02-05 00:00:00", "120", "23"),
+    )
+    destination = tmp_path / "pm25.parquet"
+
+    with pytest.raises(ConfigError, match="header"):
+        parse_observation_csv(
+            source,
+            destination,
+            variable="pm25",
+            day="2025-02-05",
+        )
+
+    assert not destination.exists()
+
+
 def test_a_short_csv_record_is_rejected_instead_of_becoming_source_nulls(
     tmp_path: Path,
 ) -> None:
@@ -260,6 +449,11 @@ def test_one_raw_generation_becomes_three_immutable_parquet_members_and_is_reuse
         ).encode()
     ).hexdigest()
     assert written.generation_sha256 == expected_generation
+    assert written.manifest["parser_contract"] == {
+        "timestamp_format": "%Y-%m-%d %H:%M:%S",
+        "value_columns": VALUE_COLUMNS,
+        "output_schema": {name: str(dtype) for name, dtype in OBSERVATION_OUTPUT_SCHEMA},
+    }
 
     second = parse_micro_sensor_observation_generation(
         raw_generation,
@@ -269,6 +463,40 @@ def test_one_raw_generation_becomes_three_immutable_parquet_members_and_is_reuse
         interim_observation_root=interim_root,
     )
     assert second.directory == written.directory
+
+
+def test_a_new_header_generation_binds_only_the_three_selected_source_schemas(
+    tmp_path: Path,
+) -> None:
+    raw_generation, raw_root, raw_catalog_root, interim_catalog_root = _new_schema_raw_generation(
+        tmp_path
+    )
+
+    written = parse_micro_sensor_observation_generation(
+        raw_generation,
+        raw_observation_root=raw_root,
+        raw_catalog_root=raw_catalog_root,
+        interim_catalog_root=interim_catalog_root,
+        interim_observation_root=tmp_path / "parsed-observations",
+    )
+
+    source_schemas = written.manifest["parser_contract"]["source_schemas"]
+    assert set(source_schemas) == {"pm25", "humidity", "temperature"}
+    assert source_schemas["pm25"] == {
+        "header": [
+            "stationID",
+            "phenomenonTime",
+            "PM2.5",
+            "StationLongitude",
+            "StationLatitude",
+        ],
+        "device_id": "stationID",
+        "value": "PM2.5",
+        "timestamp": "phenomenonTime",
+        "longitude": "StationLongitude",
+        "latitude": "StationLatitude",
+    }
+    assert "schemas" not in written.manifest["parser_contract"]
 
 
 def test_a_changed_parquet_member_is_rejected_instead_of_reparsed(tmp_path: Path) -> None:
@@ -450,7 +678,7 @@ def test_an_interrupted_publish_leaves_no_generation_or_staging(
     assert [path for path in interim_root.iterdir() if path.is_dir()] == []
 
 
-def test_the_shipped_parser_contract_names_only_the_three_measured_csv_headers() -> None:
+def test_the_shipped_parser_contract_names_only_the_reviewed_schema_variants() -> None:
     contract = load_micro_sensor_parser_contract()
 
     assert contract.timestamp_format == "%Y-%m-%d %H:%M:%S"
@@ -458,6 +686,93 @@ def test_the_shipped_parser_contract_names_only_the_three_measured_csv_headers()
         "pm25": "PM2.5",
         "humidity": "humidity",
         "temperature": "temperature",
+    }
+    assert {
+        variable: [
+            {
+                "header": schema.header,
+                "device_id": schema.device_id,
+                "value": schema.value,
+                "timestamp": schema.timestamp,
+                "longitude": schema.longitude,
+                "latitude": schema.latitude,
+            }
+            for schema in schemas
+        ]
+        for variable, schemas in contract.schemas.items()
+    } == {
+        "pm25": [
+            {
+                "header": ("deviceId", "PM2.5", "time", "lon", "lat"),
+                "device_id": "deviceId",
+                "value": "PM2.5",
+                "timestamp": "time",
+                "longitude": "lon",
+                "latitude": "lat",
+            },
+            {
+                "header": (
+                    "stationID",
+                    "phenomenonTime",
+                    "PM2.5",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "device_id": "stationID",
+                "value": "PM2.5",
+                "timestamp": "phenomenonTime",
+                "longitude": "StationLongitude",
+                "latitude": "StationLatitude",
+            },
+        ],
+        "humidity": [
+            {
+                "header": ("deviceId", "humidity", "time", "lon", "lat"),
+                "device_id": "deviceId",
+                "value": "humidity",
+                "timestamp": "time",
+                "longitude": "lon",
+                "latitude": "lat",
+            },
+            {
+                "header": (
+                    "stationID",
+                    "Relative humidity",
+                    "phenomenonTime",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "device_id": "stationID",
+                "value": "Relative humidity",
+                "timestamp": "phenomenonTime",
+                "longitude": "StationLongitude",
+                "latitude": "StationLatitude",
+            },
+        ],
+        "temperature": [
+            {
+                "header": ("deviceId", "temperature", "time", "lon", "lat"),
+                "device_id": "deviceId",
+                "value": "temperature",
+                "timestamp": "time",
+                "longitude": "lon",
+                "latitude": "lat",
+            },
+            {
+                "header": (
+                    "stationID",
+                    "phenomenonTime",
+                    "Temperature",
+                    "StationLongitude",
+                    "StationLatitude",
+                ),
+                "device_id": "stationID",
+                "value": "Temperature",
+                "timestamp": "phenomenonTime",
+                "longitude": "StationLongitude",
+                "latitude": "StationLatitude",
+            },
+        ],
     }
 
 
