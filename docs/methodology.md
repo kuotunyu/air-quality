@@ -595,6 +595,28 @@ bit-exact；獨立 NumPy 公式的 scores／deltas 最大差為 2.66e-15。
 長期 drift 或高解析度濃度場證據。要進入 calibration，仍需要更長期間與獨立 target；要進入三源融合，
 還需要另行定義衛星／地面／微感測器共同特徵、空間產物與完整的留出測站驗證。
 
+### 每月標準站 satellite context 是否增加未見測站的預測資訊
+
+`twair analyze micro-sensor-satellite-value` 延續相同 split，但只讓三個衛星來源都完整的列進入五個
+共同 cohort feature sets。generation
+`a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974` 量得
+269,952 筆共同 cohort device-hour、468 個裝置、58 個標準站與 25 日；1,186 筆排除列因標準站 MAIAC
+為 null 而留在獨立 ledger，沒有填補。25 個 held-date fold 與 10 個 air-zone-aware held-station fold
+共完成 140 次 fit、539,904 筆 prediction。獨立 verifier 串行重做全部 fit，prediction bit-exact；
+scores 與 deltas 的最大絕對差分別為 1.78e-15、2.66e-15。
+
+方法比較 `micro_satellite` − `micro_only`，以及 `micro_weather_satellite` − `micro_weather`，因此每一列
+只回答加入 satellite context 的增量。兩者在 held-date／device-hour 的 median ΔRMSE 分別為
+−0.951、−0.953 µg/m³，各有 25／25 fold 改善；但每月標準站 satellite context 在一月內固定，
+且同一標準站同時出現在 train 與 test，這只是次要的 station-descriptor 證據。
+
+held-station 是主要證據：兩個比較的 device-hour median ΔRMSE 分別是
++0.320 µg/m³（3／10 fold 改善）與 +0.127 µg/m³（3／10 fold 改善）；reference-station-hour 則是
++0.488 µg/m³（3／10）與 +0.221 µg/m³（4／10）。正值表示加入衛星 context 後 RMSE 更高，所以這批
+一月資料沒有顯示穩定的未見測站增量預測價值。這些值不是微型感測器位置的衛星觀測值、
+不是 sensor fusion，也不是 validated calibration、因果／來源歸因、跨季節、drift、future transfer
+或高解析度濃度場證據。
+
 ---
 
 ## 結論

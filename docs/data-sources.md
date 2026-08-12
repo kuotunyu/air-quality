@@ -110,7 +110,7 @@ register 永遠優先，歷史資料不覆蓋同名現行紀錄。
 | Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源與多年度／留出測站 robustness 已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
-| 智慧城鄉微型感測器 | 高密度低成本 PM2.5 觀測候選來源 | ✅ 2025-01 來源、觀測、readiness 與 grouped predictive benchmark 已完成；validated calibration 與融合未交付 |
+| 智慧城鄉微型感測器 | 高密度低成本 PM2.5 觀測候選來源 | ✅ 2025-01 來源、觀測、readiness、grouped predictive benchmark 與 reference-station satellite-context predictive-value limit 已完成；validated calibration 與融合未交付 |
 
 ### 2026-08-12 智慧城鄉微型感測器來源與一月 predictive benchmark
 
@@ -159,6 +159,33 @@ raw micro；加入 weather 在 held-date 仍有增益，但在 held-station 相�
 不使用衛星特徵，也不支持全年／季節穩定性、長期 drift、因果或高解析度濃度場。低成本感測器仍不能
 視為標準監測站的等價替代；validated calibration 需要更長期間與獨立 target，融合場則需要另一套
 留出測站驗證。
+
+#### 每月標準站 satellite context 的增量預測測試
+
+`twair analyze micro-sensor-satellite-value` 把同一個 readiness generation 的 `maiac_aod`、
+`s5p_no2`、`s5p_so2` 加到一月 benchmark，但這三個值是每月標準站 satellite context，
+不是微型感測器位置的衛星觀測值。immutable generation
+`a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974` 使用三個來源都完整的
+269,952 筆共同 cohort device-hour，涵蓋 468 個裝置、58 個標準站與 25 日；因富貴角、恆春的
+MAIAC 為 null，另有 1,186 筆排除列保留在 `exclusions.parquet`，沒有填補。
+
+同一共同 cohort 在 25 個 held-date fold 與 10 個 air-zone-aware held-station fold 各測一次，
+共完成 140 次 fit、539,904 筆 prediction。獨立 verifier 不呼叫正式分析的 scoring／summary functions，
+逐 fold 串行重做 140 次 fit；所有 prediction bit-exact，scores 與 deltas 的最大絕對差分別為
+1.78e-15、2.66e-15，五個 input 與八個 output SHA-256 在重算前後均未改變。
+
+| Holdout／尺度 | micro+satellite − micro-only：median ΔRMSE（改善 fold） | micro+weather+satellite − micro+weather：median ΔRMSE（改善 fold） |
+|---|---:|---:|
+| held-date／device-hour | −0.951 µg/m³（25／25） | −0.953 µg/m³（25／25） |
+| held-date／reference-station-hour | −1.259 µg/m³（25／25） | −1.276 µg/m³（25／25） |
+| held-station／device-hour | **+0.320 µg/m³（3／10 fold 改善）** | **+0.127 µg/m³（3／10 fold 改善）** |
+| held-station／reference-station-hour | +0.488 µg/m³（3／10） | +0.221 µg/m³（4／10） |
+
+負值表示加入 satellite context 後 RMSE 較低，正值表示較高。held-station 是主要證據：在未見標準站
+上，兩個最直接的 satellite 增量比較其中位數都變差，而且只有 3／10 個 device-hour fold 改善。
+held-date 的改善是次要的 station-descriptor 證據，因為一月內每個標準站的 satellite context 固定，
+且相同標準站同時出現在 train 與 test。結果沒有支持穩定的未見測站增量預測價值；這不是 sensor fusion、
+validated calibration、因果／來源歸因、跨季節或未來 transfer，也不是高解析度濃度場。
 
 ### 2026-08-11 ERA5 2025 來源取得邊界
 

@@ -273,3 +273,41 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_from_calibrati
     assert "觀測 ZIP 尚未下載" not in " ".join(
         (zh_prose, en_prose, plan_prose, sources_prose, methodology_prose)
     )
+
+
+def test_public_docs_publish_the_verified_satellite_context_limit_without_calling_it_fusion() -> (
+    None
+):
+    zh, en = _readmes()
+    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
+    sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+    methodology = (REPO_ROOT / "docs" / "methodology.md").read_text(encoding="utf-8")
+    zh_prose = " ".join(zh.split())
+    en_prose = " ".join(en.split())
+    detailed = tuple(" ".join(text.split()) for text in (plan, sources, methodology))
+
+    assert "一月 reference-station satellite-context predictive-value limit 已交付" in zh_prose
+    assert (
+        "January 2025 reference-station satellite-context predictive-value limit delivered"
+        in en_prose
+    )
+    assert "validated calibration 與融合仍延後" in zh_prose
+    assert "validated calibration and fusion remain deferred" in en_prose
+
+    for text in detailed:
+        assert "twair analyze micro-sensor-satellite-value" in text
+        assert "a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974" in text
+        assert "269,952 筆共同 cohort device-hour" in text
+        assert "1,186 筆排除列" in text
+        assert "468 個裝置" in text
+        assert "58 個標準站" in text
+        assert "25 個 held-date fold" in text
+        assert "10 個 air-zone-aware held-station fold" in text
+        assert "140 次 fit" in text
+        assert "539,904 筆 prediction" in text
+        assert "+0.320 µg/m³（3／10 fold 改善）" in text
+        assert "+0.127 µg/m³（3／10 fold 改善）" in text
+        assert "每月標準站 satellite context" in text
+        assert "不是微型感測器位置的衛星觀測值" in text
+        assert "不是 sensor fusion" in text
+        assert "held-station 是主要證據" in text

@@ -237,7 +237,7 @@ the relevant public [technical docs](docs/).
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
 | **Phase 5** | M6 spatial structure and M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution) | ✅ Bounded delivery; HYSPLIT and a 1 km field deferred |
-| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered, while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
+| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered, while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Closeout: HF Dataset and an external-reader trial remain; PyPI is optional |
 
