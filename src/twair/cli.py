@@ -1216,6 +1216,31 @@ def analyze_micro_sensor_benchmark() -> None:
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-satellite-value")
+def analyze_micro_sensor_satellite_value() -> None:
+    """Test reference-station monthly satellite context on held-out groups."""
+    from twair.analysis.micro_sensor_satellite_value import (
+        run_micro_sensor_satellite_value,
+        write_micro_sensor_satellite_value_result,
+    )
+
+    result = run_micro_sensor_satellite_value()
+    written = write_micro_sensor_satellite_value_result(result)
+
+    summary = result.summary
+    console.print(
+        "January satellite-context predictive benchmark: "
+        f"{int(summary['cohort_rows']):,} common-cohort device-hours; "
+        f"{int(summary['excluded_rows']):,} explicitly excluded rows"
+    )
+    console.print(
+        "Held-station evidence is primary; satellite values are reference-station monthly "
+        "context, not calibration, fusion, or a micro-sensor-location satellite value."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("era5-robustness")
 def analyze_era5_robustness(
     generation: str = typer.Option(

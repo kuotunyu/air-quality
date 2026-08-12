@@ -117,6 +117,12 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "micro_sensor_satellite_value",
+        "twair analyze micro-sensor-satellite-value",
+        "held-station reference-station monthly satellite value; not fusion",
+        feeds_web=False,
+    ),
+    Module(
         "m8_era5_value",
         "twair analyze era5-value",
         "held-out ERA5 weather value beyond station measurements",

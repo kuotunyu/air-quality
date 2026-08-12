@@ -135,6 +135,16 @@ class TestTheReproduceTableCannotRot:
         assert "held-station" in module.what
         assert "not validated calibration or fusion" in module.what
 
+    def test_micro_sensor_satellite_value_has_an_exact_non_web_return_command(self) -> None:
+        module = next(item for item in MODULES if item.directory == "micro_sensor_satellite_value")
+
+        assert module.reproduce == "twair analyze micro-sensor-satellite-value"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "held-station" in module.what
+        assert "reference-station monthly" in module.what
+        assert "not fusion" in module.what
+
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""
         status = Status(
