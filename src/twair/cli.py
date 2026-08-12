@@ -1191,6 +1191,31 @@ def analyze_micro_sensor_readiness() -> None:
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-benchmark")
+def analyze_micro_sensor_benchmark() -> None:
+    """Test January micro-sensor prediction on held dates and stations."""
+    from twair.analysis.micro_sensor_calibration_benchmark import (
+        run_micro_sensor_calibration_benchmark,
+        write_micro_sensor_calibration_benchmark_result,
+    )
+
+    result = run_micro_sensor_calibration_benchmark()
+    written = write_micro_sensor_calibration_benchmark_result(result)
+
+    summary = result.summary
+    console.print(
+        "January micro-sensor predictive benchmark: "
+        f"{int(summary['eligible_rows']):,} eligible device-hours; "
+        f"{int(summary['folds'])} held-date and held-station folds"
+    )
+    console.print(
+        "January held-out prediction only; not validated calibration or sensor fusion, "
+        "and satellite context is not a model feature."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("era5-robustness")
 def analyze_era5_robustness(
     generation: str = typer.Option(

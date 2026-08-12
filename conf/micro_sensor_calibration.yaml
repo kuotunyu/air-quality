@@ -1,0 +1,15 @@
+"analysis":
+  "readiness_generation_sha256": "1f76ea400995080027701f80c311438fab3e6d823f5665681b9ca79a4aad81fd"
+  "date_folds": 25
+  "station_folds": 10
+  "feature_sets":
+    "raw_micro": []
+    "micro_only": ["pm25_mean"]
+    "micro_weather": ["pm25_mean", "humidity_mean", "temperature_mean"]
+  "model":
+    "n_estimators": 200
+    "learning_rate": 0.05
+    "num_leaves": 31
+    "min_child_samples": 10
+    "n_jobs": 1
+    "seed": 20260812
