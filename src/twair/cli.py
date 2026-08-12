@@ -1191,6 +1191,30 @@ def analyze_micro_sensor_readiness() -> None:
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-annual-readiness")
+def analyze_micro_sensor_annual_readiness() -> None:
+    """Measure the reviewed 2025 cohort without fitting or fusing values."""
+    from twair.analysis.micro_sensor_annual_readiness import (
+        run_and_write_annual_micro_sensor_readiness,
+    )
+
+    result, written = run_and_write_annual_micro_sensor_readiness()
+
+    calendar = result.summary["calendar"]
+    console.print(
+        "Annual micro-sensor cohort readiness: "
+        f"{int(calendar['complete_dates'])} complete date(s); "
+        f"{int(calendar['catalogue_absent_dates'])} catalogue-absent date(s); "
+        f"{int(result.summary['devices']):,} measured device(s)"
+    )
+    console.print(
+        "Readiness evidence only; not calibration, fusion, satellite acquisition, "
+        "or a high-resolution PM2.5 field."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("micro-sensor-benchmark")
 def analyze_micro_sensor_benchmark() -> None:
     """Test January micro-sensor prediction on held dates and stations."""

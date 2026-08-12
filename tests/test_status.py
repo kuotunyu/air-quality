@@ -123,6 +123,14 @@ class TestTheReproduceTableCannotRot:
         assert module.feeds_web is False
         assert "not calibration or fusion" in module.what
 
+    def test_annual_micro_sensor_readiness_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(item for item in MODULES if item.directory == "micro_sensor_annual_readiness")
+
+        assert module.reproduce == "twair analyze micro-sensor-annual-readiness"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "not calibration or fusion" in module.what
+
     def test_micro_sensor_benchmark_has_a_reproducible_non_web_status_entry(self) -> None:
         module = next(
             item for item in MODULES if item.directory == "micro_sensor_calibration_benchmark"
