@@ -1885,6 +1885,7 @@ def export_web(
     story: bool = typer.Option(True, "--story/--no-story", help="Also build chapter payloads."),
 ) -> None:
     """Export meta, L0 (station-month JSON) and L1 (station-day Parquet)."""
+    from twair.provenance import git_state
     from twair.viz.export import export_all, write_manifest
     from twair.viz.story import export_story
 
@@ -1897,7 +1898,8 @@ def export_web(
             "see docs/legal.md."
         )
 
-    results = export_all(levels=selected)
+    provenance = git_state()
+    results = export_all(levels=selected, provenance=provenance)
     for name, result in results.items():
         console.print(f"{name}: [green]{result.summary()}[/green]")
 
@@ -1905,7 +1907,7 @@ def export_web(
         paths = export_story()
         total = sum(p.stat().st_size for p in paths)
         console.print(f"story: [green]{len(paths)} file(s), {total / 1e6:.1f} MB[/green]")
-        write_manifest()
+        write_manifest(provenance=provenance)
 
     from twair.viz.export import web_data_dir
 

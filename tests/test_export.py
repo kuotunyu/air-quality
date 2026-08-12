@@ -19,8 +19,10 @@ from typing import Any
 import polars as pl
 import pytest
 from scripts import check_web_export
+from typer.testing import CliRunner
 
-from twair.viz import export
+from twair import cli, provenance
+from twair.viz import export, story
 
 
 def _run_check(root: Path) -> int:
@@ -359,6 +361,37 @@ class TestManifest:
         manifest = json.loads(export.write_manifest(tmp_path).read_text(encoding="utf-8"))
 
         assert [entry["file"] for entry in manifest["files"]] == ["a.json"]
+
+
+class TestProvenanceSnapshot:
+    def test_the_cli_stamps_meta_and_the_final_manifest_with_the_pre_write_tree_state(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The export's own tracked writes must not make its input tree look dirty."""
+        _stub_meta_dependencies(monkeypatch)
+        monkeypatch.setattr(cli, "ensure_dirs", lambda: None)
+        monkeypatch.setattr(export, "web_data_dir", lambda: tmp_path)
+
+        snapshots = iter([("abc1234", False), ("abc1234", True), ("abc1234", True)])
+        monkeypatch.setattr(provenance, "git_state", lambda: next(snapshots))
+
+        def export_late_story() -> list[Path]:
+            return [export.write_json(tmp_path / "story" / "late.json", {"measured": True})]
+
+        monkeypatch.setattr(story, "export_story", export_late_story)
+
+        result = CliRunner().invoke(cli.app, ["export", "web", "--levels", ""])
+
+        assert result.exit_code == 0, result.output
+        meta = json.loads((tmp_path / "meta.json").read_text(encoding="utf-8"))
+        manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+        assert meta["git_sha"] == manifest["git_sha"] == "abc1234"
+        assert meta["git_dirty"] is False
+        assert manifest["git_dirty"] is False
+        assert {entry["file"] for entry in manifest["files"]} == {
+            "meta.json",
+            "story/late.json",
+        }
 
 
 class TestPublicationBoundary:
