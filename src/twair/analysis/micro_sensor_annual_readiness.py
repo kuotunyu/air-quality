@@ -826,8 +826,10 @@ def aggregate_micro_sensor_day(
 def _validate_device_day_frame(frame: pl.DataFrame, *, day: date | None = None) -> None:
     if frame.schema != dict(ANNUAL_DEVICE_DAY_SCHEMA):
         raise RuntimeError("annual micro-sensor device-day schema changed")
-    if day is not None and (
-        frame["date"].null_count() or set(frame["date"].unique().to_list()) != {day}
+    if (
+        day is not None
+        and frame.height
+        and (frame["date"].null_count() or set(frame["date"].unique().to_list()) != {day})
     ):
         raise RuntimeError("annual micro-sensor device-day date changed")
     if frame["date"].null_count() or frame["device_id"].null_count():

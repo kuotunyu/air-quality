@@ -521,6 +521,32 @@ def _device_day_frame(rows: list[dict[str, object]]) -> pl.DataFrame:
     return pl.DataFrame(rows, schema=dict(ANNUAL_DEVICE_DAY_SCHEMA))
 
 
+def test_a_complete_day_with_no_observed_devices_persists_and_reloads_an_empty_checkpoint(
+    tmp_path: Path,
+) -> None:
+    frame = _device_day_frame([])
+
+    written = write_annual_device_day_checkpoint(
+        frame,
+        day=date(2025, 10, 31),
+        parsed_generation_sha256="a" * 64,
+        input_files=(),
+        panel_sha256="b" * 64,
+        checkpoint_root=tmp_path,
+    )
+    loaded = load_annual_device_day_checkpoint(
+        day=date(2025, 10, 31),
+        parsed_generation_sha256="a" * 64,
+        input_files=(),
+        panel_sha256="b" * 64,
+        checkpoint_root=tmp_path,
+    )
+
+    assert written == tmp_path / "2025-10-31" / "device_days.parquet"
+    assert loaded.equals(frame)
+    assert loaded.height == 0
+
+
 def test_daily_checkpoints_are_immutable_reusable_and_reject_tampering(tmp_path: Path) -> None:
     frame = _device_day_frame(
         [
