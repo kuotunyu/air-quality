@@ -561,6 +561,42 @@ $(1,0,1)(1,0,1)_{24}$、每 72 小時一個預測原點。**18/18 次擬合全�
 
 ---
 
+## 微型感測器 grouped predictive benchmark
+
+2025-01-01 至 2025-01-25 的 readiness panel 先把每個微型感測器小時配到 primary-radius 內最近的
+標準站小時。282,581 筆 primary-radius device-hour（1 km）中，只有 PM2.5、溫度、相對濕度、標準站 PM2.5、
+距離與 coverage 都通過既定契約的 271,138 筆進入模型；它們涵蓋 470 個裝置、60 個標準站。
+排除列沒有刪除或補值，而是與原因一起保留在 readiness generation。
+
+評估使用兩種互補的 grouped split：
+
+1. **25 個 held-date fold**：每次完整留出一天，避免同一天的裝置小時同時出現在 train 與 test。
+2. **10 個 air-zone-aware held-station fold**：同一標準站配到的所有裝置小時一起留出，測量未見地點的
+   spatial transfer；分層只平衡官方空品區，不把 test station 的 target 洩漏給模型。
+
+每個 fold 比較三個 predictor：直接使用微型感測器 PM2.5 的 `raw_micro`、只以微型感測器 PM2.5 fit 的
+`micro_only` LightGBM，以及加入溫度／相對濕度的 `micro_weather` LightGBM。模型固定 seed、
+`n_jobs=1`，且每個 fold 只在 train partition fit；不使用衛星特徵。device-hour 保留裝置為觀測單位，
+reference-station-hour 則先在同一標準站小時平均各裝置 prediction，再計算 RMSE／MAE／R²／bias。
+
+| Holdout／尺度 | micro-only − raw：median ΔRMSE | micro+weather − raw：median ΔRMSE | micro+weather − micro-only：median ΔRMSE |
+|---|---:|---:|---:|
+| held-date／device-hour | −0.497 µg/m³ | **−0.618 µg/m³** | −0.120 µg/m³ |
+| held-date／reference-station-hour | −0.577 µg/m³ | −0.480 µg/m³ | −0.039 µg/m³ |
+| held-station／device-hour | −0.582 µg/m³ | **−0.649 µg/m³** | +0.022 µg/m³ |
+| held-station／reference-station-hour | −0.295 µg/m³ | −0.091 µg/m³ | +0.205 µg/m³ |
+
+表中負值表示 candidate 的 RMSE 較低。結果支持 `micro_only` 相對 raw micro 在這 25 日內的 grouped
+predictive improvement；weather 在 held-date 有增益，但沒有改善 held-station 相對 `micro_only` 的
+median RMSE。獨立 verifier 從 readiness panel 串行重做 70 次 fit，35 個 fold 與 542,276 筆 prediction
+bit-exact；獨立 NumPy 公式的 scores／deltas 最大差為 2.66e-15。
+
+這不是 validated calibration、不是 sensor fusion、不使用衛星特徵，也不是因果、全年／跨季節穩定性、
+長期 drift 或高解析度濃度場證據。要進入 calibration，仍需要更長期間與獨立 target；要進入三源融合，
+還需要另行定義衛星／地面／微感測器共同特徵、空間產物與完整的留出測站驗證。
+
+---
+
 ## 結論
 
 這份重製的成果展示，我們建立的不僅僅是「寫出更漂亮的程式碼」，而是藉由資料工程與嚴謹物理原理：

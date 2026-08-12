@@ -110,13 +110,13 @@ register 永遠優先，歷史資料不覆蓋同名現行紀錄。
 | Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源與多年度／留出測站 robustness 已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
-| 智慧城鄉微型感測器 | 高密度低成本 PM2.5 觀測候選來源 | ✅ 官方站點清冊與 2025-01 archive catalogue pilot 已完成；觀測值、校正與融合未交付 |
+| 智慧城鄉微型感測器 | 高密度低成本 PM2.5 觀測候選來源 | ✅ 2025-01 來源、觀測、readiness 與 grouped predictive benchmark 已完成；validated calibration 與融合未交付 |
 
-### 2026-08-12 智慧城鄉微型感測器來源目錄 pilot
+### 2026-08-12 智慧城鄉微型感測器來源與一月 predictive benchmark
 
 來源為環境部「[民生公共物聯網－空氣品質](https://ci.taiwan.gov.tw/dsp/Views/dataset/air.aspx)」的
 站點清冊，以及其「[歷史資料](https://history.colife.org.tw/)」瀏覽器公開的 archive catalogue。
-下列指令只擷取清冊與目錄 metadata，不下載日別觀測 ZIP：
+下列指令先擷取清冊與目錄 metadata；這一步本身不下載日別觀測 ZIP：
 
 ```bash
 uv run twair ingest micro-sensor-catalog --month 202501 --confirm-network
@@ -129,11 +129,36 @@ uv run twair ingest micro-sensor-catalog --month 202501 --confirm-network
 75／93 個預期日別變數檔案存在，18 個缺席；三個變數都只有 1 月 1–25 日出現在來源目錄，
 1 月 26–31 日缺席。
 
-`archive_present` 只表示官方歷史目錄列出該 ZIP，不能解讀為感測器回報完整率；本 pilot
-尚未下載任何觀測 ZIP，也沒有讀取 ZIP 內的測值。低成本感測器會受濕度、位置與儀器狀態影響，
-不能視為標準監測站的等價替代。下一個 gate 是先以容量上限約束單日 PM2.5／溫度／相對濕度下載，
-保留原始缺值並量測和標準站的時空重疊；在獨立 calibration target 與留出測站驗證完成前，
-不報告校正成效或融合濃度場。
+`archive_present` 只表示官方歷史目錄列出該 ZIP，不能解讀為感測器回報完整率。後續以來源容量上限
+逐日取得並解析 2025-01-01 至 2025-01-25 的 PM2.5、溫度與相對濕度；1 月 26–31 日仍是來源目錄中
+缺席的日期，不補值、不向前填補。`twair analyze micro-sensor-readiness` 產生 immutable generation
+`1f76ea400995080027701f80c311438fab3e6d823f5665681b9ca79a4aad81fd`：共量得
+282,581 筆 primary-radius device-hour（1 km），其中 271,138 筆同時通過微型感測器三變數、標準站 PM2.5、
+距離與 coverage 契約，可進 predictive benchmark；這些列涵蓋 470 個裝置、60 個標準站與 25 日。
+其餘列仍留在輸出並以明確排除原因報告，不刪除也不插補。
+
+`twair analyze micro-sensor-benchmark` 以同一批 271,138 筆列建立 25 個 held-date fold 與
+10 個 air-zone-aware held-station fold；每個 fold 的模型只看 train partition。它比較 raw micro、
+只用微型感測器 PM2.5 的 LightGBM，以及加入溫度／相對濕度的 LightGBM，並同時在 device-hour 與
+reference-station-hour 尺度評分。輸出 generation 為
+`25cc89fdb57d1e64754edd5c3a7bbb140cad88e5e178137875dafae2103f0cc6`；35 個 fold 產生
+542,276 筆 held-out prediction。獨立 verifier 從 readiness panel 串行重做 70 次 fit，35 個 fold 與
+542,276 筆 prediction 均 bit-exact；獨立公式重算的 210 筆 scores 與 210 筆 deltas 最大浮點差為
+2.66e-15。
+
+| Holdout／評分尺度 | micro-only − raw：median ΔRMSE | micro+weather − raw：median ΔRMSE | micro+weather − micro-only：median ΔRMSE |
+|---|---:|---:|---:|
+| held-date／device-hour | −0.497 µg/m³ | **−0.618 µg/m³** | −0.120 µg/m³ |
+| held-date／reference-station-hour | −0.577 µg/m³ | −0.480 µg/m³ | −0.039 µg/m³ |
+| held-station／device-hour | −0.582 µg/m³ | **−0.649 µg/m³** | +0.022 µg/m³ |
+| held-station／reference-station-hour | −0.295 µg/m³ | −0.091 µg/m³ | +0.205 µg/m³ |
+
+負值表示表中左側 candidate 的 RMSE 較低。micro-only 在兩種 holdout 的 device-hour 中位數都優於
+raw micro；加入 weather 在 held-date 仍有增益，但在 held-station 相對 micro-only 的中位數沒有改善。
+因此這是 2025 年 1 月的 grouped predictive benchmark：不是 validated calibration、不是 sensor fusion、
+不使用衛星特徵，也不支持全年／季節穩定性、長期 drift、因果或高解析度濃度場。低成本感測器仍不能
+視為標準監測站的等價替代；validated calibration 需要更長期間與獨立 target，融合場則需要另一套
+留出測站驗證。
 
 ### 2026-08-11 ERA5 2025 來源取得邊界
 
