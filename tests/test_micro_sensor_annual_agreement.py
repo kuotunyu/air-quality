@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import asdict, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -1810,3 +1810,850 @@ def test_eager_and_path_backed_members_both_reject_a_wrong_schema(
             reviewed_geography=wrong_geo,
             config=_fixture_config(agreement, wrong_sha),
         )
+
+
+def _annual_agreement_panel_fixture(
+    tmp_path: Path,
+) -> tuple[Any, tuple[Any, ...], Any]:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    config = agreement.load_annual_agreement_config()
+    reviewed_panel = agreement.load_annual_micro_sensor_panel_config()
+    catalogs = dict(reviewed_panel.catalog_generations)
+    parsed_generations = {
+        record.date: record.generation_sha256 for record in reviewed_panel.parsed_generations
+    }
+    candidates = _cohort_fixture(devices=124, stations=13).select(
+        "device_id", "station_name", "distance_km"
+    )
+    dates = [date(2025, 1, 1) + timedelta(days=index) for index in range(365)]
+    parsed = sorted(parsed_generations)
+    calendar = pl.DataFrame(
+        {
+            "date": dates,
+            "state": [
+                "complete" if day in parsed_generations else "catalogue_absent" for day in dates
+            ],
+            "catalog_generation_sha256": [catalogs[day.strftime("%Y%m")] for day in dates],
+            "parsed_generation_sha256": [parsed_generations.get(day) for day in dates],
+        },
+        schema=dict(ANNUAL_CALENDAR_SCHEMA),
+    )
+    annual_dir = tmp_path / ANNUAL_GENERATION
+    annual_dir.mkdir(parents=True)
+    annual_path = annual_dir / "device_days.parquet"
+    pl.DataFrame(schema=dict(ANNUAL_DEVICE_DAY_SCHEMA)).write_parquet(annual_path)
+    pinned = _pinned_annual_member(agreement, annual_path)
+    annual_input = agreement.AnnualReadinessInput(
+        generation_dir=annual_dir.resolve(),
+        manifest={
+            "generation_sha256": ANNUAL_GENERATION,
+            "inputs": {
+                "catalog_generations": catalogs,
+                "parsed_generations": [
+                    {
+                        "date": day.isoformat(),
+                        "generation_sha256": parsed_generations[day],
+                        "input_files": [
+                            {
+                                "path": f"parsed/{day.isoformat()}/{variable}.parquet",
+                                "bytes": 1,
+                                "sha256": digest,
+                            }
+                            for variable, digest in (
+                                ("pm25", "1" * 64),
+                                ("humidity", "2" * 64),
+                                ("temperature", "3" * 64),
+                            )
+                        ],
+                    }
+                    for index, day in enumerate(parsed)
+                ],
+                "ground_files": [
+                    {
+                        "path": f"processed/year=2025/month={month:02d}/part-0.parquet",
+                        "bytes": 1,
+                        "sha256": "d" * 64,
+                    }
+                    for month in range(1, 13)
+                ],
+            },
+        },
+        summary={},
+        calendar_coverage=calendar,
+        device_days=pinned,
+        device_cohorts=_cohort_fixture(devices=124, stations=13),
+        cohort_thresholds=pl.DataFrame(schema=dict(ANNUAL_COHORT_THRESHOLD_SCHEMA)),
+        exclusions=pl.DataFrame(schema=dict(ANNUAL_EXCLUSION_SCHEMA)),
+        candidate_cohorts=tuple(
+            agreement.AnnualDistanceCohort(radius_km=radius, candidates=candidates)
+            for radius in config.distance_bands_km
+        ),
+    )
+    checkpoints: list[Any] = []
+    checkpoint_root = tmp_path / "checkpoints"
+    candidate_identity = _canonical_hash(candidates.sort("device_id").to_dicts())
+    checkpoint_config = json.loads(json.dumps(asdict(config), allow_nan=False))
+    for day in parsed:
+        directory = checkpoint_root / day.isoformat()
+        directory.mkdir(parents=True)
+        values: dict[str, list[object]] = {}
+        for name, dtype in agreement.AGREEMENT_DAY_SCHEMA:
+            if name == "date":
+                values[name] = [day] * candidates.height
+            elif name == "device_id":
+                values[name] = candidates["device_id"].to_list()
+            elif name == "station_name":
+                values[name] = candidates["station_name"].to_list()
+            elif name == "distance_km":
+                values[name] = candidates["distance_km"].to_list()
+            elif name == "spatial_state":
+                values[name] = ["missing_pm25_coordinate"] * candidates.height
+            elif name == "reason":
+                values[name] = ["device_day_absent"] * candidates.height
+            elif dtype == pl.Int64:
+                values[name] = [0] * candidates.height
+            else:
+                values[name] = [None] * candidates.height
+        rows = pl.DataFrame(values, schema=dict(agreement.AGREEMENT_DAY_SCHEMA))
+        member_path = directory / "paired_day.parquet"
+        rows.write_parquet(member_path)
+        inputs = {
+            "raw_generation_sha256": catalogs[day.strftime("%Y%m")],
+            "parsed_generation_sha256": parsed_generations[day],
+            "source_members": {
+                variable: {
+                    "path": f"{variable}.parquet",
+                    "bytes": 1,
+                    "sha256": digest,
+                }
+                for variable, digest in (
+                    ("pm25", "1" * 64),
+                    ("humidity", "2" * 64),
+                    ("temperature", "3" * 64),
+                )
+            },
+            "ground_member": {
+                "path": "part-0.parquet",
+                "bytes": 1,
+                "sha256": "d" * 64,
+            },
+            "annual_generation_sha256": ANNUAL_GENERATION,
+            "annual_device_days": {
+                "path": annual_path.name,
+                "bytes": annual_path.stat().st_size,
+                "sha256": sha256_file(annual_path),
+            },
+            "candidate_identity_sha256": candidate_identity,
+            "catalogue_state": "present",
+            "annual_selected_date_rows": 0,
+        }
+        summary = {"device_day_absent": candidates.height}
+        manifest = {
+            "schema_version": 1,
+            "kind": "annual_reference_station_agreement_day",
+            "date": day.isoformat(),
+            "inputs": inputs,
+            "config": checkpoint_config,
+            "rows": candidates.height,
+            "schema": {name: str(dtype) for name, dtype in agreement.AGREEMENT_DAY_SCHEMA},
+            "member": {
+                "path": member_path.name,
+                "bytes": member_path.stat().st_size,
+                "sha256": sha256_file(member_path),
+            },
+            "summary": summary,
+            "summary_sha256": _canonical_hash(summary),
+            "complete": True,
+        }
+        manifest_path = directory / "manifest.json"
+        _write_json(manifest_path, manifest)
+        checkpoints.append(
+            agreement.AgreementDayCheckpoint(
+                directory=directory,
+                member_path=member_path,
+                manifest_path=manifest_path,
+                rows=rows,
+                manifest=manifest,
+            )
+        )
+    return annual_input, tuple(checkpoints), config
+
+
+def test_the_panel_contains_every_primary_device_on_all_365_dates_without_repairing_absence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+
+    panel = agreement.prepare_annual_agreement_panel(
+        annual_input,
+        checkpoints,
+        config,
+    )
+
+    primary = panel.paired_days.filter(pl.col("radius_km") == 0.5)
+    absent = primary.filter(pl.col("calendar_state") == "catalogue_absent")
+    assert primary.height == 365 * 124
+    assert primary["date"].n_unique() == 365
+    assert primary["device_id"].n_unique() == 124
+    assert absent.height == 43 * 124
+    assert absent["micro_pm25_mean"].null_count() == absent.height
+    assert absent["reason"].unique().to_list() == ["catalogue_absent"]
+
+
+def test_a_physically_reordered_checkpoint_key_is_rejected_even_when_its_hash_is_rebound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    first = checkpoints[0]
+    pl.read_parquet(first.member_path).reverse().write_parquet(first.member_path)
+    changed_manifest = deepcopy(first.manifest)
+    changed_manifest["member"] = {
+        "path": first.member_path.name,
+        "bytes": first.member_path.stat().st_size,
+        "sha256": sha256_file(first.member_path),
+    }
+    _write_json(first.manifest_path, changed_manifest)
+    changed = replace(first, manifest=changed_manifest)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+
+    with pytest.raises(RuntimeError, match="physical checkpoint key order changed"):
+        agreement.prepare_annual_agreement_panel(
+            annual_input,
+            (changed, *checkpoints[1:]),
+            config,
+        )
+
+
+def test_the_annual_reducer_revalidates_the_task_2_null_contract_inside_duckdb(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    first = checkpoints[0]
+    rows = pl.read_parquet(first.member_path).with_columns(pl.lit("eligible").alias("reason"))
+    rows.write_parquet(first.member_path)
+    changed_manifest = deepcopy(first.manifest)
+    changed_manifest["member"] = {
+        "path": first.member_path.name,
+        "bytes": first.member_path.stat().st_size,
+        "sha256": sha256_file(first.member_path),
+    }
+    changed_manifest["summary"] = {"eligible": rows.height}
+    changed_manifest["summary_sha256"] = _canonical_hash(changed_manifest["summary"])
+    _write_json(first.manifest_path, changed_manifest)
+    changed = replace(first, manifest=changed_manifest)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+
+    with pytest.raises(RuntimeError, match="checkpoint eligible value is null"):
+        agreement.prepare_annual_agreement_panel(
+            annual_input,
+            (changed, *checkpoints[1:]),
+            config,
+        )
+
+
+@pytest.mark.parametrize("mutation", ["raw_generation", "annual_device_days"])
+def test_rebound_task_2_evidence_must_still_match_the_trusted_task_1_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    first = checkpoints[0]
+    changed_manifest = deepcopy(first.manifest)
+    if mutation == "raw_generation":
+        changed_manifest["inputs"]["raw_generation_sha256"] = "e" * 64
+    else:
+        changed_manifest["inputs"]["annual_device_days"] = {
+            "path": "device_days.parquet",
+            "bytes": 1,
+            "sha256": "e" * 64,
+        }
+    _write_json(first.manifest_path, changed_manifest)
+    changed = replace(first, manifest=changed_manifest)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+
+    with pytest.raises(RuntimeError, match="does not match reviewed annual input"):
+        agreement.prepare_annual_agreement_panel(
+            annual_input,
+            (changed, *checkpoints[1:]),
+            config,
+        )
+
+
+def test_the_panel_writer_persists_four_ordered_members_and_reloads_the_final_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+
+    published = agreement.write_annual_agreement_panel(panel, destination=destination)
+    loaded = agreement.load_annual_agreement_panel(destination)
+
+    assert published.manifest == loaded.manifest
+    assert published.manifest is not panel.manifest
+    assert published.manifest["complete"] is True
+    assert len(published.manifest["generation_sha256"]) == 64
+    assert {path.name for path in destination.iterdir()} == {
+        "calendar.parquet",
+        "paired_days.parquet",
+        "exclusions.parquet",
+        "cohort_coverage.parquet",
+        "summary.json",
+        "manifest.json",
+    }
+    assert loaded.paired_days.select("radius_km", "date", "device_id").rows() == sorted(
+        loaded.paired_days.select("radius_km", "date", "device_id").rows()
+    )
+
+
+def test_the_annual_reduction_scans_checkpoint_paths_without_polars_collecting_them(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    monkeypatch.setattr(
+        agreement.pl,
+        "read_parquet",
+        lambda *_args, **_kwargs: pytest.fail("annual reduction used pl.read_parquet"),
+    )
+    monkeypatch.setattr(
+        agreement.pl,
+        "concat",
+        lambda *_args, **_kwargs: pytest.fail("annual reduction used pl.concat"),
+    )
+
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+
+    assert panel.paired_days.height == 365 * 124
+
+
+@pytest.mark.parametrize("mutation", ["missing", "reordered"])
+def test_missing_or_reordered_checkpoint_evidence_cannot_define_the_annual_panel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    changed = (
+        checkpoints[1:]
+        if mutation == "missing"
+        else (checkpoints[1], checkpoints[0], *checkpoints[2:])
+    )
+
+    with pytest.raises(RuntimeError, match="ordered checkpoint inventory changed"):
+        agreement.prepare_annual_agreement_panel(annual_input, tuple(changed), config)
+
+
+def test_a_calendar_with_the_right_dates_but_the_wrong_2025_arithmetic_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    calendar = (
+        annual_input.calendar_coverage.with_row_index()
+        .with_columns(
+            pl.when(pl.col("index") == 364)
+            .then(pl.lit(date(2026, 1, 1)))
+            .otherwise(pl.col("date"))
+            .alias("date")
+        )
+        .drop("index")
+    )
+    changed = replace(annual_input, calendar_coverage=calendar)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: changed)
+
+    with pytest.raises(RuntimeError, match="calendar arithmetic changed"):
+        agreement.prepare_annual_agreement_panel(changed, checkpoints, config)
+
+
+def test_published_member_mutation_is_rejected_even_when_row_count_and_schema_stay_equal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    member = destination / "paired_days.parquet"
+    pl.read_parquet(member).reverse().write_parquet(member)
+
+    with pytest.raises(RuntimeError, match="paired_days member changed"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def _rebind_agreement_panel_manifest(destination: Path) -> None:
+    manifest_path = destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for name in ("calendar", "paired_days", "exclusions", "cohort_coverage"):
+        member = destination / f"{name}.parquet"
+        manifest["members"][name] = {
+            "path": member.name,
+            "bytes": member.stat().st_size,
+            "sha256": sha256_file(member),
+        }
+    summary_path = destination / "summary.json"
+    manifest["summary_file"] = {
+        "path": summary_path.name,
+        "bytes": summary_path.stat().st_size,
+        "sha256": sha256_file(summary_path),
+    }
+    identity = {
+        field: manifest[field]
+        for field in (
+            "schema_version",
+            "analysis",
+            "inputs",
+            "checkpoint_inventory",
+            "config",
+            "claim_boundary",
+            "output_rows",
+            "members",
+            "summary_file",
+            "summary_sha256",
+        )
+    }
+    manifest["generation_sha256"] = _canonical_hash(identity)
+    _write_json(manifest_path, manifest)
+
+
+@pytest.mark.parametrize("mutation", ["config", "summary", "calendar", "coverage"])
+def test_rebound_persisted_metadata_and_aggregates_are_not_accepted_as_a_new_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    manifest_path = destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "config":
+        manifest["config"]["threads"] = 999
+        _write_json(manifest_path, manifest)
+    elif mutation == "summary":
+        summary_path = destination / "summary.json"
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        summary["reason_counts"]["invented"] = 999
+        _write_json(summary_path, summary)
+        manifest["summary_sha256"] = _canonical_hash(summary)
+        _write_json(manifest_path, manifest)
+    elif mutation == "calendar":
+        member = destination / "calendar.parquet"
+        calendar = (
+            pl.read_parquet(member)
+            .with_row_index()
+            .with_columns(
+                pl.when(pl.col("index") == 0)
+                .then(pl.lit("e" * 64))
+                .otherwise(pl.col("catalog_generation_sha256"))
+                .alias("catalog_generation_sha256")
+            )
+            .drop("index")
+        )
+        calendar.write_parquet(member)
+    else:
+        member = destination / "cohort_coverage.parquet"
+        coverage = (
+            pl.read_parquet(member)
+            .with_row_index()
+            .with_columns(
+                pl.when(pl.col("index") == 0)
+                .then(pl.col("device_days") + 1)
+                .otherwise(pl.col("device_days"))
+                .alias("device_days")
+            )
+            .drop("index")
+        )
+        coverage.write_parquet(member)
+    _rebind_agreement_panel_manifest(destination)
+
+    with pytest.raises(RuntimeError, match="persisted semantics changed"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_coordinated_catalogue_calendar_and_checkpoint_rebinding_cannot_replace_task_1_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    calendar_path = destination / "calendar.parquet"
+    pl.read_parquet(calendar_path).with_columns(
+        pl.lit("e" * 64).alias("catalog_generation_sha256")
+    ).write_parquet(calendar_path)
+    manifest_path = destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["inputs"]["catalog_generations"] = dict.fromkeys(
+        manifest["inputs"]["catalog_generations"], "e" * 64
+    )
+    for evidence in manifest["checkpoint_inventory"]:
+        evidence["raw_generation_sha256"] = "e" * 64
+    _write_json(manifest_path, manifest)
+    _rebind_agreement_panel_manifest(destination)
+
+    with pytest.raises(RuntimeError, match="persisted semantics changed"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_coordinated_candidate_and_member_rebinding_cannot_replace_the_reviewed_primary_cohort(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    for name in ("paired_days", "exclusions"):
+        member = destination / f"{name}.parquet"
+        pl.read_parquet(member).with_columns(
+            pl.concat_str(pl.lit("rebound-"), pl.col("device_id")).alias("device_id")
+        ).write_parquet(member)
+    manifest_path = destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    rebound_candidates = (
+        pl.read_parquet(destination / "paired_days.parquet")
+        .select("device_id", "station_name", "distance_km")
+        .unique()
+        .sort("device_id")
+    )
+    manifest["inputs"]["candidate_identity_sha256"] = _canonical_hash(rebound_candidates.to_dicts())
+    _write_json(manifest_path, manifest)
+    _rebind_agreement_panel_manifest(destination)
+
+    with pytest.raises(RuntimeError, match="persisted semantics changed"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_a_checkpoint_directory_cannot_be_a_junction_to_an_outside_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("junction mutation is Windows-specific")
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    first = checkpoints[0]
+    outside = tmp_path / "outside-checkpoint"
+    first.directory.replace(outside)
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(first.directory), str(outside)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    changed = replace(
+        first,
+        manifest_path=first.directory / "manifest.json",
+        member_path=first.directory / "paired_day.parquet",
+    )
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+
+    with pytest.raises(RuntimeError, match="linked or outside checkpoint root"):
+        agreement.prepare_annual_agreement_panel(
+            annual_input,
+            (changed, *checkpoints[1:]),
+            config,
+        )
+
+
+def test_the_public_loader_rejects_a_generation_junction_to_an_outside_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("junction mutation is Windows-specific")
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    outside = tmp_path / "outside-published"
+    destination.replace(outside)
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(destination), str(outside)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    with pytest.raises(RuntimeError, match="linked or outside generation"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+@pytest.mark.parametrize(
+    "linked_name",
+    [
+        "manifest.json",
+        "summary.json",
+        "calendar.parquet",
+        "paired_days.parquet",
+        "exclusions.parquet",
+        "cohort_coverage.parquet",
+    ],
+)
+def test_the_public_loader_rejects_every_linked_persisted_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    linked_name: str,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    original_is_link_like = agreement._is_link_like
+    monkeypatch.setattr(
+        agreement,
+        "_is_link_like",
+        lambda path: path.name == linked_name or original_is_link_like(path),
+    )
+
+    with pytest.raises(RuntimeError, match="linked or outside generation"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_a_rebound_output_cannot_put_a_value_on_an_explicitly_excluded_row(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    member = destination / "paired_days.parquet"
+    rows = (
+        pl.read_parquet(member)
+        .with_row_index()
+        .with_columns(
+            pl.when(pl.col("index") == 124)
+            .then(pl.lit(1.0))
+            .otherwise(pl.col("micro_pm25_mean"))
+            .alias("micro_pm25_mean")
+        )
+        .drop("index")
+    )
+    rows.write_parquet(member)
+    _rebind_agreement_panel_manifest(destination)
+
+    with pytest.raises(RuntimeError, match="ineligible value is not null"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_rebinding_hashes_cannot_hide_reordered_physical_output_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    for name in ("paired_days", "exclusions"):
+        member = destination / f"{name}.parquet"
+        pl.read_parquet(member).reverse().write_parquet(member)
+    _rebind_agreement_panel_manifest(destination)
+
+    with pytest.raises(RuntimeError, match="physical output key order changed"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_the_writer_reloads_the_persisted_manifest_before_releasing_its_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    original_load = agreement._load_annual_agreement_panel_unlocked
+    reloaded_while_locked = False
+
+    def prove_lock(directory: Path) -> Any:
+        nonlocal reloaded_while_locked
+        with (
+            pytest.raises(RuntimeError, match="checkpoint writer is active"),
+            agreement._agreement_panel_lock(directory.parent / f".{directory.name}.lock"),
+        ):
+            pytest.fail("panel lock was released before manifest reload")
+        reloaded_while_locked = True
+        return original_load(directory)
+
+    monkeypatch.setattr(agreement, "_load_annual_agreement_panel_unlocked", prove_lock)
+
+    published = agreement.write_annual_agreement_panel(panel, destination=destination)
+
+    assert reloaded_while_locked
+    assert "generation_sha256" in published.manifest
+    assert "generation_sha256" not in panel.manifest
+
+
+@pytest.mark.parametrize("mutation", ["config", "summary", "calendar", "coverage"])
+def test_rebound_panel_metadata_and_aggregates_must_match_the_prepared_rows_and_reviewed_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    if mutation == "config":
+        manifest = deepcopy(panel.manifest)
+        manifest["config"]["threads"] = 999
+        changed = replace(panel, manifest=manifest)
+    elif mutation == "summary":
+        summary = deepcopy(panel.summary)
+        summary["reason_counts"]["invented"] = 999
+        manifest = {**panel.manifest, "summary_sha256": _canonical_hash(summary)}
+        changed = replace(panel, summary=summary, manifest=manifest)
+    elif mutation == "calendar":
+        calendar = (
+            panel.calendar.with_row_index()
+            .with_columns(
+                pl.when(pl.col("index") == 0)
+                .then(pl.lit("e" * 64))
+                .otherwise(pl.col("catalog_generation_sha256"))
+                .alias("catalog_generation_sha256")
+            )
+            .drop("index")
+        )
+        changed = replace(panel, calendar=calendar)
+    else:
+        coverage = (
+            panel.cohort_coverage.with_row_index()
+            .with_columns(
+                pl.when(pl.col("index") == 0)
+                .then(pl.col("device_days") + 1)
+                .otherwise(pl.col("device_days"))
+                .alias("device_days")
+            )
+            .drop("index")
+        )
+        changed = replace(panel, cohort_coverage=coverage)
+
+    with pytest.raises(RuntimeError, match="reviewed preparation changed"):
+        agreement.write_annual_agreement_panel(
+            changed,
+            destination=tmp_path / f"published-{mutation}",
+        )
+
+
+def test_an_interrupted_panel_publish_leaves_no_partial_output_and_releases_the_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    original_replace = Path.replace
+
+    def interrupt_publish(path: Path, target: Path) -> Path:
+        if path.name.startswith(".published.staging-") and target == destination:
+            raise KeyboardInterrupt("synthetic publish interruption")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", interrupt_publish)
+    with pytest.raises(KeyboardInterrupt, match="synthetic publish interruption"):
+        agreement.write_annual_agreement_panel(panel, destination=destination)
+
+    assert not destination.exists()
+    assert not tuple(destination.parent.glob(".published.staging-*"))
+    assert not tuple(destination.parent.glob(".published.backup-*"))
+    monkeypatch.setattr(Path, "replace", original_replace)
+    published = agreement.write_annual_agreement_panel(panel, destination=destination)
+    assert published.manifest["complete"] is True
+
+
+def test_a_successful_panel_move_followed_by_an_interrupt_rolls_back_for_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    original_replace = Path.replace
+
+    def move_then_interrupt(path: Path, target: Path) -> Path:
+        moved = original_replace(path, target)
+        if path.name.startswith(".published.staging-") and target == destination:
+            raise KeyboardInterrupt("synthetic post-move interruption")
+        return moved
+
+    monkeypatch.setattr(Path, "replace", move_then_interrupt)
+    with pytest.raises(KeyboardInterrupt, match="synthetic post-move interruption"):
+        agreement.write_annual_agreement_panel(panel, destination=destination)
+
+    assert not destination.exists()
+    assert not tuple(destination.parent.glob(".published.staging-*"))
+    assert not tuple(destination.parent.glob(".published.backup-*"))
+    monkeypatch.setattr(Path, "replace", original_replace)
+    published = agreement.write_annual_agreement_panel(panel, destination=destination)
+    assert published.manifest["complete"] is True
+
+
+def test_a_final_persisted_reload_failure_rolls_back_the_published_generation_for_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    original_load = agreement._load_annual_agreement_panel_unlocked
+
+    def fail_final_reload(_directory: Path) -> Any:
+        raise RuntimeError("synthetic final persisted reload failure")
+
+    monkeypatch.setattr(
+        agreement,
+        "_load_annual_agreement_panel_unlocked",
+        fail_final_reload,
+    )
+    with pytest.raises(RuntimeError, match="synthetic final persisted reload failure"):
+        agreement.write_annual_agreement_panel(panel, destination=destination)
+
+    assert not destination.exists()
+    assert not tuple(destination.parent.glob(".published.staging-*"))
+    assert not tuple(destination.parent.glob(".published.backup-*"))
+    monkeypatch.setattr(agreement, "_load_annual_agreement_panel_unlocked", original_load)
+    published = agreement.write_annual_agreement_panel(panel, destination=destination)
+    assert published.manifest["complete"] is True

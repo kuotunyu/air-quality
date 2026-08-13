@@ -27,6 +27,7 @@ from twair.analysis.micro_sensor_annual_readiness import (
     ANNUAL_DEVICE_COHORT_SCHEMA,
     ANNUAL_DEVICE_DAY_SCHEMA,
     ANNUAL_EXCLUSION_SCHEMA,
+    annual_micro_sensor_readiness_dir,
     load_annual_micro_sensor_panel_config,
 )
 from twair.config import ConfigError, load_conf
@@ -107,6 +108,53 @@ AGREEMENT_DAY_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = 
     ("ground_pm25_mean", pl.Float64),
     ("reason", pl.String),
 )
+AGREEMENT_CALENDAR_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("date", pl.Date),
+    ("calendar_state", pl.String),
+    ("catalog_generation_sha256", pl.String),
+    ("parsed_generation_sha256", pl.String),
+)
+AGREEMENT_PAIRED_DAY_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("radius_km", pl.Float64),
+    ("calendar_state", pl.String),
+    ("quarter", pl.Int64),
+    *AGREEMENT_DAY_SCHEMA,
+)
+AGREEMENT_EXCLUSION_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("radius_km", pl.Float64),
+    ("date", pl.Date),
+    ("device_id", pl.String),
+    ("station_name", pl.String),
+    ("quarter", pl.Int64),
+    ("reason", pl.String),
+)
+AGREEMENT_COHORT_COVERAGE_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("radius_km", pl.Float64),
+    ("station_name", pl.String),
+    ("quarter", pl.Int64),
+    ("reason", pl.String),
+    ("device_days", pl.Int64),
+    ("devices", pl.Int64),
+    ("dates", pl.Int64),
+)
+_AGREEMENT_PANEL_SCHEMAS = {
+    "calendar": AGREEMENT_CALENDAR_SCHEMA,
+    "paired_days": AGREEMENT_PAIRED_DAY_SCHEMA,
+    "exclusions": AGREEMENT_EXCLUSION_SCHEMA,
+    "cohort_coverage": AGREEMENT_COHORT_COVERAGE_SCHEMA,
+}
+_AGREEMENT_PANEL_IDENTITY_FIELDS = (
+    "schema_version",
+    "analysis",
+    "inputs",
+    "checkpoint_inventory",
+    "config",
+    "claim_boundary",
+    "output_rows",
+    "members",
+    "summary_file",
+    "summary_sha256",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +229,18 @@ class AgreementDayCheckpoint:
     manifest: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class AnnualAgreementPanel:
+    calendar: pl.DataFrame
+    paired_days: pl.DataFrame
+    exclusions: pl.DataFrame
+    cohort_coverage: pl.DataFrame
+    summary: dict[str, object]
+    manifest: dict[str, object]
+    annual_input: AnnualReadinessInput | None
+    checkpoints: tuple[AgreementDayCheckpoint, ...] | None
+
+
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise ConfigError(f"{label} must be a mapping with string keys")
@@ -253,6 +313,39 @@ def _validate_generation_inventory(
         if _is_link_like(entry) or outside:
             raise RuntimeError(
                 f"annual readiness member is linked or outside generation: {entry.name}"
+            )
+
+
+def _validate_agreement_panel_inventory(
+    directory: Path,
+    *,
+    expected_files: set[str],
+    during_read: bool,
+) -> None:
+    try:
+        resolved_directory = directory.resolve(strict=True)
+        entries = tuple(directory.iterdir())
+    except OSError as exc:
+        raise RuntimeError("annual agreement panel generation is unreadable") from exc
+    if (
+        _is_link_like(directory)
+        or resolved_directory != directory
+        or not resolved_directory.is_dir()
+    ):
+        raise RuntimeError("annual agreement panel is linked or outside generation")
+    if {entry.name for entry in entries} != expected_files:
+        suffix = " during read" if during_read else ""
+        raise RuntimeError(f"annual agreement panel file set changed{suffix}")
+    for entry in entries:
+        try:
+            outside = entry.resolve(strict=True).parent != directory
+        except OSError as exc:
+            raise RuntimeError(
+                f"annual agreement panel member is unreadable: {entry.name}"
+            ) from exc
+        if _is_link_like(entry) or outside:
+            raise RuntimeError(
+                f"annual agreement panel member is linked or outside generation: {entry.name}"
             )
 
 
@@ -1864,3 +1957,951 @@ def write_agreement_day_checkpoint(
         day=day,
         checkpoint_root=checkpoint_root,
     )
+
+
+def _agreement_calendar(annual_input: AnnualReadinessInput) -> pl.DataFrame:
+    source = annual_input.calendar_coverage
+    if source.schema != dict(ANNUAL_CALENDAR_SCHEMA) or source.height != 365:
+        raise RuntimeError("annual agreement calendar contract changed")
+    ordered = source.sort("date")
+    expected_dates = [date(2025, 1, 1) + timedelta(days=index) for index in range(365)]
+    if ordered["date"].to_list() != expected_dates:
+        raise RuntimeError("annual agreement calendar arithmetic changed")
+    if (
+        ordered.filter(pl.col("state") == "complete").height != 322
+        or ordered.filter(pl.col("state") == "catalogue_absent").height != 43
+        or ordered.filter(~pl.col("state").is_in(["complete", "catalogue_absent"])).height
+        or ordered.filter(
+            (pl.col("state") == "complete") != pl.col("parsed_generation_sha256").is_not_null()
+        ).height
+    ):
+        raise RuntimeError("annual agreement calendar partition changed")
+    return ordered.rename({"state": "calendar_state"}).cast(
+        dict(AGREEMENT_CALENDAR_SCHEMA), strict=True
+    )
+
+
+def _checkpoint_inventory_evidence(
+    checkpoints: tuple[AgreementDayCheckpoint, ...],
+    *,
+    annual_input: AnnualReadinessInput,
+    calendar: pl.DataFrame,
+    candidates: pl.DataFrame,
+    config: AnnualAgreementConfig,
+) -> tuple[tuple[Path, ...], list[dict[str, object]], tuple[dict[str, object], ...]]:
+    parsed_rows = calendar.filter(pl.col("calendar_state") == "complete")
+    parsed_dates = parsed_rows["date"].to_list()
+    observed_dates: list[date] = []
+    paths: list[Path] = []
+    evidence: list[dict[str, object]] = []
+    before: list[dict[str, object]] = []
+    candidate_identity = _canonical_hash(candidates.sort("device_id").to_dicts())
+    expected_schema = {name: str(dtype) for name, dtype in AGREEMENT_DAY_SCHEMA}
+    reviewed_inputs = _mapping(
+        annual_input.manifest.get("inputs"), label="reviewed annual agreement inputs"
+    )
+    catalog_generations = _mapping(
+        reviewed_inputs.get("catalog_generations"),
+        label="reviewed annual agreement catalog generations",
+    )
+    parsed_generations = reviewed_inputs.get("parsed_generations")
+    ground_files = reviewed_inputs.get("ground_files")
+    if (
+        not isinstance(parsed_generations, list)
+        or len(parsed_generations) != len(parsed_dates)
+        or not isinstance(ground_files, list)
+        or len(ground_files) != 12
+    ):
+        raise RuntimeError("annual agreement reviewed input inventory changed")
+    reviewed_parsed = {
+        str(_mapping(item, label="reviewed annual parsed generation").get("date")): _mapping(
+            item, label="reviewed annual parsed generation"
+        )
+        for item in parsed_generations
+    }
+    checkpoint_roots = {
+        checkpoint.directory.parent.resolve(strict=True) for checkpoint in checkpoints
+    }
+    if len(checkpoint_roots) != 1:
+        raise RuntimeError("annual agreement checkpoints span multiple roots")
+    checkpoint_root = checkpoint_roots.pop()
+    for checkpoint in checkpoints:
+        manifest_path = checkpoint.manifest_path
+        member_path = checkpoint.member_path
+        try:
+            resolved_directory = checkpoint.directory.resolve(strict=True)
+            resolved_manifest = manifest_path.resolve(strict=True)
+            resolved_member = member_path.resolve(strict=True)
+        except OSError as exc:
+            raise RuntimeError("annual agreement checkpoint path is unreadable") from exc
+        if (
+            _is_link_like(checkpoint.directory)
+            or _is_link_like(manifest_path)
+            or _is_link_like(member_path)
+            or checkpoint.directory != manifest_path.parent
+            or checkpoint.directory != member_path.parent
+            or resolved_directory.parent != checkpoint_root
+            or resolved_manifest.parent != resolved_directory
+            or resolved_member.parent != resolved_directory
+            or not checkpoint.directory.is_dir()
+            or {path.name for path in checkpoint.directory.iterdir()}
+            != {"manifest.json", "paired_day.parquet"}
+        ):
+            raise RuntimeError("annual agreement linked or outside checkpoint root")
+        manifest_identity = _file_identity(manifest_path)
+        member_identity = _file_identity(member_path)
+        manifest = _read_json(manifest_path, label="annual agreement checkpoint manifest")
+        if manifest != checkpoint.manifest:
+            raise RuntimeError("annual agreement checkpoint evidence changed")
+        try:
+            observed_day = date.fromisoformat(str(manifest["date"]))
+        except (KeyError, ValueError) as exc:
+            raise RuntimeError("annual agreement checkpoint date changed") from exc
+        if checkpoint.directory.name != observed_day.isoformat():
+            raise RuntimeError("annual agreement checkpoint date changed")
+        observed_dates.append(observed_day)
+        if (
+            type(manifest.get("schema_version")) is not int
+            or manifest.get("schema_version") != 1
+            or manifest.get("kind") != "annual_reference_station_agreement_day"
+            or manifest.get("complete") is not True
+            or manifest.get("config") != _checkpoint_config(config)
+            or manifest.get("schema") != expected_schema
+            or type(manifest.get("rows")) is not int
+            or manifest.get("rows") != candidates.height
+        ):
+            raise RuntimeError("annual agreement checkpoint contract changed")
+        normalized_inputs = _checkpoint_inputs(
+            _mapping(manifest.get("inputs"), label="annual agreement checkpoint inputs"),
+            config=config,
+        )
+        reviewed_day = reviewed_parsed.get(observed_day.isoformat())
+        if reviewed_day is None:
+            raise RuntimeError("annual agreement checkpoint does not match reviewed annual input")
+        reviewed_files = reviewed_day.get("input_files")
+        if not isinstance(reviewed_files, list) or len(reviewed_files) != len(_AGREEMENT_VARIABLES):
+            raise RuntimeError("annual agreement reviewed source inventory changed")
+        reviewed_sources: dict[str, dict[str, object]] = {}
+        for value in reviewed_files:
+            declared = _checkpoint_file_identity(value, label="reviewed annual source member")
+            variable = Path(str(declared["path"])).stem
+            if variable not in _AGREEMENT_VARIABLES or variable in reviewed_sources:
+                raise RuntimeError("annual agreement reviewed source inventory changed")
+            reviewed_sources[variable] = {
+                "path": f"{variable}.parquet",
+                "bytes": declared["bytes"],
+                "sha256": declared["sha256"],
+            }
+        reviewed_ground = _checkpoint_file_identity(
+            ground_files[observed_day.month - 1],
+            label="reviewed annual ground member",
+        )
+        expected_ground = {
+            "path": Path(str(reviewed_ground["path"])).name,
+            "bytes": reviewed_ground["bytes"],
+            "sha256": reviewed_ground["sha256"],
+        }
+        expected_annual = {
+            "path": annual_input.device_days.path.name,
+            "bytes": annual_input.device_days.bytes,
+            "sha256": annual_input.device_days.sha256,
+        }
+        if (
+            normalized_inputs["catalogue_state"] != "present"
+            or normalized_inputs["candidate_identity_sha256"] != candidate_identity
+            or normalized_inputs["raw_generation_sha256"]
+            != catalog_generations.get(observed_day.strftime("%Y%m"))
+            or normalized_inputs["parsed_generation_sha256"]
+            != parsed_rows.filter(pl.col("date") == observed_day)["parsed_generation_sha256"].item()
+            or normalized_inputs["parsed_generation_sha256"]
+            != reviewed_day.get("generation_sha256")
+            or normalized_inputs["source_members"] != reviewed_sources
+            or normalized_inputs["ground_member"] != expected_ground
+            or normalized_inputs["annual_device_days"] != expected_annual
+        ):
+            raise RuntimeError("annual agreement checkpoint does not match reviewed annual input")
+        expected_member = {
+            "path": "paired_day.parquet",
+            "bytes": member_identity["bytes"],
+            "sha256": member_identity["sha256"],
+        }
+        if manifest.get("member") != expected_member:
+            raise RuntimeError("annual agreement checkpoint member changed")
+        summary = manifest.get("summary")
+        if (
+            not isinstance(summary, dict)
+            or not all(
+                isinstance(key, str) and type(value) is int and value >= 0
+                for key, value in summary.items()
+            )
+            or sum(summary.values()) != candidates.height
+            or manifest.get("summary_sha256") != _canonical_hash(summary)
+        ):
+            raise RuntimeError("annual agreement checkpoint summary changed")
+        try:
+            if pl.read_parquet_schema(member_path) != dict(AGREEMENT_DAY_SCHEMA):
+                raise RuntimeError("annual agreement checkpoint schema changed")
+        except (OSError, pl.exceptions.PolarsError) as exc:
+            raise RuntimeError("annual agreement checkpoint member is unreadable") from exc
+        paths.append(member_path)
+        before.append({"manifest": manifest_identity, "member": member_identity})
+        evidence.append(
+            {
+                "date": observed_day.isoformat(),
+                "raw_generation_sha256": normalized_inputs["raw_generation_sha256"],
+                "parsed_generation_sha256": normalized_inputs["parsed_generation_sha256"],
+                "inputs_sha256": _canonical_hash(normalized_inputs),
+                "rows": candidates.height,
+                "manifest_bytes": manifest_identity["bytes"],
+                "manifest_sha256": manifest_identity["sha256"],
+                "member_bytes": member_identity["bytes"],
+                "member_sha256": member_identity["sha256"],
+                "summary_sha256": manifest["summary_sha256"],
+            }
+        )
+    if observed_dates != parsed_dates:
+        raise RuntimeError("annual agreement ordered checkpoint inventory changed")
+    return tuple(paths), evidence, tuple(before)
+
+
+def _panel_select_sql() -> str:
+    expressions: list[str] = [
+        "0.5::DOUBLE AS radius_km",
+        "calendar.calendar_state",
+        "quarter(calendar.date)::BIGINT AS quarter",
+        "calendar.date",
+        "candidates.device_id",
+    ]
+    candidate_fields = {"station_name", "distance_km"}
+    nullable_float_fields = {
+        "lon_min",
+        "lon_max",
+        "lat_min",
+        "lat_max",
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    }
+    for name, dtype in AGREEMENT_DAY_SCHEMA[2:]:
+        if name in candidate_fields:
+            expressions.append(f"candidates.{name}")
+        elif dtype == pl.Int64:
+            expressions.append(
+                f"CASE WHEN calendar.calendar_state = 'catalogue_absent' "
+                f"THEN 0::BIGINT ELSE checkpoint.{name} END AS {name}"
+            )
+        elif name in nullable_float_fields:
+            expressions.append(
+                f"CASE WHEN calendar.calendar_state = 'catalogue_absent' "
+                f"THEN NULL::DOUBLE ELSE checkpoint.{name} END AS {name}"
+            )
+        elif name == "spatial_state":
+            expressions.append(
+                "CASE WHEN calendar.calendar_state = 'catalogue_absent' "
+                "THEN 'missing_pm25_coordinate' ELSE checkpoint.spatial_state END "
+                "AS spatial_state"
+            )
+        elif name == "reason":
+            expressions.append(
+                "CASE WHEN calendar.calendar_state = 'catalogue_absent' "
+                "THEN 'catalogue_absent' ELSE checkpoint.reason END AS reason"
+            )
+        else:
+            raise RuntimeError(f"annual agreement panel field is unhandled: {name}")
+    return ",\n".join(expressions)
+
+
+def _prepare_annual_agreement_panel(
+    annual_input: AnnualReadinessInput,
+    checkpoints: tuple[AgreementDayCheckpoint, ...],
+    config: AnnualAgreementConfig,
+) -> AnnualAgreementPanel:
+    if config.threads != 1 or config.memory_limit_gb != 6:
+        raise RuntimeError("annual agreement panel resource limits changed")
+    calendar = _agreement_calendar(annual_input)
+    primary = tuple(
+        cohort
+        for cohort in annual_input.candidate_cohorts
+        if cohort.radius_km == config.primary_distance_km
+    )
+    if len(primary) != 1:
+        raise RuntimeError("annual agreement reviewed primary cohort changed")
+    candidates = _validate_agreement_candidates(primary[0].candidates)
+    if (
+        candidates.height != config.primary_devices
+        or candidates["station_name"].n_unique() != config.primary_stations
+        or candidates.filter(pl.col("distance_km") > config.primary_distance_km).height
+    ):
+        raise RuntimeError("annual agreement reviewed primary cohort changed")
+    checkpoint_paths, checkpoint_evidence, checkpoint_before = _checkpoint_inventory_evidence(
+        checkpoints,
+        annual_input=annual_input,
+        calendar=calendar,
+        candidates=candidates,
+        config=config,
+    )
+    path_list = ", ".join(f"'{_sql_path(path)}'" for path in checkpoint_paths)
+    with tempfile.TemporaryDirectory(prefix="twair-agreement-panel-") as temporary:
+        spill = Path(temporary) / "duckdb-spill"
+        spill.mkdir()
+        connection = duckdb.connect()
+        try:
+            connection.execute(f"SET threads={config.threads}")
+            connection.execute(f"SET memory_limit='{config.memory_limit_gb}GB'")
+            connection.execute(f"SET temp_directory='{_sql_path(spill)}'")
+            connection.execute("SET preserve_insertion_order=false")
+            connection.register("calendar_input", calendar.to_arrow())
+            connection.register("candidate_input", candidates.to_arrow())
+            connection.execute("CREATE TEMP TABLE calendar AS SELECT * FROM calendar_input")
+            connection.execute("CREATE TEMP TABLE candidates AS SELECT * FROM candidate_input")
+            connection.execute(
+                f"CREATE TEMP VIEW checkpoint AS "
+                f"SELECT * FROM read_parquet([{path_list}], filename=true)"
+            )
+            physical_order = connection.execute(
+                """
+                SELECT count(*) FROM (
+                    SELECT filename, date, device_id,
+                           lag(date) OVER (PARTITION BY filename) AS previous_date,
+                           lag(device_id) OVER (PARTITION BY filename) AS previous_device_id
+                    FROM checkpoint
+                ) ordered
+                WHERE previous_date > date
+                   OR (previous_date = date AND previous_device_id >= device_id)
+                """
+            ).fetchone()
+            if physical_order is None or int(physical_order[0]):
+                raise RuntimeError("annual agreement physical checkpoint key order changed")
+            eligible_null = connection.execute(
+                """
+                SELECT count(*) FROM checkpoint
+                WHERE reason = 'eligible' AND (
+                    micro_pm25_mean IS NULL OR micro_humidity_mean IS NULL
+                    OR micro_temperature_mean IS NULL OR ground_pm25_mean IS NULL
+                )
+                """
+            ).fetchone()
+            if eligible_null is None or int(eligible_null[0]):
+                raise RuntimeError("annual agreement checkpoint eligible value is null")
+            ineligible_value = connection.execute(
+                """
+                SELECT count(*) FROM checkpoint
+                WHERE reason != 'eligible' AND (
+                    micro_pm25_mean IS NOT NULL OR micro_humidity_mean IS NOT NULL
+                    OR micro_temperature_mean IS NOT NULL OR ground_pm25_mean IS NOT NULL
+                )
+                """
+            ).fetchone()
+            if ineligible_value is None or int(ineligible_value[0]):
+                raise RuntimeError("annual agreement checkpoint ineligible value is not null")
+            invalid_model_value = connection.execute(
+                """
+                SELECT count(*) FROM checkpoint
+                WHERE (micro_pm25_mean IS NOT NULL AND NOT isfinite(micro_pm25_mean))
+                   OR (micro_humidity_mean IS NOT NULL AND NOT isfinite(micro_humidity_mean))
+                   OR (micro_temperature_mean IS NOT NULL
+                       AND NOT isfinite(micro_temperature_mean))
+                   OR (ground_pm25_mean IS NOT NULL AND NOT isfinite(ground_pm25_mean))
+                """
+            ).fetchone()
+            if invalid_model_value is None or int(invalid_model_value[0]):
+                raise RuntimeError("annual agreement checkpoint model value is non-finite")
+            invalid = connection.execute(
+                """
+                SELECT count(*) FILTER (WHERE calendar.calendar_state = 'complete'
+                           AND checkpoint.device_id IS NULL),
+                       count(*) FILTER (WHERE calendar.calendar_state = 'catalogue_absent'
+                           AND checkpoint.device_id IS NOT NULL),
+                       count(*) FILTER (WHERE checkpoint.device_id IS NOT NULL
+                           AND (checkpoint.station_name != candidates.station_name
+                             OR checkpoint.distance_km != candidates.distance_km))
+                FROM calendar CROSS JOIN candidates
+                LEFT JOIN checkpoint
+                  ON checkpoint.date = calendar.date
+                 AND checkpoint.device_id = candidates.device_id
+                """
+            ).fetchone()
+            if invalid is None or any(int(value) for value in invalid):
+                raise RuntimeError("annual agreement checkpoint panel keys changed")
+            checkpoint_count = connection.execute("SELECT count(*) FROM checkpoint").fetchone()
+            if checkpoint_count is None or int(checkpoint_count[0]) != 322 * candidates.height:
+                raise RuntimeError("annual agreement checkpoint panel row count changed")
+            paired_days = pl.DataFrame(
+                connection.execute(
+                    f"""
+                    SELECT {_panel_select_sql()}
+                    FROM calendar CROSS JOIN candidates
+                    LEFT JOIN checkpoint
+                      ON checkpoint.date = calendar.date
+                     AND checkpoint.device_id = candidates.device_id
+                    ORDER BY radius_km, calendar.date, candidates.device_id
+                    """
+                ).to_arrow_table()
+            ).cast(dict(AGREEMENT_PAIRED_DAY_SCHEMA), strict=True)
+            connection.register("paired_days", paired_days.to_arrow())
+            exclusions = pl.DataFrame(
+                connection.execute(
+                    """
+                    SELECT radius_km, date, device_id, station_name, quarter, reason
+                    FROM paired_days WHERE reason != 'eligible'
+                    ORDER BY radius_km, date, device_id
+                    """
+                ).to_arrow_table()
+            ).cast(dict(AGREEMENT_EXCLUSION_SCHEMA), strict=True)
+            cohort_coverage = pl.DataFrame(
+                connection.execute(
+                    """
+                    SELECT radius_km, station_name, quarter, reason,
+                           count(*)::BIGINT AS device_days,
+                           count(DISTINCT device_id)::BIGINT AS devices,
+                           count(DISTINCT date)::BIGINT AS dates
+                    FROM paired_days GROUP BY ALL
+                    ORDER BY radius_km, station_name, quarter, reason
+                    """
+                ).to_arrow_table()
+            ).cast(dict(AGREEMENT_COHORT_COVERAGE_SCHEMA), strict=True)
+        finally:
+            connection.close()
+            shutil.rmtree(spill)
+    checkpoint_after = tuple(
+        {
+            "manifest": _file_identity(checkpoint.manifest_path),
+            "member": _file_identity(checkpoint.member_path),
+        }
+        for checkpoint in checkpoints
+    )
+    if checkpoint_before != checkpoint_after:
+        raise RuntimeError("annual agreement checkpoint evidence changed during reduction")
+    checkpoint_root = checkpoints[0].directory.parent.resolve(strict=True)
+    for checkpoint in checkpoints:
+        try:
+            resolved_directory = checkpoint.directory.resolve(strict=True)
+            resolved_manifest = checkpoint.manifest_path.resolve(strict=True)
+            resolved_member = checkpoint.member_path.resolve(strict=True)
+        except OSError as exc:
+            raise RuntimeError("annual agreement checkpoint path changed during reduction") from exc
+        if (
+            _is_link_like(checkpoint.directory)
+            or _is_link_like(checkpoint.manifest_path)
+            or _is_link_like(checkpoint.member_path)
+            or resolved_directory.parent != checkpoint_root
+            or resolved_manifest.parent != resolved_directory
+            or resolved_member.parent != resolved_directory
+        ):
+            raise RuntimeError("annual agreement linked or outside checkpoint root")
+    output_rows = {
+        "calendar": calendar.height,
+        "paired_days": paired_days.height,
+        "exclusions": exclusions.height,
+        "cohort_coverage": cohort_coverage.height,
+    }
+    reason_counts = {
+        str(reason): int(count)
+        for reason, count in paired_days.group_by("reason").len().sort("reason").iter_rows()
+    }
+    summary: dict[str, object] = {
+        "calendar": {"complete_dates": 322, "catalogue_absent_dates": 43},
+        "primary": {
+            "radius_km": config.primary_distance_km,
+            "devices": candidates.height,
+            "stations": candidates["station_name"].n_unique(),
+        },
+        "reason_counts": reason_counts,
+        "output_rows": output_rows,
+    }
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "analysis": "annual_reference_station_agreement_panel",
+        "inputs": {
+            "annual_generation_sha256": config.annual_generation_sha256,
+            "candidate_identity_sha256": _canonical_hash(candidates.to_dicts()),
+            "catalog_generations": _mapping(
+                _mapping(
+                    annual_input.manifest.get("inputs"),
+                    label="reviewed annual agreement inputs",
+                ).get("catalog_generations"),
+                label="reviewed annual agreement catalog generations",
+            ),
+        },
+        "checkpoint_inventory": checkpoint_evidence,
+        "config": _checkpoint_config(config),
+        "claim_boundary": dict(config.claim_boundary),
+        "output_rows": output_rows,
+        "summary_sha256": _canonical_hash(summary),
+    }
+    return AnnualAgreementPanel(
+        calendar=calendar,
+        paired_days=paired_days,
+        exclusions=exclusions,
+        cohort_coverage=cohort_coverage,
+        summary=summary,
+        manifest=manifest,
+        annual_input=annual_input,
+        checkpoints=checkpoints,
+    )
+
+
+def prepare_annual_agreement_panel(
+    annual_input: AnnualReadinessInput,
+    checkpoints: tuple[AgreementDayCheckpoint, ...],
+    config: AnnualAgreementConfig,
+) -> AnnualAgreementPanel:
+    reviewed = load_annual_agreement_config()
+    if config != reviewed:
+        raise RuntimeError("annual agreement reviewed protocol changed")
+    reloaded = load_annual_readiness_input(annual_input.generation_dir)
+    if reloaded.generation_dir != annual_input.generation_dir:
+        raise RuntimeError("annual agreement reviewed annual input changed")
+    return _prepare_annual_agreement_panel(reloaded, checkpoints, reviewed)
+
+
+def _validate_agreement_panel_frames(panel: AnnualAgreementPanel) -> None:
+    frames = {name: getattr(panel, name) for name in _AGREEMENT_PANEL_SCHEMAS}
+    for name, schema in _AGREEMENT_PANEL_SCHEMAS.items():
+        if frames[name].schema != dict(schema):
+            raise RuntimeError(f"annual agreement panel {name} schema changed")
+    paired = panel.paired_days
+    if (
+        paired.height != 365 * 124
+        or paired.select("radius_km", "date", "device_id").n_unique() != paired.height
+        or paired["date"].n_unique() != 365
+        or paired["device_id"].n_unique() != 124
+        or paired["station_name"].n_unique() != 13
+    ):
+        raise RuntimeError("annual agreement panel row identities changed")
+    order_contracts = {
+        "calendar": (panel.calendar, ["date"]),
+        "paired_days": (paired, ["radius_km", "date", "device_id"]),
+        "exclusions": (
+            panel.exclusions,
+            ["radius_km", "date", "device_id"],
+        ),
+        "cohort_coverage": (
+            panel.cohort_coverage,
+            ["radius_km", "station_name", "quarter", "reason"],
+        ),
+    }
+    for frame, keys in order_contracts.values():
+        if frame.rows() != frame.sort(keys).rows():
+            raise RuntimeError("annual agreement physical output key order changed")
+    absent = paired.filter(pl.col("calendar_state") == "catalogue_absent")
+    model_columns = (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    )
+    if (
+        absent.height != 43 * 124
+        or absent.filter(pl.col("reason") != "catalogue_absent").height
+        or absent.select(
+            pl.any_horizontal(pl.col(column).is_not_null() for column in model_columns).any()
+        ).item()
+    ):
+        raise RuntimeError("annual agreement catalogue absence changed")
+    if paired.filter(
+        (pl.col("reason") != "eligible")
+        & pl.any_horizontal(pl.col(column).is_not_null() for column in model_columns)
+    ).height:
+        raise RuntimeError("annual agreement panel ineligible value is not null")
+    if paired.filter(
+        (pl.col("reason") == "eligible")
+        & pl.any_horizontal(pl.col(column).is_null() for column in model_columns)
+    ).height:
+        raise RuntimeError("annual agreement panel eligible value is null")
+    if paired.filter(
+        pl.any_horizontal(
+            pl.col(column).is_not_null() & ~pl.col(column).is_finite() for column in model_columns
+        )
+    ).height:
+        raise RuntimeError("annual agreement panel model value is non-finite")
+    expected_exclusions = paired.filter(pl.col("reason") != "eligible").select(
+        *(name for name, _ in AGREEMENT_EXCLUSION_SCHEMA)
+    )
+    if panel.exclusions.rows() != expected_exclusions.rows():
+        raise RuntimeError("annual agreement exclusions changed")
+    rows = {name: frame.height for name, frame in frames.items()}
+    if panel.manifest.get("output_rows") != rows or panel.summary.get("output_rows") != rows:
+        raise RuntimeError("annual agreement panel output row counts changed")
+    if panel.manifest.get("summary_sha256") != _canonical_hash(panel.summary):
+        raise RuntimeError("annual agreement panel summary changed")
+    if panel.manifest.get("claim_boundary") != dict(load_annual_agreement_config().claim_boundary):
+        raise RuntimeError("annual agreement panel claim boundary changed")
+    _validate_persisted_agreement_panel_semantics(panel)
+
+
+def _validate_persisted_agreement_panel_semantics(panel: AnnualAgreementPanel) -> None:
+    reviewed = load_annual_agreement_config()
+    if panel.manifest.get("config") != _checkpoint_config(reviewed):
+        raise RuntimeError("annual agreement persisted semantics changed")
+    inputs = _mapping(panel.manifest.get("inputs"), label="annual agreement panel inputs")
+    candidates = (
+        panel.paired_days.select("device_id", "station_name", "distance_km")
+        .unique()
+        .sort("device_id")
+    )
+    catalog_generations = _mapping(
+        inputs.get("catalog_generations"),
+        label="annual agreement panel catalog generations",
+    )
+    reviewed_panel = load_annual_micro_sensor_panel_config()
+    reviewed_catalogs = dict(reviewed_panel.catalog_generations)
+    reviewed_parsed = {
+        record.date.isoformat(): record.generation_sha256
+        for record in reviewed_panel.parsed_generations
+    }
+    readiness = load_annual_readiness_input(
+        annual_micro_sensor_readiness_dir(generation_sha256=reviewed.annual_generation_sha256)
+    )
+    primary_cohorts = tuple(
+        cohort
+        for cohort in readiness.candidate_cohorts
+        if cohort.radius_km == reviewed.primary_distance_km
+    )
+    if len(primary_cohorts) != 1:
+        raise RuntimeError("annual agreement persisted semantics changed")
+    reviewed_candidates = _validate_agreement_candidates(primary_cohorts[0].candidates)
+    persisted_cohort = (
+        panel.paired_days.select("radius_km", "device_id", "station_name", "distance_km")
+        .unique()
+        .sort("device_id")
+    )
+    reviewed_cohort = reviewed_candidates.with_columns(
+        pl.lit(reviewed.primary_distance_km).alias("radius_km")
+    ).select("radius_km", "device_id", "station_name", "distance_km")
+    expected_catalog_months = {f"2025{month:02d}" for month in range(1, 13)}
+    if (
+        set(catalog_generations) != expected_catalog_months
+        or any(
+            not isinstance(value, str) or _SHA256.fullmatch(value) is None
+            for value in catalog_generations.values()
+        )
+        or catalog_generations != reviewed_catalogs
+        or inputs.get("annual_generation_sha256") != reviewed.annual_generation_sha256
+        or persisted_cohort.rows() != reviewed_cohort.rows()
+        or candidates.rows() != reviewed_candidates.rows()
+        or inputs.get("candidate_identity_sha256")
+        != _canonical_hash(reviewed_candidates.to_dicts())
+        or set(inputs)
+        != {
+            "annual_generation_sha256",
+            "candidate_identity_sha256",
+            "catalog_generations",
+        }
+    ):
+        raise RuntimeError("annual agreement persisted semantics changed")
+    expected_dates = [date(2025, 1, 1) + timedelta(days=index) for index in range(365)]
+    if panel.calendar["date"].to_list() != expected_dates:
+        raise RuntimeError("annual agreement persisted semantics changed")
+    complete = panel.calendar.filter(pl.col("calendar_state") == "complete")
+    absent = panel.calendar.filter(pl.col("calendar_state") == "catalogue_absent")
+    if (
+        complete.height != 322
+        or absent.height != 43
+        or complete["parsed_generation_sha256"].null_count()
+        or absent["parsed_generation_sha256"].null_count() != absent.height
+    ):
+        raise RuntimeError("annual agreement persisted semantics changed")
+    inventory = panel.manifest.get("checkpoint_inventory")
+    evidence_fields = {
+        "date",
+        "raw_generation_sha256",
+        "parsed_generation_sha256",
+        "inputs_sha256",
+        "rows",
+        "manifest_bytes",
+        "manifest_sha256",
+        "member_bytes",
+        "member_sha256",
+        "summary_sha256",
+    }
+    if not isinstance(inventory, list) or len(inventory) != complete.height:
+        raise RuntimeError("annual agreement persisted semantics changed")
+    for calendar_row, value in zip(complete.iter_rows(named=True), inventory, strict=True):
+        evidence = _mapping(value, label="annual agreement panel checkpoint evidence")
+        if set(evidence) != evidence_fields:
+            raise RuntimeError("annual agreement persisted semantics changed")
+        day_text = calendar_row["date"].isoformat()
+        raw_generation = evidence["raw_generation_sha256"]
+        parsed_generation = evidence["parsed_generation_sha256"]
+        if (
+            evidence["date"] != day_text
+            or raw_generation != calendar_row["catalog_generation_sha256"]
+            or raw_generation != catalog_generations.get(day_text[:4] + day_text[5:7])
+            or parsed_generation != calendar_row["parsed_generation_sha256"]
+            or parsed_generation != reviewed_parsed.get(day_text)
+            or not isinstance(raw_generation, str)
+            or _SHA256.fullmatch(raw_generation) is None
+            or not isinstance(parsed_generation, str)
+            or _SHA256.fullmatch(parsed_generation) is None
+            or any(
+                not isinstance(evidence[name], str) or _SHA256.fullmatch(evidence[name]) is None
+                for name in (
+                    "inputs_sha256",
+                    "manifest_sha256",
+                    "member_sha256",
+                    "summary_sha256",
+                )
+            )
+            or any(
+                type(evidence[name]) is not int or evidence[name] < 0
+                for name in ("rows", "manifest_bytes", "member_bytes")
+            )
+        ):
+            raise RuntimeError("annual agreement persisted semantics changed")
+    for row in panel.calendar.iter_rows(named=True):
+        month = row["date"].strftime("%Y%m")
+        if row["catalog_generation_sha256"] != catalog_generations.get(month):
+            raise RuntimeError("annual agreement persisted semantics changed")
+    expected_coverage = (
+        panel.paired_days.group_by("radius_km", "station_name", "quarter", "reason")
+        .agg(
+            pl.len().cast(pl.Int64).alias("device_days"),
+            pl.col("device_id").n_unique().cast(pl.Int64).alias("devices"),
+            pl.col("date").n_unique().cast(pl.Int64).alias("dates"),
+        )
+        .sort("radius_km", "station_name", "quarter", "reason")
+        .cast(dict(AGREEMENT_COHORT_COVERAGE_SCHEMA), strict=True)
+    )
+    if panel.cohort_coverage.rows() != expected_coverage.rows():
+        raise RuntimeError("annual agreement persisted semantics changed")
+    output_rows = {name: getattr(panel, name).height for name in _AGREEMENT_PANEL_SCHEMAS}
+    expected_summary: dict[str, object] = {
+        "calendar": {"complete_dates": complete.height, "catalogue_absent_dates": absent.height},
+        "primary": {
+            "radius_km": reviewed.primary_distance_km,
+            "devices": candidates.height,
+            "stations": candidates["station_name"].n_unique(),
+        },
+        "reason_counts": {
+            str(reason): int(count)
+            for reason, count in panel.paired_days.group_by("reason")
+            .len()
+            .sort("reason")
+            .iter_rows()
+        },
+        "output_rows": output_rows,
+    }
+    if panel.summary != expected_summary:
+        raise RuntimeError("annual agreement persisted semantics changed")
+
+
+@contextmanager
+def _agreement_panel_lock(path: Path) -> Iterator[None]:
+    with _agreement_checkpoint_lock(path):
+        yield
+
+
+def _recover_agreement_panel_swap(destination: Path) -> None:
+    parent = destination.parent
+    if not parent.exists():
+        return
+    stages = sorted(parent.glob(f".{destination.name}.staging-*"))
+    backups = sorted(parent.glob(f".{destination.name}.backup-*"))
+    if len(stages) > 1 or len(backups) > 1:
+        raise RuntimeError("multiple interrupted annual agreement panel swaps")
+    if destination.exists() and stages and backups:
+        raise RuntimeError("ambiguous interrupted annual agreement panel swap")
+    if not destination.exists() and backups:
+        backups[0].replace(destination)
+        backups = []
+    for staged in stages:
+        shutil.rmtree(staged)
+    if destination.exists() and backups:
+        shutil.rmtree(backups[0])
+
+
+def _load_annual_agreement_panel_unlocked(directory: Path) -> AnnualAgreementPanel:
+    directory = directory.absolute()
+    expected_files = {
+        *(f"{name}.parquet" for name in _AGREEMENT_PANEL_SCHEMAS),
+        "summary.json",
+        "manifest.json",
+    }
+    _validate_agreement_panel_inventory(
+        directory,
+        expected_files=expected_files,
+        during_read=False,
+    )
+    manifest_path = directory / "manifest.json"
+    summary_path = directory / "summary.json"
+    manifest = _read_json(manifest_path, label="annual agreement panel manifest")
+    if (
+        set(manifest)
+        != {
+            *_AGREEMENT_PANEL_IDENTITY_FIELDS,
+            "complete",
+            "generation_sha256",
+        }
+        or type(manifest.get("schema_version")) is not int
+        or manifest.get("schema_version") != 1
+        or manifest.get("analysis") != "annual_reference_station_agreement_panel"
+        or manifest.get("complete") is not True
+    ):
+        raise RuntimeError("annual agreement panel manifest contract changed")
+    identity = {field: manifest[field] for field in _AGREEMENT_PANEL_IDENTITY_FIELDS}
+    if manifest.get("generation_sha256") != _canonical_hash(identity):
+        raise RuntimeError("annual agreement panel generation identity changed")
+    members = _mapping(manifest.get("members"), label="annual agreement panel members")
+    if set(members) != set(_AGREEMENT_PANEL_SCHEMAS):
+        raise RuntimeError("annual agreement panel member fields changed")
+    summary_declaration = _checkpoint_file_identity(
+        manifest.get("summary_file"), label="annual agreement panel summary member"
+    )
+    observed_summary = _observed_checkpoint_file_identity(summary_path)
+    if summary_declaration != observed_summary:
+        raise RuntimeError("annual agreement panel summary member changed")
+    before = {
+        "manifest": _file_identity(manifest_path),
+        "summary": _file_identity(summary_path),
+    }
+    summary = _read_json(summary_path, label="annual agreement panel summary")
+    frames: dict[str, pl.DataFrame] = {}
+    for name, schema in _AGREEMENT_PANEL_SCHEMAS.items():
+        path = directory / f"{name}.parquet"
+        declaration = _checkpoint_file_identity(
+            members[name], label=f"annual agreement panel {name} member"
+        )
+        observed = _observed_checkpoint_file_identity(path)
+        if declaration != observed:
+            raise RuntimeError(f"annual agreement panel {name} member changed")
+        try:
+            if pl.read_parquet_schema(path) != dict(schema):
+                raise RuntimeError(f"annual agreement panel {name} schema changed")
+            frames[name] = pl.read_parquet(path)
+        except (OSError, pl.exceptions.PolarsError) as exc:
+            raise RuntimeError(f"annual agreement panel {name} member is unreadable") from exc
+        before[name] = _file_identity(path)
+    loaded = AnnualAgreementPanel(
+        calendar=frames["calendar"],
+        paired_days=frames["paired_days"],
+        exclusions=frames["exclusions"],
+        cohort_coverage=frames["cohort_coverage"],
+        summary=summary,
+        manifest=manifest,
+        annual_input=None,
+        checkpoints=None,
+    )
+    _validate_agreement_panel_frames(loaded)
+    after = {
+        "manifest": _file_identity(manifest_path),
+        "summary": _file_identity(summary_path),
+        **{
+            name: _file_identity(directory / f"{name}.parquet") for name in _AGREEMENT_PANEL_SCHEMAS
+        },
+    }
+    if before != after:
+        raise RuntimeError("annual agreement panel changed during read")
+    _validate_agreement_panel_inventory(
+        directory,
+        expected_files=expected_files,
+        during_read=True,
+    )
+    return loaded
+
+
+def load_annual_agreement_panel(directory: Path) -> AnnualAgreementPanel:
+    with _agreement_panel_lock(directory.parent / f".{directory.name}.lock"):
+        _recover_agreement_panel_swap(directory)
+        return _load_annual_agreement_panel_unlocked(directory)
+
+
+def _reprepare_agreement_panel_for_publication(
+    panel: AnnualAgreementPanel,
+) -> AnnualAgreementPanel:
+    if panel.annual_input is None or panel.checkpoints is None:
+        raise RuntimeError("annual agreement reviewed preparation changed")
+    reviewed = load_annual_agreement_config()
+    reloaded = load_annual_readiness_input(panel.annual_input.generation_dir)
+    prepared = _prepare_annual_agreement_panel(reloaded, panel.checkpoints, reviewed)
+    if (
+        panel.calendar.rows() != prepared.calendar.rows()
+        or panel.paired_days.rows() != prepared.paired_days.rows()
+        or panel.exclusions.rows() != prepared.exclusions.rows()
+        or panel.cohort_coverage.rows() != prepared.cohort_coverage.rows()
+        or panel.summary != prepared.summary
+        or panel.manifest != prepared.manifest
+    ):
+        raise RuntimeError("annual agreement reviewed preparation changed")
+    return prepared
+
+
+def write_annual_agreement_panel(
+    panel: AnnualAgreementPanel,
+    *,
+    destination: Path,
+) -> AnnualAgreementPanel:
+    panel = _reprepare_agreement_panel_for_publication(panel)
+    _validate_agreement_panel_frames(panel)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = destination.parent / f".{destination.name}.lock"
+    with _agreement_panel_lock(lock_path):
+        _recover_agreement_panel_swap(destination)
+        if destination.exists():
+            raise RuntimeError(f"annual agreement panel output already exists: {destination}")
+        token = uuid4().hex
+        staged = destination.with_name(f".{destination.name}.staging-{token}")
+        backup = destination.with_name(f".{destination.name}.backup-{token}")
+        staged.mkdir()
+        try:
+            members: dict[str, dict[str, object]] = {}
+            for name in _AGREEMENT_PANEL_SCHEMAS:
+                path = staged / f"{name}.parquet"
+                getattr(panel, name).write_parquet(path)
+                members[name] = _observed_checkpoint_file_identity(path)
+            paired_path = staged / "paired_days.parquet"
+            with tempfile.TemporaryDirectory(
+                prefix="twair-agreement-panel-copy-", dir=staged
+            ) as temporary:
+                rewritten = staged / ".paired_days.ordered.parquet"
+                spill = Path(temporary) / "duckdb-spill"
+                spill.mkdir()
+                connection = duckdb.connect()
+                try:
+                    config = load_annual_agreement_config()
+                    connection.execute(f"SET threads={config.threads}")
+                    connection.execute(f"SET memory_limit='{config.memory_limit_gb}GB'")
+                    connection.execute(f"SET temp_directory='{_sql_path(spill)}'")
+                    connection.execute("SET preserve_insertion_order=false")
+                    copied = connection.execute(
+                        f"""
+                        COPY (
+                            SELECT * FROM read_parquet('{_sql_path(paired_path)}')
+                            ORDER BY radius_km, date, device_id
+                        ) TO '{_sql_path(rewritten)}' (FORMAT PARQUET)
+                        """
+                    ).fetchone()
+                    if copied is None or int(copied[0]) != panel.paired_days.height:
+                        raise RuntimeError("annual agreement paired-day COPY row count changed")
+                finally:
+                    connection.close()
+                    shutil.rmtree(spill)
+                rewritten.replace(paired_path)
+            members["paired_days"] = _observed_checkpoint_file_identity(paired_path)
+            _write_checkpoint_json(staged / "summary.json", panel.summary)
+            summary_file = _observed_checkpoint_file_identity(staged / "summary.json")
+            identity = {
+                **panel.manifest,
+                "members": members,
+                "summary_file": summary_file,
+            }
+            final_identity = {field: identity[field] for field in _AGREEMENT_PANEL_IDENTITY_FIELDS}
+            manifest = {
+                **identity,
+                "generation_sha256": _canonical_hash(final_identity),
+                "complete": True,
+            }
+            _write_checkpoint_json(staged / "manifest.json", manifest)
+            try:
+                staged.replace(destination)
+                return _load_annual_agreement_panel_unlocked(destination)
+            except BaseException:
+                if destination.exists():
+                    shutil.rmtree(destination)
+                if backup.exists():
+                    backup.replace(destination)
+                raise
+        finally:
+            if staged.exists():
+                shutil.rmtree(staged)
