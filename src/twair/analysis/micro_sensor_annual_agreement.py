@@ -5,14 +5,20 @@ from __future__ import annotations
 import json
 import math
 import re
+import shutil
+import sys
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import date, timedelta
 from hashlib import sha256
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+import duckdb
 import polars as pl
 
 from twair.analysis.micro_sensor_annual_readiness import (
@@ -21,10 +27,13 @@ from twair.analysis.micro_sensor_annual_readiness import (
     ANNUAL_DEVICE_COHORT_SCHEMA,
     ANNUAL_DEVICE_DAY_SCHEMA,
     ANNUAL_EXCLUSION_SCHEMA,
+    load_annual_micro_sensor_panel_config,
 )
 from twair.config import ConfigError, load_conf
+from twair.ingest.micro_sensor_observations import OBSERVATION_OUTPUT_SCHEMA
 from twair.ingest.station_meta import resolve_station_geo
 from twair.net import sha256_file
+from twair.store.schema import PARTITION_SCHEMA
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ANNUAL_GENERATION_SHA256 = "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
@@ -86,6 +95,18 @@ _ANNUAL_MANIFEST_FIELDS = {
 }
 _ANNUAL_SUMMARY_FIELDS = {"calendar", "devices", "threshold_grid_rows", "output_rows"}
 _ANNUAL_SUMMARY_CALENDAR_FIELDS = {"complete_dates", "catalogue_absent_dates"}
+_AGREEMENT_VARIABLES = ("pm25", "humidity", "temperature")
+_AGREEMENT_COUNT_COLUMNS = tuple(
+    name for name, dtype in ANNUAL_DEVICE_DAY_SCHEMA if dtype == pl.Int64
+)
+AGREEMENT_DAY_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    *ANNUAL_DEVICE_DAY_SCHEMA,
+    ("micro_pm25_mean", pl.Float64),
+    ("micro_humidity_mean", pl.Float64),
+    ("micro_temperature_mean", pl.Float64),
+    ("ground_pm25_mean", pl.Float64),
+    ("reason", pl.String),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +154,31 @@ class AnnualReadinessInput:
     cohort_thresholds: pl.DataFrame
     exclusions: pl.DataFrame
     candidate_cohorts: tuple[AnnualDistanceCohort, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementDayAggregation:
+    rows: pl.DataFrame
+    summary: dict[str, int]
+    input_identities: dict[str, object]
+    config: AnnualAgreementConfig
+    input_paths: AgreementDayInputPaths | None
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementDayInputPaths:
+    micro_paths: tuple[tuple[str, Path], ...]
+    annual_device_days: PinnedAnnualMember
+    ground_path: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementDayCheckpoint:
+    directory: Path
+    member_path: Path
+    manifest_path: Path
+    rows: pl.DataFrame
+    manifest: dict[str, Any]
 
 
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
@@ -667,4 +713,1154 @@ def load_annual_readiness_input(
         expected_generation_sha256=config.annual_generation_sha256,
         config=config,
         reviewed_geography=reviewed_geography,
+    )
+
+
+def _sql_path(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
+def _validate_agreement_candidates(candidates: pl.DataFrame) -> pl.DataFrame:
+    expected = {"device_id": pl.String, "station_name": pl.String, "distance_km": pl.Float64}
+    if not set(expected).issubset(candidates.columns) or any(
+        candidates.schema[name] != dtype for name, dtype in expected.items()
+    ):
+        raise RuntimeError("annual agreement candidate schema changed")
+    selected = candidates.select(*expected)
+    invalid = selected.filter(
+        pl.col("device_id").is_null()
+        | (pl.col("device_id").str.strip_chars() == "")
+        | pl.col("station_name").is_null()
+        | (pl.col("station_name").str.strip_chars() == "")
+        | pl.col("distance_km").is_null()
+        | ~pl.col("distance_km").is_finite()
+        | (pl.col("distance_km") < 0)
+    )
+    if invalid.height or selected["device_id"].n_unique() != selected.height:
+        raise RuntimeError("annual agreement candidates are invalid")
+    return selected.sort("device_id")
+
+
+def _validate_agreement_source_member(path: Path, *, variable: str) -> None:
+    try:
+        schema = pl.read_parquet_schema(path)
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError(f"annual agreement {variable} member is unreadable") from exc
+    if schema != dict(OBSERVATION_OUTPUT_SCHEMA):
+        raise RuntimeError(f"annual agreement {variable} member schema changed")
+
+
+def _validate_agreement_ground_member(path: Path) -> None:
+    try:
+        schema = pl.read_parquet_schema(path)
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError("annual agreement ground member is unreadable") from exc
+    if set(schema) != set(PARTITION_SCHEMA) or any(
+        schema[name] != dtype for name, dtype in PARTITION_SCHEMA.items()
+    ):
+        raise RuntimeError("annual agreement ground member schema changed")
+
+
+def _create_agreement_variable_table(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    variable: str,
+    minimum: float,
+    maximum: float,
+) -> None:
+    connection.execute(
+        f"""
+        CREATE TEMP TABLE {variable}_daily AS
+        WITH duplicate_groups AS (
+            SELECT device_id, count(*)::BIGINT AS duplicate_timestamp_groups
+            FROM (
+                SELECT device_id, ts_local
+                FROM {variable}_input
+                WHERE ts_local IS NOT NULL
+                GROUP BY device_id, ts_local
+                HAVING count(*) > 1
+            ) groups
+            GROUP BY device_id
+        ), aggregated AS (
+            SELECT device_id,
+                   count(*)::BIGINT AS source_rows,
+                   count(*) FILTER (WHERE value IS NULL)::BIGINT AS null_value_rows,
+                   count(*) FILTER (WHERE ts_local IS NULL)::BIGINT AS null_timestamp_rows,
+                   count(DISTINCT ts_local)::BIGINT AS distinct_timestamps,
+                   count(DISTINCT date_trunc('hour', ts_local)) FILTER (
+                       WHERE ts_local IS NOT NULL AND value IS NOT NULL
+                   )::BIGINT AS observed_hours,
+                   count(*) FILTER (
+                       WHERE value IS NOT NULL AND (value < {minimum} OR value > {maximum})
+                   )::BIGINT AS extreme_rows,
+                   avg(value)::DOUBLE AS mean_value
+            FROM {variable}_input
+            GROUP BY device_id
+        )
+        SELECT aggregated.*,
+               coalesce(duplicate_groups.duplicate_timestamp_groups, 0)::BIGINT
+                   AS duplicate_timestamp_groups
+        FROM aggregated LEFT JOIN duplicate_groups USING (device_id)
+        """
+    )
+    connection.execute(
+        f"""
+        CREATE TEMP TABLE {variable}_hours AS
+        SELECT DISTINCT device_id, date_trunc('hour', ts_local) AS hour
+        FROM {variable}_input
+        WHERE ts_local IS NOT NULL AND value IS NOT NULL
+        """
+    )
+
+
+def _agreement_daily_query(day: date) -> str:
+    metrics = ",\n".join(
+        f"coalesce({variable}.{metric}, 0)::BIGINT AS {variable}_{metric}"
+        for variable in _AGREEMENT_VARIABLES
+        for metric in (
+            "source_rows",
+            "null_value_rows",
+            "null_timestamp_rows",
+            "distinct_timestamps",
+            "observed_hours",
+            "duplicate_timestamp_groups",
+            "extreme_rows",
+        )
+    )
+    return f"""
+        SELECT DATE '{day.isoformat()}' AS date,
+               candidates.device_id,
+               {metrics},
+               coalesce(trio.observed_hours, 0)::BIGINT AS trio_observed_hours,
+               coalesce(coordinates.source_rows, 0)::BIGINT AS coordinate_source_rows,
+               coalesce(coordinates.null_rows, 0)::BIGINT AS coordinate_null_rows,
+               coalesce(coordinates.invalid_rows, 0)::BIGINT AS coordinate_invalid_rows,
+               coalesce(coordinates.positions, 0)::BIGINT AS coordinate_positions,
+               coordinates.lon_min, coordinates.lon_max,
+               coordinates.lat_min, coordinates.lat_max,
+               CASE WHEN pm25.source_rows IS NULL THEN 'missing_pm25_coordinate'
+                    ELSE 'eligible' END AS spatial_state,
+               candidates.station_name, candidates.distance_km,
+               coalesce(ground.present_hours, 0)::BIGINT AS ground_present_trio_hours,
+               coalesce(ground.eligible_hours, 0)::BIGINT AS ground_eligible_trio_hours,
+               coalesce(ground.present_ineligible_hours, 0)::BIGINT
+                   AS ground_present_ineligible_trio_hours,
+               coalesce(ground.absent_hours, 0)::BIGINT AS ground_absent_trio_hours,
+               pm25.mean_value AS raw_pm25_mean,
+               humidity.mean_value AS raw_humidity_mean,
+               temperature.mean_value AS raw_temperature_mean,
+               ground.mean_value AS raw_ground_mean
+        FROM candidates
+        LEFT JOIN pm25_daily pm25 USING (device_id)
+        LEFT JOIN humidity_daily humidity USING (device_id)
+        LEFT JOIN temperature_daily temperature USING (device_id)
+        LEFT JOIN trio USING (device_id)
+        LEFT JOIN coordinates USING (device_id)
+        LEFT JOIN ground_by_device ground USING (device_id)
+        ORDER BY candidates.device_id
+    """
+
+
+def _assert_annual_counts_match(
+    recomputed: pl.DataFrame,
+    annual: pl.DataFrame,
+) -> None:
+    if annual["device_id"].n_unique() != annual.height:
+        raise RuntimeError("annual agreement device-day identities changed")
+    annual_rows = {str(row["device_id"]): row for row in annual.to_dicts()}
+    compared = (
+        *_AGREEMENT_COUNT_COLUMNS,
+        "lon_min",
+        "lon_max",
+        "lat_min",
+        "lat_max",
+        "spatial_state",
+        "station_name",
+        "distance_km",
+    )
+    for row in recomputed.to_dicts():
+        device_id = str(row["device_id"])
+        source_present = any(
+            row[f"{variable}_source_rows"] > 0 for variable in _AGREEMENT_VARIABLES
+        )
+        expected = annual_rows.pop(device_id, None)
+        if source_present != (expected is not None):
+            raise RuntimeError("annual agreement device-day presence changed")
+        if expected is not None and any(row[name] != expected[name] for name in compared):
+            raise RuntimeError("annual agreement derived device-day counts changed")
+    if annual_rows:
+        raise RuntimeError("annual agreement device-day identities changed")
+
+
+def _agreement_reason_expression(config: AnnualAgreementConfig) -> pl.Expr:
+    conditions: list[tuple[pl.Expr, str]] = [
+        (
+            pl.sum_horizontal(
+                *(pl.col(f"{variable}_source_rows") for variable in _AGREEMENT_VARIABLES)
+            )
+            == 0,
+            "device_day_absent",
+        )
+    ]
+    checks = (
+        ("null_timestamp_rows", "null_timestamp"),
+        ("null_value_rows", "null_value"),
+        ("duplicate_timestamp_groups", "duplicate_timestamp"),
+        ("extreme_rows", "extreme_value"),
+    )
+    for variable in _AGREEMENT_VARIABLES:
+        for metric, suffix in checks:
+            conditions.append((pl.col(f"{variable}_{metric}") > 0, f"{variable}_{suffix}"))
+        conditions.extend(
+            (
+                (
+                    pl.col(f"{variable}_source_rows") < config.minimum_source_rows,
+                    f"{variable}_insufficient_source_rows",
+                ),
+                (
+                    pl.col(f"{variable}_observed_hours") < config.minimum_observed_hours,
+                    f"{variable}_insufficient_observed_hours",
+                ),
+            )
+        )
+    conditions.extend(
+        (
+            (pl.col("ground_present_trio_hours") == 0, "ground_absent"),
+            (
+                pl.col("ground_eligible_trio_hours") < config.minimum_observed_hours,
+                "ground_present_but_ineligible",
+            ),
+        )
+    )
+    reason = pl.lit("eligible")
+    for condition, label in reversed(conditions):
+        reason = pl.when(condition).then(pl.lit(label)).otherwise(reason)
+    return reason.alias("reason")
+
+
+def _annual_selected_date_rows(path: Path, *, day: date) -> int:
+    try:
+        schema = pl.read_parquet_schema(path)
+        if schema != dict(ANNUAL_DEVICE_DAY_SCHEMA):
+            raise RuntimeError("annual agreement device-day schema changed")
+        rows = pl.scan_parquet(path).filter(pl.col("date") == day).select(pl.len()).collect().item()
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError("annual agreement device-day member is unreadable") from exc
+    if isinstance(rows, bool) or not isinstance(rows, int):
+        raise RuntimeError("annual agreement selected device-day row count changed")
+    return rows
+
+
+def _aggregate_agreement_day_paths(
+    *,
+    day: date,
+    micro_paths: dict[str, Path] | None,
+    annual_device_days: Path,
+    ground_path: Path | None,
+    candidates: pl.DataFrame,
+    config: AnnualAgreementConfig,
+) -> AgreementDayAggregation:
+    if config.threads != 1 or config.memory_limit_gb != 6:
+        raise RuntimeError("annual agreement aggregation resource limits changed")
+    selected_candidates = _validate_agreement_candidates(candidates)
+    if micro_paths is None:
+        if ground_path is not None:
+            raise RuntimeError("catalogue-absent agreement day cannot have a ground input")
+        if _annual_selected_date_rows(annual_device_days, day=day) != 0:
+            raise RuntimeError("catalogue absence contradicts annual device-days")
+        rows = selected_candidates.with_columns(
+            pl.lit(day, dtype=pl.Date).alias("date"),
+            *(pl.lit(0, dtype=pl.Int64).alias(name) for name in _AGREEMENT_COUNT_COLUMNS),
+            pl.lit(None, dtype=pl.Float64).alias("lon_min"),
+            pl.lit(None, dtype=pl.Float64).alias("lon_max"),
+            pl.lit(None, dtype=pl.Float64).alias("lat_min"),
+            pl.lit(None, dtype=pl.Float64).alias("lat_max"),
+            pl.lit("missing_pm25_coordinate").alias("spatial_state"),
+            pl.lit(None, dtype=pl.Float64).alias("micro_pm25_mean"),
+            pl.lit(None, dtype=pl.Float64).alias("micro_humidity_mean"),
+            pl.lit(None, dtype=pl.Float64).alias("micro_temperature_mean"),
+            pl.lit(None, dtype=pl.Float64).alias("ground_pm25_mean"),
+            pl.lit("catalogue_absent").alias("reason"),
+        ).select(*(name for name, _ in AGREEMENT_DAY_SCHEMA))
+        return AgreementDayAggregation(
+            rows=rows,
+            summary={"catalogue_absent": rows.height},
+            input_identities={},
+            config=config,
+            input_paths=None,
+        )
+    if set(micro_paths) != set(_AGREEMENT_VARIABLES) or ground_path is None:
+        raise RuntimeError("annual agreement aggregation requires three source members and ground")
+    try:
+        annual_schema = pl.read_parquet_schema(annual_device_days)
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError("annual agreement device-day member is unreadable") from exc
+    if annual_schema != dict(ANNUAL_DEVICE_DAY_SCHEMA):
+        raise RuntimeError("annual agreement device-day schema changed")
+    for variable in _AGREEMENT_VARIABLES:
+        _validate_agreement_source_member(micro_paths[variable], variable=variable)
+    _validate_agreement_ground_member(ground_path)
+    identity_paths = (
+        *tuple(micro_paths[variable] for variable in _AGREEMENT_VARIABLES),
+        annual_device_days,
+        ground_path,
+    )
+    before = tuple(_file_identity(path) for path in identity_paths)
+    ranges = dict(load_annual_micro_sensor_panel_config().analysis.extreme_ranges)
+    next_day = day + timedelta(days=1)
+    with tempfile.TemporaryDirectory(prefix="twair-agreement-day-") as temporary:
+        temp_dir = Path(temporary) / "duckdb-spill"
+        temp_dir.mkdir()
+        connection = duckdb.connect()
+        try:
+            connection.execute(f"SET threads={config.threads}")
+            connection.execute(f"SET memory_limit='{config.memory_limit_gb}GB'")
+            connection.execute(f"SET temp_directory='{_sql_path(temp_dir)}'")
+            connection.execute("SET preserve_insertion_order=false")
+            connection.register("candidate_input", selected_candidates.to_arrow())
+            connection.execute("CREATE TEMP TABLE candidates AS SELECT * FROM candidate_input")
+            for variable in _AGREEMENT_VARIABLES:
+                path = micro_paths[variable]
+                connection.execute(
+                    f"CREATE TEMP VIEW {variable}_input AS "
+                    f"SELECT source.* FROM read_parquet('{_sql_path(path)}') source "
+                    "INNER JOIN candidates USING (device_id)"
+                )
+                invalid = connection.execute(
+                    f"""
+                    SELECT count(*) FILTER (WHERE variable IS NULL OR variable != ?),
+                           count(*) FILTER (WHERE ts_local IS NOT NULL AND (
+                               ts_local < ?::TIMESTAMP OR ts_local >= ?::TIMESTAMP
+                           )),
+                           count(*) FILTER (WHERE value IS NOT NULL AND NOT isfinite(value)),
+                           count(*) FILTER (WHERE (coordinate_wgs84_valid IS NULL)
+                               != (lon IS NULL OR lat IS NULL))
+                    FROM {variable}_input
+                    """,
+                    (variable, day.isoformat(), next_day.isoformat()),
+                ).fetchone()
+                if invalid is None or any(int(value) for value in invalid):
+                    raise RuntimeError(f"annual agreement {variable} source rows are invalid")
+                _create_agreement_variable_table(
+                    connection,
+                    variable=variable,
+                    minimum=ranges[variable][0],
+                    maximum=ranges[variable][1],
+                )
+            connection.execute(
+                """
+                CREATE TEMP TABLE trio_hours AS
+                SELECT pm25.device_id, pm25.hour
+                FROM pm25_hours pm25
+                INNER JOIN humidity_hours humidity USING (device_id, hour)
+                INNER JOIN temperature_hours temperature USING (device_id, hour)
+                """
+            )
+            connection.execute(
+                """
+                CREATE TEMP TABLE trio AS
+                SELECT device_id, count(*)::BIGINT AS observed_hours
+                FROM trio_hours
+                GROUP BY device_id
+                """
+            )
+            connection.execute(
+                """
+                CREATE TEMP TABLE coordinates AS
+                SELECT device_id, count(*)::BIGINT AS source_rows,
+                       count(*) FILTER (WHERE lon IS NULL OR lat IS NULL)::BIGINT AS null_rows,
+                       count(*) FILTER (WHERE coordinate_wgs84_valid IS FALSE)::BIGINT AS invalid_rows,
+                       count(DISTINCT struct_pack(lon := lon, lat := lat)) FILTER (
+                           WHERE coordinate_wgs84_valid IS TRUE
+                       )::BIGINT AS positions,
+                       min(lon) FILTER (WHERE coordinate_wgs84_valid IS TRUE)::DOUBLE AS lon_min,
+                       max(lon) FILTER (WHERE coordinate_wgs84_valid IS TRUE)::DOUBLE AS lon_max,
+                       min(lat) FILTER (WHERE coordinate_wgs84_valid IS TRUE)::DOUBLE AS lat_min,
+                       max(lat) FILTER (WHERE coordinate_wgs84_valid IS TRUE)::DOUBLE AS lat_max
+                FROM pm25_input GROUP BY device_id
+                """
+            )
+            connection.execute(
+                f"""
+                CREATE TEMP TABLE ground_pm25 AS
+                SELECT CAST(station_name AS VARCHAR) AS station_name, ts_local AS hour,
+                       value::DOUBLE AS ground_pm25, CAST(flag AS VARCHAR) AS ground_flag
+                FROM read_parquet('{_sql_path(ground_path)}')
+                WHERE CAST(pollutant AS VARCHAR) = 'PM2.5'
+                  AND ts_local >= TIMESTAMP '{day.isoformat()} 00:00:00'
+                  AND ts_local < TIMESTAMP '{next_day.isoformat()} 00:00:00'
+                  AND station_name IN (SELECT station_name FROM candidates)
+                """
+            )
+            ground_invalid = connection.execute(
+                """
+                    SELECT (SELECT count(*) FROM (
+                               SELECT station_name, hour FROM ground_pm25
+                               GROUP BY ALL HAVING count(*) > 1
+                           ))
+                    """
+            ).fetchone()
+            if ground_invalid is None or any(int(value) for value in ground_invalid):
+                raise RuntimeError("annual agreement ground PM2.5 member is invalid")
+            connection.execute(
+                """
+                CREATE TEMP TABLE ground_by_device AS
+                SELECT trio.device_id,
+                       count(*) FILTER (WHERE ground.hour IS NOT NULL)::BIGINT AS present_hours,
+                       count(*) FILTER (WHERE ground.hour IS NOT NULL
+                           AND ground.ground_flag = 'valid'
+                           AND ground.ground_pm25 IS NOT NULL
+                           AND isfinite(ground.ground_pm25))::BIGINT AS eligible_hours,
+                       count(*) FILTER (WHERE ground.hour IS NOT NULL AND NOT coalesce(
+                           ground.ground_flag = 'valid' AND ground.ground_pm25 IS NOT NULL
+                           AND isfinite(ground.ground_pm25),
+                           false
+                       ))::BIGINT AS present_ineligible_hours,
+                       count(*) FILTER (WHERE ground.hour IS NULL)::BIGINT AS absent_hours,
+                       avg(ground.ground_pm25) FILTER (WHERE ground.ground_flag = 'valid'
+                           AND ground.ground_pm25 IS NOT NULL
+                           AND isfinite(ground.ground_pm25))::DOUBLE AS mean_value
+                FROM trio_hours trio
+                INNER JOIN candidates USING (device_id)
+                LEFT JOIN ground_pm25 ground
+                  ON ground.station_name = candidates.station_name AND ground.hour = trio.hour
+                GROUP BY trio.device_id
+                """
+            )
+            recomputed = pl.DataFrame(
+                connection.execute(_agreement_daily_query(day)).to_arrow_table()
+            )
+            annual = pl.DataFrame(
+                connection.execute(
+                    f"""
+                    SELECT annual.* FROM read_parquet('{_sql_path(annual_device_days)}') annual
+                    INNER JOIN candidates USING (device_id)
+                    WHERE annual.date = DATE '{day.isoformat()}'
+                    """
+                ).to_arrow_table()
+            ).cast(dict(ANNUAL_DEVICE_DAY_SCHEMA), strict=True)
+        finally:
+            connection.close()
+            shutil.rmtree(temp_dir)
+    after = tuple(_file_identity(path) for path in identity_paths)
+    if before != after:
+        raise RuntimeError("an annual agreement input changed while it was read")
+    recomputed = recomputed.cast(
+        {
+            **dict(ANNUAL_DEVICE_DAY_SCHEMA),
+            "raw_pm25_mean": pl.Float64,
+            "raw_humidity_mean": pl.Float64,
+            "raw_temperature_mean": pl.Float64,
+            "raw_ground_mean": pl.Float64,
+        },
+        strict=True,
+    )
+    _assert_annual_counts_match(recomputed, annual)
+    reason = _agreement_reason_expression(config)
+    rows = (
+        recomputed.with_columns(reason)
+        .with_columns(
+            pl.when(pl.col("reason") == "eligible")
+            .then(pl.col("raw_pm25_mean"))
+            .alias("micro_pm25_mean"),
+            pl.when(pl.col("reason") == "eligible")
+            .then(pl.col("raw_humidity_mean"))
+            .alias("micro_humidity_mean"),
+            pl.when(pl.col("reason") == "eligible")
+            .then(pl.col("raw_temperature_mean"))
+            .alias("micro_temperature_mean"),
+            pl.when(pl.col("reason") == "eligible")
+            .then(pl.col("raw_ground_mean"))
+            .alias("ground_pm25_mean"),
+        )
+        .select(*(name for name, _ in AGREEMENT_DAY_SCHEMA))
+    )
+    rows = rows.cast(dict(AGREEMENT_DAY_SCHEMA), strict=True)
+    summary = {
+        str(reason_value): count
+        for reason_value, count in rows.group_by("reason").len().iter_rows()
+    }
+    return AgreementDayAggregation(
+        rows=rows,
+        summary=summary,
+        input_identities={},
+        config=config,
+        input_paths=None,
+    )
+
+
+def _observed_checkpoint_file_identity(path: Path) -> dict[str, object]:
+    observed = _file_identity(path)
+    return {"path": path.name, "bytes": observed["bytes"], "sha256": observed["sha256"]}
+
+
+def _aggregate_agreement_day(
+    *,
+    day: date,
+    micro_paths: dict[str, Path] | None,
+    annual_device_days: PinnedAnnualMember,
+    ground_path: Path | None,
+    candidates: pl.DataFrame,
+    input_identities: dict[str, object],
+    config: AnnualAgreementConfig,
+) -> AgreementDayAggregation:
+    normalized = _checkpoint_inputs(input_identities, config=config)
+    if normalized["annual_device_days"] != {
+        "path": annual_device_days.path.name,
+        "bytes": annual_device_days.bytes,
+        "sha256": annual_device_days.sha256,
+    }:
+        raise RuntimeError("annual agreement device-day member changed")
+    selected = _validate_agreement_candidates(candidates)
+    if normalized["candidate_identity_sha256"] != _canonical_hash(selected.to_dicts()):
+        raise RuntimeError("annual agreement candidate identity changed")
+    if micro_paths is None:
+        if normalized["catalogue_state"] != "absent":
+            raise RuntimeError("annual agreement catalogue state changed")
+        with stable_annual_member_path(annual_device_days) as annual_path:
+            selected_date_rows = _annual_selected_date_rows(annual_path, day=day)
+            if selected_date_rows != 0:
+                raise RuntimeError("catalogue absence contradicts annual device-days")
+            if normalized["annual_selected_date_rows"] != selected_date_rows:
+                raise RuntimeError("annual agreement selected device-day row count changed")
+            result = _aggregate_agreement_day_paths(
+                day=day,
+                micro_paths=None,
+                annual_device_days=annual_path,
+                ground_path=ground_path,
+                candidates=selected,
+                config=config,
+            )
+        return replace(
+            result,
+            input_identities=normalized,
+            input_paths=AgreementDayInputPaths((), annual_device_days, None),
+        )
+    if set(micro_paths) != set(_AGREEMENT_VARIABLES) or ground_path is None:
+        raise RuntimeError("annual agreement aggregation requires three source members and ground")
+    if normalized["catalogue_state"] != "present":
+        raise RuntimeError("annual agreement catalogue state changed")
+    normalized_sources = _mapping(
+        normalized["source_members"], label="annual agreement source members"
+    )
+    for variable in _AGREEMENT_VARIABLES:
+        if normalized_sources[variable] != _observed_checkpoint_file_identity(
+            micro_paths[variable]
+        ):
+            raise RuntimeError(f"annual agreement {variable} source member changed")
+    if normalized["ground_member"] != _observed_checkpoint_file_identity(ground_path):
+        raise RuntimeError("annual agreement ground member changed")
+    with stable_annual_member_path(annual_device_days) as annual_path:
+        if normalized["annual_selected_date_rows"] != _annual_selected_date_rows(
+            annual_path, day=day
+        ):
+            raise RuntimeError("annual agreement selected device-day row count changed")
+        result = _aggregate_agreement_day_paths(
+            day=day,
+            micro_paths=micro_paths,
+            annual_device_days=annual_path,
+            ground_path=ground_path,
+            candidates=selected,
+            config=config,
+        )
+    return replace(
+        result,
+        input_identities=normalized,
+        input_paths=AgreementDayInputPaths(
+            tuple((variable, micro_paths[variable]) for variable in _AGREEMENT_VARIABLES),
+            annual_device_days,
+            ground_path,
+        ),
+    )
+
+
+def aggregate_agreement_day(
+    *,
+    day: date,
+    micro_paths: dict[str, Path] | None,
+    annual_device_days: PinnedAnnualMember,
+    ground_path: Path | None,
+    candidates: pl.DataFrame,
+    input_identities: dict[str, object],
+    config: AnnualAgreementConfig,
+) -> AgreementDayAggregation:
+    if not isinstance(annual_device_days, PinnedAnnualMember):
+        raise TypeError("annual_device_days must be a PinnedAnnualMember")
+    reviewed = load_annual_agreement_config()
+    if config != reviewed:
+        raise RuntimeError("annual agreement reviewed protocol changed")
+    selected = _validate_agreement_candidates(candidates)
+    if (
+        selected.height != reviewed.primary_devices
+        or selected["station_name"].n_unique() != reviewed.primary_stations
+        or selected.filter(pl.col("distance_km") > reviewed.primary_distance_km).height
+    ):
+        raise RuntimeError("annual agreement reviewed candidate cohort changed")
+    readiness = load_annual_readiness_input(annual_device_days.generation_dir)
+    if readiness.device_days != annual_device_days:
+        raise RuntimeError("annual agreement reviewed annual member changed")
+    primary_cohorts = tuple(
+        cohort
+        for cohort in readiness.candidate_cohorts
+        if cohort.radius_km == reviewed.primary_distance_km
+    )
+    if len(primary_cohorts) != 1:
+        raise RuntimeError("annual agreement reviewed primary cohort changed")
+    reviewed_candidates = _validate_agreement_candidates(primary_cohorts[0].candidates)
+    if _canonical_hash(selected.to_dicts()) != _canonical_hash(reviewed_candidates.to_dicts()):
+        raise RuntimeError("annual agreement exact reviewed primary cohort changed")
+    return _aggregate_agreement_day(
+        day=day,
+        micro_paths=micro_paths,
+        annual_device_days=annual_device_days,
+        ground_path=ground_path,
+        candidates=reviewed_candidates,
+        input_identities=input_identities,
+        config=config,
+    )
+
+
+def _validate_agreement_day_rows(frame: pl.DataFrame, *, day: date) -> None:
+    if frame.schema != dict(AGREEMENT_DAY_SCHEMA):
+        raise RuntimeError("annual agreement checkpoint schema changed")
+    if (
+        frame["date"].null_count()
+        or set(frame["date"].unique().to_list()) != {day}
+        or frame["device_id"].null_count()
+        or frame["device_id"].n_unique() != frame.height
+    ):
+        raise RuntimeError("annual agreement checkpoint row identities changed")
+    if any(
+        frame[column].null_count() or (frame[column] < 0).any()
+        for column in _AGREEMENT_COUNT_COLUMNS
+    ):
+        raise RuntimeError("annual agreement checkpoint counts changed")
+    model_columns = (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    )
+    if frame.filter(
+        pl.any_horizontal(
+            pl.col(column).is_not_null() & ~pl.col(column).is_finite() for column in model_columns
+        )
+    ).height:
+        raise RuntimeError("annual agreement checkpoint model value is non-finite")
+    if frame.filter(
+        (pl.col("reason") != "eligible")
+        & pl.any_horizontal(pl.col(column).is_not_null() for column in model_columns)
+    ).height:
+        raise RuntimeError("annual agreement checkpoint ineligible value is not null")
+    if (
+        frame["reason"].null_count()
+        or frame.filter(
+            (pl.col("reason") == "eligible")
+            & pl.any_horizontal(pl.col(column).is_null() for column in model_columns)
+        ).height
+    ):
+        raise RuntimeError("annual agreement checkpoint eligible value is null")
+
+
+def _checkpoint_config(config: AnnualAgreementConfig) -> dict[str, object]:
+    value = json.loads(json.dumps(asdict(config), allow_nan=False))
+    if not isinstance(value, dict):
+        raise RuntimeError("annual agreement checkpoint config is invalid")
+    return value
+
+
+def _checkpoint_file_identity(value: object, *, label: str) -> dict[str, object]:
+    raw = _mapping(value, label=label)
+    if set(raw) != {"path", "bytes", "sha256"}:
+        raise RuntimeError(f"{label} fields changed")
+    path = raw["path"]
+    size = raw["bytes"]
+    digest = raw["sha256"]
+    if (
+        not isinstance(path, str)
+        or not path
+        or Path(path).is_absolute()
+        or any(part in {"", ".", ".."} for part in Path(path).parts)
+    ):
+        raise RuntimeError(f"{label} path changed")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise RuntimeError(f"{label} bytes changed")
+    if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
+        raise RuntimeError(f"{label} SHA-256 changed")
+    return {"path": path, "bytes": size, "sha256": digest}
+
+
+def _checkpoint_inputs(
+    value: dict[str, object],
+    *,
+    config: AnnualAgreementConfig,
+) -> dict[str, object]:
+    expected = {
+        "raw_generation_sha256",
+        "parsed_generation_sha256",
+        "source_members",
+        "ground_member",
+        "annual_generation_sha256",
+        "annual_device_days",
+        "candidate_identity_sha256",
+        "catalogue_state",
+        "annual_selected_date_rows",
+    }
+    if set(value) != expected:
+        raise RuntimeError("annual agreement checkpoint input identity fields changed")
+    identities: dict[str, str] = {}
+    for name in (
+        "raw_generation_sha256",
+        "parsed_generation_sha256",
+        "annual_generation_sha256",
+        "candidate_identity_sha256",
+    ):
+        item = value[name]
+        if not isinstance(item, str) or _SHA256.fullmatch(item) is None:
+            raise RuntimeError(f"annual agreement checkpoint {name} changed")
+        identities[name] = item
+    if identities["annual_generation_sha256"] != config.annual_generation_sha256:
+        raise RuntimeError("annual agreement checkpoint annual generation changed")
+    catalogue_state = value["catalogue_state"]
+    if catalogue_state not in {"present", "absent"}:
+        raise RuntimeError("annual agreement checkpoint catalogue state changed")
+    selected_date_rows = value["annual_selected_date_rows"]
+    if (
+        isinstance(selected_date_rows, bool)
+        or not isinstance(selected_date_rows, int)
+        or selected_date_rows < 0
+    ):
+        raise RuntimeError("annual agreement checkpoint selected-date rows changed")
+    if catalogue_state == "absent":
+        if (
+            value["source_members"] is not None
+            or value["ground_member"] is not None
+            or selected_date_rows != 0
+        ):
+            raise RuntimeError("annual agreement checkpoint catalogue absence changed")
+        sources: dict[str, object] | None = None
+        ground: dict[str, object] | None = None
+    else:
+        source_raw = _mapping(value["source_members"], label="annual agreement source members")
+        if set(source_raw) != set(_AGREEMENT_VARIABLES):
+            raise RuntimeError("annual agreement checkpoint source member fields changed")
+        sources = {
+            variable: _checkpoint_file_identity(
+                source_raw[variable],
+                label=f"annual agreement {variable} source member",
+            )
+            for variable in _AGREEMENT_VARIABLES
+        }
+        ground = _checkpoint_file_identity(
+            value["ground_member"],
+            label="annual agreement ground member",
+        )
+    return {
+        **identities,
+        "source_members": sources,
+        "ground_member": ground,
+        "annual_device_days": _checkpoint_file_identity(
+            value["annual_device_days"],
+            label="annual agreement device-day member",
+        ),
+        "catalogue_state": catalogue_state,
+        "annual_selected_date_rows": selected_date_rows,
+    }
+
+
+def _checkpoint_contract(
+    *,
+    day: date,
+    input_identities: dict[str, object],
+    config: AnnualAgreementConfig,
+) -> dict[str, object]:
+    normalized_inputs = _checkpoint_inputs(input_identities, config=config)
+    return {
+        "schema_version": 1,
+        "kind": "annual_reference_station_agreement_day",
+        "date": day.isoformat(),
+        "inputs": normalized_inputs,
+        "config": _checkpoint_config(config),
+    }
+
+
+def _agreement_checkpoint_directory(checkpoint_root: Path, *, day: date) -> Path:
+    return checkpoint_root / day.isoformat()
+
+
+def _write_checkpoint_json(path: Path, value: object) -> None:
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+@contextmanager
+def _agreement_checkpoint_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_file = path.open("a+b")
+    acquired = False
+    try:
+        if path.stat().st_size == 0:
+            lock_file.write(b"\0")
+            lock_file.flush()
+        lock_file.seek(0)
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise RuntimeError("another annual agreement checkpoint writer is active") from None
+        acquired = True
+        yield
+    finally:
+        try:
+            if acquired:
+                lock_file.seek(0)
+                if sys.platform == "win32":
+                    import msvcrt
+
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_file.close()
+
+
+def _recover_agreement_checkpoint_swap(destination: Path) -> None:
+    parent = destination.parent
+    if not parent.exists():
+        return
+    stages = sorted(parent.glob(f".{destination.name}.staging-*"))
+    backups = sorted(parent.glob(f".{destination.name}.backup-*"))
+    if len(stages) > 1 or len(backups) > 1:
+        raise RuntimeError("multiple interrupted annual agreement checkpoint swaps")
+    if destination.exists() and stages and backups:
+        raise RuntimeError("ambiguous interrupted annual agreement checkpoint swap")
+    if not destination.exists() and backups:
+        backups[0].replace(destination)
+        backups = []
+    for staged in stages:
+        shutil.rmtree(staged)
+    if destination.exists() and backups:
+        shutil.rmtree(backups[0])
+
+
+def _replaceable_incomplete_checkpoint(destination: Path) -> bool:
+    manifest_path = destination / "manifest.json"
+    if not manifest_path.exists():
+        return True
+    manifest = _read_json(
+        manifest_path,
+        label="existing annual agreement checkpoint manifest",
+    )
+    return manifest.get("complete") is not True
+
+
+def _same_json_type_and_value(observed: object, expected: object) -> bool:
+    if type(observed) is not type(expected):
+        return False
+    if isinstance(expected, dict) and isinstance(observed, dict):
+        return set(observed) == set(expected) and all(
+            _same_json_type_and_value(observed[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list) and isinstance(observed, list):
+        return len(observed) == len(expected) and all(
+            _same_json_type_and_value(left, right)
+            for left, right in zip(observed, expected, strict=True)
+        )
+    return observed == expected
+
+
+def _load_agreement_day_checkpoint_unlocked(
+    *,
+    day: date,
+    input_identities: dict[str, object],
+    config: AnnualAgreementConfig,
+    checkpoint_root: Path,
+) -> AgreementDayCheckpoint:
+    directory = _agreement_checkpoint_directory(checkpoint_root, day=day)
+    member_path = directory / "paired_day.parquet"
+    manifest_path = directory / "manifest.json"
+    if not directory.is_dir():
+        raise FileNotFoundError(f"annual agreement checkpoint is missing: {day}")
+    if {path.name for path in directory.iterdir()} != {"paired_day.parquet", "manifest.json"}:
+        raise RuntimeError("annual agreement checkpoint file set changed")
+    manifest = _read_json(manifest_path, label="annual agreement checkpoint manifest")
+    contract = _checkpoint_contract(
+        day=day,
+        input_identities=input_identities,
+        config=config,
+    )
+    if type(manifest.get("schema_version")) is not int:
+        raise RuntimeError("annual agreement checkpoint manifest contract changed")
+    if any(
+        not _same_json_type_and_value(manifest.get(key), value) for key, value in contract.items()
+    ):
+        raise RuntimeError("annual agreement checkpoint input identity changed")
+    if (
+        set(manifest)
+        != {
+            *contract,
+            "complete",
+            "rows",
+            "schema",
+            "member",
+            "summary",
+            "summary_sha256",
+        }
+        or type(manifest.get("schema_version")) is not int
+        or manifest.get("complete") is not True
+    ):
+        raise RuntimeError("annual agreement checkpoint manifest contract changed")
+    expected_schema = {name: str(dtype) for name, dtype in AGREEMENT_DAY_SCHEMA}
+    if manifest.get("schema") != expected_schema:
+        raise RuntimeError("annual agreement checkpoint schema changed")
+    observed_member = _file_identity(member_path)
+    expected_member = {
+        "path": "paired_day.parquet",
+        "bytes": observed_member["bytes"],
+        "sha256": observed_member["sha256"],
+    }
+    if manifest.get("member") != expected_member:
+        raise RuntimeError("annual agreement checkpoint member changed")
+    before = (observed_member, _file_identity(manifest_path))
+    try:
+        rows = pl.read_parquet(member_path)
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError("annual agreement checkpoint member is unreadable") from exc
+    _validate_agreement_day_rows(rows, day=day)
+    declared_rows = manifest.get("rows")
+    if type(declared_rows) is not int or declared_rows < 0 or declared_rows != rows.height:
+        raise RuntimeError("annual agreement checkpoint row count changed")
+    summary = manifest.get("summary")
+    if (
+        not isinstance(summary, dict)
+        or not all(
+            isinstance(key, str) and type(value) is int and value >= 0
+            for key, value in summary.items()
+        )
+        or manifest.get("summary_sha256") != _canonical_hash(summary)
+    ):
+        raise RuntimeError("annual agreement checkpoint summary changed")
+    observed_summary = {
+        str(reason): count for reason, count in rows.group_by("reason").len().iter_rows()
+    }
+    if summary != observed_summary:
+        raise RuntimeError("annual agreement checkpoint summary changed")
+    after = (_file_identity(member_path), _file_identity(manifest_path))
+    if before != after:
+        raise RuntimeError("annual agreement checkpoint changed during read")
+    return AgreementDayCheckpoint(
+        directory=directory,
+        member_path=member_path,
+        manifest_path=manifest_path,
+        rows=rows,
+        manifest=manifest,
+    )
+
+
+def _load_agreement_day_checkpoint(
+    *,
+    day: date,
+    input_identities: dict[str, object],
+    config: AnnualAgreementConfig,
+    checkpoint_root: Path,
+) -> AgreementDayCheckpoint:
+    destination = _agreement_checkpoint_directory(checkpoint_root, day=day)
+    with _agreement_checkpoint_lock(checkpoint_root / f".{day.isoformat()}.lock"):
+        _recover_agreement_checkpoint_swap(destination)
+        return _load_agreement_day_checkpoint_unlocked(
+            day=day,
+            input_identities=input_identities,
+            config=config,
+            checkpoint_root=checkpoint_root,
+        )
+
+
+def load_agreement_day_checkpoint(
+    *,
+    day: date,
+    input_identities: dict[str, object],
+    config: AnnualAgreementConfig,
+    checkpoint_root: Path,
+) -> AgreementDayCheckpoint:
+    if config != load_annual_agreement_config():
+        raise RuntimeError("annual agreement reviewed protocol changed")
+    return _load_agreement_day_checkpoint(
+        day=day,
+        input_identities=input_identities,
+        config=config,
+        checkpoint_root=checkpoint_root,
+    )
+
+
+def _revalidate_agreement_result_inputs(result: AgreementDayAggregation) -> None:
+    paths = result.input_paths
+    if paths is None:
+        raise RuntimeError("annual agreement aggregation input paths are missing")
+    normalized = _checkpoint_inputs(result.input_identities, config=result.config)
+    micro_paths = dict(paths.micro_paths)
+    catalogue_absent_rows = (
+        result.rows.filter(pl.col("reason") == "catalogue_absent").height
+        if "reason" in result.rows.columns
+        else -1
+    )
+    if normalized["catalogue_state"] == "absent":
+        if (
+            paths.micro_paths
+            or paths.ground_path is not None
+            or normalized["source_members"] is not None
+            or normalized["ground_member"] is not None
+            or not result.rows.height
+            or catalogue_absent_rows != result.rows.height
+        ):
+            raise RuntimeError("annual agreement catalogue state and input paths disagree")
+    elif (
+        len(paths.micro_paths) != len(_AGREEMENT_VARIABLES)
+        or set(micro_paths) != set(_AGREEMENT_VARIABLES)
+        or paths.ground_path is None
+        or not isinstance(normalized["source_members"], dict)
+        or not isinstance(normalized["ground_member"], dict)
+        or catalogue_absent_rows != 0
+    ):
+        raise RuntimeError("annual agreement catalogue state and input paths disagree")
+    if normalized["catalogue_state"] == "present":
+        normalized_sources = _mapping(
+            normalized["source_members"], label="annual agreement source members"
+        )
+        for variable in _AGREEMENT_VARIABLES:
+            if normalized_sources[variable] != _observed_checkpoint_file_identity(
+                micro_paths[variable]
+            ):
+                raise RuntimeError(f"annual agreement {variable} source member changed")
+        if paths.ground_path is None or normalized[
+            "ground_member"
+        ] != _observed_checkpoint_file_identity(paths.ground_path):
+            raise RuntimeError("annual agreement ground member changed")
+    with stable_annual_member_path(paths.annual_device_days) as annual_path:
+        if normalized["annual_device_days"] != {
+            "path": paths.annual_device_days.path.name,
+            "bytes": paths.annual_device_days.bytes,
+            "sha256": paths.annual_device_days.sha256,
+        }:
+            raise RuntimeError("annual agreement device-day member changed")
+        days = result.rows["date"].unique().to_list()
+        if len(days) != 1 or not isinstance(days[0], date):
+            raise RuntimeError("annual agreement aggregation date changed")
+        if normalized["annual_selected_date_rows"] != _annual_selected_date_rows(
+            annual_path, day=days[0]
+        ):
+            raise RuntimeError("annual agreement selected device-day row count changed")
+    candidates = result.rows.select("device_id", "station_name", "distance_km").sort("device_id")
+    if normalized["candidate_identity_sha256"] != _canonical_hash(candidates.to_dicts()):
+        raise RuntimeError("annual agreement candidate identity changed")
+
+
+def _write_agreement_day_checkpoint(
+    result: AgreementDayAggregation,
+    *,
+    day: date,
+    checkpoint_root: Path,
+) -> AgreementDayCheckpoint:
+    _revalidate_agreement_result_inputs(result)
+    _validate_agreement_day_rows(result.rows, day=day)
+    observed_summary = {
+        str(reason): count for reason, count in result.rows.group_by("reason").len().iter_rows()
+    }
+    if result.summary != observed_summary:
+        raise RuntimeError("annual agreement checkpoint summary changed")
+    contract = _checkpoint_contract(
+        day=day,
+        input_identities=result.input_identities,
+        config=result.config,
+    )
+    destination = _agreement_checkpoint_directory(checkpoint_root, day=day)
+    lock_path = checkpoint_root / f".{day.isoformat()}.lock"
+    with _agreement_checkpoint_lock(lock_path):
+        _recover_agreement_checkpoint_swap(destination)
+        if destination.exists() and not _replaceable_incomplete_checkpoint(destination):
+            return _load_agreement_day_checkpoint_unlocked(
+                day=day,
+                input_identities=result.input_identities,
+                config=result.config,
+                checkpoint_root=checkpoint_root,
+            )
+        checkpoint_root.mkdir(parents=True, exist_ok=True)
+        token = uuid4().hex
+        staged = destination.with_name(f".{destination.name}.staging-{token}")
+        backup = destination.with_name(f".{destination.name}.backup-{token}")
+        staged.mkdir()
+        had_existing = destination.exists()
+        try:
+            member_path = staged / "paired_day.parquet"
+            result.rows.write_parquet(member_path)
+            member = _file_identity(member_path)
+            manifest = {
+                **contract,
+                "rows": result.rows.height,
+                "schema": {name: str(dtype) for name, dtype in AGREEMENT_DAY_SCHEMA},
+                "member": {
+                    "path": "paired_day.parquet",
+                    "bytes": member["bytes"],
+                    "sha256": member["sha256"],
+                },
+                "summary": result.summary,
+                "summary_sha256": _canonical_hash(result.summary),
+                "complete": True,
+            }
+            _write_checkpoint_json(staged / "manifest.json", manifest)
+            try:
+                if had_existing:
+                    destination.replace(backup)
+                staged.replace(destination)
+            except BaseException:
+                if had_existing and backup.exists():
+                    if destination.exists():
+                        shutil.rmtree(destination)
+                    backup.replace(destination)
+                raise
+            if backup.exists():
+                shutil.rmtree(backup)
+        finally:
+            if staged.exists():
+                shutil.rmtree(staged)
+        return _load_agreement_day_checkpoint_unlocked(
+            day=day,
+            input_identities=result.input_identities,
+            config=result.config,
+            checkpoint_root=checkpoint_root,
+        )
+
+
+def write_agreement_day_checkpoint(
+    result: AgreementDayAggregation,
+    *,
+    day: date,
+    checkpoint_root: Path,
+) -> AgreementDayCheckpoint:
+    reviewed = load_annual_agreement_config()
+    if result.config != reviewed:
+        raise RuntimeError("annual agreement reviewed protocol changed")
+    rows = _validate_agreement_candidates(
+        result.rows.select("device_id", "station_name", "distance_km")
+    )
+    if (
+        rows.height != reviewed.primary_devices
+        or rows["station_name"].n_unique() != reviewed.primary_stations
+        or rows.filter(pl.col("distance_km") > reviewed.primary_distance_km).height
+    ):
+        raise RuntimeError("annual agreement reviewed candidate cohort changed")
+    return _write_agreement_day_checkpoint(
+        result,
+        day=day,
+        checkpoint_root=checkpoint_root,
     )
