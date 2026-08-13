@@ -117,6 +117,12 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "micro_sensor_annual_agreement",
+        "twair analyze micro-sensor-annual-agreement",
+        "annual reference-station agreement; not validated calibration or fusion",
+        feeds_web=False,
+    ),
+    Module(
         "micro_sensor_calibration_benchmark",
         "twair analyze micro-sensor-benchmark",
         "January held-date and held-station prediction; not validated calibration or fusion",

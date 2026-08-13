@@ -1215,6 +1215,62 @@ def analyze_micro_sensor_annual_readiness() -> None:
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-annual-agreement")
+def analyze_micro_sensor_annual_agreement(
+    confirm_compute: bool = typer.Option(
+        False,
+        "--confirm-compute",
+        help="Run the reviewed one-thread annual agreement benchmark.",
+    ),
+) -> None:
+    """Plan or run the reviewed annual reference-station agreement benchmark."""
+    from twair.analysis.micro_sensor_annual_agreement import (
+        annual_agreement_run_plan,
+        run_and_write_annual_agreement,
+    )
+
+    plan = annual_agreement_run_plan()
+    if not confirm_compute:
+        console.print("Annual reference-station agreement benchmark")
+        console.print(f"reviewed annual readiness generation: {plan.annual_generation_sha256}")
+        console.print(
+            f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB DuckDB memory limit; "
+            "network, GEE, GPU: disabled"
+        )
+        console.print(f"checkpoints: {plan.checkpoint_root}")
+        console.print(f"output generations: {plan.output_root}")
+        console.print("PLAN ONLY — run again with --confirm-compute to compute and publish")
+        return
+
+    result = run_and_write_annual_agreement()
+    generation = result.manifest.get("generation_sha256")
+    written = result.written
+    if (
+        result.manifest.get("complete") is not True
+        or not isinstance(generation, str)
+        or result.directory.name != generation
+        or not isinstance(written, dict)
+        or not written
+        or any(not isinstance(path, Path) or not path.is_file() for path in written.values())
+    ):
+        raise RuntimeError("annual agreement combined result was not persisted and verified")
+    console.print("Annual reference-station agreement benchmark")
+    console.print(f"reviewed annual readiness generation: {plan.annual_generation_sha256}")
+    console.print(
+        f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB DuckDB memory limit; "
+        "network, GEE, GPU: disabled"
+    )
+    console.print(f"checkpoints: {plan.checkpoint_root}")
+    console.print(f"output generations: {plan.output_root}")
+    console.print(f"Annual reference-station agreement generation: {generation}")
+    console.print(
+        "Predictive agreement only; not validated calibration or fusion, and no satellite "
+        "feature or high-resolution PM2.5 field was created."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("micro-sensor-benchmark")
 def analyze_micro_sensor_benchmark() -> None:
     """Test January micro-sensor prediction on held dates and stations."""

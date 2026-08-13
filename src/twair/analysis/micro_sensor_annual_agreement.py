@@ -12,7 +12,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from itertools import pairwise
 from pathlib import Path
@@ -37,9 +37,14 @@ from twair.analysis.micro_sensor_annual_readiness import (
     load_annual_micro_sensor_panel_config,
 )
 from twair.config import ConfigError, load_conf
-from twair.ingest.micro_sensor_observations import OBSERVATION_OUTPUT_SCHEMA
+from twair.ingest.micro_sensor_observations import (
+    OBSERVATION_OUTPUT_SCHEMA,
+    load_micro_sensor_observation_generation,
+)
 from twair.ingest.station_meta import resolve_station_geo
 from twair.net import sha256_file
+from twair.paths import data_root as configured_data_root
+from twair.provenance import git_state
 from twair.store.schema import PARTITION_SCHEMA
 
 threadpool_limits: Any = importlib.import_module("threadpoolctl").threadpool_limits
@@ -163,6 +168,35 @@ _AGREEMENT_PANEL_IDENTITY_FIELDS = (
     "summary_file",
     "summary_sha256",
 )
+_FINAL_MEMBER_NAMES = (
+    "calendar",
+    "paired_days",
+    "exclusions",
+    "fold_membership",
+    "folds",
+    "predictions",
+    "scores",
+    "deltas",
+)
+_FINAL_IDENTITY_FIELDS = (
+    "schema_version",
+    "analysis",
+    "annual_generation_sha256",
+    "panel_generation_sha256",
+    "evaluation_generation_sha256",
+    "panel_manifest",
+    "evaluation_manifest",
+    "checkpoint_inventory",
+    "config",
+    "claim_boundary",
+    "output_rows",
+    "schemas",
+    "members",
+    "summary_file",
+    "summary_sha256",
+    "git_sha",
+    "git_dirty",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +263,30 @@ class AgreementDayInputPaths:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewedAgreementDaySources:
+    micro_paths: tuple[tuple[str, Path], ...]
+    ground_path: Path
+    parsed_directory: Path
+    parsed_manifest: dict[str, Any]
+    containment: tuple[tuple[Path, Path, bool], ...]
+    file_identities: tuple[tuple[Path, dict[str, object]], ...]
+
+    def assert_unchanged(self) -> None:
+        _assert_reviewed_parsed_generation(
+            self.parsed_directory,
+            expected_manifest=self.parsed_manifest,
+        )
+        for path, parent, is_directory in self.containment:
+            _assert_reviewed_direct_child(
+                path,
+                parent=parent,
+                is_directory=is_directory,
+            )
+        if any(_file_identity(path) != identity for path, identity in self.file_identities):
+            raise RuntimeError("annual agreement reviewed source changed during use")
+
+
+@dataclass(frozen=True, slots=True)
 class AgreementDayCheckpoint:
     directory: Path
     member_path: Path
@@ -257,6 +315,34 @@ class AnnualAgreementEvaluation:
     scores: pl.DataFrame
     deltas: pl.DataFrame
     manifest: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class AnnualAgreementRunPlan:
+    annual_generation_sha256: str
+    annual_generation_dir: Path
+    checkpoint_root: Path
+    panel_destination: Path
+    output_root: Path
+    lock_path: Path
+    threads: int
+    memory_limit_gb: int
+
+
+@dataclass(frozen=True, slots=True)
+class AnnualAgreementResult:
+    directory: Path
+    calendar: pl.DataFrame
+    paired_days: pl.DataFrame
+    exclusions: pl.DataFrame
+    fold_membership: pl.DataFrame
+    folds: pl.DataFrame
+    predictions: pl.DataFrame
+    scores: pl.DataFrame
+    deltas: pl.DataFrame
+    summary: dict[str, object]
+    manifest: dict[str, object]
+    written: dict[str, Path]
 
 
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
@@ -3602,3 +3688,836 @@ def evaluate_annual_agreement(panel: AnnualAgreementPanel) -> AnnualAgreementEva
         deltas=deltas,
         manifest=manifest,
     )
+
+
+def annual_agreement_run_plan() -> AnnualAgreementRunPlan:
+    config = load_annual_agreement_config()
+    root = configured_data_root()
+    run_identity = _canonical_hash(_checkpoint_config(config))
+    run_root = root / "interim" / "micro_sensor_annual_agreement" / run_identity
+    return AnnualAgreementRunPlan(
+        annual_generation_sha256=config.annual_generation_sha256,
+        annual_generation_dir=annual_micro_sensor_readiness_dir(
+            generation_sha256=config.annual_generation_sha256
+        ),
+        checkpoint_root=run_root / "days",
+        panel_destination=run_root / "panel",
+        output_root=root / "outputs" / "micro_sensor_annual_agreement" / "generations",
+        lock_path=run_root / ".run.lock",
+        threads=config.threads,
+        memory_limit_gb=config.memory_limit_gb,
+    )
+
+
+@contextmanager
+def _annual_agreement_run_lock(path: Path) -> Iterator[None]:
+    try:
+        with _agreement_checkpoint_lock(path):
+            yield
+    except RuntimeError as exc:
+        if str(exc) == "another annual agreement checkpoint writer is active":
+            raise RuntimeError("another annual agreement run is active") from None
+        raise
+
+
+def _assert_reviewed_direct_child(
+    path: Path,
+    *,
+    parent: Path,
+    is_directory: bool,
+) -> None:
+    path = path.absolute()
+    parent = parent.absolute()
+    try:
+        resolved_parent = parent.resolve(strict=True)
+        resolved_path = path.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("annual agreement reviewed source is unreadable") from exc
+    if (
+        _is_link_like(parent)
+        or _is_link_like(path)
+        or resolved_parent != parent
+        or resolved_path != path
+        or resolved_path.parent != resolved_parent
+        or (is_directory and not path.is_dir())
+        or (not is_directory and not path.is_file())
+    ):
+        raise RuntimeError("annual agreement reviewed source is linked or outside")
+
+
+def _reviewed_source_containment(
+    data_root: Path,
+    *,
+    parsed_generation_sha256: str,
+    reviewed_year: int,
+    month: int,
+) -> tuple[tuple[Path, Path, bool], ...]:
+    root = data_root.absolute()
+    try:
+        if _is_link_like(root) or root.resolve(strict=True) != root or not root.is_dir():
+            raise RuntimeError("annual agreement reviewed source is linked or outside")
+    except OSError as exc:
+        raise RuntimeError("annual agreement reviewed source is unreadable") from exc
+    paths: list[tuple[Path, Path, bool]] = []
+
+    def add_chain(parts: tuple[str, ...]) -> Path:
+        parent = root
+        for part in parts:
+            child = parent / part
+            paths.append((child, parent, True))
+            parent = child
+        return parent
+
+    parsed_directory = add_chain(
+        (
+            "interim",
+            "micro_sensors",
+            "observations",
+            "generations",
+            parsed_generation_sha256,
+        )
+    )
+    paths.extend(
+        (parsed_directory / name, parsed_directory, False)
+        for name in ("manifest.json", *(f"{variable}.parquet" for variable in _AGREEMENT_VARIABLES))
+    )
+    ground_directory = add_chain(
+        (
+            "processed",
+            "observations",
+            f"year={reviewed_year}",
+            f"month={month:02d}",
+        )
+    )
+    paths.append((ground_directory / "part-0.parquet", ground_directory, False))
+    return tuple(paths)
+
+
+def _portable_reviewed_identity(path: Path, *, data_root: Path) -> dict[str, object]:
+    try:
+        relative = path.relative_to(data_root).as_posix()
+    except ValueError as exc:
+        raise RuntimeError("annual agreement reviewed source is linked or outside") from exc
+    return {"path": relative, **_file_identity(path)}
+
+
+def _assert_reviewed_parsed_generation(
+    directory: Path,
+    *,
+    expected_manifest: dict[str, Any],
+) -> dict[str, object]:
+    expected_files = {
+        "manifest.json",
+        *(f"{variable}.parquet" for variable in _AGREEMENT_VARIABLES),
+    }
+    try:
+        observed_files = {entry.name for entry in directory.iterdir()}
+    except OSError as exc:
+        raise RuntimeError("annual agreement reviewed parsed generation changed") from exc
+    manifest_path = directory / "manifest.json"
+    try:
+        before = _file_identity(manifest_path)
+        observed_manifest = _read_json(
+            manifest_path,
+            label="annual agreement reviewed parsed manifest",
+        )
+        after = _file_identity(manifest_path)
+    except RuntimeError as exc:
+        raise RuntimeError("annual agreement reviewed parsed generation changed") from exc
+    if (
+        observed_files != expected_files
+        or observed_manifest != expected_manifest
+        or before != after
+    ):
+        raise RuntimeError("annual agreement reviewed parsed generation changed")
+    return before
+
+
+def _load_reviewed_agreement_day_sources(
+    annual_input: AnnualReadinessInput,
+    *,
+    day: date,
+    parsed_generation_sha256: str,
+    raw_generation_sha256: str,
+    data_root: Path,
+    reviewed_year: int,
+) -> ReviewedAgreementDaySources:
+    data_root = data_root.absolute()
+    parsed_root = data_root / "interim" / "micro_sensors" / "observations" / "generations"
+    loaded = load_micro_sensor_observation_generation(
+        parsed_generation_sha256,
+        interim_observation_root=parsed_root,
+    )
+    expected_directory = parsed_root / parsed_generation_sha256
+    if (
+        loaded.generation_sha256 != parsed_generation_sha256
+        or loaded.directory.absolute() != expected_directory
+        or loaded.manifest.get("date") != day.isoformat()
+        or loaded.manifest.get("raw_observation_generation_sha256") != raw_generation_sha256
+    ):
+        raise RuntimeError("annual agreement reviewed source is linked or outside")
+    manifest_identity = _assert_reviewed_parsed_generation(
+        expected_directory,
+        expected_manifest=loaded.manifest,
+    )
+    containment = _reviewed_source_containment(
+        data_root,
+        parsed_generation_sha256=parsed_generation_sha256,
+        reviewed_year=reviewed_year,
+        month=day.month,
+    )
+    for path, parent, is_directory in containment:
+        _assert_reviewed_direct_child(path, parent=parent, is_directory=is_directory)
+    micro_paths = tuple(
+        (variable, expected_directory / f"{variable}.parquet") for variable in _AGREEMENT_VARIABLES
+    )
+    ground_path = (
+        data_root
+        / "processed"
+        / "observations"
+        / f"year={reviewed_year}"
+        / f"month={day.month:02d}"
+        / "part-0.parquet"
+    )
+    inputs = _mapping(annual_input.manifest.get("inputs"), label="annual readiness inputs")
+    parsed_evidence = inputs.get("parsed_generations")
+    if not isinstance(parsed_evidence, list):
+        raise RuntimeError("annual agreement reviewed parsed inventory changed")
+    matches = [
+        value
+        for value in parsed_evidence
+        if isinstance(value, dict)
+        and value.get("date") == day.isoformat()
+        and value.get("generation_sha256") == parsed_generation_sha256
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("annual agreement reviewed parsed inventory changed")
+    input_files = matches[0].get("input_files")
+    observed_micro = [
+        _portable_reviewed_identity(path, data_root=data_root) for _, path in micro_paths
+    ]
+    members = _mapping(
+        loaded.manifest.get("members"),
+        label="annual agreement reviewed parsed members",
+    )
+    if (
+        not isinstance(input_files, list)
+        or len(input_files) != len(micro_paths)
+        or not all(isinstance(value, dict) for value in input_files)
+        or input_files != observed_micro
+        or any(
+            _mapping(
+                members.get(path.name),
+                label=f"annual agreement reviewed {variable} parsed member",
+            ).get("bytes")
+            != observed["bytes"]
+            or _mapping(
+                members.get(path.name),
+                label=f"annual agreement reviewed {variable} parsed member",
+            ).get("sha256")
+            != observed["sha256"]
+            for (variable, path), observed in zip(micro_paths, observed_micro, strict=True)
+        )
+    ):
+        raise RuntimeError("annual agreement reviewed parsed evidence changed")
+    ground_evidence = inputs.get("ground_files")
+    observed_ground = _portable_reviewed_identity(ground_path, data_root=data_root)
+    if not isinstance(ground_evidence, list) or ground_evidence.count(observed_ground) != 1:
+        raise RuntimeError("annual agreement reviewed ground evidence changed")
+    trusted_file_identities = (
+        (expected_directory / "manifest.json", manifest_identity),
+        *(
+            (
+                path,
+                {"bytes": evidence["bytes"], "sha256": evidence["sha256"]},
+            )
+            for (_, path), evidence in zip(micro_paths, observed_micro, strict=True)
+        ),
+        (
+            ground_path,
+            {"bytes": observed_ground["bytes"], "sha256": observed_ground["sha256"]},
+        ),
+    )
+    return ReviewedAgreementDaySources(
+        micro_paths=micro_paths,
+        ground_path=ground_path,
+        parsed_directory=expected_directory,
+        parsed_manifest=json.loads(json.dumps(loaded.manifest, allow_nan=False)),
+        containment=containment,
+        file_identities=trusted_file_identities,
+    )
+
+
+def _annual_agreement_input_identities(
+    *,
+    day: date,
+    raw_generation_sha256: str,
+    parsed_generation_sha256: str,
+    micro_paths: dict[str, Path] | None,
+    ground_path: Path | None,
+    annual_device_days: PinnedAnnualMember,
+    candidates: pl.DataFrame,
+) -> dict[str, object]:
+    present = micro_paths is not None
+    return {
+        "raw_generation_sha256": raw_generation_sha256,
+        "parsed_generation_sha256": parsed_generation_sha256,
+        "source_members": (
+            {
+                variable: _observed_checkpoint_file_identity(micro_paths[variable])
+                for variable in _AGREEMENT_VARIABLES
+            }
+            if present and micro_paths is not None
+            else None
+        ),
+        "ground_member": (
+            _observed_checkpoint_file_identity(ground_path)
+            if present and ground_path is not None
+            else None
+        ),
+        "annual_generation_sha256": _ANNUAL_GENERATION_SHA256,
+        "annual_device_days": {
+            "path": annual_device_days.path.name,
+            "bytes": annual_device_days.bytes,
+            "sha256": annual_device_days.sha256,
+        },
+        "candidate_identity_sha256": _canonical_hash(candidates.to_dicts()),
+        "catalogue_state": "present" if present else "absent",
+        "annual_selected_date_rows": _annual_selected_date_rows(annual_device_days.path, day=day),
+    }
+
+
+def _validate_reviewed_agreement_source_inventory(
+    annual_input: AnnualReadinessInput,
+    *,
+    reviewed_panel: Any,
+) -> None:
+    inputs = _mapping(annual_input.manifest.get("inputs"), label="annual readiness inputs")
+    parsed = inputs.get("parsed_generations")
+    expected_parsed = [
+        (record.date.isoformat(), record.generation_sha256)
+        for record in reviewed_panel.parsed_generations
+    ]
+    observed_parsed = (
+        [
+            (value.get("date"), value.get("generation_sha256"))
+            for value in parsed
+            if isinstance(value, dict)
+        ]
+        if isinstance(parsed, list)
+        else []
+    )
+    ground = inputs.get("ground_files")
+    expected_ground_paths = [
+        f"processed/observations/year={reviewed_panel.year}/month={month:02d}/part-0.parquet"
+        for month in range(1, 13)
+    ]
+    observed_ground_paths = (
+        [value.get("path") for value in ground if isinstance(value, dict)]
+        if isinstance(ground, list)
+        else []
+    )
+    if observed_parsed != expected_parsed or observed_ground_paths != expected_ground_paths:
+        raise RuntimeError("annual agreement reviewed source inventory changed")
+
+
+def _prepare_annual_agreement_checkpoints(
+    annual_input: AnnualReadinessInput,
+    *,
+    plan: AnnualAgreementRunPlan,
+    config: AnnualAgreementConfig,
+) -> tuple[AgreementDayCheckpoint, ...]:
+    reviewed_panel = load_annual_micro_sensor_panel_config()
+    primary = tuple(
+        cohort
+        for cohort in annual_input.candidate_cohorts
+        if cohort.radius_km == config.primary_distance_km
+    )
+    if len(primary) != 1:
+        raise RuntimeError("annual agreement reviewed primary cohort changed")
+    candidates = _validate_agreement_candidates(primary[0].candidates)
+    _validate_reviewed_agreement_source_inventory(
+        annual_input,
+        reviewed_panel=reviewed_panel,
+    )
+    catalogs = dict(reviewed_panel.catalog_generations)
+    root = configured_data_root()
+    checkpoints: list[AgreementDayCheckpoint] = []
+    for record in reviewed_panel.parsed_generations:
+        day = record.date
+        raw_generation = catalogs[day.strftime("%Y%m")]
+        parsed_generation = record.generation_sha256
+        sources = _load_reviewed_agreement_day_sources(
+            annual_input,
+            day=day,
+            parsed_generation_sha256=parsed_generation,
+            raw_generation_sha256=raw_generation,
+            data_root=root,
+            reviewed_year=reviewed_panel.year,
+        )
+        micro_paths = dict(sources.micro_paths)
+        ground_path = sources.ground_path
+        identities = _annual_agreement_input_identities(
+            day=day,
+            raw_generation_sha256=raw_generation,
+            parsed_generation_sha256=parsed_generation,
+            micro_paths=micro_paths,
+            ground_path=ground_path,
+            annual_device_days=annual_input.device_days,
+            candidates=candidates,
+        )
+        sources.assert_unchanged()
+        try:
+            checkpoint = _load_agreement_day_checkpoint(
+                day=day,
+                input_identities=identities,
+                config=config,
+                checkpoint_root=plan.checkpoint_root,
+            )
+        except FileNotFoundError:
+            aggregated = aggregate_agreement_day(
+                day=day,
+                micro_paths=micro_paths,
+                annual_device_days=annual_input.device_days,
+                ground_path=ground_path,
+                candidates=candidates,
+                input_identities=identities,
+                config=config,
+            )
+            sources.assert_unchanged()
+            checkpoint = write_agreement_day_checkpoint(
+                aggregated,
+                day=day,
+                checkpoint_root=plan.checkpoint_root,
+            )
+        sources.assert_unchanged()
+        checkpoints.append(checkpoint)
+    return tuple(checkpoints)
+
+
+def _final_frames(
+    panel: AnnualAgreementPanel,
+    evaluation: AnnualAgreementEvaluation,
+) -> dict[str, pl.DataFrame]:
+    return {
+        "calendar": panel.calendar,
+        "paired_days": panel.paired_days,
+        "exclusions": panel.exclusions,
+        "fold_membership": evaluation.memberships,
+        "folds": evaluation.folds,
+        "predictions": evaluation.predictions,
+        "scores": evaluation.scores,
+        "deltas": evaluation.deltas,
+    }
+
+
+def _load_or_write_annual_agreement_panel(
+    panel: AnnualAgreementPanel,
+    *,
+    destination: Path,
+) -> AnnualAgreementPanel:
+    if not destination.exists():
+        return write_annual_agreement_panel(panel, destination=destination)
+    loaded = load_annual_agreement_panel(destination)
+    if (
+        loaded.calendar.rows() != panel.calendar.rows()
+        or loaded.paired_days.rows() != panel.paired_days.rows()
+        or loaded.exclusions.rows() != panel.exclusions.rows()
+        or loaded.cohort_coverage.rows() != panel.cohort_coverage.rows()
+        or loaded.summary != panel.summary
+        or any(loaded.manifest.get(key) != value for key, value in panel.manifest.items())
+    ):
+        raise RuntimeError("annual agreement staged panel changed")
+    return loaded
+
+
+def _final_written(directory: Path) -> dict[str, Path]:
+    return {
+        **{name: directory / f"{name}.parquet" for name in _FINAL_MEMBER_NAMES},
+        "summary": directory / "summary.json",
+        "manifest": directory / "manifest.json",
+    }
+
+
+def _validate_final_inventory(directory: Path, *, during_read: bool) -> None:
+    _validate_agreement_panel_inventory(
+        directory,
+        expected_files={
+            *(f"{name}.parquet" for name in _FINAL_MEMBER_NAMES),
+            "summary.json",
+            "manifest.json",
+        },
+        during_read=during_read,
+    )
+
+
+def _validate_loaded_annual_agreement_result(result: AnnualAgreementResult) -> None:
+    panel_manifest = _mapping(
+        result.manifest.get("panel_manifest"), label="annual agreement final panel manifest"
+    )
+    panel = AnnualAgreementPanel(
+        calendar=result.calendar,
+        paired_days=result.paired_days,
+        exclusions=result.exclusions,
+        cohort_coverage=(
+            result.paired_days.group_by("radius_km", "station_name", "quarter", "reason")
+            .agg(
+                pl.len().cast(pl.Int64).alias("device_days"),
+                pl.col("device_id").n_unique().cast(pl.Int64).alias("devices"),
+                pl.col("date").n_unique().cast(pl.Int64).alias("dates"),
+            )
+            .sort("radius_km", "station_name", "quarter", "reason")
+            .cast(dict(AGREEMENT_COHORT_COVERAGE_SCHEMA), strict=True)
+        ),
+        summary=_mapping(result.summary.get("panel"), label="annual agreement final panel summary"),
+        manifest=panel_manifest,
+        annual_input=None,
+        checkpoints=None,
+    )
+    _validate_agreement_panel_frames(panel)
+    recomputed = evaluate_annual_agreement(panel)
+    persisted = {
+        "fold_membership": result.fold_membership,
+        "folds": result.folds,
+        "predictions": result.predictions,
+        "scores": result.scores,
+        "deltas": result.deltas,
+    }
+    expected = {
+        "fold_membership": recomputed.memberships,
+        "folds": recomputed.folds,
+        "predictions": recomputed.predictions,
+        "scores": recomputed.scores,
+        "deltas": recomputed.deltas,
+    }
+    if result.manifest.get("evaluation_manifest") != recomputed.manifest or any(
+        persisted[name].rows() != expected[name].rows() for name in persisted
+    ):
+        raise RuntimeError("annual agreement persisted model evidence changed")
+
+
+def _validate_embedded_panel_manifest(manifest: dict[str, Any]) -> None:
+    if (
+        set(manifest)
+        != {
+            *_AGREEMENT_PANEL_IDENTITY_FIELDS,
+            "complete",
+            "generation_sha256",
+        }
+        or type(manifest.get("schema_version")) is not int
+        or manifest.get("schema_version") != 1
+        or manifest.get("analysis") != "annual_reference_station_agreement_panel"
+        or manifest.get("complete") is not True
+    ):
+        raise RuntimeError("annual agreement embedded panel manifest changed")
+    identity = {field: manifest[field] for field in _AGREEMENT_PANEL_IDENTITY_FIELDS}
+    if manifest.get("generation_sha256") != _canonical_hash(identity):
+        raise RuntimeError("annual agreement embedded panel manifest changed")
+
+
+def _validate_final_manifest_relationships(manifest: dict[str, Any]) -> None:
+    reviewed = load_annual_agreement_config()
+    panel = _mapping(manifest.get("panel_manifest"), label="annual agreement final panel manifest")
+    evaluation = _mapping(
+        manifest.get("evaluation_manifest"),
+        label="annual agreement final evaluation manifest",
+    )
+    _validate_embedded_panel_manifest(panel)
+    panel_inputs = _mapping(panel.get("inputs"), label="annual agreement final panel inputs")
+    expected_config = _checkpoint_config(reviewed)
+    expected_claim = dict(reviewed.claim_boundary)
+    if (
+        manifest.get("annual_generation_sha256") != reviewed.annual_generation_sha256
+        or panel_inputs.get("annual_generation_sha256") != reviewed.annual_generation_sha256
+        or manifest.get("panel_generation_sha256") != panel.get("generation_sha256")
+        or manifest.get("evaluation_generation_sha256") != evaluation.get("generation_sha256")
+        or evaluation.get("panel_generation_sha256") != panel.get("generation_sha256")
+        or manifest.get("checkpoint_inventory") != panel.get("checkpoint_inventory")
+        or manifest.get("config") != expected_config
+        or panel.get("config") != expected_config
+        or evaluation.get("config") != expected_config
+        or manifest.get("claim_boundary") != expected_claim
+        or panel.get("claim_boundary") != expected_claim
+        or evaluation.get("claim_boundary") != expected_claim
+    ):
+        raise RuntimeError("annual agreement final evidence relationships changed")
+
+
+def _load_annual_agreement_result_unlocked(
+    directory: Path,
+    *,
+    trusted_panel: AnnualAgreementPanel,
+) -> AnnualAgreementResult:
+    directory = directory.absolute()
+    _validate_final_inventory(directory, during_read=False)
+    written = _final_written(directory)
+    manifest = _read_json(written["manifest"], label="annual agreement final manifest")
+    summary = _read_json(written["summary"], label="annual agreement final summary")
+    if (
+        set(manifest) != {*_FINAL_IDENTITY_FIELDS, "complete", "generated_at", "generation_sha256"}
+        or type(manifest.get("schema_version")) is not int
+        or manifest.get("schema_version") != 1
+        or manifest.get("analysis") != "annual_reference_station_agreement_benchmark"
+        or manifest.get("complete") is not True
+        or not isinstance(manifest.get("git_sha"), str)
+        or re.fullmatch(r"[0-9a-f]{7,40}", str(manifest.get("git_sha"))) is None
+        or type(manifest.get("git_dirty")) is not bool
+    ):
+        raise RuntimeError("annual agreement final manifest contract changed")
+    _validate_final_manifest_relationships(manifest)
+    identity = {field: manifest[field] for field in _FINAL_IDENTITY_FIELDS}
+    if manifest.get("generation_sha256") != _canonical_hash(identity):
+        raise RuntimeError("annual agreement final generation identity changed")
+    if directory.name != manifest["generation_sha256"]:
+        raise RuntimeError("annual agreement final generation directory changed")
+    members = _mapping(manifest.get("members"), label="annual agreement final members")
+    schemas = _mapping(manifest.get("schemas"), label="annual agreement final schemas")
+    if set(members) != set(_FINAL_MEMBER_NAMES) or set(schemas) != set(_FINAL_MEMBER_NAMES):
+        raise RuntimeError("annual agreement final member fields changed")
+    summary_file = _checkpoint_file_identity(
+        manifest.get("summary_file"), label="annual agreement final summary member"
+    )
+    if summary_file != _observed_checkpoint_file_identity(written["summary"]) or manifest.get(
+        "summary_sha256"
+    ) != _canonical_hash(summary):
+        raise RuntimeError("annual agreement final summary changed")
+    before = {name: _file_identity(path) for name, path in written.items()}
+    frames: dict[str, pl.DataFrame] = {}
+    for name in _FINAL_MEMBER_NAMES:
+        path = written[name]
+        if _checkpoint_file_identity(
+            members[name], label=f"annual agreement final {name} member"
+        ) != _observed_checkpoint_file_identity(path):
+            raise RuntimeError(f"annual agreement final {name} member changed")
+        frame = pl.read_parquet(path)
+        if {column: str(dtype) for column, dtype in frame.schema.items()} != schemas[name]:
+            raise RuntimeError(f"annual agreement final {name} schema changed")
+        frames[name] = frame
+    output_rows = {name: frame.height for name, frame in frames.items()}
+    if manifest.get("output_rows") != output_rows:
+        raise RuntimeError("annual agreement final output row counts changed")
+    if manifest.get("panel_manifest") != trusted_panel.manifest or any(
+        frames[name].rows() != getattr(trusted_panel, name).rows()
+        for name in ("calendar", "paired_days", "exclusions")
+    ):
+        raise RuntimeError("annual agreement embedded panel manifest changed")
+    if (
+        set(summary) != {"panel", "output_rows"}
+        or summary.get("panel") != trusted_panel.summary
+        or summary.get("output_rows") != output_rows
+    ):
+        raise RuntimeError("annual agreement final summary changed")
+    result = AnnualAgreementResult(
+        directory=directory,
+        calendar=frames["calendar"],
+        paired_days=frames["paired_days"],
+        exclusions=frames["exclusions"],
+        fold_membership=frames["fold_membership"],
+        folds=frames["folds"],
+        predictions=frames["predictions"],
+        scores=frames["scores"],
+        deltas=frames["deltas"],
+        summary=summary,
+        manifest=manifest,
+        written=written,
+    )
+    _validate_loaded_annual_agreement_result(result)
+    if before != {name: _file_identity(path) for name, path in written.items()}:
+        raise RuntimeError("annual agreement final generation changed during read")
+    _validate_final_inventory(directory, during_read=True)
+    return result
+
+
+def load_annual_agreement_result(directory: Path) -> AnnualAgreementResult:
+    plan = annual_agreement_run_plan()
+    requested = directory.absolute()
+    if requested.parent != plan.output_root.absolute():
+        raise RuntimeError("annual agreement final generation is outside reviewed output root")
+    with _annual_agreement_run_lock(plan.lock_path):
+        _validate_final_inventory(requested, during_read=False)
+        trusted_panel = load_annual_agreement_panel(plan.panel_destination)
+        return _load_annual_agreement_result_unlocked(requested, trusted_panel=trusted_panel)
+
+
+def _recover_annual_agreement_final_residue(output_root: Path) -> None:
+    residue = sorted(
+        entry
+        for entry in output_root.iterdir()
+        if entry.name.startswith(".annual-agreement.staging-")
+        or entry.name.startswith(".annual-agreement.backup-")
+    )
+    if len(residue) > 1:
+        raise RuntimeError("ambiguous final publication residue")
+    if not residue:
+        return
+    candidate = residue[0]
+    if re.fullmatch(r"\.annual-agreement\.(?:staging|backup)-[0-9a-f]{32}", candidate.name) is None:
+        raise RuntimeError("annual agreement final publication residue name changed")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("annual agreement final publication residue is unreadable") from exc
+    if (
+        _is_link_like(candidate)
+        or resolved != candidate.absolute()
+        or resolved.parent != output_root
+        or not candidate.is_dir()
+    ):
+        raise RuntimeError("annual agreement final publication residue is linked or outside")
+    allowed = {
+        *(f"{name}.parquet" for name in _FINAL_MEMBER_NAMES),
+        "summary.json",
+        "manifest.json",
+    }
+    for entry in candidate.iterdir():
+        try:
+            resolved_entry = entry.resolve(strict=True)
+        except OSError as exc:
+            raise RuntimeError("annual agreement final publication residue is unreadable") from exc
+        if (
+            entry.name not in allowed
+            or _is_link_like(entry)
+            or not entry.is_file()
+            or resolved_entry != entry.absolute()
+            or resolved_entry.parent != resolved
+        ):
+            raise RuntimeError("annual agreement final publication residue is linked or outside")
+    shutil.rmtree(candidate)
+
+
+def _assert_prepared_final_result(
+    result: AnnualAgreementResult,
+    *,
+    panel: AnnualAgreementPanel,
+    evaluation: AnnualAgreementEvaluation,
+) -> None:
+    expected_frames = _final_frames(panel, evaluation)
+    if (
+        result.manifest.get("panel_manifest") != panel.manifest
+        or result.manifest.get("evaluation_manifest") != evaluation.manifest
+        or result.summary
+        != {
+            "panel": panel.summary,
+            "output_rows": {name: frame.height for name, frame in expected_frames.items()},
+        }
+        or any(
+            getattr(result, name).rows() != frame.rows() for name, frame in expected_frames.items()
+        )
+    ):
+        raise RuntimeError("annual agreement existing final output differs from prepared result")
+
+
+def _publish_annual_agreement_result(
+    panel: AnnualAgreementPanel,
+    evaluation: AnnualAgreementEvaluation,
+    *,
+    output_root: Path,
+) -> AnnualAgreementResult:
+    frames = _final_frames(panel, evaluation)
+    output_root = output_root.absolute()
+    output_root.mkdir(parents=True, exist_ok=True)
+    try:
+        resolved_output_root = output_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("annual agreement final output root is unreadable") from exc
+    if _is_link_like(output_root) or resolved_output_root != output_root:
+        raise RuntimeError("annual agreement final output root is linked or outside")
+    _recover_annual_agreement_final_residue(output_root)
+    staged = output_root / f".annual-agreement.staging-{uuid4().hex}"
+    staged.mkdir()
+    try:
+        resolved_staged = staged.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("annual agreement final staging directory is unreadable") from exc
+    if _is_link_like(staged) or resolved_staged.parent != output_root:
+        raise RuntimeError("annual agreement final staging directory is linked or outside")
+    destination: Path | None = None
+    try:
+        members: dict[str, dict[str, object]] = {}
+        schemas: dict[str, dict[str, str]] = {}
+        for name, frame in frames.items():
+            path = staged / f"{name}.parquet"
+            frame.write_parquet(path)
+            members[name] = _observed_checkpoint_file_identity(path)
+            schemas[name] = {column: str(dtype) for column, dtype in frame.schema.items()}
+        summary: dict[str, object] = {
+            "panel": panel.summary,
+            "output_rows": {name: frame.height for name, frame in frames.items()},
+        }
+        _write_checkpoint_json(staged / "summary.json", summary)
+        summary_file = _observed_checkpoint_file_identity(staged / "summary.json")
+        config = load_annual_agreement_config()
+        git_sha, git_dirty = git_state()
+        identity: dict[str, object] = {
+            "schema_version": 1,
+            "analysis": "annual_reference_station_agreement_benchmark",
+            "annual_generation_sha256": config.annual_generation_sha256,
+            "panel_generation_sha256": panel.manifest["generation_sha256"],
+            "evaluation_generation_sha256": evaluation.manifest["generation_sha256"],
+            "panel_manifest": panel.manifest,
+            "evaluation_manifest": evaluation.manifest,
+            "checkpoint_inventory": panel.manifest["checkpoint_inventory"],
+            "config": _checkpoint_config(config),
+            "claim_boundary": dict(config.claim_boundary),
+            "output_rows": summary["output_rows"],
+            "schemas": schemas,
+            "members": members,
+            "summary_file": summary_file,
+            "summary_sha256": _canonical_hash(summary),
+            "git_sha": git_sha,
+            "git_dirty": git_dirty,
+        }
+        generation = _canonical_hash(identity)
+        destination = output_root / generation
+        if destination.exists():
+            existing = _load_annual_agreement_result_unlocked(destination, trusted_panel=panel)
+            _assert_prepared_final_result(existing, panel=panel, evaluation=evaluation)
+            return existing
+        manifest = {
+            **identity,
+            "complete": True,
+            "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "generation_sha256": generation,
+        }
+        _write_checkpoint_json(staged / "manifest.json", manifest)
+        try:
+            staged.replace(destination)
+            return _load_annual_agreement_result_unlocked(destination, trusted_panel=panel)
+        except BaseException:
+            if destination.exists():
+                shutil.rmtree(destination)
+            raise
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+
+
+def _run_annual_agreement_locked(
+    *,
+    plan: AnnualAgreementRunPlan,
+    config: AnnualAgreementConfig,
+) -> Any:
+    annual_input = load_annual_readiness_input(plan.annual_generation_dir)
+    checkpoints = _prepare_annual_agreement_checkpoints(
+        annual_input,
+        plan=plan,
+        config=config,
+    )
+    panel = _prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    panel = _load_or_write_annual_agreement_panel(
+        panel,
+        destination=plan.panel_destination,
+    )
+    evaluation = evaluate_annual_agreement(panel)
+    return _publish_annual_agreement_result(
+        panel,
+        evaluation,
+        output_root=plan.output_root,
+    )
+
+
+def run_and_write_annual_agreement() -> Any:
+    config = load_annual_agreement_config()
+    plan = annual_agreement_run_plan()
+    with _annual_agreement_run_lock(plan.lock_path):
+        return _run_annual_agreement_locked(plan=plan, config=config)
