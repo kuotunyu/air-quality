@@ -266,6 +266,7 @@ class AgreementDayInputPaths:
 class ReviewedAgreementDaySources:
     micro_paths: tuple[tuple[str, Path], ...]
     ground_path: Path
+    raw_observation_generation_sha256: str
     parsed_directory: Path
     parsed_manifest: dict[str, Any]
     containment: tuple[tuple[Path, Path, bool], ...]
@@ -1593,7 +1594,8 @@ def _checkpoint_inputs(
     config: AnnualAgreementConfig,
 ) -> dict[str, object]:
     expected = {
-        "raw_generation_sha256",
+        "catalog_generation_sha256",
+        "raw_observation_generation_sha256",
         "parsed_generation_sha256",
         "source_members",
         "ground_member",
@@ -1607,7 +1609,8 @@ def _checkpoint_inputs(
         raise RuntimeError("annual agreement checkpoint input identity fields changed")
     identities: dict[str, str] = {}
     for name in (
-        "raw_generation_sha256",
+        "catalog_generation_sha256",
+        "raw_observation_generation_sha256",
         "parsed_generation_sha256",
         "annual_generation_sha256",
         "candidate_identity_sha256",
@@ -2213,7 +2216,7 @@ def _checkpoint_inventory_evidence(
         if (
             normalized_inputs["catalogue_state"] != "present"
             or normalized_inputs["candidate_identity_sha256"] != candidate_identity
-            or normalized_inputs["raw_generation_sha256"]
+            or normalized_inputs["catalog_generation_sha256"]
             != catalog_generations.get(observed_day.strftime("%Y%m"))
             or normalized_inputs["parsed_generation_sha256"]
             != parsed_rows.filter(pl.col("date") == observed_day)["parsed_generation_sha256"].item()
@@ -2252,7 +2255,10 @@ def _checkpoint_inventory_evidence(
         evidence.append(
             {
                 "date": observed_day.isoformat(),
-                "raw_generation_sha256": normalized_inputs["raw_generation_sha256"],
+                "catalog_generation_sha256": normalized_inputs["catalog_generation_sha256"],
+                "raw_observation_generation_sha256": normalized_inputs[
+                    "raw_observation_generation_sha256"
+                ],
                 "parsed_generation_sha256": normalized_inputs["parsed_generation_sha256"],
                 "inputs_sha256": _canonical_hash(normalized_inputs),
                 "rows": candidates.height,
@@ -2710,7 +2716,8 @@ def _validate_persisted_agreement_panel_semantics(panel: AnnualAgreementPanel) -
     inventory = panel.manifest.get("checkpoint_inventory")
     evidence_fields = {
         "date",
-        "raw_generation_sha256",
+        "catalog_generation_sha256",
+        "raw_observation_generation_sha256",
         "parsed_generation_sha256",
         "inputs_sha256",
         "rows",
@@ -2727,16 +2734,19 @@ def _validate_persisted_agreement_panel_semantics(panel: AnnualAgreementPanel) -
         if set(evidence) != evidence_fields:
             raise RuntimeError("annual agreement persisted semantics changed")
         day_text = calendar_row["date"].isoformat()
-        raw_generation = evidence["raw_generation_sha256"]
+        catalog_generation = evidence["catalog_generation_sha256"]
+        raw_observation_generation = evidence["raw_observation_generation_sha256"]
         parsed_generation = evidence["parsed_generation_sha256"]
         if (
             evidence["date"] != day_text
-            or raw_generation != calendar_row["catalog_generation_sha256"]
-            or raw_generation != catalog_generations.get(day_text[:4] + day_text[5:7])
+            or catalog_generation != calendar_row["catalog_generation_sha256"]
+            or catalog_generation != catalog_generations.get(day_text[:4] + day_text[5:7])
             or parsed_generation != calendar_row["parsed_generation_sha256"]
             or parsed_generation != reviewed_parsed.get(day_text)
-            or not isinstance(raw_generation, str)
-            or _SHA256.fullmatch(raw_generation) is None
+            or not isinstance(catalog_generation, str)
+            or _SHA256.fullmatch(catalog_generation) is None
+            or not isinstance(raw_observation_generation, str)
+            or _SHA256.fullmatch(raw_observation_generation) is None
             or not isinstance(parsed_generation, str)
             or _SHA256.fullmatch(parsed_generation) is None
             or any(
@@ -3838,7 +3848,6 @@ def _load_reviewed_agreement_day_sources(
     *,
     day: date,
     parsed_generation_sha256: str,
-    raw_generation_sha256: str,
     data_root: Path,
     reviewed_year: int,
 ) -> ReviewedAgreementDaySources:
@@ -3853,9 +3862,14 @@ def _load_reviewed_agreement_day_sources(
         loaded.generation_sha256 != parsed_generation_sha256
         or loaded.directory.absolute() != expected_directory
         or loaded.manifest.get("date") != day.isoformat()
-        or loaded.manifest.get("raw_observation_generation_sha256") != raw_generation_sha256
     ):
         raise RuntimeError("annual agreement reviewed source is linked or outside")
+    raw_observation_generation_sha256 = loaded.manifest.get("raw_observation_generation_sha256")
+    if (
+        not isinstance(raw_observation_generation_sha256, str)
+        or _SHA256.fullmatch(raw_observation_generation_sha256) is None
+    ):
+        raise RuntimeError("annual agreement reviewed raw-observation generation changed")
     manifest_identity = _assert_reviewed_parsed_generation(
         expected_directory,
         expected_manifest=loaded.manifest,
@@ -3941,6 +3955,7 @@ def _load_reviewed_agreement_day_sources(
     return ReviewedAgreementDaySources(
         micro_paths=micro_paths,
         ground_path=ground_path,
+        raw_observation_generation_sha256=raw_observation_generation_sha256,
         parsed_directory=expected_directory,
         parsed_manifest=json.loads(json.dumps(loaded.manifest, allow_nan=False)),
         containment=containment,
@@ -3951,30 +3966,21 @@ def _load_reviewed_agreement_day_sources(
 def _annual_agreement_input_identities(
     *,
     day: date,
-    raw_generation_sha256: str,
-    parsed_generation_sha256: str,
-    micro_paths: dict[str, Path] | None,
-    ground_path: Path | None,
+    catalog_generation_sha256: str,
+    sources: ReviewedAgreementDaySources,
     annual_device_days: PinnedAnnualMember,
     candidates: pl.DataFrame,
 ) -> dict[str, object]:
-    present = micro_paths is not None
+    micro_paths = dict(sources.micro_paths)
     return {
-        "raw_generation_sha256": raw_generation_sha256,
-        "parsed_generation_sha256": parsed_generation_sha256,
-        "source_members": (
-            {
-                variable: _observed_checkpoint_file_identity(micro_paths[variable])
-                for variable in _AGREEMENT_VARIABLES
-            }
-            if present and micro_paths is not None
-            else None
-        ),
-        "ground_member": (
-            _observed_checkpoint_file_identity(ground_path)
-            if present and ground_path is not None
-            else None
-        ),
+        "catalog_generation_sha256": catalog_generation_sha256,
+        "raw_observation_generation_sha256": sources.raw_observation_generation_sha256,
+        "parsed_generation_sha256": sources.parsed_directory.name,
+        "source_members": {
+            variable: _observed_checkpoint_file_identity(micro_paths[variable])
+            for variable in _AGREEMENT_VARIABLES
+        },
+        "ground_member": _observed_checkpoint_file_identity(sources.ground_path),
         "annual_generation_sha256": _ANNUAL_GENERATION_SHA256,
         "annual_device_days": {
             "path": annual_device_days.path.name,
@@ -3982,7 +3988,7 @@ def _annual_agreement_input_identities(
             "sha256": annual_device_days.sha256,
         },
         "candidate_identity_sha256": _canonical_hash(candidates.to_dicts()),
-        "catalogue_state": "present" if present else "absent",
+        "catalogue_state": "present",
         "annual_selected_date_rows": _annual_selected_date_rows(annual_device_days.path, day=day),
     }
 
@@ -4045,13 +4051,12 @@ def _prepare_annual_agreement_checkpoints(
     checkpoints: list[AgreementDayCheckpoint] = []
     for record in reviewed_panel.parsed_generations:
         day = record.date
-        raw_generation = catalogs[day.strftime("%Y%m")]
+        catalog_generation = catalogs[day.strftime("%Y%m")]
         parsed_generation = record.generation_sha256
         sources = _load_reviewed_agreement_day_sources(
             annual_input,
             day=day,
             parsed_generation_sha256=parsed_generation,
-            raw_generation_sha256=raw_generation,
             data_root=root,
             reviewed_year=reviewed_panel.year,
         )
@@ -4059,10 +4064,8 @@ def _prepare_annual_agreement_checkpoints(
         ground_path = sources.ground_path
         identities = _annual_agreement_input_identities(
             day=day,
-            raw_generation_sha256=raw_generation,
-            parsed_generation_sha256=parsed_generation,
-            micro_paths=micro_paths,
-            ground_path=ground_path,
+            catalog_generation_sha256=catalog_generation,
+            sources=sources,
             annual_device_days=annual_input.device_days,
             candidates=candidates,
         )

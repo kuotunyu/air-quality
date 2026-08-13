@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import polars as pl
 import pytest
@@ -513,11 +513,14 @@ def test_a_retry_after_process_death_reuses_the_exact_renamed_generation(
     assert not tuple(output_root.glob(".annual-agreement.*-*"))
 
 
-def _reviewed_source_fixture(tmp_path: Path) -> tuple[Any, Any, str, str, date, Path]:
+def _reviewed_source_fixture(
+    tmp_path: Path,
+    *,
+    parsed_generation: str = "a" * 64,
+    raw_generation: str = "b" * 64,
+) -> tuple[Any, Any, str, str, date, Path]:
     agreement = _module()
     day = date(2025, 1, 2)
-    parsed_generation = "a" * 64
-    raw_generation = "b" * 64
     parsed_root = tmp_path / "interim" / "micro_sensors" / "observations" / "generations"
     parsed_directory = parsed_root / parsed_generation
     parsed_directory.mkdir(parents=True)
@@ -573,6 +576,86 @@ def _reviewed_source_fixture(tmp_path: Path) -> tuple[Any, Any, str, str, date, 
     return annual_input, loaded, parsed_generation, raw_generation, day, ground_path
 
 
+def test_checkpoint_preparation_keeps_catalogue_and_manifest_raw_generations_distinct(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    agreement = _module()
+    catalogue_generation = "c841ef16d7cc55920b6ab5b7b274c2f8b5e68e754d8cce4e1a5677f997e8e05b"
+    raw_observation_generation = "38d3634c8628c9be301b2a28ad63ae320cfa1b30c8870b844c6ead98eaf26dfb"
+    parsed_generation = "bc9ee6c7f7e47770649091afa6580a8bf281499c24114a42f4de5ab9161343ae"
+    annual, loaded, _, _, day, ground_path = _reviewed_source_fixture(
+        tmp_path,
+        parsed_generation=parsed_generation,
+        raw_generation=raw_observation_generation,
+    )
+    config = agreement.load_annual_agreement_config()
+    candidates = pl.DataFrame(
+        {"device_id": ["device-1"], "station_name": ["station-1"], "distance_km": [0.1]}
+    )
+    annual_path = tmp_path / "annual-device-days.parquet"
+    pl.DataFrame(schema=dict(agreement.ANNUAL_DEVICE_DAY_SCHEMA)).write_parquet(annual_path)
+    annual.device_days = agreement.PinnedAnnualMember(
+        path=annual_path,
+        generation_dir=annual_path.parent,
+        bytes=annual_path.stat().st_size,
+        sha256=agreement.sha256_file(annual_path),
+    )
+    annual.candidate_cohorts = (
+        SimpleNamespace(radius_km=config.primary_distance_km, candidates=candidates),
+    )
+    annual.manifest["inputs"]["ground_files"] = [
+        annual.manifest["inputs"]["ground_files"][0],
+        *(
+            {"path": (f"processed/observations/year=2025/month={month:02d}/part-0.parquet")}
+            for month in range(2, 13)
+        ),
+    ]
+    reviewed = SimpleNamespace(
+        year=2025,
+        parsed_generations=(SimpleNamespace(date=day, generation_sha256=parsed_generation),),
+        catalog_generations=(("202501", catalogue_generation),),
+    )
+    captured: list[dict[str, object]] = []
+    checkpoint = SimpleNamespace(directory=tmp_path / "checkpoint")
+
+    def load_checkpoint(**kwargs: object) -> Any:
+        captured.append(cast(dict[str, object], kwargs["input_identities"]))
+        return checkpoint
+
+    monkeypatch.setattr(agreement, "configured_data_root", lambda: tmp_path)
+    monkeypatch.setattr(agreement, "load_annual_micro_sensor_panel_config", lambda: reviewed)
+    monkeypatch.setattr(
+        agreement,
+        "load_micro_sensor_observation_generation",
+        lambda *_args, **_kwargs: loaded,
+    )
+    monkeypatch.setattr(agreement, "_load_agreement_day_checkpoint", load_checkpoint)
+    monkeypatch.setattr(
+        agreement,
+        "aggregate_agreement_day",
+        lambda **_kwargs: pytest.fail("distinct source identities reached aggregation"),
+    )
+    monkeypatch.setattr(
+        agreement,
+        "write_agreement_day_checkpoint",
+        lambda *_args, **_kwargs: pytest.fail("distinct source identities reached publication"),
+    )
+
+    prepared = agreement._prepare_annual_agreement_checkpoints(
+        annual,
+        plan=SimpleNamespace(checkpoint_root=tmp_path / "checkpoints"),
+        config=config,
+    )
+
+    assert prepared == (checkpoint,)
+    assert len(captured) == 1
+    assert captured[0]["catalog_generation_sha256"] == catalogue_generation
+    assert captured[0]["raw_observation_generation_sha256"] == raw_observation_generation
+    assert captured[0]["parsed_generation_sha256"] == parsed_generation
+    assert ground_path.is_file()
+
+
 def test_combined_sources_use_the_reviewed_parsed_loader_and_remain_stable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -593,7 +676,6 @@ def test_combined_sources_use_the_reviewed_parsed_loader_and_remain_stable(
         annual,
         day=day,
         parsed_generation_sha256=parsed_generation,
-        raw_generation_sha256=raw_generation,
         data_root=tmp_path,
         reviewed_year=2025,
     )
@@ -610,6 +692,43 @@ def test_combined_sources_use_the_reviewed_parsed_loader_and_remain_stable(
         for variable in ("pm25", "humidity", "temperature")
     }
     assert sources.ground_path == ground_path
+    assert sources.raw_observation_generation_sha256 == raw_generation
+
+
+@pytest.mark.parametrize(
+    "raw_observation_generation",
+    [None, "not-a-sha256", True],
+    ids=["missing", "malformed", "boolean"],
+)
+def test_combined_sources_reject_an_invalid_manifest_raw_observation_generation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    raw_observation_generation: object,
+) -> None:
+    agreement = _module()
+    annual, loaded, parsed_generation, _, day, _ = _reviewed_source_fixture(tmp_path)
+    if raw_observation_generation is None:
+        del loaded.manifest["raw_observation_generation_sha256"]
+    else:
+        loaded.manifest["raw_observation_generation_sha256"] = raw_observation_generation
+    (loaded.directory / "manifest.json").write_text(
+        json.dumps(loaded.manifest, ensure_ascii=False, allow_nan=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        agreement,
+        "load_micro_sensor_observation_generation",
+        lambda *_args, **_kwargs: loaded,
+    )
+
+    with pytest.raises(RuntimeError, match="raw-observation generation changed"):
+        agreement._load_reviewed_agreement_day_sources(
+            annual,
+            day=day,
+            parsed_generation_sha256=parsed_generation,
+            data_root=tmp_path,
+            reviewed_year=2025,
+        )
 
 
 @pytest.mark.parametrize(
@@ -628,9 +747,7 @@ def test_combined_sources_reject_misplacement_and_linked_directories_or_members(
     mutation: str,
 ) -> None:
     agreement = _module()
-    annual, loaded, parsed_generation, raw_generation, day, ground_path = _reviewed_source_fixture(
-        tmp_path
-    )
+    annual, loaded, parsed_generation, _, day, ground_path = _reviewed_source_fixture(tmp_path)
     if mutation == "misplaced":
         outside = tmp_path / "outside" / parsed_generation
         outside.mkdir(parents=True)
@@ -658,7 +775,6 @@ def test_combined_sources_reject_misplacement_and_linked_directories_or_members(
             annual,
             day=day,
             parsed_generation_sha256=parsed_generation,
-            raw_generation_sha256=raw_generation,
             data_root=tmp_path,
             reviewed_year=2025,
         )
@@ -669,7 +785,7 @@ def test_combined_sources_reject_a_member_change_after_duckdb_use(
     tmp_path: Path,
 ) -> None:
     agreement = _module()
-    annual, loaded, parsed_generation, raw_generation, day, _ = _reviewed_source_fixture(tmp_path)
+    annual, loaded, parsed_generation, _, day, _ = _reviewed_source_fixture(tmp_path)
     monkeypatch.setattr(
         agreement,
         "load_micro_sensor_observation_generation",
@@ -679,7 +795,6 @@ def test_combined_sources_reject_a_member_change_after_duckdb_use(
         annual,
         day=day,
         parsed_generation_sha256=parsed_generation,
-        raw_generation_sha256=raw_generation,
         data_root=tmp_path,
         reviewed_year=2025,
     )
@@ -689,21 +804,29 @@ def test_combined_sources_reject_a_member_change_after_duckdb_use(
         sources.assert_unchanged()
 
 
-@pytest.mark.parametrize("mutation", ["extra_member", "replaced_manifest"])
+@pytest.mark.parametrize(
+    "mutation",
+    ["extra_member", "replaced_manifest", "replaced_raw_observation_generation"],
+)
 def test_combined_sources_reject_mutation_after_the_public_parsed_loader_returns(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     mutation: str,
 ) -> None:
     agreement = _module()
-    annual, loaded, parsed_generation, raw_generation, day, _ = _reviewed_source_fixture(tmp_path)
+    annual, loaded, parsed_generation, _, day, _ = _reviewed_source_fixture(tmp_path)
 
     def load_then_mutate(*_args: object, **_kwargs: object) -> Any:
         if mutation == "extra_member":
             (loaded.directory / "unexpected.bin").write_bytes(b"unexpected")
         else:
+            changed = (
+                {**loaded.manifest, "date": "2025-01-03"}
+                if mutation == "replaced_manifest"
+                else {**loaded.manifest, "raw_observation_generation_sha256": "c" * 64}
+            )
             (loaded.directory / "manifest.json").write_text(
-                json.dumps({**loaded.manifest, "date": "2025-01-03"}) + "\n",
+                json.dumps(changed) + "\n",
                 encoding="utf-8",
             )
         return loaded
@@ -715,7 +838,6 @@ def test_combined_sources_reject_mutation_after_the_public_parsed_loader_returns
             annual,
             day=day,
             parsed_generation_sha256=parsed_generation,
-            raw_generation_sha256=raw_generation,
             data_root=tmp_path,
             reviewed_year=2025,
         )
@@ -728,9 +850,7 @@ def test_combined_sources_never_self_baseline_a_change_after_evidence_comparison
     member: str,
 ) -> None:
     agreement = _module()
-    annual, loaded, parsed_generation, raw_generation, day, ground_path = _reviewed_source_fixture(
-        tmp_path
-    )
+    annual, loaded, parsed_generation, _, day, ground_path = _reviewed_source_fixture(tmp_path)
     target = loaded.directory / "pm25.parquet" if member == "parsed" else ground_path
 
     def identify_then_mutate(path: Path, *, data_root: Path) -> dict[str, object]:
@@ -754,7 +874,6 @@ def test_combined_sources_never_self_baseline_a_change_after_evidence_comparison
         annual,
         day=day,
         parsed_generation_sha256=parsed_generation,
-        raw_generation_sha256=raw_generation,
         data_root=tmp_path,
         reviewed_year=2025,
     )

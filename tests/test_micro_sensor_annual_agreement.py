@@ -545,8 +545,9 @@ def _checkpoint_input_identities(
         for variable, path in sorted(micro_paths.items())
     }
     return {
-        "raw_generation_sha256": "a" * 64,
-        "parsed_generation_sha256": "b" * 64,
+        "catalog_generation_sha256": "a" * 64,
+        "raw_observation_generation_sha256": "b" * 64,
+        "parsed_generation_sha256": "c" * 64,
         "source_members": source_members,
         "ground_member": {
             "path": ground_path.name,
@@ -569,6 +570,48 @@ def _checkpoint_input_identities(
         .collect()
         .item(),
     }
+
+
+def test_checkpoint_inputs_keep_exact_distinct_catalogue_raw_observation_and_parsed_generations(
+    tmp_path: Path,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    micro_paths, annual_path, ground_path, _ = _single_agreement_inputs(tmp_path)
+    identities = _checkpoint_input_identities(micro_paths, annual_path, ground_path)
+
+    normalized = agreement._checkpoint_inputs(
+        identities,
+        config=agreement.load_annual_agreement_config(),
+    )
+
+    assert normalized["catalog_generation_sha256"] == "a" * 64
+    assert normalized["raw_observation_generation_sha256"] == "b" * 64
+    assert normalized["parsed_generation_sha256"] == "c" * 64
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "boolean"])
+def test_checkpoint_inputs_reject_missing_extra_or_boolean_source_generation_identities(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    micro_paths, annual_path, ground_path, _ = _single_agreement_inputs(tmp_path)
+    identities = _checkpoint_input_identities(micro_paths, annual_path, ground_path)
+    if mutation == "missing":
+        del identities["raw_observation_generation_sha256"]
+        message = "input identity fields changed"
+    elif mutation == "extra":
+        identities["unexpected_generation_sha256"] = "d" * 64
+        message = "input identity fields changed"
+    else:
+        identities["raw_observation_generation_sha256"] = True
+        message = "raw_observation_generation_sha256 changed"
+
+    with pytest.raises(RuntimeError, match=message):
+        agreement._checkpoint_inputs(
+            identities,
+            config=agreement.load_annual_agreement_config(),
+        )
 
 
 def _checkpoint_fixture(
@@ -695,8 +738,9 @@ def _catalogue_absent_identities(
     candidates: pl.DataFrame,
 ) -> dict[str, object]:
     return {
-        "raw_generation_sha256": "a" * 64,
-        "parsed_generation_sha256": "b" * 64,
+        "catalog_generation_sha256": "a" * 64,
+        "raw_observation_generation_sha256": "b" * 64,
+        "parsed_generation_sha256": "c" * 64,
         "source_members": None,
         "ground_member": None,
         "annual_generation_sha256": ANNUAL_GENERATION,
@@ -802,8 +846,9 @@ def test_a_catalogue_absent_date_rejects_a_nonexistent_pinned_annual_member(
             ground_path=None,
             candidates=AGREEMENT_CANDIDATES,
             input_identities={
-                "raw_generation_sha256": "a" * 64,
-                "parsed_generation_sha256": "b" * 64,
+                "catalog_generation_sha256": "a" * 64,
+                "raw_observation_generation_sha256": "b" * 64,
+                "parsed_generation_sha256": "c" * 64,
                 "source_members": None,
                 "ground_member": None,
                 "annual_generation_sha256": ANNUAL_GENERATION,
@@ -1088,8 +1133,17 @@ def test_a_checkpoint_first_write_binds_every_identity_and_exact_reuse_changes_n
     assert sha256_file(reused.manifest_path) == manifest_hash
 
 
-def test_a_checkpoint_cannot_be_reused_after_any_bound_input_identity_changes(
+@pytest.mark.parametrize(
+    "identity_name",
+    [
+        "catalog_generation_sha256",
+        "raw_observation_generation_sha256",
+        "parsed_generation_sha256",
+    ],
+)
+def test_a_checkpoint_cannot_be_reused_after_any_source_generation_identity_changes(
     tmp_path: Path,
+    identity_name: str,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
     result, identities, config = _checkpoint_fixture(tmp_path)
@@ -1100,7 +1154,7 @@ def test_a_checkpoint_cannot_be_reused_after_any_bound_input_identity_changes(
         checkpoint_root=checkpoint_root,
     )
     changed = deepcopy(identities)
-    changed["raw_generation_sha256"] = "c" * 64
+    changed[identity_name] = "e" * 64
 
     with pytest.raises(RuntimeError, match="checkpoint input identity changed"):
         agreement._load_agreement_day_checkpoint(
@@ -1919,7 +1973,8 @@ def _annual_agreement_panel_fixture(
         member_path = directory / "paired_day.parquet"
         rows.write_parquet(member_path)
         inputs = {
-            "raw_generation_sha256": catalogs[day.strftime("%Y%m")],
+            "catalog_generation_sha256": catalogs[day.strftime("%Y%m")],
+            "raw_observation_generation_sha256": "4" * 64,
             "parsed_generation_sha256": parsed_generations[day],
             "source_members": {
                 variable: {
@@ -2874,7 +2929,10 @@ def test_the_annual_reducer_revalidates_the_task_2_null_contract_inside_duckdb(
         )
 
 
-@pytest.mark.parametrize("mutation", ["raw_generation", "annual_device_days"])
+@pytest.mark.parametrize(
+    "mutation",
+    ["catalog_generation", "annual_device_days"],
+)
 def test_rebound_task_2_evidence_must_still_match_the_trusted_task_1_input(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2884,14 +2942,39 @@ def test_rebound_task_2_evidence_must_still_match_the_trusted_task_1_input(
     annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
     first = checkpoints[0]
     changed_manifest = deepcopy(first.manifest)
-    if mutation == "raw_generation":
-        changed_manifest["inputs"]["raw_generation_sha256"] = "e" * 64
+    if mutation == "catalog_generation":
+        changed_manifest["inputs"]["catalog_generation_sha256"] = "e" * 64
     else:
         changed_manifest["inputs"]["annual_device_days"] = {
             "path": "device_days.parquet",
             "bytes": 1,
             "sha256": "e" * 64,
         }
+    _write_json(first.manifest_path, changed_manifest)
+    changed = replace(first, manifest=changed_manifest)
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+
+    with pytest.raises(RuntimeError, match="does not match reviewed annual input"):
+        agreement.prepare_annual_agreement_panel(
+            annual_input,
+            (changed, *checkpoints[1:]),
+            config,
+        )
+
+
+def test_swapped_catalogue_and_raw_observation_checkpoint_identities_are_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    first = checkpoints[0]
+    changed_manifest = deepcopy(first.manifest)
+    inputs = changed_manifest["inputs"]
+    inputs["catalog_generation_sha256"], inputs["raw_observation_generation_sha256"] = (
+        inputs["raw_observation_generation_sha256"],
+        inputs["catalog_generation_sha256"],
+    )
     _write_json(first.manifest_path, changed_manifest)
     changed = replace(first, manifest=changed_manifest)
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
@@ -3129,7 +3212,7 @@ def test_coordinated_catalogue_calendar_and_checkpoint_rebinding_cannot_replace_
         manifest["inputs"]["catalog_generations"], "e" * 64
     )
     for evidence in manifest["checkpoint_inventory"]:
-        evidence["raw_generation_sha256"] = "e" * 64
+        evidence["catalog_generation_sha256"] = "e" * 64
     _write_json(manifest_path, manifest)
     _rebind_agreement_panel_manifest(destination)
 
