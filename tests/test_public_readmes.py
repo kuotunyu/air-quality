@@ -222,7 +222,7 @@ def test_both_readmes_keep_hugging_face_to_l0_l1_and_owner_confirmed_publication
     assert "full HF Dataset publishes at closeout" not in en
 
 
-def test_public_docs_distinguish_measured_micro_sensor_prediction_from_calibration_and_fusion() -> (
+def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_readiness_from_calibration_and_fusion() -> (
     None
 ):
     zh, en = _readmes()
@@ -273,6 +273,38 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_from_calibrati
     assert "觀測 ZIP 尚未下載" not in " ".join(
         (zh_prose, en_prose, plan_prose, sources_prose, methodology_prose)
     )
+
+    assert "微型感測器 2025 全年 readiness audit 已交付" in zh_prose
+    assert "2025 annual micro-sensor readiness audit delivered" in en_prose
+
+    annual_details = (plan_prose, sources_prose, methodology_prose)
+    for text in annual_details:
+        assert "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb" in text
+        assert "365 日日曆" in text
+        assert "322 個已解析日期" in text
+        assert "43 個來源目錄缺席日期" in text
+        assert "2,775,609 筆 device-day" in text
+        assert "11,556 個裝置" in text
+        assert "1,708 個裝置通過空間篩選" in text
+        assert "1,343 個裝置符合寬鬆 eligibility 門檻" in text
+        assert "3 個 active months" in text
+        assert "30 個 trio dates" in text
+        assert "360 個 trio-observed hours" in text
+        assert "距最近標準站不超過 10 km" in text
+        assert "不是 calibration、不是 bias estimation、不是 sensor fusion" in text
+        assert "沒有取得衛星資料，也沒有補值" in text
+        assert "最近標準站不是微型感測器位置的 colocated ground truth" in text
+        assert "沒有建立高解析度 PM2.5 場" in text
+
+    for text in (sources, methodology):
+        assert "| invalid or null coordinate | 6,049 |" in text
+        assert "| moving coordinate | 3,794 |" in text
+        assert "| outside Taiwan | 4 |" in text
+        assert "| missing PM2.5 coordinate | 1 |" in text
+
+    assert "四種去向的裝置數都保留在 exclusion ledger，沒有靜默移除" in sources_prose
+    assert "座標沒有被平均、修復或移到最近標準站" in methodology_prose
+    assert "flag 不是 valid 或 PM2.5 為 null" in methodology_prose
 
 
 def test_public_docs_publish_the_verified_satellite_context_limit_without_calling_it_fusion() -> (

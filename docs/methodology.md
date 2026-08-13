@@ -561,6 +561,36 @@ $(1,0,1)(1,0,1)_{24}$、每 72 小時一個預測原點。**18/18 次擬合全�
 
 ---
 
+## 微型感測器 2025 全年 readiness audit
+
+全年 audit 不先擬合模型，而是先確認是否有可以設計 held-station 與 held-time 實驗的觀測 cohort。
+`twair analyze micro-sensor-annual-readiness` 每次只以單日 PM2.5、相對濕度與溫度來源做
+DuckDB aggregation，保留每個變數的 source rows、nulls、distinct timestamps、observed hours 與
+extreme-range counts。只有三個變數在同一小時都有非 null 值才計為 trio-observed hour；這是
+coverage flag，不是補值。每日結果原子寫入 checkpoint，年度彙總再以 bounded DuckDB scan／COPY 建立。
+
+immutable generation `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`
+由獨立 verifier 重算 322 個已解析日期；365 日日曆的另 43 個來源目錄缺席日期依然缺席。
+輸出共 2,775,609 筆 device-day 與 11,556 個裝置。座標條件要求每筆 PM2.5 座標有效，且全年
+longitude／latitude 的最小與最大值相同；座標沒有被平均、修復或移到最近標準站。
+
+| 座標／空間狀態 | 裝置數 |
+|---|---:|
+| 通過空間篩選 | 1,708 |
+| invalid or null coordinate | 6,049 |
+| moving coordinate | 3,794 |
+| outside Taiwan | 4 |
+| missing PM2.5 coordinate | 1 |
+
+因此有 1,708 個裝置通過空間篩選。在明確標為寬鬆的「3 個 active months、30 個 trio dates、
+360 個 trio-observed hours、距最近標準站不超過 10 km」條件下，
+1,343 個裝置符合寬鬆 eligibility 門檻。ground overlap 只計最近標準站在該小時明確有效且
+非 null 的 PM2.5；缺列與有列但 flag 不是 valid 或 PM2.5 為 null 繼續分開計數。
+
+這不是 calibration、不是 bias estimation、不是 sensor fusion；沒有取得衛星資料，也沒有補值。
+最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
+全年 audit 只將下一個 calibration 實驗從「有沒有足夠 cohort」變成可以用 held-station／held-time 設計回答的問題。
+
 ## 微型感測器 grouped predictive benchmark
 
 2025-01-01 至 2025-01-25 的 readiness panel 先把每個微型感測器小時配到 primary-radius 內最近的
