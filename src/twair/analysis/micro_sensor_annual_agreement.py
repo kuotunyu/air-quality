@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import math
 import re
@@ -19,8 +20,13 @@ from typing import Any
 from uuid import uuid4
 
 import duckdb
+import numpy as np
 import polars as pl
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
+from twair.analysis.era5_robustness import assign_station_folds
 from twair.analysis.micro_sensor_annual_readiness import (
     ANNUAL_CALENDAR_SCHEMA,
     ANNUAL_COHORT_THRESHOLD_SCHEMA,
@@ -35,6 +41,8 @@ from twair.ingest.micro_sensor_observations import OBSERVATION_OUTPUT_SCHEMA
 from twair.ingest.station_meta import resolve_station_geo
 from twair.net import sha256_file
 from twair.store.schema import PARTITION_SCHEMA
+
+threadpool_limits: Any = importlib.import_module("threadpoolctl").threadpool_limits
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ANNUAL_GENERATION_SHA256 = "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
@@ -239,6 +247,16 @@ class AnnualAgreementPanel:
     manifest: dict[str, object]
     annual_input: AnnualReadinessInput | None
     checkpoints: tuple[AgreementDayCheckpoint, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class AnnualAgreementEvaluation:
+    memberships: pl.DataFrame
+    folds: pl.DataFrame
+    predictions: pl.DataFrame
+    scores: pl.DataFrame
+    deltas: pl.DataFrame
+    manifest: dict[str, object]
 
 
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
@@ -2905,3 +2923,682 @@ def write_annual_agreement_panel(
         finally:
             if staged.exists():
                 shutil.rmtree(staged)
+
+
+def assign_agreement_folds(panel: AnnualAgreementPanel) -> pl.DataFrame:
+    _validate_agreement_panel_frames(panel)
+    config = load_annual_agreement_config()
+    eligible = panel.paired_days.filter(pl.col("reason") == "eligible")
+    required = {
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "quarter",
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    }
+    if required - set(eligible.columns) or eligible.is_empty():
+        raise RuntimeError("annual agreement has no eligible split rows")
+    if eligible.filter(~pl.col("quarter").is_in(config.quarters)).height:
+        raise RuntimeError("annual agreement eligible quarter changed")
+    if eligible.select("radius_km", "date", "device_id").n_unique() != eligible.height:
+        raise RuntimeError("annual agreement eligible row identity changed")
+    model_columns = (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    )
+    if eligible.filter(
+        pl.any_horizontal(
+            pl.col(column).is_null() | ~pl.col(column).is_finite() for column in model_columns
+        )
+    ).height:
+        raise RuntimeError("annual agreement eligible model value is non-finite")
+    stations = panel.paired_days.select("station_name").unique().sort("station_name")
+    geography = resolve_station_geo().select("station_name", "airzone_official")
+    inventory = stations.join(geography, on="station_name", how="left")
+    if inventory["airzone_official"].null_count():
+        raise RuntimeError("annual agreement station geography changed")
+    station_membership = assign_station_folds(inventory, fold_count=config.station_folds)
+    source = eligible.join(
+        station_membership.select("station_name", "station_fold"),
+        on="station_name",
+        how="left",
+    )
+    rows: list[pl.DataFrame] = []
+    for station_fold in range(config.station_folds):
+        rows.append(
+            source.with_columns(
+                pl.lit("held_station").alias("evaluation"),
+                pl.lit(f"held_station_{station_fold:02d}").alias("fold"),
+                pl.when(pl.col("station_fold") == station_fold)
+                .then(pl.lit("test"))
+                .otherwise(pl.lit("train"))
+                .alias("role"),
+            )
+        )
+    for quarter in config.quarters:
+        rows.append(
+            source.with_columns(
+                pl.lit("held_quarter").alias("evaluation"),
+                pl.lit(f"held_quarter_{quarter:02d}").alias("fold"),
+                pl.when(pl.col("quarter") == quarter)
+                .then(pl.lit("test"))
+                .otherwise(pl.lit("train"))
+                .alias("role"),
+            )
+        )
+    for station_fold in range(config.station_folds):
+        for quarter in config.quarters:
+            rows.append(
+                source.with_columns(
+                    pl.lit("joint").alias("evaluation"),
+                    pl.lit(f"joint_{station_fold:02d}_{quarter:02d}").alias("fold"),
+                    pl.when(
+                        (pl.col("station_fold") == station_fold) & (pl.col("quarter") == quarter)
+                    )
+                    .then(pl.lit("test"))
+                    .when((pl.col("station_fold") != station_fold) & (pl.col("quarter") != quarter))
+                    .then(pl.lit("train"))
+                    .otherwise(pl.lit("excluded"))
+                    .alias("role"),
+                )
+            )
+    memberships = (
+        pl.concat(rows)
+        .select(
+            "evaluation",
+            "fold",
+            "role",
+            "station_fold",
+            *eligible.columns,
+        )
+        .sort("evaluation", "fold", "role", "radius_km", "date", "device_id")
+    )
+    identity_columns = (
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    bound: list[pl.DataFrame] = []
+    for split in memberships.partition_by("evaluation", "fold", maintain_order=True):
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        if train.height < 2 or train["ground_pm25_mean"].n_unique() < 2:
+            raise RuntimeError("annual agreement fold has insufficient training targets")
+        if test.is_empty():
+            state = "unscored_empty_test"
+        elif test["ground_pm25_mean"].n_unique() < 2:
+            state = "unscored_single_target"
+        else:
+            state = "scored"
+
+        def digest(frame: pl.DataFrame, *, truth: bool = False) -> str:
+            columns = (*identity_columns, "ground_pm25_mean") if truth else identity_columns
+            records = (
+                frame.select(*columns)
+                .sort(*identity_columns)
+                .with_columns(pl.col("date").cast(pl.String))
+                .to_dicts()
+            )
+            return _canonical_hash(records)
+
+        bound.append(
+            split.with_columns(
+                pl.lit(state).alias("fold_state"),
+                pl.lit(train.height, dtype=pl.Int64).alias("train_rows"),
+                pl.lit(test.height, dtype=pl.Int64).alias("test_rows"),
+                pl.lit(digest(train)).alias("train_membership_sha256"),
+                pl.lit(digest(test)).alias("test_membership_sha256"),
+                pl.lit(digest(test, truth=True)).alias("test_truth_sha256"),
+            )
+        )
+    return pl.concat(bound).sort("evaluation", "fold", "role", "radius_km", "date", "device_id")
+
+
+def _agreement_fold_table(memberships: pl.DataFrame) -> pl.DataFrame:
+    identities = (
+        memberships.select(
+            "evaluation",
+            "fold",
+            "fold_state",
+            "train_rows",
+            "test_rows",
+            "train_membership_sha256",
+            "test_membership_sha256",
+            "test_truth_sha256",
+        )
+        .unique()
+        .sort("evaluation", "fold")
+    )
+    if identities.height != 29:
+        raise RuntimeError("annual agreement fold inventory changed")
+    rows: list[dict[str, object]] = []
+    for identity in identities.iter_rows(named=True):
+        split = memberships.filter(pl.col("fold") == identity["fold"])
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        train_devices = set(train["device_id"])
+        test_devices = set(test["device_id"])
+        rows.append(
+            {
+                **identity,
+                "train_devices": len(train_devices),
+                "test_devices": len(test_devices),
+                "train_stations": train["station_name"].n_unique(),
+                "test_stations": test["station_name"].n_unique(),
+                "train_dates": train["date"].n_unique(),
+                "test_dates": test["date"].n_unique(),
+                "device_overlap": len(train_devices & test_devices),
+                "excluded_rows": split.filter(pl.col("role") == "excluded").height,
+            }
+        )
+    return pl.DataFrame(rows).sort("evaluation", "fold")
+
+
+def _agreement_prediction_rows(
+    memberships: pl.DataFrame,
+    *,
+    config: AnnualAgreementConfig,
+) -> pl.DataFrame:
+    models = {
+        "pooled_micro_ridge": ("micro_pm25_mean",),
+        "pooled_weather_ridge": (
+            "micro_pm25_mean",
+            "micro_humidity_mean",
+            "micro_temperature_mean",
+        ),
+    }
+    rows: list[pl.DataFrame] = []
+    common = (
+        "evaluation",
+        "fold",
+        "fold_state",
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+        "train_membership_sha256",
+        "test_membership_sha256",
+        "test_truth_sha256",
+    )
+    for split in memberships.partition_by("evaluation", "fold", maintain_order=True):
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        if test.is_empty():
+            continue
+        rows.append(
+            test.select(*common, pl.col("ground_pm25_mean").alias("y_true")).with_columns(
+                pl.lit("raw_micro").alias("model"),
+                pl.lit("micro_pm25_mean").alias("model_features"),
+                test["micro_pm25_mean"].alias("y_pred"),
+            )
+        )
+        weighted_train = train.with_columns(
+            (1.0 / pl.len().over("station_name", "date")).alias("_sample_weight")
+        )
+        y_train = weighted_train["ground_pm25_mean"].to_numpy()
+        weights = weighted_train["_sample_weight"].to_numpy()
+        for model, features in models.items():
+            x_train = weighted_train.select(*features).to_numpy()
+            x_test = test.select(*features).to_numpy()
+            if not (
+                np.isfinite(x_train).all()
+                and np.isfinite(x_test).all()
+                and np.isfinite(y_train).all()
+                and np.isfinite(weights).all()
+                and (weights > 0).all()
+            ):
+                raise RuntimeError("annual agreement model input is non-finite")
+            pipeline = Pipeline(
+                [
+                    ("standardscaler", StandardScaler()),
+                    ("ridge", Ridge(alpha=config.ridge_alpha)),
+                ]
+            )
+            with threadpool_limits(limits=config.threads):
+                pipeline.fit(
+                    x_train,
+                    y_train,
+                    standardscaler__sample_weight=weights,
+                    ridge__sample_weight=weights,
+                )
+                predicted = pipeline.predict(x_test)
+            if predicted.shape != (test.height,) or not np.isfinite(predicted).all():
+                raise RuntimeError("annual agreement prediction is non-finite")
+            rows.append(
+                test.select(*common, pl.col("ground_pm25_mean").alias("y_true")).with_columns(
+                    pl.lit(model).alias("model"),
+                    pl.lit(",".join(features)).alias("model_features"),
+                    pl.Series("y_pred", predicted, dtype=pl.Float64),
+                )
+            )
+    if not rows:
+        raise RuntimeError("annual agreement produced no test predictions")
+    return pl.concat(rows).sort("evaluation", "fold", "radius_km", "date", "device_id", "model")
+
+
+def _validate_agreement_predictions(
+    predictions: pl.DataFrame,
+    *,
+    memberships: pl.DataFrame,
+    folds: pl.DataFrame,
+) -> None:
+    required = {
+        "evaluation",
+        "fold",
+        "fold_state",
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+        "train_membership_sha256",
+        "test_membership_sha256",
+        "test_truth_sha256",
+        "model",
+        "model_features",
+        "y_true",
+        "y_pred",
+    }
+    if set(predictions.columns) != required or predictions.is_empty():
+        raise RuntimeError("annual agreement prediction schema changed")
+    if _agreement_fold_table(memberships).rows() != folds.rows():
+        raise RuntimeError("annual agreement trusted fold evidence changed")
+    identity = (
+        "evaluation",
+        "fold",
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    if predictions.select(*identity, "model").n_unique() != predictions.height:
+        raise RuntimeError("annual agreement predictions contain duplicate rows")
+    expected_models = {"raw_micro", "pooled_micro_ridge", "pooled_weather_ridge"}
+    expected_features = {
+        "raw_micro": "micro_pm25_mean",
+        "pooled_micro_ridge": "micro_pm25_mean",
+        "pooled_weather_ridge": ("micro_pm25_mean,micro_humidity_mean,micro_temperature_mean"),
+    }
+    if set(predictions["model"].unique()) - expected_models:
+        raise RuntimeError("annual agreement predictions differ from trusted prediction universe")
+    if predictions.filter(
+        pl.col("model_features")
+        != pl.col("model").replace_strict(expected_features, return_dtype=pl.String)
+    ).height:
+        raise RuntimeError("annual agreement prediction features changed")
+    membership_identity = (
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    trusted_prediction_rows: list[pl.DataFrame] = []
+    for fold_row in folds.iter_rows(named=True):
+        fold_name = str(fold_row["fold"])
+        fold_memberships = memberships.filter(pl.col("fold") == fold_name)
+        train = fold_memberships.filter(pl.col("role") == "train")
+        test = fold_memberships.filter(pl.col("role") == "test")
+
+        def digest(frame: pl.DataFrame, *, truth: bool = False) -> str:
+            columns = (*membership_identity, "ground_pm25_mean") if truth else membership_identity
+            return _canonical_hash(
+                frame.select(*columns)
+                .sort(*membership_identity)
+                .with_columns(pl.col("date").cast(pl.String))
+                .to_dicts()
+            )
+
+        if (
+            digest(train) != fold_row["train_membership_sha256"]
+            or digest(test) != fold_row["test_membership_sha256"]
+            or digest(test, truth=True) != fold_row["test_truth_sha256"]
+            or train.height != fold_row["train_rows"]
+            or test.height != fold_row["test_rows"]
+        ):
+            raise RuntimeError("annual agreement trusted fold evidence changed")
+        expected = test.select(
+            "evaluation",
+            "fold",
+            *membership_identity,
+            pl.col("ground_pm25_mean").alias("y_true"),
+        ).sort(*identity)
+        observed = predictions.filter(pl.col("fold") == fold_name)
+        if test.is_empty():
+            if not observed.is_empty():
+                raise RuntimeError("annual agreement predictions differ from trusted fold")
+            continue
+        trusted_prediction_rows.append(
+            expected.with_columns(
+                pl.lit(fold_row["fold_state"]).alias("fold_state"),
+                pl.lit(fold_row["train_membership_sha256"]).alias("train_membership_sha256"),
+                pl.lit(fold_row["test_membership_sha256"]).alias("test_membership_sha256"),
+                pl.lit(fold_row["test_truth_sha256"]).alias("test_truth_sha256"),
+            )
+            .join(
+                pl.DataFrame(
+                    {
+                        "model": list(expected_features),
+                        "model_features": list(expected_features.values()),
+                    }
+                ),
+                how="cross",
+            )
+            .select(
+                *identity,
+                "fold_state",
+                "train_membership_sha256",
+                "test_membership_sha256",
+                "test_truth_sha256",
+                "model",
+                "model_features",
+                "y_true",
+            )
+        )
+        if set(observed["model"].unique()) != expected_models:
+            raise RuntimeError("annual agreement prediction models changed")
+        for model in expected_models:
+            model_rows = observed.filter(pl.col("model") == model).sort(*identity)
+            if (
+                model_rows.select(*identity, "y_true").rows() != expected.rows()
+                or model_rows["fold_state"].unique().to_list() != [fold_row["fold_state"]]
+                or model_rows["train_membership_sha256"].unique().to_list()
+                != [fold_row["train_membership_sha256"]]
+                or model_rows["test_membership_sha256"].unique().to_list()
+                != [fold_row["test_membership_sha256"]]
+                or model_rows["test_truth_sha256"].unique().to_list()
+                != [fold_row["test_truth_sha256"]]
+            ):
+                raise RuntimeError("annual agreement predictions differ from trusted fold")
+    trusted_universe = pl.concat(trusted_prediction_rows).sort(*identity, "model")
+    observed_universe = predictions.select(trusted_universe.columns).sort(*identity, "model")
+    if observed_universe.rows() != trusted_universe.rows():
+        raise RuntimeError("annual agreement predictions differ from trusted prediction universe")
+    if predictions.filter(
+        pl.col("y_true").is_null()
+        | ~pl.col("y_true").is_finite()
+        | pl.col("y_pred").is_null()
+        | ~pl.col("y_pred").is_finite()
+    ).height:
+        raise RuntimeError("annual agreement prediction is non-finite")
+
+
+def _agreement_scoring_frame(frame: pl.DataFrame, *, unit: str) -> pl.DataFrame:
+    if unit == "device_day":
+        return frame
+    if unit != "station_day":
+        raise RuntimeError("annual agreement evaluation unit changed")
+    truth_counts = frame.group_by("station_name", "date").agg(
+        pl.col("y_true").n_unique().alias("truths")
+    )
+    if truth_counts.filter(pl.col("truths") != 1).height:
+        raise RuntimeError("annual agreement station-day truth changed within a target")
+    return (
+        frame.group_by("station_name", "date")
+        .agg(pl.col("y_true").first(), pl.col("y_pred").mean())
+        .sort("station_name", "date")
+    )
+
+
+def _agreement_metric_values(frame: pl.DataFrame) -> dict[str, float]:
+    truth = frame["y_true"].to_numpy()
+    predicted = frame["y_pred"].to_numpy()
+    if truth.size < 2 or np.unique(truth).size < 2:
+        raise RuntimeError("annual agreement score requires multi-level targets")
+    error = predicted - truth
+    denominator = float(np.sum((truth - np.mean(truth)) ** 2))
+    if denominator <= 0.0:
+        raise RuntimeError("annual agreement score has a single-level target")
+    bias = float(np.mean(error))
+    values = {
+        "rmse": float(np.sqrt(np.mean(error**2))),
+        "mae": float(np.mean(np.abs(error))),
+        "r2": float(1.0 - np.sum(error**2) / denominator),
+        "bias": bias,
+        "absolute_bias": abs(bias),
+    }
+    if not all(math.isfinite(value) for value in values.values()):
+        raise RuntimeError("annual agreement metric is non-finite")
+    return values
+
+
+def _agreement_score_row(
+    frame: pl.DataFrame,
+    *,
+    scope: str,
+    evaluation: str,
+    fold: str | None,
+    radius_km: float,
+    model: str,
+    unit: str,
+    state: str,
+    membership_sha256: str,
+    truth_sha256: str,
+) -> dict[str, object]:
+    scored = _agreement_scoring_frame(frame, unit=unit)
+    row: dict[str, object] = {
+        "scope": scope,
+        "evaluation": evaluation,
+        "fold": fold,
+        "radius_km": radius_km,
+        "model": model,
+        "unit": unit,
+        "state": state,
+        "n": scored.height,
+        "membership_sha256": membership_sha256,
+        "truth_sha256": truth_sha256,
+    }
+    if state == "scored":
+        row.update(_agreement_metric_values(scored))
+    else:
+        row.update(
+            {
+                "rmse": None,
+                "mae": None,
+                "r2": None,
+                "bias": None,
+                "absolute_bias": None,
+            }
+        )
+    return row
+
+
+def _score_annual_agreement_predictions(
+    predictions: pl.DataFrame,
+    *,
+    memberships: pl.DataFrame,
+    folds: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    _validate_agreement_predictions(predictions, memberships=memberships, folds=folds)
+    score_rows: list[dict[str, object]] = []
+    for fold_row in folds.iter_rows(named=True):
+        for model in ("raw_micro", "pooled_micro_ridge", "pooled_weather_ridge"):
+            split = predictions.filter(
+                (pl.col("fold") == fold_row["fold"]) & (pl.col("model") == model)
+            )
+            for unit in ("device_day", "station_day"):
+                score_rows.append(
+                    _agreement_score_row(
+                        split,
+                        scope="fold",
+                        evaluation=str(fold_row["evaluation"]),
+                        fold=str(fold_row["fold"]),
+                        radius_km=float(
+                            memberships.filter(pl.col("fold") == fold_row["fold"])["radius_km"]
+                            .unique()
+                            .item()
+                        ),
+                        model=model,
+                        unit=unit,
+                        state=str(fold_row["fold_state"]),
+                        membership_sha256=str(fold_row["test_membership_sha256"]),
+                        truth_sha256=str(fold_row["test_truth_sha256"]),
+                    )
+                )
+    identity = (
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    for split in predictions.partition_by("evaluation", "radius_km", "model", maintain_order=True):
+        first = split.row(0, named=True)
+        membership_records = (
+            split.select(*identity)
+            .unique()
+            .sort(*identity)
+            .with_columns(pl.col("date").cast(pl.String))
+            .to_dicts()
+        )
+        truth_records = (
+            split.select(*identity, "y_true")
+            .unique()
+            .sort(*identity)
+            .with_columns(pl.col("date").cast(pl.String))
+            .to_dicts()
+        )
+        for unit in ("device_day", "station_day"):
+            score_rows.append(
+                _agreement_score_row(
+                    split,
+                    scope="overall",
+                    evaluation=str(first["evaluation"]),
+                    fold=None,
+                    radius_km=float(first["radius_km"]),
+                    model=str(first["model"]),
+                    unit=unit,
+                    state="scored",
+                    membership_sha256=_canonical_hash(membership_records),
+                    truth_sha256=_canonical_hash(truth_records),
+                )
+            )
+    scores = pl.DataFrame(score_rows).sort(
+        "scope", "evaluation", "fold", "radius_km", "model", "unit", nulls_last=True
+    )
+    delta_rows: list[dict[str, object]] = []
+    keys = ("scope", "evaluation", "fold", "radius_km", "unit")
+    for group in scores.partition_by(*keys, maintain_order=True):
+        baseline = group.filter(pl.col("model") == "raw_micro")
+        if baseline.height != 1:
+            raise RuntimeError("annual agreement baseline score is missing or duplicated")
+        raw = baseline.row(0, named=True)
+        for model in ("pooled_micro_ridge", "pooled_weather_ridge"):
+            adjusted = group.filter(pl.col("model") == model)
+            if adjusted.height != 1:
+                raise RuntimeError("annual agreement adjusted score is missing or duplicated")
+            candidate = adjusted.row(0, named=True)
+            if any(
+                candidate[field] != raw[field]
+                for field in ("state", "n", "membership_sha256", "truth_sha256")
+            ):
+                raise RuntimeError("annual agreement scores are not paired to the same test truth")
+            scored = raw["state"] == "scored"
+            row: dict[str, object] = {
+                **{key: raw[key] for key in keys},
+                "model": model,
+                "baseline_model": "raw_micro",
+                "state": raw["state"],
+                "n": raw["n"],
+                "membership_sha256": raw["membership_sha256"],
+                "truth_sha256": raw["truth_sha256"],
+            }
+            for metric in ("rmse", "mae", "r2", "bias", "absolute_bias"):
+                row[f"delta_{metric}"] = (
+                    float(candidate[metric]) - float(raw[metric]) if scored else None
+                )
+            row.update(
+                {
+                    "improved_rmse": candidate["rmse"] < raw["rmse"] if scored else None,
+                    "improved_mae": candidate["mae"] < raw["mae"] if scored else None,
+                    "improved_r2": candidate["r2"] > raw["r2"] if scored else None,
+                    "improved_absolute_bias": candidate["absolute_bias"] < raw["absolute_bias"]
+                    if scored
+                    else None,
+                }
+            )
+            delta_rows.append(row)
+    deltas = pl.DataFrame(delta_rows).sort(
+        "scope", "evaluation", "fold", "radius_km", "model", "unit", nulls_last=True
+    )
+    return scores, deltas
+
+
+def score_annual_agreement_predictions(
+    panel: AnnualAgreementPanel,
+    predictions: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    memberships = assign_agreement_folds(panel)
+    folds = _agreement_fold_table(memberships)
+    return _score_annual_agreement_predictions(
+        predictions,
+        memberships=memberships,
+        folds=folds,
+    )
+
+
+def _agreement_frame_hash(frame: pl.DataFrame) -> str:
+    temporal = [
+        name
+        for name, dtype in frame.schema.items()
+        if dtype == pl.Date or isinstance(dtype, pl.Datetime)
+    ]
+    normalized = (
+        frame.with_columns(pl.col(name).cast(pl.String) for name in temporal) if temporal else frame
+    )
+    return _canonical_hash(normalized.to_dicts())
+
+
+def evaluate_annual_agreement(panel: AnnualAgreementPanel) -> AnnualAgreementEvaluation:
+    config = load_annual_agreement_config()
+    memberships = assign_agreement_folds(panel)
+    folds = _agreement_fold_table(memberships)
+    predictions = _agreement_prediction_rows(memberships, config=config)
+    scores, deltas = _score_annual_agreement_predictions(
+        predictions,
+        memberships=memberships,
+        folds=folds,
+    )
+    panel_generation = panel.manifest.get("generation_sha256")
+    if not isinstance(panel_generation, str) or _SHA256.fullmatch(panel_generation) is None:
+        raise RuntimeError("annual agreement panel generation identity changed")
+    outputs = {
+        "folds": folds,
+        "predictions": predictions,
+        "scores": scores,
+        "deltas": deltas,
+    }
+    identity: dict[str, object] = {
+        "schema_version": 1,
+        "analysis": "annual_reference_station_agreement_benchmark",
+        "panel_generation_sha256": panel_generation,
+        "config": _checkpoint_config(config),
+        "claim_boundary": dict(config.claim_boundary),
+        "output_rows": {name: frame.height for name, frame in outputs.items()},
+        "output_hashes": {name: _agreement_frame_hash(frame) for name, frame in outputs.items()},
+    }
+    manifest = {**identity, "generation_sha256": _canonical_hash(identity)}
+    return AnnualAgreementEvaluation(
+        memberships=memberships,
+        folds=folds,
+        predictions=predictions,
+        scores=scores,
+        deltas=deltas,
+        manifest=manifest,
+    )

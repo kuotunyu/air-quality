@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import math
 import subprocess
 import sys
 import time
@@ -1977,6 +1978,821 @@ def _annual_agreement_panel_fixture(
             )
         )
     return annual_input, tuple(checkpoints), config
+
+
+def _agreement_model_panel_fixture(agreement: Any) -> Any:
+    rows: list[dict[str, object]] = []
+    quarter_dates = (
+        date(2025, 1, 15),
+        date(2025, 4, 15),
+        date(2025, 7, 15),
+        date(2025, 10, 15),
+    )
+    for station_index in range(10):
+        for quarter, day in enumerate(quarter_dates, start=1):
+            rows.append(
+                {
+                    "radius_km": 0.5,
+                    "date": day,
+                    "device_id": f"device-{station_index:02d}",
+                    "station_name": f"station-{station_index:02d}",
+                    "quarter": quarter,
+                    "reason": "eligible",
+                    "micro_pm25_mean": float(10 + station_index + quarter),
+                    "micro_humidity_mean": float(60 + quarter),
+                    "micro_temperature_mean": float(20 + quarter),
+                    "ground_pm25_mean": float(11 + station_index + quarter),
+                }
+            )
+    paired_days = pl.DataFrame(rows)
+    return agreement.AnnualAgreementPanel(
+        calendar=pl.DataFrame(),
+        paired_days=paired_days,
+        exclusions=pl.DataFrame(),
+        cohort_coverage=pl.DataFrame(),
+        summary={},
+        manifest={"generation_sha256": "a" * 64},
+        annual_input=None,
+        checkpoints=None,
+    )
+
+
+def test_joint_transfer_exposes_neither_the_test_station_fold_nor_test_quarter_to_training(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    memberships = agreement.assign_agreement_folds(panel)
+
+    assert memberships.filter(pl.col("evaluation") == "held_station")["fold"].n_unique() == 5
+    assert memberships.filter(pl.col("evaluation") == "held_quarter")["fold"].n_unique() == 4
+    joint = memberships.filter(pl.col("evaluation") == "joint")
+    assert joint["fold"].n_unique() == 20
+    for split in joint.partition_by("fold", as_dict=False):
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        assert set(train["station_fold"]).isdisjoint(set(test["station_fold"]))
+        assert set(train["quarter"]).isdisjoint(set(test["quarter"]))
+    test_memberships = joint.filter(pl.col("role") == "test")
+    assert (
+        test_memberships.select("radius_km", "date", "device_id").n_unique()
+        == panel.paired_days.height
+    )
+    assert test_memberships.height == panel.paired_days.height
+    for evaluation in ("held_station", "held_quarter"):
+        tests = memberships.filter(
+            (pl.col("evaluation") == evaluation) & (pl.col("role") == "test")
+        )
+        assert tests.height == panel.paired_days.height
+        assert tests.select("radius_km", "date", "device_id").n_unique() == panel.paired_days.height
+
+
+def test_fold_membership_is_deterministic_hashed_and_does_not_remove_panel_exclusions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    excluded = panel.paired_days.row(0, named=True)
+    panel = replace(
+        panel,
+        paired_days=pl.concat(
+            [
+                panel.paired_days,
+                pl.DataFrame(
+                    [
+                        {
+                            **excluded,
+                            "device_id": "excluded-device",
+                            "reason": "device_day_absent",
+                            "micro_pm25_mean": None,
+                            "micro_humidity_mean": None,
+                            "micro_temperature_mean": None,
+                            "ground_pm25_mean": None,
+                        }
+                    ]
+                ),
+            ],
+            how="diagonal_relaxed",
+        ),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    first = agreement.assign_agreement_folds(panel)
+    second = agreement.assign_agreement_folds(panel)
+
+    assert first.rows() == second.rows()
+    assert first.height == 1160
+    assert dict(first.group_by("role").len().iter_rows()) == {
+        "excluded": 280,
+        "test": 120,
+        "train": 760,
+    }
+    assert panel.paired_days.filter(pl.col("device_id") == "excluded-device").height == 1
+    assert first.filter(pl.col("device_id") == "excluded-device").is_empty()
+    per_fold = first.group_by("evaluation", "fold").agg(
+        pl.col("train_membership_sha256").n_unique().alias("train_hashes"),
+        pl.col("test_membership_sha256").n_unique().alias("test_hashes"),
+        pl.col("test_truth_sha256").n_unique().alias("truth_hashes"),
+    )
+    assert per_fold.select(
+        (pl.col("train_hashes") == 1).all(),
+        (pl.col("test_hashes") == 1).all(),
+        (pl.col("truth_hashes") == 1).all(),
+    ).row(0) == (True, True, True)
+    assert first.filter(
+        ~pl.col("train_membership_sha256").str.contains(r"^[0-9a-f]{64}$")
+        | ~pl.col("test_membership_sha256").str.contains(r"^[0-9a-f]{64}$")
+        | ~pl.col("test_truth_sha256").str.contains(r"^[0-9a-f]{64}$")
+    ).is_empty()
+    fold_summary = (
+        first.select(
+            "evaluation",
+            "fold",
+            "fold_state",
+            "train_rows",
+            "test_rows",
+            "train_membership_sha256",
+            "test_membership_sha256",
+            "test_truth_sha256",
+        )
+        .unique()
+        .sort("evaluation", "fold")
+    )
+    assert _canonical_hash(fold_summary.to_dicts()) == (
+        "27839354f4ad1db1efd4e8b610a33557c5ddf93471f15b476f80619fa4e9a4e6"
+    )
+
+
+def test_empty_and_single_target_test_folds_remain_explicit_and_unscored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    panel = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.when(pl.col("quarter") == 4)
+            .then(pl.lit("device_day_absent"))
+            .otherwise(pl.col("reason"))
+            .alias("reason"),
+            pl.when(pl.col("quarter") == 1)
+            .then(pl.lit(25.0))
+            .otherwise(pl.col("ground_pm25_mean"))
+            .alias("ground_pm25_mean"),
+        ),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    memberships = agreement.assign_agreement_folds(panel)
+    result = agreement.evaluate_annual_agreement(panel)
+
+    empty = memberships.filter(pl.col("fold") == "held_quarter_04")
+    assert empty["fold_state"].unique().to_list() == ["unscored_empty_test"]
+    assert empty["test_rows"].unique().to_list() == [0]
+    single = memberships.filter(pl.col("fold") == "joint_00_01")
+    assert single["fold_state"].unique().to_list() == ["unscored_single_target"]
+    empty_folds = result.folds.filter(pl.col("fold_state") == "unscored_empty_test")[
+        "fold"
+    ].to_list()
+    assert empty_folds == [
+        "held_quarter_04",
+        "joint_00_04",
+        "joint_01_04",
+        "joint_02_04",
+        "joint_03_04",
+        "joint_04_04",
+    ]
+    assert result.predictions.filter(pl.col("fold").is_in(empty_folds)).is_empty()
+    empty_scores = result.scores.filter(pl.col("fold").is_in(empty_folds))
+    empty_deltas = result.deltas.filter(pl.col("fold").is_in(empty_folds))
+    assert empty_scores.height == len(empty_folds) * 3 * 2
+    assert empty_deltas.height == len(empty_folds) * 2 * 2
+    assert empty_scores.select(
+        (pl.col("state") == "unscored_empty_test").all(),
+        (pl.col("n") == 0).all(),
+        pl.all_horizontal(
+            pl.col(metric).is_null() for metric in ("rmse", "mae", "r2", "bias", "absolute_bias")
+        ).all(),
+    ).row(0) == (True, True, True)
+    assert empty_deltas.select(
+        (pl.col("state") == "unscored_empty_test").all(),
+        (pl.col("n") == 0).all(),
+        pl.all_horizontal(
+            pl.col(column).is_null()
+            for column in empty_deltas.columns
+            if column.startswith("delta_")
+        ).all(),
+    ).row(0) == (True, True, True)
+
+
+def test_station_fold_identity_uses_the_full_panel_universe_when_a_station_has_no_eligible_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    reduced = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.when(pl.col("station_name") == "station-00")
+            .then(pl.lit("device_day_absent"))
+            .otherwise(pl.col("reason"))
+            .alias("reason")
+        ),
+    )
+
+    full = agreement.assign_agreement_folds(panel)
+    changed = agreement.assign_agreement_folds(reduced)
+    full_assignments = full.select("station_name", "station_fold").unique().sort("station_name")
+    changed_assignments = (
+        changed.select("station_name", "station_fold").unique().sort("station_name")
+    )
+
+    assert (
+        changed_assignments.rows()
+        == full_assignments.filter(pl.col("station_name") != "station-00").rows()
+    )
+
+
+def test_fold_assignment_rejects_invalid_eligible_membership_before_modeling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    invalid_quarter = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.when(pl.col("device_id") == "device-00")
+            .then(pl.lit(5, dtype=pl.Int64))
+            .otherwise(pl.col("quarter"))
+            .alias("quarter")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="eligible quarter"):
+        agreement.assign_agreement_folds(invalid_quarter)
+
+
+def test_the_fixed_cpu_models_predict_every_and_only_held_out_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    result = agreement.evaluate_annual_agreement(panel)
+
+    assert result.folds.height == 29
+    assert result.predictions.height == 360
+    assert set(result.predictions["model"]) == {
+        "raw_micro",
+        "pooled_micro_ridge",
+        "pooled_weather_ridge",
+    }
+    assert set(result.predictions["model_features"]) == {
+        "micro_pm25_mean",
+        "micro_pm25_mean,micro_humidity_mean,micro_temperature_mean",
+    }
+    test_rows = result.memberships.filter(pl.col("role") == "test").select(
+        "evaluation", "fold", "radius_km", "date", "device_id"
+    )
+    for model in result.predictions["model"].unique():
+        predicted = result.predictions.filter(pl.col("model") == model).select(
+            "evaluation", "fold", "radius_km", "date", "device_id"
+        )
+        assert predicted.rows() == test_rows.rows()
+    raw = result.predictions.filter(pl.col("model") == "raw_micro").join(
+        panel.paired_days.select("radius_km", "date", "device_id", "micro_pm25_mean"),
+        on=["radius_km", "date", "device_id"],
+        how="left",
+    )
+    assert raw["y_pred"].to_list() == raw["micro_pm25_mean"].to_list()
+
+
+def test_each_fold_records_train_test_exclusion_and_overlap_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    result = agreement.evaluate_annual_agreement(panel)
+
+    for fold in result.folds.iter_rows(named=True):
+        membership = result.memberships.filter(pl.col("fold") == fold["fold"])
+        train = membership.filter(pl.col("role") == "train")
+        test = membership.filter(pl.col("role") == "test")
+        assert fold["train_stations"] == train["station_name"].n_unique()
+        assert fold["test_stations"] == test["station_name"].n_unique()
+        assert fold["train_dates"] == train["date"].n_unique()
+        assert fold["test_dates"] == test["date"].n_unique()
+        assert fold["excluded_rows"] == membership.filter(pl.col("role") == "excluded").height
+        assert fold["device_overlap"] == len(set(train["device_id"]) & set(test["device_id"]))
+
+
+def test_ridge_preprocessing_and_inverse_station_day_weights_are_fit_only_on_training_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    duplicate = {
+        **panel.paired_days.row(0, named=True),
+        "device_id": "device-00-duplicate",
+    }
+    panel = replace(
+        panel,
+        paired_days=pl.concat(
+            [panel.paired_days, pl.DataFrame([duplicate])], how="diagonal_relaxed"
+        ),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    fit_calls: list[dict[str, Any]] = []
+    thread_limits: list[int] = []
+    original_fit = agreement.Pipeline.fit
+
+    def recording_fit(self: Any, x: Any, y: Any, **kwargs: Any) -> Any:
+        fit_calls.append(
+            {
+                "steps": tuple(name for name, _ in self.steps),
+                "alpha": self.named_steps["ridge"].alpha,
+                "shape": x.shape,
+                "truth": y.copy(),
+                "kwargs": {key: value.copy() for key, value in kwargs.items()},
+            }
+        )
+        return original_fit(self, x, y, **kwargs)
+
+    @contextmanager
+    def recording_thread_limit(*, limits: int) -> Any:
+        thread_limits.append(limits)
+        yield
+
+    monkeypatch.setattr(agreement.Pipeline, "fit", recording_fit)
+    monkeypatch.setattr(agreement, "threadpool_limits", recording_thread_limit)
+
+    agreement.evaluate_annual_agreement(panel)
+
+    assert len(fit_calls) == 58
+    assert thread_limits == [1] * 58
+    assert {call["steps"] for call in fit_calls} == {("standardscaler", "ridge")}
+    assert {call["alpha"] for call in fit_calls} == {1.0}
+    assert {call["shape"][1] for call in fit_calls} == {1, 3}
+    for call in fit_calls:
+        kwargs = call["kwargs"]
+        assert set(kwargs) == {
+            "standardscaler__sample_weight",
+            "ridge__sample_weight",
+        }
+        assert (
+            kwargs["standardscaler__sample_weight"].tolist()
+            == kwargs["ridge__sample_weight"].tolist()
+        )
+    assert any(0.5 in call["kwargs"]["ridge__sample_weight"].tolist() for call in fit_calls)
+
+
+def test_scores_recompute_both_units_and_pair_deltas_on_identical_truth_and_membership(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    evaluation = agreement.evaluate_annual_agreement(panel)
+    predictions = evaluation.predictions
+
+    scores, deltas = agreement.score_annual_agreement_predictions(
+        panel,
+        predictions,
+    )
+
+    assert scores.height == 192
+    assert deltas.height == 128
+    overall = scores.filter(pl.col("scope") == "overall")
+    assert overall.select("evaluation", "model", "unit").n_unique() == 18
+    selected_predictions = predictions.filter(
+        (pl.col("evaluation") == "joint") & (pl.col("model") == "pooled_weather_ridge")
+    )
+    errors = [
+        predicted - truth
+        for truth, predicted in selected_predictions.select("y_true", "y_pred").iter_rows()
+    ]
+    truth = selected_predictions["y_true"].to_list()
+    truth_mean = sum(truth) / len(truth)
+    expected = {
+        "rmse": math.sqrt(sum(error * error for error in errors) / len(errors)),
+        "mae": sum(abs(error) for error in errors) / len(errors),
+        "r2": 1
+        - sum(error * error for error in errors)
+        / sum((value - truth_mean) ** 2 for value in truth),
+        "bias": sum(errors) / len(errors),
+    }
+    selected_score = overall.filter(
+        (pl.col("evaluation") == "joint")
+        & (pl.col("model") == "pooled_weather_ridge")
+        & (pl.col("unit") == "device_day")
+    ).row(0, named=True)
+    for metric, value in expected.items():
+        assert selected_score[metric] == pytest.approx(value)
+    assert selected_score["absolute_bias"] == pytest.approx(abs(expected["bias"]))
+    paired = deltas.filter(pl.col("state") == "scored")
+    assert paired.filter(
+        pl.col("membership_sha256").is_null() | pl.col("truth_sha256").is_null()
+    ).is_empty()
+
+
+def test_a_held_out_target_change_cannot_enter_that_folds_ridge_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    mutated = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.when(pl.col("station_name").is_in(["station-00", "station-05"]))
+            .then(pl.col("ground_pm25_mean") + 1000.0)
+            .otherwise(pl.col("ground_pm25_mean"))
+            .alias("ground_pm25_mean")
+        ),
+    )
+
+    original = agreement.evaluate_annual_agreement(panel).predictions.filter(
+        (pl.col("fold") == "held_station_00") & (pl.col("model") != "raw_micro")
+    )
+    changed = agreement.evaluate_annual_agreement(mutated).predictions.filter(
+        (pl.col("fold") == "held_station_00") & (pl.col("model") != "raw_micro")
+    )
+
+    assert (
+        original.select("model", "date", "device_id", "y_pred").rows()
+        == changed.select("model", "date", "device_id", "y_pred").rows()
+    )
+    assert original["y_true"].to_list() != changed["y_true"].to_list()
+
+
+def test_scoring_rejects_nonfinite_unpaired_missing_and_duplicate_predictions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    evaluation = agreement.evaluate_annual_agreement(panel)
+    predictions = evaluation.predictions
+    nonfinite = (
+        predictions.with_row_index()
+        .with_columns(
+            pl.when(pl.col("index") == 0)
+            .then(pl.lit(float("inf")))
+            .otherwise(pl.col("y_pred"))
+            .alias("y_pred")
+        )
+        .drop("index")
+    )
+    unpaired = (
+        predictions.with_row_index()
+        .with_columns(
+            pl.when((pl.col("index") == 0) & (pl.col("model") == "pooled_micro_ridge"))
+            .then(pl.col("y_true") + 1.0)
+            .otherwise(pl.col("y_true"))
+            .alias("y_true")
+        )
+        .drop("index")
+    )
+    missing = predictions.slice(1)
+    duplicated = pl.concat([predictions, predictions.head(1)])
+    wrong_features = predictions.with_columns(
+        pl.when(pl.col("model") == "raw_micro")
+        .then(pl.lit("micro_humidity_mean"))
+        .otherwise(pl.col("model_features"))
+        .alias("model_features")
+    )
+    wrong_train_membership = (
+        predictions.with_row_index()
+        .with_columns(
+            pl.when((pl.col("index") == 0) & (pl.col("model") == "pooled_micro_ridge"))
+            .then(pl.lit("f" * 64))
+            .otherwise(pl.col("train_membership_sha256"))
+            .alias("train_membership_sha256")
+        )
+        .drop("index")
+    )
+
+    for changed in (
+        nonfinite,
+        unpaired,
+        missing,
+        duplicated,
+        wrong_features,
+        wrong_train_membership,
+    ):
+        with pytest.raises(RuntimeError):
+            agreement.score_annual_agreement_predictions(
+                panel,
+                changed,
+            )
+
+
+def test_scoring_rejects_coordinated_missing_and_extra_rows_against_trusted_fold_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    evaluation = agreement.evaluate_annual_agreement(panel)
+    predictions = evaluation.predictions
+    identity = (
+        predictions.filter(
+            (pl.col("evaluation") == "held_quarter") & (pl.col("fold") == "held_quarter_01")
+        )
+        .select("radius_km", "date", "device_id")
+        .row(0)
+    )
+    removed = predictions.filter(
+        ~(
+            (pl.col("evaluation") == "held_quarter")
+            & (pl.col("fold") == "held_quarter_01")
+            & (pl.col("radius_km") == identity[0])
+            & (pl.col("date") == identity[1])
+            & (pl.col("device_id") == identity[2])
+        )
+    )
+    fabricated = (
+        predictions.filter(
+            (pl.col("evaluation") == "held_quarter") & (pl.col("fold") == "held_quarter_01")
+        )
+        .head(3)
+        .with_columns(pl.lit("fabricated-device").alias("device_id"))
+    )
+    extra = pl.concat([predictions, fabricated])
+
+    for changed in (removed, extra):
+        with pytest.raises(RuntimeError, match="trusted fold"):
+            agreement.score_annual_agreement_predictions(
+                panel,
+                changed,
+            )
+
+
+def test_scoring_rejects_coordinated_three_model_rows_outside_the_trusted_fold_universe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    predictions = agreement.evaluate_annual_agreement(panel).predictions
+    trusted = predictions.filter(
+        (pl.col("evaluation") == "held_quarter") & (pl.col("fold") == "held_quarter_01")
+    )
+    identity = trusted.select("radius_km", "date", "device_id").row(0)
+    coordinated = trusted.filter(
+        (pl.col("radius_km") == identity[0])
+        & (pl.col("date") == identity[1])
+        & (pl.col("device_id") == identity[2])
+    )
+    assert coordinated.height == 3
+    assert coordinated["model"].n_unique() == 3
+    fabricated_rows = (
+        coordinated.with_columns(pl.lit("fabricated_fold").alias("fold")),
+        coordinated.with_columns(
+            pl.lit("fabricated_evaluation").alias("evaluation"),
+            pl.lit("fabricated_fold").alias("fold"),
+        ),
+    )
+
+    for fabricated in fabricated_rows:
+        with pytest.raises(RuntimeError, match="trusted prediction universe"):
+            agreement.score_annual_agreement_predictions(
+                panel,
+                pl.concat([predictions, fabricated]),
+            )
+
+
+def test_public_scoring_rejects_a_coherently_rebound_universe_that_does_not_match_the_panel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    evaluation = agreement.evaluate_annual_agreement(panel)
+    identity = (
+        evaluation.predictions.filter(
+            (pl.col("evaluation") == "held_quarter") & (pl.col("fold") == "held_quarter_01")
+        )
+        .select("radius_km", "date", "device_id")
+        .row(0)
+    )
+    rebound = evaluation.predictions.filter(
+        ~(
+            (pl.col("evaluation") == "held_quarter")
+            & (pl.col("fold") == "held_quarter_01")
+            & (pl.col("radius_km") == identity[0])
+            & (pl.col("date") == identity[1])
+            & (pl.col("device_id") == identity[2])
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="trusted fold"):
+        agreement.score_annual_agreement_predictions(panel, rebound)
+
+
+def test_evaluation_identity_binds_the_trusted_panel_claim_boundary_and_ordered_output_hashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    result = agreement.evaluate_annual_agreement(panel)
+
+    assert result.manifest["panel_generation_sha256"] == "a" * 64
+    assert result.manifest["claim_boundary"] == dict(
+        agreement.load_annual_agreement_config().claim_boundary
+    )
+    assert result.manifest["output_rows"] == {
+        "folds": result.folds.height,
+        "predictions": result.predictions.height,
+        "scores": result.scores.height,
+        "deltas": result.deltas.height,
+    }
+    assert result.manifest["output_hashes"] == {
+        "deltas": "f804a3a3f7f9cdc8378d3baa3d91768b9663489f1405e9c9776de162fd910f46",
+        "folds": "718498f14d21917e759257ed5a4c49b06886bc98c675e8d390f5b9ce6059a55a",
+        "predictions": ("6b823ec478eb051e0f2d89cafcc71f766db3aa25230756f441fc55f6da2a0f59"),
+        "scores": "0677fc5f006399ae799decc8be1e73f734a60267c262086d0a9018c2d76d2218",
+    }
+    assert result.manifest["generation_sha256"] == (
+        "abdfde837fcc71465b7162e0d04f8c6629a8b341224a407269eef800a9331e90"
+    )
+    assert result.folds.rows() == result.folds.sort("evaluation", "fold").rows()
+    assert (
+        result.predictions.rows()
+        == result.predictions.sort(
+            "evaluation", "fold", "radius_km", "date", "device_id", "model"
+        ).rows()
+    )
+
+
+def test_station_day_scores_equal_weight_targets_instead_of_dense_device_clusters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    duplicate = {
+        **panel.paired_days.row(0, named=True),
+        "device_id": "dense-cluster-device",
+        "micro_pm25_mean": 100.0,
+    }
+    panel = replace(
+        panel,
+        paired_days=pl.concat(
+            [panel.paired_days, pl.DataFrame([duplicate])], how="diagonal_relaxed"
+        ),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    result = agreement.evaluate_annual_agreement(panel)
+    raw = result.predictions.filter(
+        (pl.col("evaluation") == "joint") & (pl.col("model") == "raw_micro")
+    )
+    station_days = raw.group_by("station_name", "date").agg(
+        pl.col("y_true").first(), pl.col("y_pred").mean()
+    )
+    errors = [
+        predicted - truth
+        for truth, predicted in station_days.select("y_true", "y_pred").iter_rows()
+    ]
+    expected_rmse = math.sqrt(sum(error * error for error in errors) / len(errors))
+    station_score = result.scores.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "joint")
+        & (pl.col("model") == "raw_micro")
+        & (pl.col("unit") == "station_day")
+    ).row(0, named=True)
+    device_score = result.scores.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "joint")
+        & (pl.col("model") == "raw_micro")
+        & (pl.col("unit") == "device_day")
+    ).row(0, named=True)
+
+    assert station_score["n"] == 40
+    assert device_score["n"] == 41
+    assert station_score["rmse"] == pytest.approx(expected_rmse)
+    assert station_score["rmse"] != pytest.approx(device_score["rmse"])
 
 
 def test_the_panel_contains_every_primary_device_on_all_365_dates_without_repairing_absence(
