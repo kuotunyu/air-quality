@@ -186,6 +186,16 @@ generation `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`。
 最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
 這個 audit 只支持下一步為這批寬鬆候選裝置設計獨立 target、held-station 與 held-time 實驗。
 
+#### Q4-supported cross-station agreement protocol（待執行）
+
+全年 readiness evidence 的後續 agreement protocol 已改為每個標準站／日期唯一的 canonical
+PM2.5 target：使用完整標準站日內的 valid、finite、non-null 小時，而不是依每個微型感測器的
+三變數重疊小時各自平均；少於 18 個 eligible station hours 時 target 保持 null。所有 29 個
+held-station、held-quarter 與 joint fold 都會持久化狀態，但現有觀測支持只允許 Q4 內的
+held-station agreement。held-quarter 與 joint station-quarter 明確不可估，也不支持全年 temporal、
+seasonal、calibration 或 fusion claim。`twair analyze micro-sensor-annual-agreement` 目前可檢視 plan；
+修訂後的 production generation 尚未執行與獨立驗證，因此此處不列新結果。
+
 #### 每月標準站 satellite context 的增量預測測試
 
 `twair analyze micro-sensor-satellite-value` 把同一個 readiness generation 的 `maiac_aod`、

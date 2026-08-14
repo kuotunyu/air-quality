@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -22,6 +23,11 @@ ANNUAL_GENERATION = "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb794
 
 def _module() -> Any:
     return importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_clean_git_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_module(), "git_state", lambda: ("a" * 40, False))
 
 
 def _published_result(tmp_path: Path) -> SimpleNamespace:
@@ -50,6 +56,12 @@ def _published_result(tmp_path: Path) -> SimpleNamespace:
         directory=directory,
         manifest={"complete": True, "generation_sha256": "a" * 64},
         summary={"output_rows": dict.fromkeys(names, 1)},
+        folds=pl.DataFrame(
+            {
+                "fold": [f"fold-{index:02d}" for index in range(29)],
+                "fold_state": ["scored"] * 5 + ["unscored_empty_test"] * 24,
+            }
+        ),
         written=written,
     )
 
@@ -73,6 +85,10 @@ def test_the_command_defaults_to_a_plan_without_starting_computation(
     assert "6 GB" in result.output
     assert "--confirm-compute" in result.output
     assert "network, GEE, GPU: disabled" in result.output
+    assert "Q4-supported cross-station agreement" in result.output
+    assert "held-station within observed Q4 support: estimable" in result.output
+    assert "held-quarter and joint station-quarter: not estimable" in result.output
+    assert "no annual temporal or seasonal generalization claim" in result.output
 
 
 def test_the_confirmed_command_uses_only_the_combined_lock_owning_entry(
@@ -108,6 +124,35 @@ def test_the_confirmed_command_uses_only_the_combined_lock_owning_entry(
     assert result.exit_code == 0
     assert events[0] == "combined-returned-persisted-result"
     assert set(events[1:]) == {"print"}
+
+
+def test_success_text_reports_verified_fold_states_without_broadening_the_claim(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    agreement = _module()
+    published = _published_result(tmp_path)
+    published.folds = pl.DataFrame(
+        {
+            "fold": [f"fold-{index:02d}" for index in range(29)],
+            "fold_state": ["scored"] * 5
+            + ["unscored_empty_train"] * 6
+            + ["unscored_empty_test"] * 18,
+        }
+    )
+    monkeypatch.setattr(agreement, "run_and_write_annual_agreement", lambda: published)
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["analyze", "micro-sensor-annual-agreement", "--confirm-compute"],
+    )
+
+    assert result.exit_code == 0
+    assert "verified fold states: scored=5" in result.output
+    assert "unscored_empty_train=6" in result.output
+    assert "unscored_empty_test=18" in result.output
+    assert "Held-quarter: not estimable" in result.output
+    assert "Joint station-quarter: not estimable" in result.output
 
 
 def test_a_failed_combined_run_prints_no_result_or_output_path(
@@ -249,7 +294,7 @@ def _final_bundle() -> tuple[_FrameBundle, SimpleNamespace]:
     panel_summary: dict[str, object] = {"panel": "synthetic"}
     panel_identity = {
         "schema_version": 1,
-        "analysis": "annual_reference_station_agreement_panel",
+        "analysis": "q4_supported_cross_station_agreement_panel",
         "inputs": {"annual_generation_sha256": ANNUAL_GENERATION},
         "checkpoint_inventory": checkpoint_inventory,
         "config": config_payload,
@@ -497,6 +542,7 @@ def test_a_retry_after_process_death_reuses_the_exact_renamed_generation(
         "panel, evaluation = scope['_final_bundle']()\n"
         "agreement = importlib.import_module('twair.analysis.micro_sensor_annual_agreement')\n"
         "agreement._validate_loaded_annual_agreement_result = lambda *_: None\n"
+        "agreement.git_state = lambda: ('a' * 40, False)\n"
         f"result = agreement._publish_annual_agreement_result(panel, evaluation, output_root=Path({str(output_root)!r}))\n"
         "print(result.directory.name)\n"
     )
@@ -731,6 +777,80 @@ def test_combined_sources_reject_an_invalid_manifest_raw_observation_generation(
         )
 
 
+def test_combined_sources_validate_containment_before_the_public_parsed_loader(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    agreement = _module()
+    annual, _, parsed_generation, _, day, _ = _reviewed_source_fixture(tmp_path)
+    loader_calls = 0
+
+    def load_parsed(*_args: object, **_kwargs: object) -> Any:
+        nonlocal loader_calls
+        loader_calls += 1
+        pytest.fail("public parsed loader ran before reviewed containment")
+
+    monkeypatch.setattr(agreement, "load_micro_sensor_observation_generation", load_parsed)
+    monkeypatch.setattr(
+        agreement,
+        "_assert_reviewed_direct_child",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("annual agreement reviewed source is linked or outside")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="reviewed source is linked or outside"):
+        agreement._load_reviewed_agreement_day_sources(
+            annual,
+            day=day,
+            parsed_generation_sha256=parsed_generation,
+            data_root=tmp_path,
+            reviewed_year=2025,
+        )
+    assert loader_calls == 0
+
+
+def test_combined_sources_repeat_containment_after_binding_member_identities(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    agreement = _module()
+    annual, loaded, parsed_generation, _, day, _ = _reviewed_source_fixture(tmp_path)
+    monkeypatch.setattr(
+        agreement,
+        "load_micro_sensor_observation_generation",
+        lambda *_args, **_kwargs: loaded,
+    )
+    real_assert = agreement._assert_reviewed_direct_child
+    first_path = tmp_path / "interim"
+    first_path_calls = 0
+
+    def reject_on_second_pass(
+        path: Path,
+        *,
+        parent: Path,
+        is_directory: bool,
+    ) -> None:
+        nonlocal first_path_calls
+        real_assert(path, parent=parent, is_directory=is_directory)
+        if path == first_path:
+            first_path_calls += 1
+            if first_path_calls == 2:
+                raise RuntimeError("annual agreement reviewed source is linked or outside")
+
+    monkeypatch.setattr(agreement, "_assert_reviewed_direct_child", reject_on_second_pass)
+
+    with pytest.raises(RuntimeError, match="reviewed source is linked or outside"):
+        agreement._load_reviewed_agreement_day_sources(
+            annual,
+            day=day,
+            parsed_generation_sha256=parsed_generation,
+            data_root=tmp_path,
+            reviewed_year=2025,
+        )
+    assert first_path_calls == 2
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -769,6 +889,39 @@ def test_combined_sources_reject_misplacement_and_linked_directories_or_members(
         "load_micro_sensor_observation_generation",
         lambda *_args, **_kwargs: loaded,
     )
+
+    with pytest.raises(RuntimeError, match="reviewed source is linked or outside"):
+        agreement._load_reviewed_agreement_day_sources(
+            annual,
+            day=day,
+            parsed_generation_sha256=parsed_generation,
+            data_root=tmp_path,
+            reviewed_year=2025,
+        )
+
+
+@pytest.mark.parametrize("target", ["parsed_member", "ground_member"])
+def test_combined_sources_reject_hardlinked_source_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    target: str,
+) -> None:
+    agreement = _module()
+    annual, loaded, parsed_generation, _, day, ground_path = _reviewed_source_fixture(tmp_path)
+    monkeypatch.setattr(
+        agreement,
+        "load_micro_sensor_observation_generation",
+        lambda *_args, **_kwargs: loaded,
+    )
+    outside = tmp_path / "outside_alias"
+    outside.mkdir(parents=True, exist_ok=True)
+    target_path = (loaded.directory / "pm25.parquet") if target == "parsed_member" else ground_path
+    try:
+        os.link(target_path, outside / "alias.parquet")
+    except (OSError, NotImplementedError, AttributeError):
+        pytest.skip("hard link not supported in this environment")
+
+    assert target_path.stat().st_nlink == 2
 
     with pytest.raises(RuntimeError, match="reviewed source is linked or outside"):
         agreement._load_reviewed_agreement_day_sources(
@@ -1012,6 +1165,7 @@ def test_the_final_loader_rejects_a_semantically_rebound_prediction_member(
         encoding="utf-8",
     )
     monkeypatch.undo()
+    monkeypatch.setattr(agreement, "git_state", lambda: ("a" * 40, False))
     monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda *_: None)
     monkeypatch.setattr(
         agreement,
@@ -1021,6 +1175,34 @@ def test_the_final_loader_rejects_a_semantically_rebound_prediction_member(
 
     with pytest.raises(RuntimeError, match="persisted model evidence changed"):
         agreement._load_annual_agreement_result_unlocked(changed, trusted_panel=panel)
+
+
+@pytest.mark.parametrize(
+    ("current_sha", "current_dirty"),
+    [("e" * 40, False), ("a" * 40, True)],
+    ids=["different-head", "dirty-tree"],
+)
+def test_the_final_loader_requires_the_current_clean_git_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    current_sha: str,
+    current_dirty: bool,
+) -> None:
+    agreement = _module()
+    panel, evaluation = _final_bundle()
+    monkeypatch.setattr(agreement, "_validate_loaded_annual_agreement_result", lambda *_: None)
+    result = agreement._publish_annual_agreement_result(
+        panel,
+        evaluation,
+        output_root=tmp_path / "generations",
+    )
+    monkeypatch.setattr(agreement, "git_state", lambda: (current_sha, current_dirty))
+
+    with pytest.raises(RuntimeError, match="final evidence relationships changed"):
+        agreement._load_annual_agreement_result_unlocked(
+            result.directory,
+            trusted_panel=panel,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1111,7 +1293,7 @@ def test_a_coherently_rebound_embedded_task_3_identity_is_rejected(
     panel, evaluation = _final_bundle()
     panel_identity = {
         "schema_version": 1,
-        "analysis": "annual_reference_station_agreement_panel",
+        "analysis": "q4_supported_cross_station_agreement_panel",
         "inputs": panel.manifest["inputs"],
         "checkpoint_inventory": panel.manifest["checkpoint_inventory"],
         "config": panel.manifest["config"],

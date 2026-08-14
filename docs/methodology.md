@@ -591,6 +591,23 @@ longitude／latitude 的最小與最大值相同；座標沒有被平均、修�
 最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
 全年 audit 只將下一個 calibration 實驗從「有沒有足夠 cohort」變成可以用 held-station／held-time 設計回答的問題。
 
+## 微型感測器 Q4-supported cross-station agreement protocol
+
+`twair analyze micro-sensor-annual-agreement` 的修訂 protocol 先為每個標準站與本地日期建立唯一的
+canonical PM2.5 target。`ground_station_present_hours` 計算該站當日實際存在的逐時列；
+`ground_station_eligible_hours` 只計入非 null、finite 且 flag 為 valid 的 PM2.5。eligible hours
+至少 18 才計算當日算術平均，否則公開 target 保持 null。這兩個 station-day 欄位不取代既有的
+device-specific trio-hour provenance，也不因個別裝置的 PM2.5／溫度／濕度重疊時段不同而改變。
+
+Protocol 固定保留 5 個 held-station、4 個 held-quarter 與 20 個 joint station-quarter fold 定義，
+並把每個 fold 明確標為 `scored`、`unscored_empty_train`、`unscored_insufficient_train`、
+`unscored_empty_test` 或 `unscored_single_target`。只有 `scored` fold 產生 prediction；score 與 delta
+仍為所有 fold 保留列，未評分者的 metric 為 null，並保存 intended 與實際 scored population 的
+row count 與 hash。現有支持只允許 Q4 內 held-station 的跨站 agreement；held-quarter 與 joint
+station-quarter 不可估，不能宣稱全年 temporal／seasonal generalization、validated calibration、
+sensor fusion 或高解析度濃度場。新的 production generation 尚未執行與獨立驗證，因此本節只描述
+方法契約，不報告新結果。
+
 ## 微型感測器 grouped predictive benchmark
 
 2025-01-01 至 2025-01-25 的 readiness panel 先把每個微型感測器小時配到 primary-radius 內最近的

@@ -1220,10 +1220,10 @@ def analyze_micro_sensor_annual_agreement(
     confirm_compute: bool = typer.Option(
         False,
         "--confirm-compute",
-        help="Run the reviewed one-thread annual agreement benchmark.",
+        help="Run the reviewed one-thread Q4-supported cross-station agreement.",
     ),
 ) -> None:
-    """Plan or run the reviewed annual reference-station agreement benchmark."""
+    """Plan or run the reviewed Q4-supported cross-station agreement."""
     from twair.analysis.micro_sensor_annual_agreement import (
         annual_agreement_run_plan,
         run_and_write_annual_agreement,
@@ -1231,7 +1231,7 @@ def analyze_micro_sensor_annual_agreement(
 
     plan = annual_agreement_run_plan()
     if not confirm_compute:
-        console.print("Annual reference-station agreement benchmark")
+        console.print("Q4-supported cross-station agreement")
         console.print(f"reviewed annual readiness generation: {plan.annual_generation_sha256}")
         console.print(
             f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB DuckDB memory limit; "
@@ -1239,6 +1239,9 @@ def analyze_micro_sensor_annual_agreement(
         )
         console.print(f"checkpoints: {plan.checkpoint_root}")
         console.print(f"output generations: {plan.output_root}")
+        console.print("held-station within observed Q4 support: estimable")
+        console.print("held-quarter and joint station-quarter: not estimable")
+        console.print("no annual temporal or seasonal generalization claim")
         console.print("PLAN ONLY — run again with --confirm-compute to compute and publish")
         return
 
@@ -1254,7 +1257,28 @@ def analyze_micro_sensor_annual_agreement(
         or any(not isinstance(path, Path) or not path.is_file() for path in written.values())
     ):
         raise RuntimeError("annual agreement combined result was not persisted and verified")
-    console.print("Annual reference-station agreement benchmark")
+    folds = getattr(result, "folds", None)
+    allowed_states = {
+        "scored",
+        "unscored_empty_train",
+        "unscored_insufficient_train",
+        "unscored_empty_test",
+        "unscored_single_target",
+    }
+    if (
+        not isinstance(folds, pl.DataFrame)
+        or folds.height != 29
+        or not {"fold", "fold_state"}.issubset(folds.columns)
+        or folds["fold"].n_unique() != 29
+        or folds["fold_state"].null_count()
+        or not set(folds["fold_state"]).issubset(allowed_states)
+    ):
+        raise RuntimeError("annual agreement verified fold states changed")
+    fold_states = {
+        str(state): int(count)
+        for state, count in folds.group_by("fold_state").len().sort("fold_state").iter_rows()
+    }
+    console.print("Q4-supported cross-station agreement")
     console.print(f"reviewed annual readiness generation: {plan.annual_generation_sha256}")
     console.print(
         f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB DuckDB memory limit; "
@@ -1264,8 +1288,15 @@ def analyze_micro_sensor_annual_agreement(
     console.print(f"output generations: {plan.output_root}")
     console.print(f"Annual reference-station agreement generation: {generation}")
     console.print(
-        "Predictive agreement only; not validated calibration or fusion, and no satellite "
-        "feature or high-resolution PM2.5 field was created."
+        "verified fold states: "
+        + ", ".join(f"{state}={count}" for state, count in fold_states.items())
+    )
+    console.print("Held-station within observed Q4 support only.")
+    console.print("Held-quarter: not estimable")
+    console.print("Joint station-quarter: not estimable")
+    console.print(
+        "No annual temporal or seasonal generalization, validated calibration, fusion, "
+        "satellite feature, or high-resolution PM2.5 field is claimed."
     )
     for name, path in written.items():
         console.print(f"wrote {name}: {path}")

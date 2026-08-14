@@ -119,7 +119,8 @@ MODULES: tuple[Module, ...] = (
     Module(
         "micro_sensor_annual_agreement",
         "twair analyze micro-sensor-annual-agreement",
-        "annual reference-station agreement; not validated calibration or fusion",
+        "Q4-supported cross-station agreement; held-quarter and joint not estimable; "
+        "not calibration or fusion",
         feeds_web=False,
     ),
     Module(

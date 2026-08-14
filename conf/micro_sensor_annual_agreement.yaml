@@ -1,4 +1,8 @@
 "analysis":
+  "protocol_revision": 2
+  "target_definition": "canonical_reference_station_day_pm25"
+  "ground_minimum_eligible_hours": 18
+  "evaluation_name": "q4_supported_cross_station_agreement"
   "annual_generation_sha256": "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
   "distance_bands_km": [0.5, 1.0, 2.0]
   "primary_distance_km": 0.5
@@ -15,6 +19,12 @@
   "threads": 1
   "memory_limit_gb": 6
   "claim_boundary":
+    "q4_supported_cross_station_agreement": true
+    "held_station_within_observed_q4_support": true
+    "held_quarter_estimable": false
+    "joint_station_quarter_estimable": false
+    "annual_temporal_generalization": false
+    "seasonal_generalization": false
     "reference_station_agreement_only": true
     "validated_calibration": false
     "sensor_bias_estimate": false

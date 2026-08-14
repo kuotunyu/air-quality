@@ -141,8 +141,9 @@ class TestTheReproduceTableCannotRot:
         assert module.reproduce == "twair analyze micro-sensor-annual-agreement"
         assert declared_reproduce_targets()[module.reproduce] is True
         assert module.feeds_web is False
-        assert "agreement" in module.what
-        assert "not validated calibration or fusion" in module.what
+        assert "Q4-supported cross-station agreement" in module.what
+        assert "held-quarter and joint not estimable" in module.what
+        assert "not calibration or fusion" in module.what
 
     def test_the_declared_agreement_command_executes_without_hidden_required_arguments(
         self,

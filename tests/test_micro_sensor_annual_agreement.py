@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import math
+import os
 import subprocess
 import sys
 import time
@@ -496,6 +497,15 @@ def _single_agreement_inputs(
             pl.lit(0).alias("ground_eligible_trio_hours"),
             pl.lit(18).alias("ground_absent_trio_hours"),
         )
+    elif ground_mutation == "short_valid":
+        ground = ground.head(17)
+        annual = annual.with_columns(
+            pl.lit(17).alias("ground_present_trio_hours"),
+            pl.lit(17).alias("ground_eligible_trio_hours"),
+            pl.lit(1).alias("ground_absent_trio_hours"),
+        )
+    elif ground_mutation == "duplicate_timestamp":
+        ground = pl.concat((ground, ground.head(1)))
     annual_path = tmp_path / "annual-device-days.parquet"
     annual.cast(dict(ANNUAL_DEVICE_DAY_SCHEMA), strict=True).write_parquet(annual_path)
     ground_path = tmp_path / "ground.parquet"
@@ -677,6 +687,17 @@ def test_a_day_retains_every_candidate_and_separates_absent_withheld_and_eligibl
     assert eligible["ground_pm25_mean"].null_count() == 0
 
 
+def test_checkpoint_validation_recomputes_the_reason_from_immutable_evidence(
+    tmp_path: Path,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    result = _aggregate_single_agreement_day(tmp_path, ground_mutation="absent")
+    rebound = result.rows.with_columns(pl.lit("device_day_absent").alias("reason"))
+
+    with pytest.raises(RuntimeError, match="checkpoint reason changed"):
+        agreement._validate_agreement_day_rows(rebound, day=AGREEMENT_DAY)
+
+
 @pytest.mark.parametrize(
     ("mutation", "reason"),
     [
@@ -710,6 +731,8 @@ def test_a_present_but_ineligible_ground_day_is_not_zero_or_absent(
     assert result.rows["reason"].to_list() == ["ground_present_but_ineligible"]
     assert result.rows["ground_pm25_mean"].to_list() == [None]
     assert result.rows["ground_present_trio_hours"].to_list() == [18]
+    assert result.rows["ground_station_present_hours"].to_list() == [18]
+    assert result.rows["ground_station_eligible_hours"].to_list() == [0]
 
 
 def test_an_absent_ground_day_stays_distinct_from_present_but_ineligible(
@@ -720,6 +743,8 @@ def test_an_absent_ground_day_stays_distinct_from_present_but_ineligible(
     assert result.rows["reason"].to_list() == ["ground_absent"]
     assert result.rows["ground_pm25_mean"].to_list() == [None]
     assert result.rows["ground_present_trio_hours"].to_list() == [0]
+    assert result.rows["ground_station_present_hours"].to_list() == [0]
+    assert result.rows["ground_station_eligible_hours"].to_list() == [0]
 
 
 def test_a_non_finite_ground_value_is_retained_as_present_but_ineligible(
@@ -731,6 +756,131 @@ def test_a_non_finite_ground_value_is_retained_as_present_but_ineligible(
     assert result.rows["ground_eligible_trio_hours"].to_list() == [0]
     assert result.rows["ground_present_ineligible_trio_hours"].to_list() == [18]
     assert result.rows["ground_pm25_mean"].to_list() == [None]
+    assert result.rows["ground_station_present_hours"].to_list() == [18]
+    assert result.rows["ground_station_eligible_hours"].to_list() == [0]
+
+
+def test_seventeen_valid_station_hours_withhold_the_canonical_target(tmp_path: Path) -> None:
+    result = _aggregate_single_agreement_day(
+        tmp_path,
+        ground_mutation="short_valid",
+    )
+
+    assert result.rows["reason"].to_list() == ["ground_present_but_ineligible"]
+    assert result.rows["ground_station_present_hours"].to_list() == [17]
+    assert result.rows["ground_station_eligible_hours"].to_list() == [17]
+    assert result.rows["ground_pm25_mean"].to_list() == [None]
+
+
+def test_duplicate_reference_station_hours_are_rejected(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match=r"ground PM2\.5 member is invalid"):
+        _aggregate_single_agreement_day(tmp_path, ground_mutation="duplicate_timestamp")
+
+
+def test_two_devices_at_one_station_share_the_complete_station_day_target(
+    tmp_path: Path,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    candidates = pl.DataFrame(
+        {
+            "device_id": ["device-a", "device-b"],
+            "station_name": ["station-a", "station-a"],
+            "distance_km": [0.1, 0.2],
+        }
+    )
+    micro_paths: dict[str, Path] = {}
+    values = {"pm25": 20.0, "humidity": 60.0, "temperature": 25.0}
+    for variable, value in values.items():
+        rows: list[dict[str, object]] = []
+        row_number = 1
+        for device_id, first_hour in (("device-a", 0), ("device-b", 6)):
+            for hour in range(first_hour, first_hour + 18):
+                for minute in range(60):
+                    rows.append(
+                        {
+                            "source_row_number": row_number,
+                            "device_id": device_id,
+                            "variable": variable,
+                            "ts_local": datetime(2025, 1, 2, hour, minute),
+                            "value": value,
+                            "lon": 121.5,
+                            "lat": 25.0,
+                            "coordinate_wgs84_valid": True,
+                        }
+                    )
+                    row_number += 1
+        path = tmp_path / f"{variable}.parquet"
+        pl.DataFrame(rows, schema=dict(OBSERVATION_OUTPUT_SCHEMA)).write_parquet(path)
+        micro_paths[variable] = path
+
+    annual_row = _agreement_annual_days().filter(pl.col("device_id") == "eligible")
+    annual = pl.concat(
+        [
+            annual_row.with_columns(
+                pl.lit(device_id).alias("device_id"),
+                pl.lit(distance_km).alias("distance_km"),
+            )
+            for device_id, distance_km in candidates.select("device_id", "distance_km").iter_rows()
+        ]
+    ).sort("device_id")
+    annual_path = tmp_path / "annual-device-days.parquet"
+    annual.write_parquet(annual_path)
+
+    ground = pl.DataFrame(
+        [
+            {
+                "station_name": "station-a",
+                "pollutant": "PM2.5",
+                "ts_local": datetime(2025, 1, 2, hour),
+                "value": float(hour),
+                "flag": "valid",
+                "value_retained": True,
+                "imputed": False,
+                "impute_method": None,
+                "generation": "fixture",
+                "source_member": "fixture.csv",
+            }
+            for hour in range(24)
+        ]
+    ).select(*(pl.col(name).cast(dtype).alias(name) for name, dtype in PARTITION_SCHEMA.items()))
+    ground_path = tmp_path / "ground.parquet"
+    ground.write_parquet(ground_path)
+
+    identities = _checkpoint_input_identities(micro_paths, annual_path, ground_path)
+    identities["candidate_identity_sha256"] = _canonical_hash(candidates.to_dicts())
+    identities["annual_selected_date_rows"] = 2
+    result = agreement._aggregate_agreement_day(
+        day=AGREEMENT_DAY,
+        micro_paths=micro_paths,
+        annual_device_days=_pinned_annual_member(agreement, annual_path),
+        ground_path=ground_path,
+        candidates=candidates,
+        input_identities=identities,
+        config=replace(
+            agreement.load_annual_agreement_config(),
+            primary_devices=2,
+            primary_stations=1,
+        ),
+    )
+
+    assert result.rows["ground_present_trio_hours"].to_list() == [18, 18]
+    assert result.rows["ground_eligible_trio_hours"].to_list() == [18, 18]
+    assert result.rows["ground_station_present_hours"].to_list() == [24, 24]
+    assert result.rows["ground_station_eligible_hours"].to_list() == [24, 24]
+    assert result.rows["ground_pm25_mean"].to_list() == [11.5, 11.5]
+
+    changed = (
+        result.rows.with_row_index()
+        .with_columns(
+            pl.when(pl.col("index") == 0)
+            .then(pl.lit(12.5))
+            .otherwise(pl.col("ground_pm25_mean"))
+            .alias("ground_pm25_mean")
+        )
+        .drop("index")
+    )
+    with pytest.raises(RuntimeError, match="station-day target changed"):
+        agreement._validate_agreement_day_rows(changed, day=AGREEMENT_DAY)
 
 
 def _catalogue_absent_identities(
@@ -1327,6 +1477,10 @@ def test_the_reviewed_agreement_config_enforces_the_scientific_and_resource_boun
 
     config = agreement.load_annual_agreement_config()
 
+    assert config.protocol_revision == 2
+    assert config.target_definition == "canonical_reference_station_day_pm25"
+    assert config.ground_minimum_eligible_hours == 18
+    assert config.evaluation_name == "q4_supported_cross_station_agreement"
     assert config.annual_generation_sha256 == ANNUAL_GENERATION
     assert config.distance_bands_km == (0.5, 1.0, 2.0)
     assert config.primary_distance_km == 0.5
@@ -1343,6 +1497,12 @@ def test_the_reviewed_agreement_config_enforces_the_scientific_and_resource_boun
     assert config.threads == 1
     assert config.memory_limit_gb == 6
     assert dict(config.claim_boundary) == {
+        "q4_supported_cross_station_agreement": True,
+        "held_station_within_observed_q4_support": True,
+        "held_quarter_estimable": False,
+        "joint_station_quarter_estimable": False,
+        "annual_temporal_generalization": False,
+        "seasonal_generalization": False,
         "reference_station_agreement_only": True,
         "validated_calibration": False,
         "sensor_bias_estimate": False,
@@ -1353,6 +1513,55 @@ def test_the_reviewed_agreement_config_enforces_the_scientific_and_resource_boun
         "values_imputed": False,
         "causal_analysis": False,
     }
+
+
+def test_the_revised_protocol_fields_require_exact_values_and_types() -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    raw = deepcopy(load_conf("micro_sensor_annual_agreement"))
+    analysis = raw["analysis"]
+    analysis.update(
+        {
+            "protocol_revision": 2,
+            "target_definition": "canonical_reference_station_day_pm25",
+            "ground_minimum_eligible_hours": 18,
+            "evaluation_name": "q4_supported_cross_station_agreement",
+        }
+    )
+    analysis["claim_boundary"].update(
+        {
+            "q4_supported_cross_station_agreement": True,
+            "held_station_within_observed_q4_support": True,
+            "held_quarter_estimable": False,
+            "joint_station_quarter_estimable": False,
+            "annual_temporal_generalization": False,
+            "seasonal_generalization": False,
+        }
+    )
+
+    reviewed = agreement.load_annual_agreement_config(raw)
+    assert reviewed.protocol_revision == 2
+
+    mutations: tuple[tuple[str, Any], ...] = (
+        ("missing", None),
+        ("extra", None),
+        ("protocol_revision", True),
+        ("ground_minimum_eligible_hours", 18.0),
+        ("target_definition", "device_trio_overlap_ground_pm25"),
+        ("evaluation_name", "annual_reference_station_agreement_benchmark"),
+        ("held_quarter_estimable", True),
+    )
+    for field, value in mutations:
+        changed = deepcopy(raw)
+        if field == "missing":
+            del changed["analysis"]["protocol_revision"]
+        elif field == "extra":
+            changed["analysis"]["unreviewed"] = False
+        elif field in changed["analysis"]["claim_boundary"]:
+            changed["analysis"]["claim_boundary"][field] = value
+        else:
+            changed["analysis"][field] = value
+        with pytest.raises(ConfigError):
+            agreement.load_annual_agreement_config(changed)
 
 
 def test_another_well_formed_annual_generation_is_rejected() -> None:
@@ -1869,6 +2078,7 @@ def test_eager_and_path_backed_members_both_reject_a_wrong_schema(
 
 def _annual_agreement_panel_fixture(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Any, tuple[Any, ...], Any]:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
     config = agreement.load_annual_agreement_config()
@@ -1882,6 +2092,21 @@ def _annual_agreement_panel_fixture(
     )
     dates = [date(2025, 1, 1) + timedelta(days=index) for index in range(365)]
     parsed = sorted(parsed_generations)
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("TWAIR_DATA_DIR", str(data_root))
+    ground_files: list[dict[str, object]] = []
+    for month in range(1, 13):
+        relative = Path(f"processed/observations/year=2025/month={month:02d}/part-0.parquet")
+        ground_path = data_root / relative
+        ground_path.parent.mkdir(parents=True)
+        pl.DataFrame(schema=PARTITION_SCHEMA).write_parquet(ground_path)
+        ground_files.append(
+            {
+                "path": relative.as_posix(),
+                "bytes": ground_path.stat().st_size,
+                "sha256": sha256_file(ground_path),
+            }
+        )
     calendar = pl.DataFrame(
         {
             "date": dates,
@@ -1923,14 +2148,7 @@ def _annual_agreement_panel_fixture(
                     }
                     for index, day in enumerate(parsed)
                 ],
-                "ground_files": [
-                    {
-                        "path": f"processed/year=2025/month={month:02d}/part-0.parquet",
-                        "bytes": 1,
-                        "sha256": "d" * 64,
-                    }
-                    for month in range(1, 13)
-                ],
+                "ground_files": ground_files,
             },
         },
         summary={},
@@ -1990,8 +2208,8 @@ def _annual_agreement_panel_fixture(
             },
             "ground_member": {
                 "path": "part-0.parquet",
-                "bytes": 1,
-                "sha256": "d" * 64,
+                "bytes": ground_files[day.month - 1]["bytes"],
+                "sha256": ground_files[day.month - 1]["sha256"],
             },
             "annual_generation_sha256": ANNUAL_GENERATION,
             "annual_device_days": {
@@ -2006,7 +2224,7 @@ def _annual_agreement_panel_fixture(
         summary = {"device_day_absent": candidates.height}
         manifest = {
             "schema_version": 1,
-            "kind": "annual_reference_station_agreement_day",
+            "kind": "q4_supported_cross_station_agreement_day",
             "date": day.isoformat(),
             "inputs": inputs,
             "config": checkpoint_config,
@@ -2192,6 +2410,240 @@ def test_fold_membership_is_deterministic_hashed_and_does_not_remove_panel_exclu
     assert _canonical_hash(fold_summary.to_dicts()) == (
         "27839354f4ad1db1efd4e8b610a33557c5ddf93471f15b476f80619fa4e9a4e6"
     )
+
+
+def test_q4_only_support_persists_all_temporal_and_joint_training_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    model_columns = (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    )
+    panel = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.when(pl.col("quarter") == 4)
+            .then(pl.lit("eligible"))
+            .otherwise(pl.lit("device_day_absent"))
+            .alias("reason"),
+            *(
+                pl.when(pl.col("quarter") == 4)
+                .then(pl.col(column))
+                .otherwise(pl.lit(None, dtype=pl.Float64))
+                .alias(column)
+                for column in model_columns
+            ),
+        ),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    memberships = agreement.assign_agreement_folds(panel)
+    folds = agreement._agreement_fold_table(memberships)
+
+    assert folds.height == 29
+    assert folds.group_by("fold_state").len().sort("fold_state").rows() == [
+        ("scored", 5),
+        ("unscored_empty_test", 18),
+        ("unscored_empty_train", 6),
+    ]
+    held_q4 = folds.filter(pl.col("fold") == "held_quarter_04").row(0, named=True)
+    assert held_q4["fold_state"] == "unscored_empty_train"
+    assert held_q4["fold_reason"] == "unscored_empty_train"
+    assert held_q4["train_rows"] == 0
+    assert held_q4["train_unique_targets"] == 0
+    assert held_q4["test_rows"] == 10
+    assert held_q4["test_unique_targets"] == 10
+    assert folds.filter(pl.col("fold_state").str.starts_with("unscored")).select(
+        pl.col("test_membership_sha256").str.contains(r"^[0-9a-f]{64}$").all(),
+        pl.col("test_truth_sha256").str.contains(r"^[0-9a-f]{64}$").all(),
+    ).row(0) == (True, True)
+
+    result = agreement.evaluate_annual_agreement(panel)
+    assert result.manifest["analysis"] == "q4_supported_cross_station_agreement_evaluation"
+    assert result.predictions.height == 30
+    assert result.predictions["evaluation"].unique().to_list() == ["held_station"]
+    assert result.predictions["fold_state"].unique().to_list() == ["scored"]
+    assert result.scores.height == 192
+    assert result.deltas.height == 128
+    held_q4_scores = result.scores.filter(
+        (pl.col("scope") == "fold") & (pl.col("fold") == "held_quarter_04")
+    )
+    assert held_q4_scores.height == 6
+    assert held_q4_scores.select(
+        (pl.col("state") == "unscored_empty_train").all(),
+        (pl.col("n") == 0).all(),
+        (pl.col("intended_n") == 10).all(),
+        (pl.col("scored_membership_sha256") == _canonical_hash([])).all(),
+        (pl.col("scored_truth_sha256") == _canonical_hash([])).all(),
+        (pl.col("total_folds") == 1).all(),
+        (pl.col("scored_folds") == 0).all(),
+    ).row(0) == (True, True, True, True, True, True, True)
+    overall = result.scores.filter(pl.col("scope") == "overall")
+    assert overall.group_by("evaluation", "state").len().sort("evaluation").rows() == [
+        ("held_quarter", "unscored_no_scored_folds", 6),
+        ("held_station", "scored", 6),
+        ("joint", "unscored_no_scored_folds", 6),
+    ]
+    unscored_overall = overall.filter(pl.col("evaluation").is_in(("held_quarter", "joint")))
+    assert unscored_overall.select(
+        (pl.col("n") == 0).all(),
+        (pl.col("intended_n") == 10).all(),
+        (pl.col("scored_folds") == 0).all(),
+        (pl.col("total_folds") > 0).all(),
+        pl.all_horizontal(
+            pl.col(metric).is_null() for metric in ("rmse", "mae", "r2", "bias", "absolute_bias")
+        ).all(),
+    ).row(0) == (True, True, True, True, True)
+
+
+def test_a_partially_estimable_evaluation_separates_intended_and_scored_populations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+    baseline = agreement.assign_agreement_folds(panel)
+    held_devices = baseline.filter(
+        (pl.col("fold") == "held_station_00") & (pl.col("role") == "test")
+    )["device_id"].unique()
+    panel = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.when(pl.col("device_id").is_in(held_devices.to_list()))
+            .then(pl.lit(25.0))
+            .otherwise(pl.col("ground_pm25_mean"))
+            .alias("ground_pm25_mean")
+        ),
+    )
+
+    result = agreement.evaluate_annual_agreement(panel)
+
+    held_folds = result.folds.filter(pl.col("evaluation") == "held_station")
+    assert held_folds.group_by("fold_state").len().sort("fold_state").rows() == [
+        ("scored", 4),
+        ("unscored_single_target", 1),
+    ]
+    overall = result.scores.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "held_station")
+        & (pl.col("model") == "raw_micro")
+    )
+    assert overall.height == 2
+    assert overall.select(
+        (pl.col("state") == "partially_scored").all(),
+        (pl.col("intended_n") == 40).all(),
+        (pl.col("n") == 32).all(),
+        (pl.col("total_folds") == 5).all(),
+        (pl.col("scored_folds") == 4).all(),
+        (pl.col("membership_sha256") != pl.col("scored_membership_sha256")).all(),
+        (pl.col("truth_sha256") != pl.col("scored_truth_sha256")).all(),
+        pl.all_horizontal(
+            pl.col(metric).is_not_null()
+            for metric in ("rmse", "mae", "r2", "bias", "absolute_bias")
+        ).all(),
+    ).row(0) == (True, True, True, True, True, True, True, True)
+
+
+def test_an_all_unscored_protocol_has_typed_empty_predictions_and_complete_null_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    panel = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(pl.lit(25.0).alias("ground_pm25_mean")),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    result = agreement.evaluate_annual_agreement(panel)
+
+    assert result.folds["fold_state"].unique().to_list() == ["unscored_insufficient_train"]
+    assert result.predictions.is_empty()
+    assert result.predictions.schema == dict(agreement.AGREEMENT_PREDICTION_SCHEMA)
+    assert result.scores.height == 192
+    assert result.deltas.height == 128
+    assert result.scores.filter(pl.col("scope") == "overall")["state"].unique().to_list() == [
+        "unscored_no_scored_folds"
+    ]
+    assert result.scores.select(
+        (pl.col("n") == 0).all(),
+        pl.all_horizontal(
+            pl.col(metric).is_null() for metric in ("rmse", "mae", "r2", "bias", "absolute_bias")
+        ).all(),
+    ).row(0) == (True, True)
+
+
+def test_a_panel_with_no_eligible_rows_persists_all_29_empty_train_folds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    panel = _agreement_model_panel_fixture(agreement)
+    model_columns = (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    )
+    panel = replace(
+        panel,
+        paired_days=panel.paired_days.with_columns(
+            pl.lit("device_day_absent").alias("reason"),
+            *(pl.lit(None, dtype=pl.Float64).alias(column) for column in model_columns),
+        ),
+    )
+    geography = pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(10)],
+            "airzone_official": ["north"] * 5 + ["south"] * 5,
+        }
+    )
+    monkeypatch.setattr(agreement, "_validate_agreement_panel_frames", lambda _: None)
+    monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
+
+    result = agreement.evaluate_annual_agreement(panel)
+
+    assert result.memberships.is_empty()
+    assert result.folds.height == 29
+    assert result.folds.select(
+        (pl.col("fold_state") == "unscored_empty_train").all(),
+        (pl.col("train_rows") == 0).all(),
+        (pl.col("test_rows") == 0).all(),
+    ).row(0) == (True, True, True)
+    assert result.predictions.is_empty()
+    assert result.scores.height == 192
+    assert result.deltas.height == 128
+    assert result.scores.select(
+        (pl.col("n") == 0).all(),
+        (pl.col("intended_n") == 0).all(),
+        pl.all_horizontal(
+            pl.col(metric).is_null() for metric in ("rmse", "mae", "r2", "bias", "absolute_bias")
+        ).all(),
+    ).row(0) == (True, True, True)
 
 
 def test_empty_and_single_target_test_folds_remain_explicit_and_unscored(
@@ -2777,13 +3229,13 @@ def test_evaluation_identity_binds_the_trusted_panel_claim_boundary_and_ordered_
         "deltas": result.deltas.height,
     }
     assert result.manifest["output_hashes"] == {
-        "deltas": "f804a3a3f7f9cdc8378d3baa3d91768b9663489f1405e9c9776de162fd910f46",
-        "folds": "718498f14d21917e759257ed5a4c49b06886bc98c675e8d390f5b9ce6059a55a",
+        "deltas": "1237efddd2ea7ea25d262b28041bb4822235f5c9f762022935913abe802cf91e",
+        "folds": "af6613bdde7beb85cf02b0ab2074722ea57464f70d82a1f2d358431db5cafbfc",
         "predictions": ("6b823ec478eb051e0f2d89cafcc71f766db3aa25230756f441fc55f6da2a0f59"),
-        "scores": "0677fc5f006399ae799decc8be1e73f734a60267c262086d0a9018c2d76d2218",
+        "scores": "23f2e10d810151ec1f0c45e2a1e9eb2e6461ab5f4a0cc7d66d320a20a167eb4d",
     }
     assert result.manifest["generation_sha256"] == (
-        "abdfde837fcc71465b7162e0d04f8c6629a8b341224a407269eef800a9331e90"
+        "1ce9563e93549db8dfd65788298fac2d309422be0e29467f1511fbbd9b51c0ae"
     )
     assert result.folds.rows() == result.folds.sort("evaluation", "fold").rows()
     assert (
@@ -2855,7 +3307,7 @@ def test_the_panel_contains_every_primary_device_on_all_365_dates_without_repair
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
 
     panel = agreement.prepare_annual_agreement_panel(
@@ -2879,7 +3331,7 @@ def test_a_physically_reordered_checkpoint_key_is_rejected_even_when_its_hash_is
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     first = checkpoints[0]
     pl.read_parquet(first.member_path).reverse().write_parquet(first.member_path)
     changed_manifest = deepcopy(first.manifest)
@@ -2905,7 +3357,7 @@ def test_the_annual_reducer_revalidates_the_task_2_null_contract_inside_duckdb(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     first = checkpoints[0]
     rows = pl.read_parquet(first.member_path).with_columns(pl.lit("eligible").alias("reason"))
     rows.write_parquet(first.member_path)
@@ -2939,7 +3391,7 @@ def test_rebound_task_2_evidence_must_still_match_the_trusted_task_1_input(
     mutation: str,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     first = checkpoints[0]
     changed_manifest = deepcopy(first.manifest)
     if mutation == "catalog_generation":
@@ -2967,7 +3419,7 @@ def test_swapped_catalogue_and_raw_observation_checkpoint_identities_are_rejecte
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     first = checkpoints[0]
     changed_manifest = deepcopy(first.manifest)
     inputs = changed_manifest["inputs"]
@@ -2992,7 +3444,9 @@ def test_the_panel_writer_persists_four_ordered_members_and_reloads_the_final_id
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3022,7 +3476,7 @@ def test_the_annual_reduction_scans_checkpoint_paths_without_polars_collecting_t
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     monkeypatch.setattr(
         agreement.pl,
@@ -3047,7 +3501,7 @@ def test_missing_or_reordered_checkpoint_evidence_cannot_define_the_annual_panel
     mutation: str,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     changed = (
         checkpoints[1:]
@@ -3064,7 +3518,7 @@ def test_a_calendar_with_the_right_dates_but_the_wrong_2025_arithmetic_is_reject
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     calendar = (
         annual_input.calendar_coverage.with_row_index()
         .with_columns(
@@ -3087,7 +3541,9 @@ def test_published_member_mutation_is_rejected_even_when_row_count_and_schema_st
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3134,6 +3590,76 @@ def _rebind_agreement_panel_manifest(destination: Path) -> None:
     _write_json(manifest_path, manifest)
 
 
+def test_public_panel_loading_recomputes_station_day_counts_from_reviewed_ground_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    member = destination / "paired_days.parquet"
+    rows = pl.read_parquet(member)
+    first_complete = rows.filter(pl.col("calendar_state") == "complete").row(0, named=True)
+    rows.with_columns(
+        pl.when(
+            (pl.col("date") == first_complete["date"])
+            & (pl.col("station_name") == first_complete["station_name"])
+        )
+        .then(pl.lit(1, dtype=pl.Int64))
+        .otherwise(pl.col("ground_station_present_hours"))
+        .alias("ground_station_present_hours")
+    ).write_parquet(member)
+    _rebind_agreement_panel_manifest(destination)
+
+    with pytest.raises(RuntimeError, match="persisted station-day target changed"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_station_day_reconstruction_repeats_ground_containment_after_duckdb_reads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    real_assert = agreement._assert_reviewed_direct_child
+    calls = 0
+
+    def reject_after_the_first_full_inventory(
+        path: Path,
+        *,
+        parent: Path,
+        is_directory: bool,
+    ) -> None:
+        nonlocal calls
+        real_assert(path, parent=parent, is_directory=is_directory)
+        calls += 1
+        if calls == 61:
+            raise RuntimeError("annual agreement reviewed source is linked or outside")
+
+    monkeypatch.setattr(
+        agreement,
+        "_assert_reviewed_direct_child",
+        reject_after_the_first_full_inventory,
+    )
+
+    with pytest.raises(RuntimeError, match="reviewed source is linked or outside"):
+        agreement._validate_persisted_station_day_targets(
+            panel,
+            readiness=annual_input,
+            config=config,
+        )
+    assert calls == 61
+
+
 @pytest.mark.parametrize("mutation", ["config", "summary", "calendar", "coverage"])
 def test_rebound_persisted_metadata_and_aggregates_are_not_accepted_as_a_new_truth(
     tmp_path: Path,
@@ -3141,7 +3667,9 @@ def test_rebound_persisted_metadata_and_aggregates_are_not_accepted_as_a_new_tru
     mutation: str,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3197,7 +3725,9 @@ def test_coordinated_catalogue_calendar_and_checkpoint_rebinding_cannot_replace_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3225,7 +3755,9 @@ def test_coordinated_candidate_and_member_rebinding_cannot_replace_the_reviewed_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3258,7 +3790,7 @@ def test_a_checkpoint_directory_cannot_be_a_junction_to_an_outside_member(
     if sys.platform != "win32":
         pytest.skip("junction mutation is Windows-specific")
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path)
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path, monkeypatch)
     first = checkpoints[0]
     outside = tmp_path / "outside-checkpoint"
     first.directory.replace(outside)
@@ -3290,7 +3822,9 @@ def test_the_public_loader_rejects_a_generation_junction_to_an_outside_directory
     if sys.platform != "win32":
         pytest.skip("junction mutation is Windows-specific")
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3325,7 +3859,9 @@ def test_the_public_loader_rejects_every_linked_persisted_member(
     linked_name: str,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3346,7 +3882,9 @@ def test_a_rebound_output_cannot_put_a_value_on_an_explicitly_excluded_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3375,7 +3913,9 @@ def test_rebinding_hashes_cannot_hide_reordered_physical_output_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3394,7 +3934,9 @@ def test_the_writer_reloads_the_persisted_manifest_before_releasing_its_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3427,7 +3969,9 @@ def test_rebound_panel_metadata_and_aggregates_must_match_the_prepared_rows_and_
     mutation: str,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     if mutation == "config":
@@ -3476,7 +4020,9 @@ def test_an_interrupted_panel_publish_leaves_no_partial_output_and_releases_the_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3504,7 +4050,9 @@ def test_a_successful_panel_move_followed_by_an_interrupt_rolls_back_for_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3533,7 +4081,9 @@ def test_a_final_persisted_reload_failure_rolls_back_the_published_generation_fo
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
-    annual_input, checkpoints, config = _annual_agreement_panel_fixture(tmp_path / "inputs")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
     monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
     panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
     destination = tmp_path / "published"
@@ -3556,3 +4106,78 @@ def test_a_final_persisted_reload_failure_rolls_back_the_published_generation_fo
     monkeypatch.setattr(agreement, "_load_annual_agreement_panel_unlocked", original_load)
     published = agreement.write_annual_agreement_panel(panel, destination=destination)
     assert published.manifest["complete"] is True
+
+
+def test_agreement_checkpoint_member_rejects_hardlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    _annual_input, checkpoints, _config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
+    checkpoint_dir = checkpoints[0].directory
+    checkpoint_file = checkpoint_dir / "paired_day.parquet"
+    outside = tmp_path / "outside_checkpoint.parquet"
+    try:
+        os.link(checkpoint_file, outside)
+    except (OSError, NotImplementedError, AttributeError):
+        pytest.skip("hard link not supported in this environment")
+
+    assert checkpoint_file.stat().st_nlink == 2
+
+    with pytest.raises(RuntimeError, match="reviewed source is linked or outside"):
+        agreement._assert_reviewed_direct_child(
+            checkpoint_file,
+            parent=checkpoint_dir,
+            is_directory=False,
+        )
+
+
+def test_agreement_panel_inventory_rejects_hardlinked_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    annual_input, checkpoints, config = _annual_agreement_panel_fixture(
+        tmp_path / "inputs", monkeypatch
+    )
+    monkeypatch.setattr(agreement, "load_annual_readiness_input", lambda _: annual_input)
+    panel = agreement.prepare_annual_agreement_panel(annual_input, checkpoints, config)
+    destination = tmp_path / "published"
+    agreement.write_annual_agreement_panel(panel, destination=destination)
+    calendar_path = destination / "calendar.parquet"
+    outside = tmp_path / "outside_panel.parquet"
+    try:
+        os.link(calendar_path, outside)
+    except (OSError, NotImplementedError, AttributeError):
+        pytest.skip("hard link not supported in this environment")
+
+    assert calendar_path.stat().st_nlink == 2
+
+    with pytest.raises(RuntimeError, match="panel member is linked or outside generation"):
+        agreement.load_annual_agreement_panel(destination)
+
+
+def test_agreement_final_inventory_rejects_hardlinked_member(
+    tmp_path: Path,
+) -> None:
+    agreement = importlib.import_module("twair.analysis.micro_sensor_annual_agreement")
+    destination = tmp_path / "final_output"
+    destination.mkdir(parents=True)
+    for name in agreement._FINAL_MEMBER_NAMES:
+        (destination / f"{name}.parquet").write_bytes(b"parquet-bytes")
+    (destination / "summary.json").write_text("{}", encoding="utf-8")
+    (destination / "manifest.json").write_text("{}", encoding="utf-8")
+
+    folds_path = destination / "folds.parquet"
+    outside = tmp_path / "outside_final.parquet"
+    try:
+        os.link(folds_path, outside)
+    except (OSError, NotImplementedError, AttributeError):
+        pytest.skip("hard link not supported in this environment")
+
+    assert folds_path.stat().st_nlink == 2
+
+    with pytest.raises(RuntimeError, match="panel member is linked or outside generation"):
+        agreement._validate_final_inventory(destination, during_read=True)

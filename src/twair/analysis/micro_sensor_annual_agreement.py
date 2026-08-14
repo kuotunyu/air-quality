@@ -52,6 +52,10 @@ threadpool_limits: Any = importlib.import_module("threadpoolctl").threadpool_lim
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ANNUAL_GENERATION_SHA256 = "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
 _ANALYSIS_FIELDS = {
+    "protocol_revision",
+    "target_definition",
+    "ground_minimum_eligible_hours",
+    "evaluation_name",
     "annual_generation_sha256",
     "distance_bands_km",
     "primary_distance_km",
@@ -70,6 +74,12 @@ _ANALYSIS_FIELDS = {
     "claim_boundary",
 }
 _CLAIM_BOUNDARY = {
+    "q4_supported_cross_station_agreement": True,
+    "held_station_within_observed_q4_support": True,
+    "held_quarter_estimable": False,
+    "joint_station_quarter_estimable": False,
+    "annual_temporal_generalization": False,
+    "seasonal_generalization": False,
     "reference_station_agreement_only": True,
     "validated_calibration": False,
     "sensor_bias_estimate": False,
@@ -113,8 +123,14 @@ _AGREEMENT_VARIABLES = ("pm25", "humidity", "temperature")
 _AGREEMENT_COUNT_COLUMNS = tuple(
     name for name, dtype in ANNUAL_DEVICE_DAY_SCHEMA if dtype == pl.Int64
 )
+_AGREEMENT_STATION_COUNT_COLUMNS = (
+    "ground_station_present_hours",
+    "ground_station_eligible_hours",
+)
 AGREEMENT_DAY_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
     *ANNUAL_DEVICE_DAY_SCHEMA,
+    ("ground_station_present_hours", pl.Int64),
+    ("ground_station_eligible_hours", pl.Int64),
     ("micro_pm25_mean", pl.Float64),
     ("micro_humidity_mean", pl.Float64),
     ("micro_temperature_mean", pl.Float64),
@@ -149,6 +165,75 @@ AGREEMENT_COHORT_COVERAGE_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataTyp
     ("device_days", pl.Int64),
     ("devices", pl.Int64),
     ("dates", pl.Int64),
+)
+AGREEMENT_PREDICTION_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("evaluation", pl.String),
+    ("fold", pl.String),
+    ("fold_state", pl.String),
+    ("radius_km", pl.Float64),
+    ("date", pl.Date),
+    ("device_id", pl.String),
+    ("station_name", pl.String),
+    ("station_fold", pl.Int64),
+    ("quarter", pl.Int64),
+    ("train_membership_sha256", pl.String),
+    ("test_membership_sha256", pl.String),
+    ("test_truth_sha256", pl.String),
+    ("model", pl.String),
+    ("model_features", pl.String),
+    ("y_true", pl.Float64),
+    ("y_pred", pl.Float64),
+)
+AGREEMENT_SCORE_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("scope", pl.String),
+    ("evaluation", pl.String),
+    ("fold", pl.String),
+    ("radius_km", pl.Float64),
+    ("model", pl.String),
+    ("unit", pl.String),
+    ("state", pl.String),
+    ("n", pl.Int64),
+    ("intended_n", pl.Int64),
+    ("membership_sha256", pl.String),
+    ("truth_sha256", pl.String),
+    ("scored_membership_sha256", pl.String),
+    ("scored_truth_sha256", pl.String),
+    ("total_folds", pl.Int64),
+    ("scored_folds", pl.Int64),
+    ("unscored_folds_sha256", pl.String),
+    ("rmse", pl.Float64),
+    ("mae", pl.Float64),
+    ("r2", pl.Float64),
+    ("bias", pl.Float64),
+    ("absolute_bias", pl.Float64),
+)
+AGREEMENT_DELTA_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
+    ("scope", pl.String),
+    ("evaluation", pl.String),
+    ("fold", pl.String),
+    ("radius_km", pl.Float64),
+    ("unit", pl.String),
+    ("model", pl.String),
+    ("baseline_model", pl.String),
+    ("state", pl.String),
+    ("n", pl.Int64),
+    ("intended_n", pl.Int64),
+    ("membership_sha256", pl.String),
+    ("truth_sha256", pl.String),
+    ("scored_membership_sha256", pl.String),
+    ("scored_truth_sha256", pl.String),
+    ("total_folds", pl.Int64),
+    ("scored_folds", pl.Int64),
+    ("unscored_folds_sha256", pl.String),
+    ("delta_rmse", pl.Float64),
+    ("delta_mae", pl.Float64),
+    ("delta_r2", pl.Float64),
+    ("delta_bias", pl.Float64),
+    ("delta_absolute_bias", pl.Float64),
+    ("improved_rmse", pl.Boolean),
+    ("improved_mae", pl.Boolean),
+    ("improved_r2", pl.Boolean),
+    ("improved_absolute_bias", pl.Boolean),
 )
 _AGREEMENT_PANEL_SCHEMAS = {
     "calendar": AGREEMENT_CALENDAR_SCHEMA,
@@ -201,6 +286,10 @@ _FINAL_IDENTITY_FIELDS = (
 
 @dataclass(frozen=True, slots=True)
 class AnnualAgreementConfig:
+    protocol_revision: int
+    target_definition: str
+    ground_minimum_eligible_hours: int
+    evaluation_name: str
     annual_generation_sha256: str
     distance_bands_km: tuple[float, ...]
     primary_distance_km: float
@@ -444,11 +533,12 @@ def _validate_agreement_panel_inventory(
     for entry in entries:
         try:
             outside = entry.resolve(strict=True).parent != directory
+            entry_stat = entry.stat()
         except OSError as exc:
             raise RuntimeError(
                 f"annual agreement panel member is unreadable: {entry.name}"
             ) from exc
-        if _is_link_like(entry) or outside:
+        if _is_link_like(entry) or outside or entry_stat.st_nlink != 1:
             raise RuntimeError(
                 f"annual agreement panel member is linked or outside generation: {entry.name}"
             )
@@ -619,6 +709,20 @@ def load_annual_agreement_config(
     analysis = _mapping(top["analysis"], label="micro_sensor_annual_agreement.analysis")
     _exact_keys(analysis, _ANALYSIS_FIELDS, label="micro_sensor_annual_agreement.analysis")
 
+    protocol_revision = _positive_integer(
+        analysis["protocol_revision"], label="analysis.protocol_revision"
+    )
+    target_definition = analysis["target_definition"]
+    if not isinstance(target_definition, str):
+        raise ConfigError("analysis.target_definition must be a string")
+    ground_minimum_eligible_hours = _positive_integer(
+        analysis["ground_minimum_eligible_hours"],
+        label="analysis.ground_minimum_eligible_hours",
+    )
+    evaluation_name = analysis["evaluation_name"]
+    if not isinstance(evaluation_name, str):
+        raise ConfigError("analysis.evaluation_name must be a string")
+
     generation = analysis["annual_generation_sha256"]
     if not isinstance(generation, str) or _SHA256.fullmatch(generation) is None:
         raise ConfigError("analysis.annual_generation_sha256 must be a lowercase SHA-256")
@@ -649,6 +753,10 @@ def load_annual_agreement_config(
     boundary = tuple((key, raw_boundary[key]) for key in _CLAIM_BOUNDARY)
 
     loaded = AnnualAgreementConfig(
+        protocol_revision=protocol_revision,
+        target_definition=target_definition,
+        ground_minimum_eligible_hours=ground_minimum_eligible_hours,
+        evaluation_name=evaluation_name,
         annual_generation_sha256=generation,
         distance_bands_km=distances,
         primary_distance_km=primary_distance,
@@ -683,6 +791,10 @@ def load_annual_agreement_config(
         claim_boundary=boundary,
     )
     if loaded != AnnualAgreementConfig(
+        protocol_revision=2,
+        target_definition="canonical_reference_station_day_pm25",
+        ground_minimum_eligible_hours=18,
+        evaluation_name="q4_supported_cross_station_agreement",
         annual_generation_sha256=generation,
         distance_bands_km=(0.5, 1.0, 2.0),
         primary_distance_km=0.5,
@@ -1044,10 +1156,14 @@ def _agreement_daily_query(day: date) -> str:
                coalesce(ground.present_ineligible_hours, 0)::BIGINT
                    AS ground_present_ineligible_trio_hours,
                coalesce(ground.absent_hours, 0)::BIGINT AS ground_absent_trio_hours,
+               coalesce(ground_station.present_hours, 0)::BIGINT
+                   AS ground_station_present_hours,
+               coalesce(ground_station.eligible_hours, 0)::BIGINT
+                   AS ground_station_eligible_hours,
                pm25.mean_value AS raw_pm25_mean,
                humidity.mean_value AS raw_humidity_mean,
                temperature.mean_value AS raw_temperature_mean,
-               ground.mean_value AS raw_ground_mean
+               ground_station.mean_value AS raw_ground_mean
         FROM candidates
         LEFT JOIN pm25_daily pm25 USING (device_id)
         LEFT JOIN humidity_daily humidity USING (device_id)
@@ -1055,6 +1171,7 @@ def _agreement_daily_query(day: date) -> str:
         LEFT JOIN trio USING (device_id)
         LEFT JOIN coordinates USING (device_id)
         LEFT JOIN ground_by_device ground USING (device_id)
+        LEFT JOIN ground_by_station ground_station USING (station_name)
         ORDER BY candidates.device_id
     """
 
@@ -1123,9 +1240,9 @@ def _agreement_reason_expression(config: AnnualAgreementConfig) -> pl.Expr:
         )
     conditions.extend(
         (
-            (pl.col("ground_present_trio_hours") == 0, "ground_absent"),
+            (pl.col("ground_station_present_hours") == 0, "ground_absent"),
             (
-                pl.col("ground_eligible_trio_hours") < config.minimum_observed_hours,
+                pl.col("ground_station_eligible_hours") < config.ground_minimum_eligible_hours,
                 "ground_present_but_ineligible",
             ),
         )
@@ -1177,6 +1294,8 @@ def _aggregate_agreement_day_paths(
             pl.lit(None, dtype=pl.Float64).alias("micro_pm25_mean"),
             pl.lit(None, dtype=pl.Float64).alias("micro_humidity_mean"),
             pl.lit(None, dtype=pl.Float64).alias("micro_temperature_mean"),
+            pl.lit(0, dtype=pl.Int64).alias("ground_station_present_hours"),
+            pl.lit(0, dtype=pl.Int64).alias("ground_station_eligible_hours"),
             pl.lit(None, dtype=pl.Float64).alias("ground_pm25_mean"),
             pl.lit("catalogue_absent").alias("reason"),
         ).select(*(name for name, _ in AGREEMENT_DAY_SCHEMA))
@@ -1314,15 +1433,27 @@ def _aggregate_agreement_day_paths(
                            AND isfinite(ground.ground_pm25),
                            false
                        ))::BIGINT AS present_ineligible_hours,
-                       count(*) FILTER (WHERE ground.hour IS NULL)::BIGINT AS absent_hours,
-                       avg(ground.ground_pm25) FILTER (WHERE ground.ground_flag = 'valid'
-                           AND ground.ground_pm25 IS NOT NULL
-                           AND isfinite(ground.ground_pm25))::DOUBLE AS mean_value
+                       count(*) FILTER (WHERE ground.hour IS NULL)::BIGINT AS absent_hours
                 FROM trio_hours trio
                 INNER JOIN candidates USING (device_id)
                 LEFT JOIN ground_pm25 ground
                   ON ground.station_name = candidates.station_name AND ground.hour = trio.hour
                 GROUP BY trio.device_id
+                """
+            )
+            connection.execute(
+                """
+                CREATE TEMP TABLE ground_by_station AS
+                SELECT station_name,
+                       count(*)::BIGINT AS present_hours,
+                       count(*) FILTER (WHERE ground_flag = 'valid'
+                           AND ground_pm25 IS NOT NULL
+                           AND isfinite(ground_pm25))::BIGINT AS eligible_hours,
+                       avg(ground_pm25) FILTER (WHERE ground_flag = 'valid'
+                           AND ground_pm25 IS NOT NULL
+                           AND isfinite(ground_pm25))::DOUBLE AS mean_value
+                FROM ground_pm25
+                GROUP BY station_name
                 """
             )
             recomputed = pl.DataFrame(
@@ -1530,9 +1661,11 @@ def _validate_agreement_day_rows(frame: pl.DataFrame, *, day: date) -> None:
         raise RuntimeError("annual agreement checkpoint row identities changed")
     if any(
         frame[column].null_count() or (frame[column] < 0).any()
-        for column in _AGREEMENT_COUNT_COLUMNS
+        for column in (*_AGREEMENT_COUNT_COLUMNS, *_AGREEMENT_STATION_COUNT_COLUMNS)
     ):
         raise RuntimeError("annual agreement checkpoint counts changed")
+    _validate_station_day_target_evidence(frame, label="checkpoint")
+    _validate_agreement_reason_evidence(frame, label="checkpoint")
     model_columns = (
         "micro_pm25_mean",
         "micro_humidity_mean",
@@ -1558,6 +1691,65 @@ def _validate_agreement_day_rows(frame: pl.DataFrame, *, day: date) -> None:
         ).height
     ):
         raise RuntimeError("annual agreement checkpoint eligible value is null")
+
+
+def _validate_station_day_target_evidence(frame: pl.DataFrame, *, label: str) -> None:
+    if frame.filter(
+        (pl.col("ground_station_present_hours") > 24)
+        | (pl.col("ground_station_eligible_hours") > pl.col("ground_station_present_hours"))
+    ).height:
+        raise RuntimeError(f"annual agreement {label} station-day counts changed")
+    count_groups = frame.group_by("station_name", "date").agg(
+        *(pl.col(column).n_unique().alias(column) for column in _AGREEMENT_STATION_COUNT_COLUMNS)
+    )
+    if count_groups.filter(
+        pl.any_horizontal(pl.col(column) != 1 for column in _AGREEMENT_STATION_COUNT_COLUMNS)
+    ).height:
+        raise RuntimeError(f"annual agreement {label} station-day target changed")
+    eligible = frame.filter(pl.col("reason") == "eligible")
+    if not eligible.is_empty():
+        target_groups = eligible.group_by("station_name", "date").agg(
+            pl.col("ground_pm25_mean").n_unique().alias("targets")
+        )
+        if target_groups.filter(pl.col("targets") != 1).height:
+            raise RuntimeError(f"annual agreement {label} station-day target changed")
+
+
+def _validate_agreement_reason_evidence(
+    frame: pl.DataFrame,
+    *,
+    label: str,
+    calendar_state_column: str | None = None,
+) -> None:
+    selected = frame
+    if calendar_state_column is None:
+        catalogue_absent = frame.filter(pl.col("reason") == "catalogue_absent")
+        if catalogue_absent.height:
+            if (
+                catalogue_absent.height != frame.height
+                or frame.select(
+                    pl.sum_horizontal(
+                        *(pl.col(column) for column in _AGREEMENT_COUNT_COLUMNS),
+                        *(pl.col(column) for column in _AGREEMENT_STATION_COUNT_COLUMNS),
+                    ).sum()
+                    != 0
+                ).item()
+            ):
+                raise RuntimeError(f"annual agreement {label} reason changed")
+            return
+    else:
+        absent = frame.filter(pl.col(calendar_state_column) == "catalogue_absent")
+        if absent.filter(pl.col("reason") != "catalogue_absent").height:
+            raise RuntimeError(f"annual agreement {label} reason changed")
+        selected = frame.filter(pl.col(calendar_state_column) == "complete")
+    if (
+        selected.with_columns(
+            _agreement_reason_expression(load_annual_agreement_config()).alias("_expected_reason")
+        )
+        .filter(pl.col("reason") != pl.col("_expected_reason"))
+        .height
+    ):
+        raise RuntimeError(f"annual agreement {label} reason changed")
 
 
 def _checkpoint_config(config: AnnualAgreementConfig) -> dict[str, object]:
@@ -1677,7 +1869,7 @@ def _checkpoint_contract(
     normalized_inputs = _checkpoint_inputs(input_identities, config=config)
     return {
         "schema_version": 1,
-        "kind": "annual_reference_station_agreement_day",
+        "kind": "q4_supported_cross_station_agreement_day",
         "date": day.isoformat(),
         "inputs": normalized_inputs,
         "config": _checkpoint_config(config),
@@ -2170,7 +2362,7 @@ def _checkpoint_inventory_evidence(
         if (
             type(manifest.get("schema_version")) is not int
             or manifest.get("schema_version") != 1
-            or manifest.get("kind") != "annual_reference_station_agreement_day"
+            or manifest.get("kind") != "q4_supported_cross_station_agreement_day"
             or manifest.get("complete") is not True
             or manifest.get("config") != _checkpoint_config(config)
             or manifest.get("schema") != expected_schema
@@ -2522,7 +2714,7 @@ def _prepare_annual_agreement_panel(
     }
     manifest: dict[str, object] = {
         "schema_version": 1,
-        "analysis": "annual_reference_station_agreement_panel",
+        "analysis": "q4_supported_cross_station_agreement_panel",
         "inputs": {
             "annual_generation_sha256": config.annual_generation_sha256,
             "candidate_identity_sha256": _canonical_hash(candidates.to_dicts()),
@@ -2626,6 +2818,12 @@ def _validate_agreement_panel_frames(panel: AnnualAgreementPanel) -> None:
         )
     ).height:
         raise RuntimeError("annual agreement panel model value is non-finite")
+    _validate_station_day_target_evidence(paired, label="panel")
+    _validate_agreement_reason_evidence(
+        paired,
+        label="panel",
+        calendar_state_column="calendar_state",
+    )
     expected_exclusions = paired.filter(pl.col("reason") != "eligible").select(
         *(name for name, _ in AGREEMENT_EXCLUSION_SCHEMA)
     )
@@ -2799,6 +2997,163 @@ def _validate_persisted_agreement_panel_semantics(panel: AnnualAgreementPanel) -
     }
     if panel.summary != expected_summary:
         raise RuntimeError("annual agreement persisted semantics changed")
+    _validate_persisted_station_day_targets(
+        panel,
+        readiness=readiness,
+        config=reviewed,
+    )
+
+
+def _validate_persisted_station_day_targets(
+    panel: AnnualAgreementPanel,
+    *,
+    readiness: AnnualReadinessInput,
+    config: AnnualAgreementConfig,
+) -> None:
+    inputs = _mapping(readiness.manifest.get("inputs"), label="annual readiness inputs")
+    declarations = inputs.get("ground_files")
+    expected_paths = [
+        f"processed/observations/year=2025/month={month:02d}/part-0.parquet"
+        for month in range(1, 13)
+    ]
+    if not isinstance(declarations, list) or len(declarations) != len(expected_paths):
+        raise RuntimeError("annual agreement persisted station-day target changed")
+    root = configured_data_root().absolute()
+    try:
+        if _is_link_like(root) or root.resolve(strict=True) != root or not root.is_dir():
+            raise RuntimeError("annual agreement reviewed source is linked or outside")
+    except OSError as exc:
+        raise RuntimeError("annual agreement reviewed source is unreadable") from exc
+    paths: list[Path] = []
+    before: list[dict[str, object]] = []
+    containment: list[tuple[Path, Path, bool]] = []
+    for expected_path, declaration in zip(expected_paths, declarations, strict=True):
+        identity = _checkpoint_file_identity(
+            declaration,
+            label="annual agreement reviewed ground member",
+        )
+        if identity["path"] != expected_path:
+            raise RuntimeError("annual agreement persisted station-day target changed")
+        path = root / expected_path
+        parent = root
+        parts = Path(expected_path).parts
+        for index, part in enumerate(parts):
+            child = parent / part
+            is_directory = index < len(parts) - 1
+            _assert_reviewed_direct_child(
+                child,
+                parent=parent,
+                is_directory=is_directory,
+            )
+            containment.append((child, parent, is_directory))
+            parent = child
+        observed = _portable_reviewed_identity(path, data_root=root)
+        if observed != identity:
+            raise RuntimeError("annual agreement persisted station-day target changed")
+        _validate_agreement_ground_member(path)
+        paths.append(path)
+        before.append(_file_identity(path))
+    required = (
+        panel.paired_days.filter(pl.col("calendar_state") == "complete")
+        .group_by("date", "station_name")
+        .agg(
+            pl.col("reason")
+            .filter(pl.col("reason") == "eligible")
+            .len()
+            .cast(pl.Int64)
+            .alias("eligible_device_rows")
+        )
+        .sort("date", "station_name")
+    )
+    connection = duckdb.connect()
+    try:
+        connection.execute("SET threads = 1")
+        connection.execute(f"SET memory_limit = '{config.memory_limit_gb}GB'")
+        connection.register("required_ground_days", required)
+        source_paths = ", ".join(f"'{_sql_path(path)}'" for path in paths)
+        duplicate = connection.execute(
+            f"""
+            SELECT count(*) FROM (
+                SELECT station_name, ts_local
+                FROM read_parquet([{source_paths}])
+                WHERE CAST(pollutant AS VARCHAR) = 'PM2.5'
+                  AND station_name IN (SELECT station_name FROM required_ground_days)
+                GROUP BY station_name, ts_local
+                HAVING count(*) > 1
+            )
+            """
+        ).fetchone()
+        if duplicate is None or int(duplicate[0]) != 0:
+            raise RuntimeError("annual agreement persisted station-day target changed")
+        expected = pl.DataFrame(
+            connection.execute(
+                f"""
+                WITH observed AS (
+                    SELECT CAST(ts_local AS DATE) AS date,
+                           CAST(station_name AS VARCHAR) AS station_name,
+                           count(*)::BIGINT AS ground_station_present_hours,
+                           count(*) FILTER (WHERE CAST(flag AS VARCHAR) = 'valid'
+                               AND value IS NOT NULL AND isfinite(value))::BIGINT
+                               AS ground_station_eligible_hours,
+                           avg(value) FILTER (WHERE CAST(flag AS VARCHAR) = 'valid'
+                               AND value IS NOT NULL AND isfinite(value))::DOUBLE
+                               AS expected_ground_pm25_mean
+                    FROM read_parquet([{source_paths}])
+                    WHERE CAST(pollutant AS VARCHAR) = 'PM2.5'
+                      AND station_name IN (SELECT station_name FROM required_ground_days)
+                    GROUP BY CAST(ts_local AS DATE), station_name
+                )
+                SELECT required.date, required.station_name,
+                       CASE WHEN observed.station_name IS NULL THEN 0
+                            ELSE observed.ground_station_present_hours END::BIGINT
+                            AS ground_station_present_hours,
+                       CASE WHEN observed.station_name IS NULL THEN 0
+                            ELSE observed.ground_station_eligible_hours END::BIGINT
+                            AS ground_station_eligible_hours,
+                       required.eligible_device_rows,
+                       CASE WHEN required.eligible_device_rows > 0
+                                      AND observed.ground_station_eligible_hours >=
+                                      {config.ground_minimum_eligible_hours}
+                            THEN observed.expected_ground_pm25_mean END::DOUBLE
+                            AS expected_ground_pm25_mean
+                FROM required_ground_days required
+                LEFT JOIN observed USING (date, station_name)
+                ORDER BY date, station_name
+                """
+            ).to_arrow_table()
+        )
+    finally:
+        connection.close()
+    try:
+        if _is_link_like(root) or root.resolve(strict=True) != root or not root.is_dir():
+            raise RuntimeError("annual agreement reviewed source is linked or outside")
+    except OSError as exc:
+        raise RuntimeError("annual agreement reviewed source is unreadable") from exc
+    for path, parent, is_directory in containment:
+        _assert_reviewed_direct_child(path, parent=parent, is_directory=is_directory)
+    if before != [_file_identity(path) for path in paths]:
+        raise RuntimeError("annual agreement reviewed source changed during use")
+    actual = (
+        panel.paired_days.filter(pl.col("calendar_state") == "complete")
+        .group_by("date", "station_name")
+        .agg(
+            pl.col("ground_station_present_hours").first(),
+            pl.col("ground_station_eligible_hours").first(),
+            pl.col("reason")
+            .filter(pl.col("reason") == "eligible")
+            .len()
+            .cast(pl.Int64)
+            .alias("eligible_device_rows"),
+            pl.col("ground_pm25_mean")
+            .filter(pl.col("reason") == "eligible")
+            .first()
+            .alias("expected_ground_pm25_mean"),
+        )
+        .sort("date", "station_name")
+    )
+    expected = expected.cast(actual.schema, strict=True)
+    if actual.rows() != expected.rows():
+        raise RuntimeError("annual agreement persisted station-day target changed")
 
 
 @contextmanager
@@ -2850,7 +3205,7 @@ def _load_annual_agreement_panel_unlocked(directory: Path) -> AnnualAgreementPan
         }
         or type(manifest.get("schema_version")) is not int
         or manifest.get("schema_version") != 1
-        or manifest.get("analysis") != "annual_reference_station_agreement_panel"
+        or manifest.get("analysis") != "q4_supported_cross_station_agreement_panel"
         or manifest.get("complete") is not True
     ):
         raise RuntimeError("annual agreement panel manifest contract changed")
@@ -3036,7 +3391,7 @@ def assign_agreement_folds(panel: AnnualAgreementPanel) -> pl.DataFrame:
         "micro_temperature_mean",
         "ground_pm25_mean",
     }
-    if required - set(eligible.columns) or eligible.is_empty():
+    if required - set(eligible.columns):
         raise RuntimeError("annual agreement has no eligible split rows")
     if eligible.filter(~pl.col("quarter").is_in(config.quarters)).height:
         raise RuntimeError("annual agreement eligible quarter changed")
@@ -3127,11 +3482,15 @@ def assign_agreement_folds(panel: AnnualAgreementPanel) -> pl.DataFrame:
     for split in memberships.partition_by("evaluation", "fold", maintain_order=True):
         train = split.filter(pl.col("role") == "train")
         test = split.filter(pl.col("role") == "test")
-        if train.height < 2 or train["ground_pm25_mean"].n_unique() < 2:
-            raise RuntimeError("annual agreement fold has insufficient training targets")
-        if test.is_empty():
+        train_unique_targets = train["ground_pm25_mean"].n_unique()
+        test_unique_targets = test["ground_pm25_mean"].n_unique()
+        if train.is_empty():
+            state = "unscored_empty_train"
+        elif train.height < 2 or train_unique_targets < 2:
+            state = "unscored_insufficient_train"
+        elif test.is_empty():
             state = "unscored_empty_test"
-        elif test["ground_pm25_mean"].n_unique() < 2:
+        elif test_unique_targets < 2:
             state = "unscored_single_target"
         else:
             state = "scored"
@@ -3149,24 +3508,80 @@ def assign_agreement_folds(panel: AnnualAgreementPanel) -> pl.DataFrame:
         bound.append(
             split.with_columns(
                 pl.lit(state).alias("fold_state"),
+                pl.lit(state).alias("fold_reason"),
                 pl.lit(train.height, dtype=pl.Int64).alias("train_rows"),
                 pl.lit(test.height, dtype=pl.Int64).alias("test_rows"),
+                pl.lit(train_unique_targets, dtype=pl.Int64).alias("train_unique_targets"),
+                pl.lit(test_unique_targets, dtype=pl.Int64).alias("test_unique_targets"),
                 pl.lit(digest(train)).alias("train_membership_sha256"),
                 pl.lit(digest(test)).alias("test_membership_sha256"),
                 pl.lit(digest(test, truth=True)).alias("test_truth_sha256"),
             )
         )
+    if not bound:
+        return memberships.with_columns(
+            pl.lit(None, dtype=pl.String).alias("fold_state"),
+            pl.lit(None, dtype=pl.String).alias("fold_reason"),
+            pl.lit(None, dtype=pl.Int64).alias("train_rows"),
+            pl.lit(None, dtype=pl.Int64).alias("test_rows"),
+            pl.lit(None, dtype=pl.Int64).alias("train_unique_targets"),
+            pl.lit(None, dtype=pl.Int64).alias("test_unique_targets"),
+            pl.lit(None, dtype=pl.String).alias("train_membership_sha256"),
+            pl.lit(None, dtype=pl.String).alias("test_membership_sha256"),
+            pl.lit(None, dtype=pl.String).alias("test_truth_sha256"),
+        )
     return pl.concat(bound).sort("evaluation", "fold", "role", "radius_km", "date", "device_id")
 
 
 def _agreement_fold_table(memberships: pl.DataFrame) -> pl.DataFrame:
+    if memberships.is_empty():
+        config = load_annual_agreement_config()
+        definitions = [
+            *(("held_station", f"held_station_{fold:02d}") for fold in range(config.station_folds)),
+            *(("held_quarter", f"held_quarter_{quarter:02d}") for quarter in config.quarters),
+            *(
+                ("joint", f"joint_{fold:02d}_{quarter:02d}")
+                for fold in range(config.station_folds)
+                for quarter in config.quarters
+            ),
+        ]
+        empty_hash = _canonical_hash([])
+        return pl.DataFrame(
+            [
+                {
+                    "evaluation": evaluation,
+                    "fold": fold,
+                    "fold_state": "unscored_empty_train",
+                    "fold_reason": "unscored_empty_train",
+                    "train_rows": 0,
+                    "test_rows": 0,
+                    "train_unique_targets": 0,
+                    "test_unique_targets": 0,
+                    "train_membership_sha256": empty_hash,
+                    "test_membership_sha256": empty_hash,
+                    "test_truth_sha256": empty_hash,
+                    "train_devices": 0,
+                    "test_devices": 0,
+                    "train_stations": 0,
+                    "test_stations": 0,
+                    "train_dates": 0,
+                    "test_dates": 0,
+                    "device_overlap": 0,
+                    "excluded_rows": 0,
+                }
+                for evaluation, fold in definitions
+            ]
+        ).sort("evaluation", "fold")
     identities = (
         memberships.select(
             "evaluation",
             "fold",
             "fold_state",
+            "fold_reason",
             "train_rows",
             "test_rows",
+            "train_unique_targets",
+            "test_unique_targets",
             "train_membership_sha256",
             "test_membership_sha256",
             "test_truth_sha256",
@@ -3230,7 +3645,10 @@ def _agreement_prediction_rows(
     for split in memberships.partition_by("evaluation", "fold", maintain_order=True):
         train = split.filter(pl.col("role") == "train")
         test = split.filter(pl.col("role") == "test")
-        if test.is_empty():
+        states = split["fold_state"].unique().to_list()
+        if len(states) != 1:
+            raise RuntimeError("annual agreement fold state changed")
+        if states[0] != "scored":
             continue
         rows.append(
             test.select(*common, pl.col("ground_pm25_mean").alias("y_true")).with_columns(
@@ -3279,8 +3697,13 @@ def _agreement_prediction_rows(
                 )
             )
     if not rows:
-        raise RuntimeError("annual agreement produced no test predictions")
-    return pl.concat(rows).sort("evaluation", "fold", "radius_km", "date", "device_id", "model")
+        return pl.DataFrame(schema=dict(AGREEMENT_PREDICTION_SCHEMA))
+    return (
+        pl.concat(rows)
+        .select(*(name for name, _ in AGREEMENT_PREDICTION_SCHEMA))
+        .cast(dict(AGREEMENT_PREDICTION_SCHEMA), strict=True)
+        .sort("evaluation", "fold", "radius_km", "date", "device_id", "model")
+    )
 
 
 def _validate_agreement_predictions(
@@ -3307,7 +3730,9 @@ def _validate_agreement_predictions(
         "y_true",
         "y_pred",
     }
-    if set(predictions.columns) != required or predictions.is_empty():
+    if set(predictions.columns) != required or predictions.schema != dict(
+        AGREEMENT_PREDICTION_SCHEMA
+    ):
         raise RuntimeError("annual agreement prediction schema changed")
     if _agreement_fold_table(memberships).rows() != folds.rows():
         raise RuntimeError("annual agreement trusted fold evidence changed")
@@ -3375,7 +3800,7 @@ def _validate_agreement_predictions(
             pl.col("ground_pm25_mean").alias("y_true"),
         ).sort(*identity)
         observed = predictions.filter(pl.col("fold") == fold_name)
-        if test.is_empty():
+        if fold_row["fold_state"] != "scored":
             if not observed.is_empty():
                 raise RuntimeError("annual agreement predictions differ from trusted fold")
             continue
@@ -3421,7 +3846,13 @@ def _validate_agreement_predictions(
                 != [fold_row["test_truth_sha256"]]
             ):
                 raise RuntimeError("annual agreement predictions differ from trusted fold")
-    trusted_universe = pl.concat(trusted_prediction_rows).sort(*identity, "model")
+    trusted_universe = (
+        pl.concat(trusted_prediction_rows).sort(*identity, "model")
+        if trusted_prediction_rows
+        else predictions.select(
+            *(name for name, _ in AGREEMENT_PREDICTION_SCHEMA if name != "y_pred")
+        )
+    )
     observed_universe = predictions.select(trusted_universe.columns).sort(*identity, "model")
     if observed_universe.rows() != trusted_universe.rows():
         raise RuntimeError("annual agreement predictions differ from trusted prediction universe")
@@ -3473,9 +3904,68 @@ def _agreement_metric_values(frame: pl.DataFrame) -> dict[str, float]:
     return values
 
 
-def _agreement_score_row(
+_SCORE_DEVICE_IDENTITY = (
+    "radius_km",
+    "date",
+    "device_id",
+    "station_name",
+    "station_fold",
+    "quarter",
+)
+_SCORE_STATION_IDENTITY = (
+    "radius_km",
+    "date",
+    "station_name",
+    "station_fold",
+    "quarter",
+)
+
+
+def _agreement_population(
     frame: pl.DataFrame,
     *,
+    unit: str,
+    truth_column: str,
+) -> pl.DataFrame:
+    if unit == "device_day":
+        return (
+            frame.select(
+                *_SCORE_DEVICE_IDENTITY,
+                pl.col(truth_column).alias("y_true"),
+            )
+            .unique()
+            .sort(*_SCORE_DEVICE_IDENTITY)
+        )
+    if unit != "station_day":
+        raise RuntimeError("annual agreement evaluation unit changed")
+    grouped = frame.group_by(*_SCORE_STATION_IDENTITY).agg(
+        pl.col(truth_column).n_unique().alias("_truths"),
+        pl.col(truth_column).first().alias("y_true"),
+    )
+    if grouped.filter(pl.col("_truths") != 1).height:
+        raise RuntimeError("annual agreement station-day truth changed within a target")
+    return grouped.drop("_truths").sort(*_SCORE_STATION_IDENTITY)
+
+
+def _agreement_population_evidence(
+    frame: pl.DataFrame,
+    *,
+    unit: str,
+    truth_column: str,
+) -> tuple[int, str, str]:
+    population = _agreement_population(frame, unit=unit, truth_column=truth_column)
+    temporal = population.with_columns(pl.col("date").cast(pl.String))
+    return (
+        population.height,
+        _canonical_hash(temporal.drop("y_true").to_dicts()),
+        _canonical_hash(temporal.to_dicts()),
+    )
+
+
+def _agreement_score_row(
+    scored_predictions: pl.DataFrame,
+    *,
+    intended_memberships: pl.DataFrame,
     scope: str,
     evaluation: str,
     fold: str | None,
@@ -3483,10 +3973,23 @@ def _agreement_score_row(
     model: str,
     unit: str,
     state: str,
-    membership_sha256: str,
-    truth_sha256: str,
+    total_folds: int,
+    scored_folds: int,
+    unscored_folds: list[dict[str, str]],
 ) -> dict[str, object]:
-    scored = _agreement_scoring_frame(frame, unit=unit)
+    intended_n, membership_sha256, truth_sha256 = _agreement_population_evidence(
+        intended_memberships,
+        unit=unit,
+        truth_column="ground_pm25_mean",
+    )
+    n, scored_membership_sha256, scored_truth_sha256 = _agreement_population_evidence(
+        scored_predictions,
+        unit=unit,
+        truth_column="y_true",
+    )
+    metric_state = state in {"scored", "partially_scored"}
+    if metric_state != (n > 0):
+        raise RuntimeError("annual agreement score state and population disagree")
     row: dict[str, object] = {
         "scope": scope,
         "evaluation": evaluation,
@@ -3495,12 +3998,20 @@ def _agreement_score_row(
         "model": model,
         "unit": unit,
         "state": state,
-        "n": scored.height,
+        "n": n,
+        "intended_n": intended_n,
         "membership_sha256": membership_sha256,
         "truth_sha256": truth_sha256,
+        "scored_membership_sha256": scored_membership_sha256,
+        "scored_truth_sha256": scored_truth_sha256,
+        "total_folds": total_folds,
+        "scored_folds": scored_folds,
+        "unscored_folds_sha256": _canonical_hash(unscored_folds),
     }
-    if state == "scored":
-        row.update(_agreement_metric_values(scored))
+    if metric_state:
+        row.update(
+            _agreement_metric_values(_agreement_scoring_frame(scored_predictions, unit=unit))
+        )
     else:
         row.update(
             {
@@ -3521,71 +4032,95 @@ def _score_annual_agreement_predictions(
     folds: pl.DataFrame,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     _validate_agreement_predictions(predictions, memberships=memberships, folds=folds)
+    config = load_annual_agreement_config()
     score_rows: list[dict[str, object]] = []
+    models = ("raw_micro", "pooled_micro_ridge", "pooled_weather_ridge")
     for fold_row in folds.iter_rows(named=True):
-        for model in ("raw_micro", "pooled_micro_ridge", "pooled_weather_ridge"):
-            split = predictions.filter(
+        intended = memberships.filter(
+            (pl.col("fold") == fold_row["fold"]) & (pl.col("role") == "test")
+        )
+        unscored_folds = (
+            []
+            if fold_row["fold_state"] == "scored"
+            else [{"fold": str(fold_row["fold"]), "state": str(fold_row["fold_state"])}]
+        )
+        for model in models:
+            scored = predictions.filter(
                 (pl.col("fold") == fold_row["fold"]) & (pl.col("model") == model)
             )
             for unit in ("device_day", "station_day"):
                 score_rows.append(
                     _agreement_score_row(
-                        split,
+                        scored,
+                        intended_memberships=intended,
                         scope="fold",
                         evaluation=str(fold_row["evaluation"]),
                         fold=str(fold_row["fold"]),
-                        radius_km=float(
-                            memberships.filter(pl.col("fold") == fold_row["fold"])["radius_km"]
-                            .unique()
-                            .item()
+                        radius_km=(
+                            config.primary_distance_km
+                            if memberships.is_empty()
+                            else float(
+                                memberships.filter(pl.col("fold") == fold_row["fold"])["radius_km"]
+                                .unique()
+                                .item()
+                            )
                         ),
                         model=model,
                         unit=unit,
                         state=str(fold_row["fold_state"]),
-                        membership_sha256=str(fold_row["test_membership_sha256"]),
-                        truth_sha256=str(fold_row["test_truth_sha256"]),
+                        total_folds=1,
+                        scored_folds=int(fold_row["fold_state"] == "scored"),
+                        unscored_folds=unscored_folds,
                     )
                 )
-    identity = (
-        "radius_km",
-        "date",
-        "device_id",
-        "station_name",
-        "station_fold",
-        "quarter",
-    )
-    for split in predictions.partition_by("evaluation", "radius_km", "model", maintain_order=True):
-        first = split.row(0, named=True)
-        membership_records = (
-            split.select(*identity)
-            .unique()
-            .sort(*identity)
-            .with_columns(pl.col("date").cast(pl.String))
-            .to_dicts()
+    for evaluation in ("held_station", "held_quarter", "joint"):
+        evaluation_folds = folds.filter(pl.col("evaluation") == evaluation)
+        intended = memberships.filter(
+            (pl.col("evaluation") == evaluation) & (pl.col("role") == "test")
         )
-        truth_records = (
-            split.select(*identity, "y_true")
-            .unique()
-            .sort(*identity)
-            .with_columns(pl.col("date").cast(pl.String))
-            .to_dicts()
-        )
-        for unit in ("device_day", "station_day"):
-            score_rows.append(
-                _agreement_score_row(
-                    split,
-                    scope="overall",
-                    evaluation=str(first["evaluation"]),
-                    fold=None,
-                    radius_km=float(first["radius_km"]),
-                    model=str(first["model"]),
-                    unit=unit,
-                    state="scored",
-                    membership_sha256=_canonical_hash(membership_records),
-                    truth_sha256=_canonical_hash(truth_records),
-                )
+        scored_fold_names = evaluation_folds.filter(pl.col("fold_state") == "scored")[
+            "fold"
+        ].to_list()
+        unscored_folds = [
+            {"fold": str(row["fold"]), "state": str(row["fold_state"])}
+            for row in evaluation_folds.filter(pl.col("fold_state") != "scored").iter_rows(
+                named=True
             )
-    scores = pl.DataFrame(score_rows).sort(
+        ]
+        if not scored_fold_names:
+            state = "unscored_no_scored_folds"
+        elif len(scored_fold_names) == evaluation_folds.height:
+            state = "scored"
+        else:
+            state = "partially_scored"
+        radius_km = config.primary_distance_km
+        if not memberships.is_empty():
+            radius = memberships.filter(pl.col("evaluation") == evaluation)["radius_km"].unique()
+            if radius.len() != 1:
+                raise RuntimeError("annual agreement evaluation radius changed")
+            radius_km = float(radius.item())
+        for model in models:
+            scored = predictions.filter(
+                (pl.col("evaluation") == evaluation) & (pl.col("model") == model)
+            )
+            for unit in ("device_day", "station_day"):
+                score_rows.append(
+                    _agreement_score_row(
+                        scored,
+                        intended_memberships=intended,
+                        scope="overall",
+                        evaluation=evaluation,
+                        fold=None,
+                        radius_km=radius_km,
+                        model=model,
+                        unit=unit,
+                        state=state,
+                        total_folds=evaluation_folds.height,
+                        scored_folds=len(scored_fold_names),
+                        unscored_folds=unscored_folds,
+                    )
+                )
+    scores = pl.DataFrame(score_rows, schema=dict(AGREEMENT_SCORE_SCHEMA)).sort(
         "scope", "evaluation", "fold", "radius_km", "model", "unit", nulls_last=True
     )
     delta_rows: list[dict[str, object]] = []
@@ -3600,37 +4135,43 @@ def _score_annual_agreement_predictions(
             if adjusted.height != 1:
                 raise RuntimeError("annual agreement adjusted score is missing or duplicated")
             candidate = adjusted.row(0, named=True)
-            if any(
-                candidate[field] != raw[field]
-                for field in ("state", "n", "membership_sha256", "truth_sha256")
-            ):
+            provenance = (
+                "state",
+                "n",
+                "intended_n",
+                "membership_sha256",
+                "truth_sha256",
+                "scored_membership_sha256",
+                "scored_truth_sha256",
+                "total_folds",
+                "scored_folds",
+                "unscored_folds_sha256",
+            )
+            if any(candidate[field] != raw[field] for field in provenance):
                 raise RuntimeError("annual agreement scores are not paired to the same test truth")
-            scored = raw["state"] == "scored"
+            metric_ready = raw["state"] in {"scored", "partially_scored"}
             row: dict[str, object] = {
                 **{key: raw[key] for key in keys},
                 "model": model,
                 "baseline_model": "raw_micro",
-                "state": raw["state"],
-                "n": raw["n"],
-                "membership_sha256": raw["membership_sha256"],
-                "truth_sha256": raw["truth_sha256"],
+                **{field: raw[field] for field in provenance},
             }
             for metric in ("rmse", "mae", "r2", "bias", "absolute_bias"):
                 row[f"delta_{metric}"] = (
-                    float(candidate[metric]) - float(raw[metric]) if scored else None
+                    float(candidate[metric]) - float(raw[metric]) if metric_ready else None
                 )
             row.update(
                 {
-                    "improved_rmse": candidate["rmse"] < raw["rmse"] if scored else None,
-                    "improved_mae": candidate["mae"] < raw["mae"] if scored else None,
-                    "improved_r2": candidate["r2"] > raw["r2"] if scored else None,
+                    "improved_rmse": candidate["rmse"] < raw["rmse"] if metric_ready else None,
+                    "improved_mae": candidate["mae"] < raw["mae"] if metric_ready else None,
+                    "improved_r2": candidate["r2"] > raw["r2"] if metric_ready else None,
                     "improved_absolute_bias": candidate["absolute_bias"] < raw["absolute_bias"]
-                    if scored
+                    if metric_ready
                     else None,
                 }
             )
             delta_rows.append(row)
-    deltas = pl.DataFrame(delta_rows).sort(
+    deltas = pl.DataFrame(delta_rows, schema=dict(AGREEMENT_DELTA_SCHEMA)).sort(
         "scope", "evaluation", "fold", "radius_km", "model", "unit", nulls_last=True
     )
     return scores, deltas
@@ -3682,7 +4223,7 @@ def evaluate_annual_agreement(panel: AnnualAgreementPanel) -> AnnualAgreementEva
     }
     identity: dict[str, object] = {
         "schema_version": 1,
-        "analysis": "annual_reference_station_agreement_benchmark",
+        "analysis": "q4_supported_cross_station_agreement_evaluation",
         "panel_generation_sha256": panel_generation,
         "config": _checkpoint_config(config),
         "claim_boundary": dict(config.claim_boundary),
@@ -3741,6 +4282,7 @@ def _assert_reviewed_direct_child(
     try:
         resolved_parent = parent.resolve(strict=True)
         resolved_path = path.resolve(strict=True)
+        path_stat = path.stat()
     except OSError as exc:
         raise RuntimeError("annual agreement reviewed source is unreadable") from exc
     if (
@@ -3751,6 +4293,7 @@ def _assert_reviewed_direct_child(
         or resolved_path.parent != resolved_parent
         or (is_directory and not path.is_dir())
         or (not is_directory and not path.is_file())
+        or (not is_directory and path_stat.st_nlink != 1)
     ):
         raise RuntimeError("annual agreement reviewed source is linked or outside")
 
@@ -3853,11 +4396,19 @@ def _load_reviewed_agreement_day_sources(
 ) -> ReviewedAgreementDaySources:
     data_root = data_root.absolute()
     parsed_root = data_root / "interim" / "micro_sensors" / "observations" / "generations"
+    expected_directory = parsed_root / parsed_generation_sha256
+    containment = _reviewed_source_containment(
+        data_root,
+        parsed_generation_sha256=parsed_generation_sha256,
+        reviewed_year=reviewed_year,
+        month=day.month,
+    )
+    for path, parent, is_directory in containment:
+        _assert_reviewed_direct_child(path, parent=parent, is_directory=is_directory)
     loaded = load_micro_sensor_observation_generation(
         parsed_generation_sha256,
         interim_observation_root=parsed_root,
     )
-    expected_directory = parsed_root / parsed_generation_sha256
     if (
         loaded.generation_sha256 != parsed_generation_sha256
         or loaded.directory.absolute() != expected_directory
@@ -3874,14 +4425,6 @@ def _load_reviewed_agreement_day_sources(
         expected_directory,
         expected_manifest=loaded.manifest,
     )
-    containment = _reviewed_source_containment(
-        data_root,
-        parsed_generation_sha256=parsed_generation_sha256,
-        reviewed_year=reviewed_year,
-        month=day.month,
-    )
-    for path, parent, is_directory in containment:
-        _assert_reviewed_direct_child(path, parent=parent, is_directory=is_directory)
     micro_paths = tuple(
         (variable, expected_directory / f"{variable}.parquet") for variable in _AGREEMENT_VARIABLES
     )
@@ -3952,6 +4495,8 @@ def _load_reviewed_agreement_day_sources(
             {"bytes": observed_ground["bytes"], "sha256": observed_ground["sha256"]},
         ),
     )
+    for path, parent, is_directory in containment:
+        _assert_reviewed_direct_child(path, parent=parent, is_directory=is_directory)
     return ReviewedAgreementDaySources(
         micro_paths=micro_paths,
         ground_path=ground_path,
@@ -4209,7 +4754,7 @@ def _validate_embedded_panel_manifest(manifest: dict[str, Any]) -> None:
         }
         or type(manifest.get("schema_version")) is not int
         or manifest.get("schema_version") != 1
-        or manifest.get("analysis") != "annual_reference_station_agreement_panel"
+        or manifest.get("analysis") != "q4_supported_cross_station_agreement_panel"
         or manifest.get("complete") is not True
     ):
         raise RuntimeError("annual agreement embedded panel manifest changed")
@@ -4220,6 +4765,7 @@ def _validate_embedded_panel_manifest(manifest: dict[str, Any]) -> None:
 
 def _validate_final_manifest_relationships(manifest: dict[str, Any]) -> None:
     reviewed = load_annual_agreement_config()
+    current_git_sha, current_git_dirty = git_state()
     panel = _mapping(manifest.get("panel_manifest"), label="annual agreement final panel manifest")
     evaluation = _mapping(
         manifest.get("evaluation_manifest"),
@@ -4242,6 +4788,9 @@ def _validate_final_manifest_relationships(manifest: dict[str, Any]) -> None:
         or manifest.get("claim_boundary") != expected_claim
         or panel.get("claim_boundary") != expected_claim
         or evaluation.get("claim_boundary") != expected_claim
+        or current_git_dirty
+        or manifest.get("git_dirty") is not False
+        or manifest.get("git_sha") != current_git_sha
     ):
         raise RuntimeError("annual agreement final evidence relationships changed")
 
@@ -4260,7 +4809,7 @@ def _load_annual_agreement_result_unlocked(
         set(manifest) != {*_FINAL_IDENTITY_FIELDS, "complete", "generated_at", "generation_sha256"}
         or type(manifest.get("schema_version")) is not int
         or manifest.get("schema_version") != 1
-        or manifest.get("analysis") != "annual_reference_station_agreement_benchmark"
+        or manifest.get("analysis") != "q4_supported_cross_station_agreement"
         or manifest.get("complete") is not True
         or not isinstance(manifest.get("git_sha"), str)
         or re.fullmatch(r"[0-9a-f]{7,40}", str(manifest.get("git_sha"))) is None
@@ -4453,7 +5002,7 @@ def _publish_annual_agreement_result(
         git_sha, git_dirty = git_state()
         identity: dict[str, object] = {
             "schema_version": 1,
-            "analysis": "annual_reference_station_agreement_benchmark",
+            "analysis": "q4_supported_cross_station_agreement",
             "annual_generation_sha256": config.annual_generation_sha256,
             "panel_generation_sha256": panel.manifest["generation_sha256"],
             "evaluation_generation_sha256": evaluation.manifest["generation_sha256"],
