@@ -18,7 +18,6 @@ from twair.analysis.replication import (
     ORIGINAL_PERIOD,
     ORIGINAL_PREDICTORS,
     RESPONSE,
-    load_expected,
     naive_monthly_panel,
 )
 from twair.qc.flags import Flag
@@ -55,23 +54,14 @@ def _full_month(
     return rows
 
 
-class TestExpectedValues:
-    def test_the_reference_file_loads(self) -> None:
-        assert load_expected()["study"]["n_observations"] == 7286
-
-    def test_nitric_oxide_survives_yaml(self) -> None:
-        """Unquoted `NO` becomes False — it bit this file too."""
-        expected = load_expected()
-
-        assert "NO" in expected["correlation_with_pm25"]
-        assert expected["correlation_with_pm25"]["NO"] == pytest.approx(0.06395)
-
-    def test_predictor_list_matches_the_module(self) -> None:
-        assert tuple(load_expected()["study"]["predictors"]) == ORIGINAL_PREDICTORS
-
-    def test_pm10_is_among_the_original_predictors(self) -> None:
-        """The leak is deliberate here: M1 must reproduce it, not fix it."""
+class TestSpecification:
+    def test_pm10_is_among_the_predictors(self) -> None:
+        """The leak is deliberate: this baseline must contain it, not fix it."""
         assert "PM10" in ORIGINAL_PREDICTORS
+
+    def test_the_collinear_triple_all_enter_together(self) -> None:
+        """NO + NO2 = NOx by definition, which is what drives the VIFs."""
+        assert {"NO", "NO2", "NOx"} <= set(ORIGINAL_PREDICTORS)
 
 
 class TestNaiveAggregation:

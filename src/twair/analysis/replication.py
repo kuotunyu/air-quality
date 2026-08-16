@@ -14,12 +14,14 @@ What the original did (第三章, 第五章):
 * hourly values averaged straight to monthly, with no daily step and no check
   on how many hours contributed
 * wind direction averaged arithmetically along with everything else
-* PM10 used as a predictor of PM2.5
-* N = 7,286 station-months
+* PM10 used as a predictor of PM2.5, a definitional overlap rather than an
+  empirical finding
+* NO, NO2 and NOx entered together, though NO + NO2 = NOx by definition
 
-Reference values are in ``reports/_expected/replication_2018.yaml``, quoted
-from the PDF. They are the original's *claims*, not ground truth; the purpose
-of this module is to find out which reproduce and which do not.
+M3 prices each of those choices against the corrected alternative. M6 goes
+further and reconstructs *this* fit to test its residuals and re-price its
+t-statistics under a two-way correction, so the frames written here are an input
+to another analysis module and not only to a report.
 """
 
 from __future__ import annotations
@@ -27,13 +29,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import polars as pl
-import yaml
 
-from twair.config import _reject_boolean_keys
-from twair.paths import REPO_ROOT, outputs_dir
+from twair.paths import outputs_dir
 from twair.qc.rainfall import usable
 from twair.store.stations import normalise_name_expr
 from twair.store.writer import scan_observations
@@ -43,7 +42,6 @@ log = logging.getLogger(__name__)
 __all__ = [
     "ORIGINAL_PREDICTORS",
     "ReplicationResult",
-    "load_expected",
     "naive_monthly_panel",
     "run_replication",
     "write_replication_report",
@@ -66,26 +64,6 @@ ORIGINAL_PREDICTORS = (
     "WS_HR",
 )
 ORIGINAL_PERIOD = (2010, 2017)
-
-EXPECTED_PATH = REPO_ROOT / "reports" / "_expected" / "replication_2018.yaml"
-
-
-def load_expected(path: Path | None = None) -> dict[str, Any]:
-    """Load the numbers the 2018 report published.
-
-    Runs the same boolean-key guard as :func:`twair.config.load_conf`. That
-    guard lives in the config loader, and this file bypassed it — so the
-    unquoted key ``NO`` became ``False`` here too, and nitric oxide silently
-    lost its reference value. The Norway problem does not respect module
-    boundaries.
-    """
-    target = path or EXPECTED_PATH
-    with target.open(encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
-    _reject_boolean_keys(data, target.name)
-    if not isinstance(data, dict):
-        raise TypeError(f"{target.name} must be a YAML mapping, got {type(data).__name__}")
-    return data
 
 
 def naive_monthly_panel(

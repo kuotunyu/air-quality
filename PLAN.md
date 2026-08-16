@@ -674,7 +674,7 @@ uv run twair ingest airtw && uv run twair build && uv run twair aggregate
 duckdb -c "SELECT count(*) FROM 'data/processed/observations/**/*.parquet'"
 
 # 分析
-uv run twair analyze m1   # 復刻，比對 reports/_expected/replication_2018.yaml
+uv run twair analyze m1   # 基準：月平均 OLS，M3 定價、M6 檢定其殘差
 uv run twair analyze m2  # 逐時重做
 uv run twair analyze --help  # M3–M12 依需要逐模組執行；沒有虛構的 `all` 指令
 
