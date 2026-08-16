@@ -592,9 +592,6 @@ def _export_spatial(root: Path) -> list[Path]:
                     "quadrants": {q: int(quadrants.get(q, 0)) for q in ("HH", "HL", "LH", "LL")},
                 },
                 "inference": {
-                    "published_t_pm10": _round(
-                        pm10.filter(pl.col("cov_type") == "iid")["published_t"][0], 2
-                    ),
                     "rows": [
                         {
                             "cov_type": row["cov_type"],
@@ -614,9 +611,9 @@ def _export_spatial(root: Path) -> list[Path]:
                 # numbers. The component prints both; keeping them here as well
                 # means a future chapter cannot forget them.
                 "scope_limits": [
-                    "這裡定價的是 OLS 階段。原文最終的推論是 AR(1) 混合模型，"
-                    "其標準誤未被記錄於本專案，所以這些數字修正的是它的中間步驟，"
-                    "不構成對其整體推論的反駁。",
+                    "這裡定價的只有 OLS 階段。修正的是「誤差互相獨立」這個假設，"
+                    "而 t 值不等於整個推論；帶 AR(1) 誤差結構的模型有自己的標準誤，"
+                    "本專案沒有計算，所以這些數字不該被讀成推翻那類模型。",
                     "殘差的空間自相關是場相依性的下界，原因有二：模型裡的解釋變數"
                     "（尤其 PM10）本身就帶空間結構，已吸走一部分訊號；"
                     "而面板是完整案例，網絡本身就被資料完整度篩選過。",

@@ -521,17 +521,6 @@ class TestInferencePrice:
         assert two_way.height > 0
         assert two_way["psd_fix_applied"].dtype == pl.Boolean
 
-    def test_the_published_t_column_comes_from_the_expected_values_file(self) -> None:
-        # PM10's 92.75 is the one t the original published that this repo
-        # records; it must arrive from the YAML, not from a constant.
-        from twair.analysis.spatial import inference_price, load_spatial_conf
-
-        table = inference_price(_synthetic_panel(seed=4), load_spatial_conf())
-        pm10 = table.filter((pl.col("term") == "PM10") & (pl.col("cov_type") == "iid"))
-        assert pm10["published_t"][0] == pytest.approx(92.75)
-        others = table.filter((pl.col("term") == "SO2") & (pl.col("cov_type") == "iid"))
-        assert others["published_t"][0] is None
-
 
 class TestLisa:
     @staticmethod

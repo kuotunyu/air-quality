@@ -67,7 +67,6 @@ const lisa = spatial.lisa as {
 };
 
 const inference = spatial.inference as {
-  published_t_pm10: number | null;
   rows: { cov_type: string; meaning: string; t: number; se_inflation: number }[];
   flips_two_way: string[];
 };
@@ -417,17 +416,17 @@ const cellFor = (method: string, buffer: number) =>
   <div class="note caveat">
     <p>
       <strong>
-        原文刊出的 t(PM10) = {n(inference.published_t_pm10 ?? 0, 2)}；
+        假設誤差互相獨立時 t(PM10) = {n(iidRow?.t ?? 0, 2)}；
         two-way 之下是 {n(twoWayRow?.t ?? 0, 2)}。
       </strong>
-      復刻的 iid 值（{n(iidRow?.t ?? 0, 2)}）與刊出值的差來自面板重建的
-      6,771 對 7,286 筆；膨脹倍數不受此影響。
+      係數沒有變，變的只有標準誤——同一個估計值，換一個關於相依性的假設，
+      顯著性就差了數倍。
     </p>
     <p>
       two-way 下失去顯著的有四項：{inference.flips_two_way.join("、")}。
       其中 <strong>WD_HR 就是第八章的錯誤三</strong>——風向被當成線性連續變數。
-      原文「風向顯著」的結論於是錯了兩次：編碼錯（D3），而顯著性本身
-      也是相依性造出來的（D7）。兩個缺陷疊在同一個係數上。
+      「風向顯著」於是錯了兩次：編碼錯了，而顯著性本身也是相依性造出來的。
+      兩個問題疊在同一個係數上。
     </p>
   </div>
 

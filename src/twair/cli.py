@@ -1609,18 +1609,13 @@ def analyze_m6(
         )
 
     if result.inference is not None and result.inference.height:
-        console.print("\n[bold]the original's t-statistics under honest covariances[/bold]")
+        console.print("\n[bold]the baseline's t-statistics under honest covariances[/bold]")
         pm10 = result.inference.filter(pl.col("term") == "PM10")
         for row in pm10.iter_rows(named=True):
-            published = (
-                f"  (published: {row['published_t']:.2f})"
-                if row["published_t"] is not None and row["cov_type"] == "iid"
-                else ""
-            )
             fix = "  [yellow]PSD repair applied[/yellow]" if row["psd_fix_applied"] else ""
             console.print(
                 f"  PM10  {row['cov_meaning']:<42} t = {row['t']:>7.2f}  "
-                f"se ×{row['se_inflation_vs_iid']:.2f}{published}{fix}"
+                f"se ×{row['se_inflation_vs_iid']:.2f}{fix}"
             )
         flips = (
             result.inference.filter(pl.col("cov_type") == "iid")

@@ -36,12 +36,12 @@ changes sign with distance — so one number is a weighted blend of opposite-sig
 bands. The correlogram and the sensitivity grid ship whole, and the CLI prints
 the correlogram before any single I.
 
-**It does not claim to refute the original's inference as a whole.** The report's
-terminal model was a mixed model with AR(1), and its standard errors are not
-recorded anywhere in this repository — `reports/_expected/replication_2018.yaml`
-holds its coefficients and fit statistics and no standard errors. Everything here
-prices the OLS stage. That limit is in the payload, the report and the CLI
-output, not only in this docstring.
+**It prices the OLS stage only.** What it corrects is the assumption of
+independent errors in the baseline fit, and a t-statistic is not the whole of an
+inference. A terminal model with an AR(1) error structure would carry its own
+standard errors, and none are computed here, so nothing in this module should be
+read as overturning such a model. That limit is in the payload, the report and
+the CLI output, not only in this docstring.
 
 One measured caveat on the closed form. Cliff-Ord's Var[I] is an approximation
 whose accuracy falls away as k/n grows; a Monte-Carlo against the fitted null
@@ -1714,13 +1714,12 @@ def inference_price(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
         two_way = vectors @ np.diag(np.clip(values, 0.0, None)) @ vectors.T
     covariances["cluster_twoway"] = two_way
 
-    published = _published_t()
     beta = np.asarray(fits["iid"].params, dtype=float)
     df = int(fits["iid"].df_resid)
     rows: list[dict[str, Any]] = []
     wanted = [str(name) for name in conf.inference["cov_types"]]
     label = {
-        "iid": "the original's own assumption",
+        "iid": "independent errors, the baseline's own assumption",
         "cluster_month": "spatial: any dependence within a month",
         "cluster_station": "temporal: any dependence within a station",
         "cluster_twoway": "both at once (CGM)",
@@ -1739,23 +1738,10 @@ def inference_price(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
                     "t": t,
                     "p": float(2 * stats.t.sf(abs(t), df)) if np.isfinite(t) else None,
                     "se_inflation_vs_iid": float(se[i] / np.sqrt(covariances["iid"][i, i])),
-                    "published_t": published.get(term),
                     "psd_fix_applied": psd_fixed if cov_name == "cluster_twoway" else False,
                 }
             )
     return pl.DataFrame(rows, infer_schema_length=None)
-
-
-def _published_t() -> dict[str, float]:
-    """The original's published t-statistics, from the expected-values file.
-
-    One entry exists (PM10, 第五章). Read rather than hard-coded so that if the
-    owner ever transcribes more of them, this table grows without a code change.
-    """
-    from twair.analysis.replication import load_expected
-
-    published = load_expected().get("published_t") or {}
-    return {str(k): float(v) for k, v in published.items()}
 
 
 # --------------------------------------------------------------------------- #
