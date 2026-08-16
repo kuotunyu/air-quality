@@ -53,6 +53,8 @@ docs/report/
 
 # --- original graduation project source PDF ---
 # Contains author names. Decide explicitly before publishing (see docs/legal.md).
+# The file was moved out of this repository on 2026-08-17 and is not expected to
+# be here. The rule is kept anyway so that returning it cannot commit it.
 懸浮微粒.pdf
 
 # --- HuggingFace Space bundle: source committed, artefacts not ---
