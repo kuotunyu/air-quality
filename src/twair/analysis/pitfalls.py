@@ -28,7 +28,6 @@ log = logging.getLogger(__name__)
 __all__ = [
     "collinearity_instability",
     "diurnal_cycle_lost_to_monthly_means",
-    "normality_remedy_does_not_work_on_its_own_numbers",
     "normality_test_fallacy",
     "run_all_pitfalls",
     "wind_direction_linearisation",
@@ -370,50 +369,6 @@ def collinearity_instability(
     }
 
 
-def normality_remedy_does_not_work_on_its_own_numbers() -> pl.DataFrame:
-    """Pitfall 4b — the stated fix fails against the report's own table.
-
-    The 2018 report says (p.37) that lowering the rejection threshold to 0.01
-    left every variable non-rejected, and concludes the data are normal.
-
-    Its own Kolmogorov-Smirnov table on the same page gives 顯著性 = .000 for
-    all thirteen variables. A p-value below 0.001 is rejected at 0.01 just as
-    surely as at 0.05. The remedy does not do what the text claims it does,
-    independently of whether the remedy would be sound.
-
-    Values are quoted from the published table; the verdicts are arithmetic.
-    """
-    # p.36, Kolmogorov-Smirnov with Lilliefors correction, df = 7286.
-    published = {
-        "AMB_TEMP": 0.099,
-        "CO": 0.137,
-        "NO": 0.300,
-        "NO2": 0.051,
-        "NOx": 0.151,
-        "O3": 0.051,
-        "PM10": 0.101,
-        "PM2.5": 0.088,
-        "RAINFALL": 0.196,
-        "RH": 0.027,
-        "SO2": 0.127,
-        "WD_HR": 0.047,
-        "WS_HR": 0.148,
-    }
-    # Every row of the published table reads ".000", i.e. p < 0.0005.
-    reported_p = 0.000
-
-    return pl.DataFrame(
-        {
-            "variable": list(published),
-            "ks_statistic_published": list(published.values()),
-            "p_value_published": [reported_p] * len(published),
-            "rejected_at_0.05": [True] * len(published),
-            "rejected_at_0.01": [True] * len(published),
-            "report_claims_not_rejected_at_0.01": [True] * len(published),
-        }
-    )
-
-
 def run_all_pitfalls(
     root: Path | None = None,
     *,
@@ -436,7 +391,6 @@ def run_all_pitfalls(
 
     tables["wind.linear_model_encoding"] = wind_encoding_in_a_linear_model(root, period=period)
     tables["normality.by_sample_size"] = normality_test_fallacy()
-    tables["normality.published_table"] = normality_remedy_does_not_work_on_its_own_numbers()
 
     # These two depend on the M2 run having produced scores; skip rather than
     # fail if it has not, so the other four still publish.

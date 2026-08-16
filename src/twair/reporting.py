@@ -208,7 +208,6 @@ PM2.5 在定義上是 PM10 的子集，用後者預測前者是恆等式而非�
 
 def _m3_section() -> str:
     normality = _load("m3_pitfalls", "normality_by_sample_size")
-    published = _load("m3_pitfalls", "normality_published_table")
     wind = _load("m3_pitfalls", "wind_summary")
     sectors = _load("m3_pitfalls", "wind_by_sector")
     wind_linear = _load("m3_pitfalls", "wind_linear_model_encoding")
@@ -327,16 +326,13 @@ def _m3_section() -> str:
             _table(normality, ["n", "data", "p_value", "rejected_at_0.05", "skewness"]),
         ]
 
-    if published is not None:
         parts += [
             "",
-            "#### 而且那個補救措施，用原文自己的數字就不成立",
+            "#### 調低 α 不是補救措施",
             "",
-            "原文說把拒絕標準降到 0.01 之後每個變數都不拒絕。",
-            "但同一頁的 K-S 表格，13 個變數的顯著性全部是 `.000`——",
-            "小於 0.001 的 p 值在 0.01 之下同樣被拒絕。",
-            "",
-            _table(published, ["variable", "ks_statistic_published", "rejected_at_0.01"], limit=13),
+            "遇到常態檢定被拒絕時，把拒絕標準從 0.05 降到 0.01 是常見的處理方式，",
+            "但它對這個問題無效：大樣本下 p 值本來就會遠小於 0.001，",
+            "在 0.01 之下同樣被拒絕。改變的是門檻，不是資料的分布形狀。",
         ]
 
     if stability is not None:

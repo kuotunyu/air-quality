@@ -60,7 +60,6 @@ const windSummary = Object.fromEntries(
 
 // --- 4. the normality test --------------------------------------------------
 const normality = t("normality_by_sample_size");
-const published = t("normality_published_table");
 
 // --- 5. collinearity --------------------------------------------------------
 const stability = t("collinearity_stability");
@@ -495,36 +494,15 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <p class="small">
       真常態的資料在任何樣本數下都不被拒絕；輕微偏態的資料在 N=100 時「通過」了，
       N ≥ 1,000 時全部被拒絕。<strong>同一份資料，答案取決於抽取的樣本數。</strong>
-      當年 N = 7,286，檢定拒絕是必然的，那個 .000 沒有告訴你任何關於分布形狀的事。
+      月平均面板的 N 是數千量級，檢定拒絕是必然的，那個 p 值沒有告訴你任何
+      關於分布形狀的事。
     </p>
 
-    <details>
-      <summary>原文那張表的 13 個變數（p 值全為 .000）</summary>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>變數</th>
-              <th class="num">K-S 統計量</th>
-              <th class="num">p（原文）</th>
-              <th>α=0.01 實際判定</th>
-            </tr>
-          </thead>
-          <tbody>
-            {
-              published.map((row) => (
-                <tr>
-                  <td>{row.variable}</td>
-                  <td class="num">{nFixed(row.ks_statistic_published as number, 3)}</td>
-                  <td class="num">&lt; .001</td>
-                  <td class="bad">拒絕</td>
-                </tr>
-              ))
-            }
-          </tbody>
-        </table>
-      </div>
-    </details>
+    <p class="small">
+      常見的處理方式是把拒絕標準從 α=0.05 降到 0.01。
+      <strong>那對這個問題無效</strong>——大樣本下 p 值遠小於 0.001，
+      在 0.01 之下同樣被拒絕。改變的是門檻，不是資料的分布形狀。
+    </p>
   </article>
 
   <!-- ─── 錯誤五 ─── -->

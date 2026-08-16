@@ -110,13 +110,14 @@ const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/detection/", 2],
   ["/forecast/", 0],
   ["/health/", 0],
-  ["/methods/", 6],
+  ["/methods/", 5],
   ["/explore/", 0],
   ["/data/", 1],
 ]);
 const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, route === "/explore/" ? 1 : 0]));
 const EXPECTED_NATIVE_FIGURES = 14;
-const EXPECTED_SECONDARY_DISCLOSURES = 9;
+// 2026-08-17: 9 -> 8. /methods/ lost one <details>, the transcribed K-S table.
+const EXPECTED_SECONDARY_DISCLOSURES = 8;
 const EXPECTED_SQL_DISCLOSURES = 1;
 const STATIC_TABLE_WRAPS = new Map([
   ["/", 0],
@@ -127,7 +128,7 @@ const STATIC_TABLE_WRAPS = new Map([
   ["/detection/", 4],
   ["/forecast/", 2],
   ["/health/", 0],
-  ["/methods/", 6],
+  ["/methods/", 5],
   ["/explore/", 0],
   ["/data/", 1],
 ]);
@@ -136,9 +137,18 @@ const STATIC_TABLE_WRAPS = new Map([
  * visible wrappers (15 route-DOM wrappers repeated six times) and 22 cases
  * where a table was genuinely wider than its local frame. These exact totals
  * make an empty probe a failure rather than a vacuous success.
+ *
+ * 2026-08-17 — re-measured at 84 and 20. /methods/ lost one wrapper: a
+ * thirteen-row table of externally transcribed K-S statistics, removed with the
+ * rest of that comparison. 14 wrappers × 6 route-viewports = 84, and the table
+ * had been one of the genuine scrollers at two of the six.
+ *
+ * These numbers are re-measured when content legitimately changes, never
+ * loosened to make a red run green. A wrapper vanishing for any other reason
+ * still fails here, which is the whole point of pinning them.
  */
-const EXPECTED_TABLE_WRAPS = 90;
-const EXPECTED_TABLE_SCROLLERS = 22;
+const EXPECTED_TABLE_WRAPS = 84;
+const EXPECTED_TABLE_SCROLLERS = 20;
 
 /** APCA Lc 60 is the floor below which text stops carrying meaning reliably. */
 const MIN_LC = 60;

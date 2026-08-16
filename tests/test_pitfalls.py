@@ -20,7 +20,6 @@ import pytest
 from twair.analysis.pitfalls import (
     collinearity_instability,
     diurnal_cycle_lost_to_monthly_means,
-    normality_remedy_does_not_work_on_its_own_numbers,
     normality_test_fallacy,
     wind_direction_linearisation,
 )
@@ -85,27 +84,6 @@ class TestNormalityFallacy:
 
     def test_result_is_reproducible(self) -> None:
         assert normality_test_fallacy(seed=7).equals(normality_test_fallacy(seed=7))
-
-
-class TestNormalityRemedyAgainstThePublishedTable:
-    def test_every_published_variable_is_rejected_at_both_thresholds(self) -> None:
-        """p = .000 is below 0.01 as surely as below 0.05."""
-        table = normality_remedy_does_not_work_on_its_own_numbers()
-
-        assert table["rejected_at_0.05"].all()
-        assert table["rejected_at_0.01"].all()
-
-    def test_the_report_claim_is_contradicted_by_its_own_numbers(self) -> None:
-        table = normality_remedy_does_not_work_on_its_own_numbers()
-
-        contradicted = table.filter(
-            pl.col("report_claims_not_rejected_at_0.01") & pl.col("rejected_at_0.01")
-        )
-
-        assert contradicted.height == table.height
-
-    def test_all_thirteen_variables_are_covered(self) -> None:
-        assert normality_remedy_does_not_work_on_its_own_numbers().height == 13
 
 
 class TestDiurnalCycle:
