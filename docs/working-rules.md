@@ -289,6 +289,32 @@ The `\\?\` prefix is what lifts the path limit; `robocopy <empty-dir> <target>
 list `.worktrees/` and compare.** A directory in the second that is missing from
 the first is an orphan, and it will not announce itself.
 
+### An unreferenced script here is usually evidence, not dead code
+
+A tidying pass looked for tracked files nothing refers to and found exactly one:
+`scripts/check_verdict_meteorology.py`, imported by nothing, called by no
+workflow, named in no document. By the usual heuristic it is dead.
+
+It is the opposite. It is the run behind a naming decision — a QC verdict class
+was once called `suspected_instrument`, and that name asserted a cause the data
+had not been asked about. The script asks it, over 7,193,172 PM2.5
+station-hours, and its docstring carries the resulting table. Red line 3 says a
+number in a docstring must come from actually running something; this file *is*
+that something for those numbers. `scripts/compare_outlier_baselines.py` and
+`scripts/solve_categorical.py` are the same kind of object.
+
+So the reference count is meaningless for this directory. These scripts are
+deliberately standalone: they are run once, by hand, to settle a question, and
+what survives is the measurement in the docstring plus the ability to re-run it.
+Deleting one destroys the provenance of a decision that is still in force, and
+the loss is silent — every test still passes, because nothing depended on it.
+
+**Before removing any tracked file for being unreferenced, read its docstring.**
+If it records a measurement that something else relies on, it is load-bearing at
+the level this project actually cares about. The same trap caught `PRODUCT.md`
+in the same pass, from the other direction: 52 KB of prose that looks inert and
+is re-derived by three CI gates.
+
 ### The Space bundle: `uv run twair export space`
 
 Rebuilds `spaces/forecast/` from the store — four LightGBM models, a demo slice,
