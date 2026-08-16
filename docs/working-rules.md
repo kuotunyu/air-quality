@@ -260,6 +260,35 @@ A bare `data/` also matched `web/public/data/` and silently kept the whole
 website export out of git. It is now `/data/`. Check `git check-ignore -v`
 after adding any pattern that names a common directory.
 
+### `git worktree remove` de-registers before it deletes, and reports failure
+
+On Windows this repository sits under a non-ASCII path deep enough that a
+worktree's `node_modules` and `.venv` exceed `MAX_PATH`. `git worktree remove`
+then prints `error: failed to delete ...: Filename too long` — **after** it has
+already dropped the worktree from `git worktree list` and `.git/worktrees`.
+
+The failure message is therefore misleading in the most expensive direction. It
+reads as "nothing happened", so the obvious response is to leave the directory
+alone and try later; but Git has already forgotten it, so it is now an orphan
+that no Git command will ever mention again. Three such orphans accumulated this
+way and went unnoticed until a disk survey found them holding 1.37 GB.
+
+Removing one needs the read-only bit cleared first, because Git's own object
+files are read-only and both `Remove-Item` and `System.IO.Directory.Delete`
+fail on them with access denied:
+
+```bash
+cmd.exe /c attrib -R "<path>\*.*" /S /D
+cmd.exe /c rd /s /q "\\?\<absolute path>"
+```
+
+The `\\?\` prefix is what lifts the path limit; `robocopy <empty-dir> <target>
+/MIR` followed by an ordinary delete works too.
+
+**After any worktree removal on this machine, run `git worktree list` and then
+list `.worktrees/` and compare.** A directory in the second that is missing from
+the first is an orphan, and it will not announce itself.
+
 ### The Space bundle: `uv run twair export space`
 
 Rebuilds `spaces/forecast/` from the store — four LightGBM models, a demo slice,
