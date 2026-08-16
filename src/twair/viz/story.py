@@ -432,7 +432,6 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
     )
 
     written.extend(_export_pitfalls(root))
-    written.extend(_export_replication(root))
     written.extend(_export_deweather(root))
     written.extend(_export_detection_limit(root))
     written.extend(_export_sources(root))
@@ -1504,15 +1503,6 @@ def _export_pitfalls(root: Path) -> list[Path]:
     if not tables:
         return []
     return [write_json(root / "pitfalls.json", {"tables": tables})]
-
-
-def _export_replication(root: Path) -> list[Path]:
-    """The M1 comparison table: published 2018 value against the reproduction."""
-    path = outputs_dir("m1_replication") / "comparison.parquet"
-    if not path.exists():
-        log.warning("no M1 output — run `twair analyze m1` before publishing chapter 5")
-        return []
-    return [write_json(root / "replication.json", {"rows": pl.read_parquet(path).to_dicts()})]
 
 
 def _round(value: Any, places: int = 2) -> float | None:

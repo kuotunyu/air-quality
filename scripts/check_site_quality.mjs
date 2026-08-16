@@ -110,14 +110,15 @@ const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/detection/", 2],
   ["/forecast/", 0],
   ["/health/", 0],
-  ["/methods/", 5],
+  ["/methods/", 4],
   ["/explore/", 0],
   ["/data/", 1],
 ]);
 const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, route === "/explore/" ? 1 : 0]));
 const EXPECTED_NATIVE_FIGURES = 14;
-// 2026-08-17: 9 -> 8. /methods/ lost one <details>, the transcribed K-S table.
-const EXPECTED_SECONDARY_DISCLOSURES = 8;
+// 2026-08-17: 9 -> 7. /methods/ lost two <details> — the transcribed K-S table
+// and the published-vs-reproduced comparison table.
+const EXPECTED_SECONDARY_DISCLOSURES = 7;
 const EXPECTED_SQL_DISCLOSURES = 1;
 const STATIC_TABLE_WRAPS = new Map([
   ["/", 0],
@@ -128,7 +129,7 @@ const STATIC_TABLE_WRAPS = new Map([
   ["/detection/", 4],
   ["/forecast/", 2],
   ["/health/", 0],
-  ["/methods/", 5],
+  ["/methods/", 4],
   ["/explore/", 0],
   ["/data/", 1],
 ]);
@@ -138,17 +139,17 @@ const STATIC_TABLE_WRAPS = new Map([
  * where a table was genuinely wider than its local frame. These exact totals
  * make an empty probe a failure rather than a vacuous success.
  *
- * 2026-08-17 — re-measured at 84 and 20. /methods/ lost one wrapper: a
- * thirteen-row table of externally transcribed K-S statistics, removed with the
- * rest of that comparison. 14 wrappers × 6 route-viewports = 84, and the table
- * had been one of the genuine scrollers at two of the six.
+ * 2026-08-17 — re-measured at 78 and 18. /methods/ lost two wrappers: a
+ * thirteen-row table of externally transcribed K-S statistics, and the
+ * published-vs-reproduced comparison table. 13 wrappers × 6 route-viewports =
+ * 78, and each removed table had been a genuine scroller at two of the six.
  *
  * These numbers are re-measured when content legitimately changes, never
  * loosened to make a red run green. A wrapper vanishing for any other reason
  * still fails here, which is the whole point of pinning them.
  */
-const EXPECTED_TABLE_WRAPS = 84;
-const EXPECTED_TABLE_SCROLLERS = 20;
+const EXPECTED_TABLE_WRAPS = 78;
+const EXPECTED_TABLE_SCROLLERS = 18;
 
 /** APCA Lc 60 is the floor below which text stops carrying meaning reliably. */
 const MIN_LC = 60;

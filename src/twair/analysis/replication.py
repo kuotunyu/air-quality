@@ -173,7 +173,6 @@ class ReplicationResult:
     descriptive: pl.DataFrame
     correlations: pl.DataFrame
     ols: pl.DataFrame
-    comparison: pl.DataFrame
     n: int
     n_stations: int
 
@@ -246,79 +245,32 @@ def _ols(panel: pl.DataFrame) -> pl.DataFrame:
     ).with_columns(pl.lit(float(model.rsquared)).alias("r_squared"))
 
 
-def _compare(
-    descriptive: pl.DataFrame,
-    correlations: pl.DataFrame,
-    ols: pl.DataFrame,
-    expected: dict[str, Any],
-    n: int,
-) -> pl.DataFrame:
-    """Line up every reproduced number against the one the report published."""
-    rows: list[dict[str, Any]] = []
-
-    def add(kind: str, item: str, published: float | None, reproduced: float | None) -> None:
-        if published is None or reproduced is None:
-            diff = None
-            pct = None
-        else:
-            diff = reproduced - published
-            pct = (diff / published * 100) if published != 0 else None
-        rows.append(
-            {
-                "kind": kind,
-                "item": item,
-                "published_2018": published,
-                "reproduced": reproduced,
-                "difference": diff,
-                "pct_difference": pct,
-            }
-        )
-
-    add("sample", "N", float(expected["study"]["n_observations"]), float(n))
-
-    published_desc = expected["descriptive"]
-    for row in descriptive.iter_rows(named=True):
-        stats = published_desc.get(row["variable"], {})
-        for stat in ("mean", "sd"):
-            add(f"descriptive.{stat}", row["variable"], stats.get(stat), row[stat])
-
-    published_corr = expected["correlation_with_pm25"]
-    for row in correlations.iter_rows(named=True):
-        add("correlation", row["variable"], published_corr.get(row["variable"]), row["r"])
-
-    published_ols = expected["ols_coefficients"]
-    for row in ols.iter_rows(named=True):
-        add("ols_coefficient", row["term"], published_ols.get(row["term"]), row["coefficient"])
-
-    return pl.DataFrame(rows)
-
-
 def run_replication(
     root: Path | None = None,
     *,
     valid_only: bool = True,
 ) -> ReplicationResult:
-    """Reproduce the 2018 analysis and compare it against the published numbers."""
+    """Fit the specification and return every table it produces."""
     panel = naive_monthly_panel(root, valid_only=valid_only)
-
-    descriptive = _descriptive(panel)
-    correlations = _correlations(panel)
-    ols = _ols(panel)
-    comparison = _compare(descriptive, correlations, ols, load_expected(), panel.height)
 
     return ReplicationResult(
         panel=panel,
-        descriptive=descriptive,
-        correlations=correlations,
-        ols=ols,
-        comparison=comparison,
+        descriptive=_descriptive(panel),
+        correlations=_correlations(panel),
+        ols=_ols(panel),
         n=panel.height,
         n_stations=panel["station_name"].n_unique(),
     )
 
 
 def write_replication_report(result: ReplicationResult) -> dict[str, Path]:
-    """Persist the replication tables for the report and the website."""
+    """Persist the tables for the report and for M6.
+
+    ``panel`` and ``ols`` are not report material. M6 reconstructs this fit from
+    them and asserts the implied R² reproduces the stored one, so that the
+    residuals it tests provably belong to this model rather than to a re-derived
+    lookalike. Dropping either would break that check.
+    """
     destination = outputs_dir("m1_replication")
     destination.mkdir(parents=True, exist_ok=True)
 
@@ -328,13 +280,8 @@ def write_replication_report(result: ReplicationResult) -> dict[str, Path]:
         ("descriptive", result.descriptive),
         ("correlations", result.correlations),
         ("ols", result.ols),
-        ("comparison", result.comparison),
     ):
         path = destination / f"{name}.parquet"
         frame.write_parquet(path, compression="zstd")
         written[name] = path
-
-    csv_path = destination / "comparison.csv"
-    result.comparison.write_csv(csv_path)
-    written["comparison_csv"] = csv_path
     return written

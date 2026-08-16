@@ -238,7 +238,6 @@ class TestStationCards:
         daily(_daily_frame(_year_of_days("三重", 2020, 22.0, days=366)))
         monkeypatch.setattr(story, "_stations", lambda: pl.DataFrame({"station_name": ["三重"]}))
         monkeypatch.setattr(story, "_export_pitfalls", lambda root: [])
-        monkeypatch.setattr(story, "_export_replication", lambda root: [])
 
         import json
 

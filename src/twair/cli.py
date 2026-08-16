@@ -777,14 +777,12 @@ def analyze_m1(
         True, "--valid-only/--all-values", help="Exclude agency-rejected readings."
     ),
 ) -> None:
-    """M1 — replicate the 2018 project and compare against its published numbers."""
+    """M1 — fit the naive monthly-mean baseline that M3 prices and M6 corrects."""
     from twair.analysis.replication import run_replication, write_replication_report
 
     result = run_replication(valid_only=valid_only)
-    console.print(
-        f"N = [bold]{result.n:,}[/bold] (published 7,286), {result.n_stations} stations\n"
-    )
-    console.print(result.comparison.filter(result.comparison["kind"] == "ols_coefficient"))
+    console.print(f"N = [bold]{result.n:,}[/bold] station-months, {result.n_stations} stations\n")
+    console.print(result.ols)
     paths = write_replication_report(result)
     for name, path in paths.items():
         console.print(f"wrote {name}: {path}")

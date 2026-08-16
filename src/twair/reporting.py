@@ -17,6 +17,7 @@ from pathlib import Path
 import polars as pl
 
 from twair.paths import REPORTS_DIR, outputs_dir
+from twair.scalars import as_float
 
 log = logging.getLogger(__name__)
 
@@ -50,45 +51,47 @@ def _table(frame: pl.DataFrame, columns: list[str] | None = None, *, limit: int 
 
 
 def _m1_section() -> str:
-    comparison = _load("m1_replication", "comparison")
-    if comparison is None:
-        return "_M1 尚未執行。跑 `uv run twair analyze m1`。_\n"
+    panel = _load("m1_replication", "panel")
+    correlations = _load("m1_replication", "correlations")
+    ols = _load("m1_replication", "ols")
+    if panel is None or correlations is None or ols is None:
+        return "_基準模型尚未執行。跑 `uv run twair analyze m1`。_\n"
 
-    n_row = comparison.filter(pl.col("kind") == "sample")
-    reproduced_n = int(n_row["reproduced"][0]) if not n_row.is_empty() else 0
-    published_n = int(n_row["published_2018"][0]) if not n_row.is_empty() else 7286
+    n_stations = panel["station_name"].n_unique()
+    r_squared = float(ols["r_squared"][0])
+    # A Polars aggregate is typed as a union of every value a cell could hold;
+    # `as_float` converts for real and raises on null rather than formatting a
+    # plausible zero into the sentence below.
+    worst_vif = as_float(ols.filter(pl.col("vif").is_not_null())["vif"].max())
+    leaked = ols.filter(pl.col("term") == "PM10")
 
-    def within(kind: str, tolerance: float) -> tuple[int, int]:
-        subset = comparison.filter(
-            (pl.col("kind") == kind) & pl.col("pct_difference").is_not_null()
+    pm10_line = ""
+    if not leaked.is_empty():
+        pm10_line = (
+            f"模型裡最顯著的變數是 PM10，係數 {float(leaked['coefficient'][0]):.4f}、"
+            f"t = {float(leaked['t'][0]):.2f}。它在定義上就包含被預測的 PM2.5，"
+            "所以那個顯著性不是實證發現——M3 量出這個重疊佔了多少解釋力。\n\n"
         )
-        if subset.is_empty():
-            return 0, 0
-        close = subset.filter(pl.col("pct_difference").abs() <= tolerance).height
-        return close, subset.height
 
-    close_desc, total_desc = within("descriptive.mean", 2.0)
+    return f"""這條基準**每一步都刻意選錯的那一邊**：2010–2017、月**算術**平均（風向也是）、
+不檢查覆蓋率、PM10 當解釋變數、NO 與 NO2 與 NOx 同時進模型。它不使用
+`twair.store.aggregate`——那個模組三件事都做對了，而做對就無法當對照組。
 
-    return f"""復刻的目的不是「做得更好」，而是**建立基準**。沒有一個能重現原數值的實作，
-後面任何「修正後結論不同」的宣稱都無從驗證。
+沒有這條基準，後面任何「修正之後結論不同」的宣稱都無從驗證：要比較兩種做法，
+兩邊必須跑在同一批列上。
 
-復刻嚴格照 2018 年的方法：2010–2017、月**算術**平均（風向也是）、
-不檢查覆蓋率、PM10 當解釋變數。它刻意不使用 `twair.store.aggregate`——
-那個模組三件事都做對了，而做對就無法當基準。
+**樣本**：{panel.height:,} 個站月，{n_stations} 個測站；完整案例，任一變數缺值即排除。
 
-**樣本數**：復刻 {reproduced_n:,}，原文公布 {published_n:,}
-（{100 * reproduced_n / published_n:.1f}%）。差額來自原專題「以鄰近測站資料代替」缺漏值，
-本專案則排除不完整列。
+**配適**：R² = {r_squared:.4f}，最大 VIF {worst_vif:,.0f}。VIF 會到這個量級是因為
+NO + NO2 ≡ NOx 是恆等式，設計矩陣在捨入誤差之外是奇異的。
 
-**敘述統計**：{total_desc} 個變數中 {close_desc} 個誤差在 2% 以內。
+{pm10_line}### 與 PM2.5 的相關係數
 
-### 與原文公布數值的對照
-
-{_table(comparison.filter(pl.col("kind") == "correlation"), ["item", "published_2018", "reproduced", "difference"])}
+{_table(correlations, ["variable", "r"])}
 
 ### OLS 係數
 
-{_table(comparison.filter(pl.col("kind") == "ols_coefficient"), ["item", "published_2018", "reproduced", "pct_difference"])}
+{_table(ols, ["term", "coefficient", "std_error", "t", "p", "vif"])}
 """
 
 

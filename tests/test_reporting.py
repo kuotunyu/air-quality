@@ -120,22 +120,40 @@ class TestNumbersComeFromFiles:
         _write(
             outputs,
             "m1_replication",
-            "comparison",
+            "panel",
             pl.DataFrame(
                 {
-                    "kind": ["sample"],
-                    "item": ["N"],
-                    "published_2018": [7286.0],
-                    "reproduced": [1234.0],
-                    "difference": [-6052.0],
-                    "pct_difference": [-83.1],
+                    "station_name": ["二林"] * 1234,
+                    "PM2.5": [20.0] * 1234,
+                }
+            ),
+        )
+        _write(
+            outputs,
+            "m1_replication",
+            "correlations",
+            pl.DataFrame({"variable": ["PM10"], "r": [0.889]}),
+        )
+        _write(
+            outputs,
+            "m1_replication",
+            "ols",
+            pl.DataFrame(
+                {
+                    "term": ["PM10"],
+                    "coefficient": [0.402],
+                    "std_error": [0.004],
+                    "t": [86.28],
+                    "p": [0.0],
+                    "vif": [12345.0],
+                    "r_squared": [0.8215],
                 }
             ),
         )
 
         section = reporting._m1_section()
 
-        assert "1,234" in section
+        assert "1,234" in section, "the sample size must come from the panel file"
 
     def test_m2_summary_aggregates_the_scores_file(self, outputs: Path) -> None:
         _write(

@@ -15,7 +15,6 @@ import trendAirzone from "../../public/data/story/trend-airzone.json";
 import trendCounty from "../../public/data/story/trend-county.json";
 import stationCards from "../../public/data/story/station-cards.json";
 import pitfalls from "../../public/data/story/pitfalls.json";
-import replication from "../../public/data/story/replication.json";
 import imputation from "../../public/data/story/imputation.json";
 import deweather from "../../public/data/story/deweather.json";
 import sarima from "../../public/data/story/sarima.json";
@@ -409,15 +408,6 @@ export const imputationEvidence = imputation as {
   method: Record<string, unknown>;
   not_reported: Record<string, string>;
 };
-
-export const replicationRows = replication.rows as {
-  kind: string;
-  item: string;
-  published_2018: number | null;
-  reproduced: number | null;
-  difference: number | null;
-  pct_difference: number | null;
-}[];
 
 /** Stations that can be drawn on a map, sorted north to south. */
 export function mappableStations(): Station[] {
