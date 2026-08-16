@@ -276,6 +276,7 @@ Windows; PowerShell here-strings break, and apostrophes in `-m` truncate).
 | What local handoff or progress context exists? | `.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md`, when present |
 | What identity may appear in history? | `conf/project.yaml` |
 | What is the overall plan? | `PLAN.md` |
+| What design claims does CI verify the site against? | `PRODUCT.md` — **not an inert design doc.** `ci.yml`, `scripts/check_palette.py` and `scripts/check_site_quality.mjs` re-derive its stated numbers and fail when they stop holding. Editing or deleting it changes what CI enforces. |
 | Why is the archive parsing so complicated? | `docs/archive-formats.md` |
 | What are the known data-quality properties? | `docs/data-quality.md` |
 | What is the licensing position? | `docs/legal.md` |
