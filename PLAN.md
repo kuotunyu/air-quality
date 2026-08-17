@@ -60,7 +60,7 @@ D1–D11 是這個專案的骨架：**每個模組都應該可追溯到其中一
 | D4 | **看到常態檢定被拒絕就調低 α** | 🟠 | M3 直接量測 sample size 如何驅動拒絕率（合成資料，已知真相）；推論改報 block/bootstrap interval 與樣本外表現。調 α 改變的是門檻，不是分布形狀 |
 | D5 | **共線性用逐步刪除硬處理** | 🟠 | NO + NO2 ≡ NOx 是恆等式，本來就不該同時進模型；M2 改用 NOx level + NO2/NOx ratio 與 LightGBM TreeSHAP，M3 另量化係數不穩定。基準的 VIF：7,764 / 25,377 / 53,452 |
 | D6 | **零樣本外驗證** | 🟠 | rolling-origin CV + leave-one-station-out + leave-one-year-out，一律報告 baseline 對照。實測樂觀偏差：in-sample R² 0.690 對 out-of-sample 0.562 |
-| D7 | **只按空品區各跑一次，就算用了空間** | 🟠 | ✅ M6 實測後修正了這個指控：分層其實移除大部分空間相依（每月殘差 I 0.157→0.063）。但 t 值通常報自合併式模型——two-way 校正後 t(PM10) 86.28→14.07，WD_HR 失去顯著；分區在地理 ensemble 99.5 百分位、惟資料偏好 k=2。LISA BH 後 0 熱點。人口加權暴露與 1km 場**不做**，理由記錄於 conf/spatial.yaml |
+| D7 | **只按空品區各跑一次，就算用了空間** | 🟠 | ✅ M6 實測後修正了這個指控：分層其實移除大部分空間相依（每月殘差 I 0.156→0.064）。但 t 值通常報自合併式模型——two-way 校正後 t(PM10) 86.28→14.07，WD_HR 失去顯著；分區在地理 ensemble 99.5 百分位、惟資料偏好 k=2。LISA BH 後 0 熱點。人口加權暴露與 1km 場**不做**，理由記錄於 conf/spatial.yaml |
 | D8 | **相關 ≠ 因果，無氣象正規化** | 🟡 | Grange et al. (2018) random-forest 氣象正規化 + weather-only counterfactual + placebo distribution；結果寫成偵測極限，不冒充政策因果。實測：2008–2025 的下降有 43.4% 對應到模型看得見的氣象差異 |
 | D9 | **GUI 工具不可重現** | 🟡 | 全 Python，uv 鎖定版本，CI 可重跑 |
 | D10 | **以「太麻煩」為由略過 SARIMA** | 🟡 | M12 補回 AutoARIMA／SARIMA 並與 persistence、climatology 比較。那個「麻煩」是真的，而且倍數隨資料量長大——但它可以被定價，而通常沒有人定價；M9 另以 LightGBM 實作可部署預報，N-HiTS／GNN 延後 |
@@ -483,7 +483,7 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 
 **驗收**
 - [x] **已取代**：全台 1 km 濃度場不出；最近鄰 0.6–67 km，1 km 宣稱網路給不起的解析度，改以緩衝 LOO 實測 `field_skill`
-- [x] Moran's I 顯著性、LISA 圖 ✅（M6：Cliff–Ord 殘差虛無、correlogram 變號、LISA BH 後 0/60）
+- [x] Moran's I 顯著性、LISA 圖 ✅（M6：Cliff–Ord 殘差虛無、correlogram 變號、LISA BH 後 0/61）
 - [ ] **延後**：至少 5 年的後推軌跡資料庫與分群；不阻擋現行 M6／M7 發布
 - [x] 網站第 3 章空間結構與第 4 章 CBPF 高值時段的風速／風向型態上線；沒有資料就不放軌跡動畫
 - [x] **已取代**：`reports/03-spatial.md` 由 M6 Parquet 產物支持；repo 不使用 Quarto

@@ -763,6 +763,39 @@ write the OEM code page, so forcing `utf-8` there would break calls that work
 today; they keep locale decoding on purpose. Adding `encoding=` is only correct
 where you also control what the child writes.
 
+### A measured number in prose is a defect only when all three hold
+
+This repository is full of sentences like "Measured on 忠明, 2006-2025, the number
+this module uses is N" — about seventeen of them in `src/` alone. Most are
+**not** a problem and must not be swept: they record the measurement that
+justified a decision, on the date it was made, which is exactly what
+「docstrings carry the scientific reasoning」 asks for. Rewriting them to track
+current data would destroy the record and gain nothing.
+
+A hand-typed number is a defect when **all three** are true:
+
+1. it is published as a **current** measurement, not as the reason for a past
+   decision;
+2. **nothing recomputes it** — no module writes it, no gate compares it;
+3. it **can drift** — the inputs it summarises are re-run.
+
+`conf/spatial.yaml`'s 「~0.73」 met all three: it was restated in
+`docs/methodology.md` and in the spatial report as a present-tense fact about the
+data, no module produced it, and the store is rebuilt. It had drifted to 0.786
+with nothing able to notice. `analysis/imputation.py`'s 「95.2% / 95.9%」 meets
+only the second: it is the arithmetic behind a refusal to publish a comparison,
+and the refusal does not depend on the third decimal.
+
+The fix for a real one is not to correct the digits — that only resets the
+drift clock. Make the module emit it and have the prose point at the output, as
+`station_correlation_raw` and `km_nearest_neighbour` now do.
+
+**When a re-run changes an output, the hand-typed copies are part of the change.**
+Re-running M6 with one more station moved numbers that `docs/methodology.md` and
+`PLAN.md` had retyped, and the report and website regenerated while those two did
+not. Grep the distinctive values — `git grep "0.348"`, `git grep "24/96"` — before
+calling such a change finished.
+
 ### A hash of float64 output tests which machine CI got, not what the code does
 
 `ubuntu-latest` is a pool, not a machine: nothing guarantees two runs get the
