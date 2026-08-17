@@ -947,6 +947,18 @@ CI cannot regenerate the site's data — it has no copy of the store. **Exportin
 is a local step followed by a commit.** The publication policy for each layer
 lives in `web/README.md`; L2 is not published at all.
 
+That is also why the two prose-agreement gates read the committed payload rather
+than `data/outputs/`: the payload is the only copy CI can see.
+
+```bash
+uv run python scripts/check_published_forecast.py   # M9, four files
+uv run python scripts/check_published_spatial.py    # M6, methodology.md + PLAN.md
+```
+
+Re-run the analysis, re-export, **then** run these — they compare prose against
+the payload, so an un-exported run makes them complain about the prose instead of
+the export.
+
 Long runs (`ingest`, `build`) belong in the background — a full build is hours.
 `build_year` catches every exception and records it in the summary, so one bad
 archive cannot kill an unattended run.

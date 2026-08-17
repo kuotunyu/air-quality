@@ -133,6 +133,15 @@ jobs:
       - name: The forecast numbers in prose match the ones on the chart
         run: uv run python scripts/check_published_forecast.py
 
+      # M6's figures are retyped in docs/methodology.md and PLAN.md for readers
+      # who are not looking at the chart. Adding one station to the network moved
+      # them; the report and the website regenerated with the run and those two
+      # files did not, staying wrong for a day — inside the very commit that was
+      # fixing a different instance of the same thing. Same shape as the check
+      # above, against the committed spatial payload.
+      - name: The spatial numbers in prose match the published payload
+        run: uv run python scripts/check_published_spatial.py
+
       - name: Test (Pytest)
         run: uv run pytest
 
