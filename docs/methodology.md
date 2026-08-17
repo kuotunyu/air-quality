@@ -1,7 +1,7 @@
-# air-quality ── 台灣空氣品質再分析方法論
+﻿# air-quality ── 台灣空氣品質再分析方法論
 
-> 本文件詳細說明 **air-quality** 專案所採用的統計與統計學、機器學習在資料工程上的修正方法。本文件旨在逐項解析 11 項結構性的方法缺陷（標記為 D1–D11），並說明在 [PLAN.md](PLAN.md) 規劃中如何進行嚴謹的資料工程與多變量分析校正。
-> 本專案實作程式碼已全數在 [src/twair/analysis/baseline.py](src/twair/analysis/baseline.py)、[src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 與 [src/twair/analysis/drivers.py](src/twair/analysis/drivers.py) 中建立完成。
+> 本文件詳細說明 **air-quality** 專案所採用的統計與統計學、機器學習在資料工程上的修正方法。本文件旨在逐項解析 11 項結構性的方法缺陷（標記為 D1–D11），並說明在 [PLAN.md](../PLAN.md) 規劃中如何進行嚴謹的資料工程與多變量分析校正。
+> 本專案實作程式碼已全數在 [src/twair/analysis/baseline.py](../src/twair/analysis/baseline.py)、[src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 與 [src/twair/analysis/drivers.py](../src/twair/analysis/drivers.py) 中建立完成。
 
 ---
 
@@ -23,7 +23,7 @@ $$\text{Var}(X) = \mathbb{E}[\text{Var}(X|T)] + \text{Var}(\mathbb{E}[X|T])$$
 當我們將資料尺度限制在月平均值時，等同於直接假設月度內的小時變異 $\mathbb{E}[\text{Var}(X|T)] \equiv 0$。
 
 ### 3. 實測證據與校正
-經由 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 的 `diurnal_cycle_lost_to_monthly_means` 函式實測 2010–2017 年的數據，
+經由 [src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 的 `diurnal_cycle_lost_to_monthly_means` 函式實測 2010–2017 年的數據，
 「每站每月一個值」聚合（本站同期得 7,269 個站－月）僅保留了原始逐時 $\text{PM}_{2.5}$ 變異的 **40.3%**（標準差自 $19.4\ \mu g/m^3$ 降至 $12.3\ \mu g/m^3$）。這意味著：
 * 喪失了 **59.7%** 的物理訊號（包括日夜循環、上下班交通尖峰、短期寒流沙塵暴事件）。
 * 無法反映短時間內的健康暴露風險（例如，數小時內的極端污染事件在月平均下會被完全平滑化）。
@@ -56,7 +56,7 @@ $$\text{PM}_{10} \equiv \text{PM}_{2.5} + \text{PM}_{2.5-10}\ （粗懸浮微粒
 這在機器學習與統計建模中構成了嚴重的**特徵洩漏（Information Leakage / Target Leakage）**。當使用包含自身子集的變數作為預測特徵時，模型得到的超高 $R^2$ 只是恆等式的自我映射，掩蓋了真正具有科學意義的物理驅動因子（如風速、溫度、邊界層高度等）。
 
 ### 3. 實測證據與校正
-經由 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 的 `pm10_leakage_price` 實測，
+經由 [src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 的 `pm10_leakage_price` 實測，
 在 Gradient Boosting 模型（LightGBM）中：
 * 誠實特徵集模型（不含 $PM_{10}$）的 $R^2$ 為 **0.524**。
 * 洩漏特徵集模型（包含 $PM_{10}$）的 $R^2$ 虛增至 **0.772**。
@@ -82,13 +82,13 @@ $$\bar{\theta} = \frac{359^\circ + 1^\circ}{2} = 180^\circ\ （正南方）$$
 會得出與真實風向（北方）完全物理相反的極端荒謬結論。
 
 ### 3. 實測證據與校正
-本專案在 [conf/pollutants.yaml](conf/pollutants.yaml) 將風向特徵明確標記為 `circular: true`，並在 [src/twair/features/met.py](src/twair/features/met.py) 中透過非線性三角變換，將風速（$WS$）與風向（$\theta$）解構為正交的 $u$ 分量與 $v$ 分量（東風與北風向量）：
+本專案在 [conf/pollutants.yaml](../conf/pollutants.yaml) 將風向特徵明確標記為 `circular: true`，並在 [src/twair/features/met.py](../src/twair/features/met.py) 中透過非線性三角變換，將風速（$WS$）與風向（$\theta$）解構為正交的 $u$ 分量與 $v$ 分量（東風與北風向量）：
 
 $$u = WS \cdot \sin\left(\frac{\theta \cdot \pi}{180}\right)$$
 
 $$v = WS \cdot \cos\left(\frac{\theta \cdot \pi}{180}\right)$$
 
-在線性 OLS 模型中，經由 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 中的 `wind_encoding_in_a_linear_model` 實測對照：
+在線性 OLS 模型中，經由 [src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 中的 `wind_encoding_in_a_linear_model` 實測對照：
 * **原始角度未變換**：與 $\text{PM}_{2.5}$ 的聯立 OLS 決定係數 $R^2$ 僅為 **0.0254**。
 * **三角向量分解（u/v）**：決定係數 $R^2$ 提升至 **0.0647**（效能提升達 **2.55 倍**）。
 
@@ -109,7 +109,7 @@ $$v = WS \cdot \cos\left(\frac{\theta \cdot \pi}{180}\right)$$
    Kolmogorov-Smirnov 檢定與 Shapiro-Wilk 檢定，其統計檢定力（Power）會隨著樣本數 $N$ 的增長而趨向於 $1.0$。在巨量原始觀測下（月聚合 $N \approx 7{,}000$，本專案逐時 $N \approx 3.4\text{ 億}$），任何物理上微小且不影響中央極限定理（CLT）漸近性質的極微小偏誤，都會被檢定判定為「極其顯著地偏離常態」（$p\text{-value} = 0.000$）。
 
 ### 3. 實測證據與校正
-在 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 的 `normality_test_fallacy` 中，使用完全常態的分佈與僅有極微小偏態的分佈在不同樣本數 $N$ 下仿真：
+在 [src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 的 `normality_test_fallacy` 中，使用完全常態的分佈與僅有極微小偏態的分佈在不同樣本數 $N$ 下仿真：
 * 偏態分佈在 $N=100$ 時能「通過常態檢定」，但在 $N=100,000$ 時會被 100% 絕對拒絕。這證明檢定判定的是**樣本大小**而非**常態本質**。
 * 大樣本下 KS 的雙尾顯著性普遍落在 `.000`（即 $p < 0.0005$）。在數學上，低於 $0.0005$ 的數值無論在 $\alpha = 0.05$ 還是 $\alpha = 0.01$ 下都必然被**拒絕**——所以「調低 $\alpha$ 之後就不拒絕常態」這個說法，與它自己的檢定結果自我牴觸。
 
@@ -132,7 +132,7 @@ $$\text{NO}_x \equiv \text{NO} + \text{NO}_2$$
 * 模型估計值極度不穩定，微小的樣本變動就會造成學術係數正負號轉向。
 
 ### 3. 實測證據與校正
-經由 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 的 `collinearity_instability` 實測：
+經由 [src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 的 `collinearity_instability` 實測：
 * **恆等殘差驗證**：實測全台 44 年原始觀測，$\text{NO} + \text{NO}_2 - \text{NO}_x$ 的物理差值均值僅為 $0.0019\ \mu g/m^3$，最大誤差在極限容差內，恆等式絕對成立。
 * **共線性指標**：三個變數同時存在時，其共線性變異膨脹因子（VIF）值分別高達：
   $$\text{VIF}_{NO} = 7,764,\quad \text{VIF}_{NO_2} = 25,377,\quad \text{VIF}_{NO_x} = 53,452$$
@@ -152,12 +152,12 @@ $$\text{NO}_x \equiv \text{NO} + \text{NO}_2$$
 僅評估樣本內指標會導致嚴重的**樂觀偏誤（Optimism Bias）**，無法區分模型究竟是學習到了真實的空氣品質物理成因（訊號），還是僅僅記住了局部樣本特有的雜訊。
 
 ### 3. 實測證據與校正
-在 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 的 `in_sample_versus_out_of_sample` 中，對時序資料進行了劃分測試：
+在 [src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 的 `in_sample_versus_out_of_sample` 中，對時序資料進行了劃分測試：
 * 樣本內指標 R² 達 **0.690**。
 * 未來觀測樣本外指標 R² 驟降至 **0.562**。
 * **樂觀度差距（Optimism Gap）高達 +0.128**。
 
-**校正對策**：本專案在 [src/twair/models/evaluate.py](src/twair/models/evaluate.py) 中建立並實作了三種基於物理空間與時間的嚴格交叉驗證框架：
+**校正對策**：本專案在 [src/twair/models/evaluate.py](../src/twair/models/evaluate.py) 中建立並實作了三種基於物理空間與時間的嚴格交叉驗證框架：
 1. **Rolling-origin （滑動時序起點交叉驗證）**：依時間推移，用過去訓練、未來測試，用作預測評估的基本基準。
 2. **Leave-one-station-out （留一測站交叉驗證）**：測試模型對全新未觀測地理測站的泛化估計能力。
 3. **Leave-one-year-out （留一年度交叉驗證）**：排除某整年的天氣異常物理干擾，檢驗模型成因解釋之穩健性。
@@ -167,7 +167,7 @@ $$\text{NO}_x \equiv \text{NO} + \text{NO}_2$$
 把樣本內換成樣本外，只解決了一半。剩下一半是 $R^2$ **本身沒有基準線**——
 它衡量的是「這個目標本來多好預測」，不是「模型有沒有加到東西」。
 
-[src/twair/models/forecast.py](src/twair/models/forecast.py)（M9）在
+[src/twair/models/forecast.py](../src/twair/models/forecast.py)（M9）在
 74 站、2015–2025、4 個 rolling-origin 分割上量到的三組數字，方向互相矛盾：
 
 | 期距 | $R^2$ | skill vs persistence | skill vs climatology |
@@ -418,7 +418,7 @@ $\text{搜尋} / \text{固定階數}$ 這個倍數**本身會隨資料量放大*
 
 ### 3. 實測證據
 
-[src/twair/models/sarima.py](src/twair/models/sarima.py)（M12），
+[src/twair/models/sarima.py](../src/twair/models/sarima.py)（M12），
 6 個測站 × 3 個 rolling-origin 分割、2015–2025、固定階數
 $(1,0,1)(1,0,1)_{24}$、每 72 小時一個預測原點。**18/18 次擬合全部收斂**，
 中位數 11 秒、8,612 個有效觀測點。
@@ -566,7 +566,7 @@ $(1,0,1)(1,0,1)_{24}$、每 72 小時一個預測原點。**18/18 次擬合全�
 ### 4. 實測校正
 經由全量大數據測試：
 * 實測發現風向 `888` 與 `999` 哨兵碼**僅存在於 1993–2004 年的檔案中**（比例達 2.6–6.4%），在 2005 之後的檔案中完全消失。這解釋了為什麼 2010–2017 這個窗口在錯誤使用連續線性風向時沒有被極端異常值（如 999 角度）直接摧毀模型 ──── 因為這個哨兵碼在該特定年份是不存在的。
-* 儘管如此，本專案在 [src/twair/qc/rainfall.py](src/twair/qc/rainfall.py) 與 [src/twair/qc/sentinels.py](src/twair/qc/sentinels.py) 中，將品管規格當作一等公民。對於 `RAINFALL` 與 `RAIN_INT`，將 `NR` 強制轉化為物理數值 $0.0$，而對於 `PH_RAIN` 則保留為 `null`（因為沒下雨時，雨水的酸鹼值是未定義的）。
+* 儘管如此，本專案在 [src/twair/qc/rainfall.py](../src/twair/qc/rainfall.py) 與 [src/twair/qc/sentinels.py](../src/twair/qc/sentinels.py) 中，將品管規格當作一等公民。對於 `RAINFALL` 與 `RAIN_INT`，將 `NR` 強制轉化為物理數值 $0.0$，而對於 `PH_RAIN` 則保留為 `null`（因為沒下雨時，雨水的酸鹼值是未定義的）。
 
 ---
 

@@ -58,6 +58,14 @@ jobs:
       - name: The test inventory matches its reviewed count
         run: uv run python scripts/check_test_count.py
 
+      # docs/methodology.md shipped seventeen links that resolved relative to
+      # docs/, so every 「[src/twair/…](src/twair/…)」 was a 404 on GitHub. The
+      # same file also held four correct `../` links, so it had been inconsistent
+      # for a long time with nothing able to see it. Offline: external URLs are
+      # never fetched, because an upstream outage must not redden this build.
+      - name: Every internal markdown link points at a file that exists
+        run: uv run python scripts/check_markdown_links.py
+
       - name: Lint (Ruff)
         run: |
           uv run ruff check .
