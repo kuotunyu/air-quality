@@ -78,6 +78,13 @@ Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 🟡 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | 🟡 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
 
+<details>
+<summary><b>衛星與 ERA5 的 held-out predictive value —— 逐 fold 數字與範圍限制</b>（點開）<br>
+兩者都在 2025 年內的留出評估上顯示增量預測資訊；<b>都不是</b>因果歸因、衛星 PM2.5 校正、
+融合場，也不是 M4 的替代。校正與融合仍然延後。</summary>
+
+<br>
+
 2025 M8 關聯與 held-out predictive-value 診斷已交付。predictive-value 實驗使用
 851 筆共同完整站月、76 站、12 個月份；all-satellite 相對只含月份週期與測站地理的
 baseline，在 held-quarter、held-station、joint transfer 分別有 3／4、9／10、37／40 個
@@ -116,6 +123,8 @@ paired rows。combined 相對站內氣象在跨年同站、2025 同年留站、�
 因此沒有被塞值或強行納入。spatial transfer 使用同年度資料，只量測留出測站的
 predictive generalisation；整組結果不是因果歸因、校正或融合。ERA5 尚未納入已發布的 M4；
 網站上的氣象正規化仍只使用站內觀測。
+
+</details>
 
 ## 快速開始
 

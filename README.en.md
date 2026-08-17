@@ -143,6 +143,14 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
+<details>
+<summary><b>Held-out predictive value of satellite and ERA5 features — per-fold counts and their limits</b> (click to open)<br>
+Both show incremental predictive information under held-out evaluation within 2025. Neither is
+causal attribution, satellite PM2.5 calibration, a fusion field, or a replacement for M4.
+Calibration and fusion remain deferred.</summary>
+
+<br>
+
 The 2025 M8 association and held-out predictive-value diagnostics delivered use
 851 common complete station-months, 76 stations, and 12 months. Relative to a baseline containing
 calendar seasonality and station geography, the combined all-satellite feature set improved both RMSE and R² in
@@ -186,6 +194,8 @@ information sets in either year, so no value was filled and those stations were 
 Contemporaneous spatial transfer measures predictive generalisation, not future-year transfer.
 These results are not causal attribution, calibration, or fusion. ERA5 has not been added to the published M4 model;
 the released meteorological normalisation still uses station measurements.
+
+</details>
 
 ---
 
