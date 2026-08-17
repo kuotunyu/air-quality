@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -43,6 +44,15 @@ def collect_total() -> int:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        # Both ends of the pipe, pinned. A Python child writes its output in
+        # whatever PYTHONIOENCODING or the locale says, and `text=True` alone
+        # decodes by locale — two ambient settings that do not have to agree. A
+        # collection failure prints this repository's own path, whose CJK is
+        # non-ASCII in either encoding, so the mismatch turns a readable pytest
+        # error into UnicodeDecodeError here.
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         check=False,
     )
     if result.returncode != 0:

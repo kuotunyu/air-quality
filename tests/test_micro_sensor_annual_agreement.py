@@ -1418,6 +1418,15 @@ def test_the_checkpoint_lock_rejects_same_process_and_subprocess_contention(
             cwd=Path.cwd(),
             capture_output=True,
             text=True,
+            # Both ends of the pipe, pinned. The child writes per
+            # PYTHONIOENCODING or the locale, `text=True` alone decodes by
+            # locale, and the two do not have to agree — the child's traceback
+            # carries this repository's own path, so a mismatch leaves
+            # `stderr` as None and the assertion below fails on a TypeError
+            # that has nothing to do with locking.
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             check=False,
         )
 

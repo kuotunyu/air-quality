@@ -551,6 +551,13 @@ def test_a_retry_after_process_death_reuses_the_exact_renamed_generation(
         check=True,
         capture_output=True,
         text=True,
+        # Both ends of the pipe, pinned; see the same call in
+        # test_micro_sensor_annual_agreement.py. The child prints a generation
+        # id, but `check=True` decodes its traceback too, and that traceback
+        # names this repository's path.
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
 
     assert retried.stdout.strip() == first.directory.name

@@ -725,6 +725,44 @@ costs one extra mypy pass and is the only way to see a POSIX-only error from
 here. The same reasoning as the empty-data run above: an environment CI has and
 you do not is an environment your gates have never actually tested.
 
+### `text=True` decodes by locale, and the child does not have to agree
+
+`subprocess.run(..., text=True)` without an explicit `encoding=` decodes with
+`locale.getencoding()`. A Python child writes with whatever `PYTHONIOENCODING`
+says, or the locale if it is unset. Those are two ambient settings that nothing
+keeps in sync, and this repository's own path contains `部隊`, so any traceback
+from a child is non-ASCII and the mismatch is not theoretical. Measured here,
+same machine, same call:
+
+| child | bytes written | as `utf-8` | as `cp950` |
+| --- | --- | --- | --- |
+| Python, `PYTHONIOENCODING` unset | `b'\xb3\xa1\xb6\xa4'` | **raises** | ok |
+| Python, `PYTHONIOENCODING=utf-8` | `b'\xe9\x83\xa8\xe9\x9a\x8a'` | ok | **raises** |
+| `cmd /c mklink` | `b'\xbb\xdd\xadn...'` | **raises** | ok |
+
+`subprocess` swallows the decode error and hands back `stderr = None`, so the
+symptom is a `TypeError` in an unrelated assertion. That cost real time on
+`test_the_checkpoint_lock_rejects_same_process_and_subprocess_contention`.
+
+**For a Python child, pin both ends** — force the child and decode to match:
+
+```python
+subprocess.run(
+    [sys.executable, "-c", code],
+    capture_output=True,
+    text=True,
+    encoding="utf-8",
+    errors="replace",
+    env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    check=False,
+)
+```
+
+**Do not blanket-apply it.** The `cmd /c mklink` calls in the agreement tests
+write the OEM code page, so forcing `utf-8` there would break calls that work
+today; they keep locale decoding on purpose. Adding `encoding=` is only correct
+where you also control what the child writes.
+
 ### A hash of float64 output tests which machine CI got, not what the code does
 
 `ubuntu-latest` is a pool, not a machine: nothing guarantees two runs get the
