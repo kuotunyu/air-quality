@@ -315,6 +315,30 @@ the level this project actually cares about. The same trap caught `PRODUCT.md`
 in the same pass, from the other direction: 52 KB of prose that looks inert and
 is re-derived by three CI gates.
 
+### Never write a backslash escape into a file through a shell heredoc
+
+`docs/methodology.md` carried two LaTeX formulas whose `\approx` had become a
+literal BEL byte (`U+0007`), because `\a` passed through a Bash heredoc into a
+Python `str.replace` and was interpreted as an escape on the way. Both formulas
+rendered as `pprox`. The two arrived in *different sessions*, months apart, by
+exactly the same mechanism — which is what makes it a rule rather than a slip.
+
+It is worse than it looks, because the repair attempt hits the same layer. Two
+successive fixes through the shell failed silently: the search string was
+mangled identically to the target, so `str.replace` matched nothing and reported
+success. The check that finally worked built the characters arithmetically —
+`chr(7)` for the control byte, `chr(92)` for the backslash — so no escaping layer
+could touch them.
+
+**Write the script to a file with the editor, then run it.** Do not pipe Python
+containing backslash escapes through a heredoc, and do not trust a `grep` for the
+damage either: `grep -c pprox` matches a *correct* `\approx` too, which is how
+the first investigation concluded there was nothing wrong.
+
+`scripts/` has no gate for this. A scan of all 329 tracked files for stray C0
+controls (anything under 0x20 that is not tab, newline or carriage return) came
+back clean after the repair, and that scan is the cheap way to check again.
+
 ### The Space bundle: `uv run twair export space`
 
 Rebuilds `spaces/forecast/` from the store — four LightGBM models, a demo slice,
