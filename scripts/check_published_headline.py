@@ -123,7 +123,9 @@ class Claim:
             if captured is None:
                 problems.append(f"{where:<17} {self.what:<32} matched but captured nothing")
                 continue
-            quoted = float(captured)
+            # U+2212 MINUS SIGN reads better in a table than a hyphen and does
+            # not parse as one. Typography is not a disagreement.
+            quoted = float(captured.replace("−", "-").replace("–", "-"))
             problem = compare(where, self.what, quoted, self.actual, self.places)
             if problem and problem not in problems:
                 problems.append(problem)
@@ -174,6 +176,60 @@ def build_claims() -> list[Claim]:
             leak_share,
             1,
             files=("README.md", "README.en.md", "PLAN.md", "methodology.md"),
+        ),
+        # methodology.md's D8 table, the four numbers the normalisation rests on.
+        # Every one is a field in the payload, so there is no arithmetic to get
+        # wrong here — only the copying, which is exactly what goes stale.
+        Claim(
+            "median observed slope",
+            r"觀測斜率中位數\s*\|\s*\*{0,2}(−?-?[\d.]+)",
+            float(deweather["median_observed_slope"]),
+            2,
+            files=("methodology.md",),
+        ),
+        Claim(
+            "median normalised slope",
+            r"正規化後斜率中位數\s*\|\s*\*{0,2}(−?-?[\d.]+)",
+            float(deweather["median_normalised_slope"]),
+            2,
+            files=("methodology.md",),
+        ),
+        Claim(
+            "weather share p10",
+            r"p10\s*([\d.]+)%",
+            float(deweather["weather_share_p10"]),
+            1,
+            scale=100.0,
+            files=("methodology.md",),
+        ),
+        Claim(
+            "weather share p90",
+            r"p90\s*([\d.]+)%",
+            float(deweather["weather_share_p90"]),
+            1,
+            scale=100.0,
+            files=("methodology.md",),
+        ),
+        Claim(
+            "median holdout R2",
+            r"holdout R²\s*中位數\s*\|\s*\*{0,2}([\d.]+)|holdout R² 中位數\s*([\d.]+)",
+            float(deweather["median_holdout_r2"]),
+            3,
+            files=("methodology.md",),
+        ),
+        Claim(
+            "stations in the normalisation",
+            r"(\d+)\s*個測站，\d+\s*個的正規化斜率顯著",
+            float(deweather["n_stations"]),
+            None,
+            files=("methodology.md",),
+        ),
+        Claim(
+            "stations with a significant slope",
+            r"\d+\s*個測站，(\d+)\s*個的正規化斜率顯著",
+            float(deweather["n_significant"]),
+            None,
+            files=("methodology.md",),
         ),
         # Anchored to the two sentences that make this claim, not to 「N 倍」.
         # A bare ratio pattern also matched 「鄰站法比內插差 2.8 倍」 (M11) and
