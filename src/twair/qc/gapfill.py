@@ -395,9 +395,12 @@ def _best_donor(
 
 
 def _load_geography() -> pl.DataFrame:
-    from twair.ingest.station_meta import load_station_geo
+    """Resolved geography — a donor search over four decades of archives cannot
+    be limited to the stations that happen to exist on the day the current
+    register was fetched. ``resolve_station_geo`` only fills names it lacks."""
+    from twair.ingest.station_meta import resolve_station_geo
 
-    return load_station_geo()
+    return resolve_station_geo()
 
 
 def _iterative(

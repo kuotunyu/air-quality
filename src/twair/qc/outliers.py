@@ -331,9 +331,17 @@ class OutlierReport:
 
 
 def _load_geography() -> pl.DataFrame:
-    from twair.ingest.station_meta import load_station_geo
+    """Resolved geography, not the raw current register.
 
-    return load_station_geo()
+    The register lists stations that exist *now*; this check runs over four
+    decades. A station retired since the register was fetched would otherwise be
+    unplaceable for its entire history and could never be neighbour-checked —
+    which is how 萬里, measuring until 2025, ended up with no neighbours at all.
+    ``resolve_station_geo`` only fills names the register lacks.
+    """
+    from twair.ingest.station_meta import resolve_station_geo
+
+    return resolve_station_geo()
 
 
 def neighbour_edges(

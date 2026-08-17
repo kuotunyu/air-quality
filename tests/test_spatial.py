@@ -68,6 +68,150 @@ class TestGeometry:
         assert pytest.approx(6371.0088) == EARTH_RADIUS_KM
 
 
+class TestPanelGeography:
+    """M6 must read the resolved geography, not the raw current register.
+
+    The register lists stations that exist *now*, so a station retired since it
+    was fetched vanishes from it — 萬里 measured until 2025, reports in all 96
+    months of the 2010-2017 panel, and was dropped from every spatial statistic
+    for that reason alone while `store/stations.py` placed it on the map.
+
+    The real `resolve_station_geo` runs here; only its two sources are replaced.
+    Reverting either call site to `load_station_geo` fails this.
+    """
+
+    def test_a_station_absent_from_the_current_register_is_still_placed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from twair.analysis.spatial import placed_panel
+        from twair.ingest import station_meta
+        from twair.store import stations as store_stations
+
+        retired = "退役站"
+        current = pl.DataFrame(
+            {
+                "station_name": ["現役站"],
+                "station_name_en": ["Serving"],
+                "site_id": ["901"],
+                "county": ["新北市"],
+                "township": ["萬里區"],
+                "address": ["新北市萬里區瑪鋉路1號"],
+                "lon": [121.6],
+                "lat": [25.1],
+                "airzone_official": ["北部空品區"],
+                "station_type_official": ["一般站"],
+            }
+        )
+        historical = pl.DataFrame(
+            {
+                "station_name": [retired],
+                "station_name_en": ["Retired"],
+                "historical_site_id": ["3"],
+                "source_record_namespace": ["AIRTW central station detail"],
+                "source_record_id": ["61"],
+                "source_page": ["https://example.invalid/station"],
+                "source_endpoint": ["https://example.invalid/detail"],
+                "verified_on": ["2026-08-10"],
+                "county": ["新北市"],
+                "township": ["萬里區"],
+                "address": ["新北市萬里區瑪鋉路221號"],
+                "lon": [121.689881],
+                "lat": [25.179667],
+                "monitoring_started_on": ["1991-07-17"],
+                "station_type_primary": ["一般站"],
+                "station_type_secondary": ["背景站"],
+            }
+        )
+        monkeypatch.setattr(station_meta, "load_station_geo", lambda: current)
+        monkeypatch.setattr(station_meta, "load_historical_station_geo", lambda: historical)
+        monkeypatch.setattr(
+            store_stations,
+            "build_station_table",
+            lambda *_args, **_kwargs: pl.DataFrame(
+                {
+                    "station_name": ["現役站", retired],
+                    "airzone": ["北部空品區", "北部空品區"],
+                }
+            ),
+        )
+
+        panel = pl.DataFrame(
+            {
+                "station_name": ["現役站", retired],
+                "month": [1, 1],
+                "residual": [0.1, -0.1],
+            }
+        )
+
+        out = placed_panel(panel, load_spatial_conf())
+        placed = out.filter(pl.col("lat").is_not_null())["station_name"].to_list()
+
+        assert retired in placed, "the reviewed supplement must reach M6's network"
+        assert out.filter(pl.col("station_name") == retired)["lat"][0] == pytest.approx(25.179667)
+
+    def test_the_current_register_still_wins_where_both_have_the_station(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The supplement fills gaps; it never moves a station MOENV still lists."""
+        from twair.analysis.spatial import placed_panel
+        from twair.ingest import station_meta
+        from twair.store import stations as store_stations
+
+        shared = "共有站"
+        current = pl.DataFrame(
+            {
+                "station_name": [shared],
+                "station_name_en": ["Shared"],
+                "site_id": ["901"],
+                "county": ["新北市"],
+                "township": ["萬里區"],
+                "address": ["新北市萬里區瑪鋉路1號"],
+                "lon": [121.6],
+                "lat": [25.1],
+                "airzone_official": ["北部空品區"],
+                "station_type_official": ["一般站"],
+            }
+        )
+        historical = pl.DataFrame(
+            {
+                "station_name": [shared],
+                "station_name_en": ["Shared"],
+                "historical_site_id": ["3"],
+                "source_record_namespace": ["AIRTW central station detail"],
+                "source_record_id": ["61"],
+                "source_page": ["https://example.invalid/station"],
+                "source_endpoint": ["https://example.invalid/detail"],
+                "verified_on": ["2026-08-10"],
+                "county": ["新北市"],
+                "township": ["萬里區"],
+                "address": ["新北市萬里區瑪鋉路221號"],
+                # Inside Taiwan, so the bounds guard cannot be what rejects it —
+                # the anti-join has to be.
+                "lon": [121.9],
+                "lat": [25.3],
+                "monitoring_started_on": ["1991-07-17"],
+                "station_type_primary": ["一般站"],
+                "station_type_secondary": ["背景站"],
+            }
+        )
+        monkeypatch.setattr(station_meta, "load_station_geo", lambda: current)
+        monkeypatch.setattr(station_meta, "load_historical_station_geo", lambda: historical)
+        monkeypatch.setattr(
+            store_stations,
+            "build_station_table",
+            lambda *_args, **_kwargs: pl.DataFrame(
+                {"station_name": [shared], "airzone": ["北部空品區"]}
+            ),
+        )
+
+        out = placed_panel(
+            pl.DataFrame({"station_name": [shared], "month": [1], "residual": [0.1]}),
+            load_spatial_conf(),
+        )
+
+        assert out["lat"][0] == pytest.approx(25.1), "the current register is authoritative"
+
+
 class TestStationSpacing:
     """The spacing that decides knn over a distance band is now measured, not typed.
 

@@ -510,12 +510,28 @@ def _spatial_distance_section() -> str:
     near_band = f"{float(near['bin_lo_km']):.0f}–{float(near['bin_hi_km']):.0f} km"
     far_band = f"{float(far['bin_lo_km']):.0f}–{float(far['bin_hi_km']):.0f} km"
 
+    # Which bands survive BH, named rather than left for the reader to infer
+    # from a z. Restoring one station to the network moved two near bands from
+    # significant to not, so reporting z alone would have hidden a real change.
+    surviving = correlogram.filter(pl.col("significant_bh"))
+    bands = "、".join(
+        f"{float(row['bin_lo_km']):.0f}–{float(row['bin_hi_km']):.0f} km"
+        for row in surviving.sort("bin_lo_km").iter_rows(named=True)
+    )
+    survival = (
+        f"\n\nBH 校正後仍顯著的距離帶有 {surviving.height}/{correlogram.height} 個："
+        f"{bands}。近距離的正相關本身沒有通過校正，所以本節的證據是"
+        "**符號隨距離改變**，不是「近處顯著正相關」。"
+        if surviving.height
+        else ""
+    )
+
     return f"""## 三、距離結構：偶極，不是一團正相關
 
 站均殘差的 correlogram（`correlogram.parquet`）在 {near_band} 為
 {_signed(float(near["i"]))}（z={_signed(float(near["z"]), 2)}）、{far_band} {sign_change}
 **{_signed(float(far["i"]))}（z={_signed(float(far["z"]), 2)}）**。北部與南部殘差反向
-共變——這也是為什麼本報告不發表單一的 Moran's I。{lisa_line}
+共變——這也是為什麼本報告不發表單一的 Moran's I。{survival}{lisa_line}
 """
 
 
@@ -601,7 +617,7 @@ def _spatial_field_section() -> str:
     return f"""## 五、測站之間的空白（`field_skill.parquet`）
 
 1 km 濃度場**不出**：{_spatial_spacing_clause()}，
-所以 1 km 的格子宣稱了網絡給不起的解析度。這個間距由
+所以 1 km 的格子宣稱了網路給不起的解析度。這個間距由
 `station_coverage.parquet` 的 `km_nearest_neighbour` 每次執行重算。
 
 取而代之量補值技巧本身：留一站（樂觀上界）與 {"/".join(f"{value:.0f}" for value in buffers)} km

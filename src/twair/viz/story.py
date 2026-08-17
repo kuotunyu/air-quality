@@ -520,6 +520,14 @@ def _export_spatial(root: Path) -> list[Path]:
         ]
 
     unplaced = coverage.filter(~pl.col("placed"))["station_name"].to_list()
+    # Which stations are placed on an authority other than the current MOENV
+    # register. Named on the page, because "the network gained a station" is a
+    # provenance claim and the reader should be able to check whose.
+    historical = (
+        coverage.filter(pl.col("geo_source") == "reviewed_historical")["station_name"].to_list()
+        if "geo_source" in coverage.columns
+        else []
+    )
     quadrants = {
         row["quadrant"]: row["len"]
         for row in lisa_table.group_by("quadrant").len().iter_rows(named=True)
@@ -535,6 +543,7 @@ def _export_spatial(root: Path) -> list[Path]:
                     "placed": int(metadata["panel_stations_placed"]),
                     "complete": int(metadata["panel_stations_complete"]),
                     "unplaced": unplaced,
+                    "historical": historical,
                     "weights": metadata["weights"],
                     "zone_partition": metadata["zone_partition"],
                     "null_draws": int(metadata["residual_null_draws"]),
@@ -615,13 +624,13 @@ def _export_spatial(root: Path) -> list[Path]:
                     "本專案沒有計算，所以這些數字不該被讀成推翻那類模型。",
                     "殘差的空間自相關是場相依性的下界，原因有二：模型裡的解釋變數"
                     "（尤其 PM10）本身就帶空間結構，已吸走一部分訊號；"
-                    "而面板是完整案例，網絡本身就被資料完整度篩選過。",
+                    "而面板是完整案例，網路本身就被資料完整度篩選過。",
                 ],
                 "refusals": [
                     "不做人口加權暴露：repo 內沒有任何人口網格，"
                     "拿測站平均乘上任何現有欄位都不是暴露量。",
                     "不出 1 公里濃度場：測站最近鄰距離從 0.6 到 67 公里，"
-                    "1 公里的格子宣稱了網絡給不起的解析度。",
+                    "1 公里的格子宣稱了網路給不起的解析度。",
                 ],
             },
         )

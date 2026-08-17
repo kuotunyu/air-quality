@@ -613,11 +613,18 @@ function historicalStationCopyProblems(route, text) {
       ],
     ],
     [
+      // This chapter used to disclose that 萬里 was excluded for want of
+      // coordinates and that its results had not been recomputed. Both stopped
+      // being true once M6 read the reviewed historical supplement, so the gate
+      // now pins the replacement claim: the station is in, on a named authority
+      // that is not the current register, and the chapter was recomputed.
       "/space/",
       [
-        "沿用分析執行時的座標快照",
-        "萬里當時因沒有座標而被排除",
-        "本章結果沒有因此重算",
+        "萬里",
+        "不是來自環境部現行測站清冊",
+        "審閱過的環境部歷史測站紀錄",
+        "conf/station_geo_historical.yaml",
+        "本章結果是在納入之後重算的",
       ],
     ],
     [
@@ -2515,8 +2522,9 @@ async function lifecycleSelfTest() {
     ],
     [
       "/space/",
-      "本章沿用分析執行時的座標快照，萬里當時因沒有座標而被排除；" +
-        "網站地圖後來補上位置，但本章結果沒有因此重算。",
+      "其中萬里的座標不是來自環境部現行測站清冊——該站已停用而從清冊消失，" +
+        "位置改依審閱過的環境部歷史測站紀錄補上，來源與查證日期記在 " +
+        "conf/station_geo_historical.yaml。本章結果是在納入之後重算的。",
     ],
     [
       "/data/",

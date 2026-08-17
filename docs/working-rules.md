@@ -950,9 +950,23 @@ Python package release; `twair --help` is not a sufficient package test.
   `conf/*.yaml`.
 - **Comments explain why, not what.** Prefer a sentence about the data's
   behaviour over a restatement of the code.
-- **Docstrings carry the scientific reasoning**, especially where a choice
-  differs from the original project.
+- **Docstrings carry the scientific reasoning**, especially where a choice costs
+  something or rules an alternative out.
 - `ruff check --fix && ruff format` before committing.
+
+### Traditional Chinese terminology
+
+Taiwanese usage, and consistent across prose, payloads and the site — a reader
+meeting two words for one thing has to work out whether they mean two things.
+
+| use | not | for |
+|---|---|---|
+| 網路 | 網絡 | the monitoring station network, and networks generally |
+
+Quoted official text keeps its own spelling: `conf/pollutants.yaml` and
+`docs/data-sources.md` reproduce MOENV wording verbatim and are not normalised.
+Generated surfaces (`reports/*.md`, `web/public/data/story/*.json`) inherit the
+term from their generator, so fix `src/` and regenerate rather than editing them.
 
 ### mypy is at zero — keep it there
 

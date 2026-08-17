@@ -82,10 +82,15 @@
   # nulls stay excluded here — so demanding a published mean in all 96 window
   # months leaves 6 stations, which is no network. Trade-off as measured when
   # this was chosen: share 0.98 kept 43 stations on 86 common months, 0.95 kept
-  # 66 on 63, 0.90 kept 73 on 47. Only the chosen share is recomputed — the run
-  # emits `clustering_stations_kept` and `clustering_months_used`, and it now
-  # keeps 65 rather than the 66 recorded here, so read the two alternatives as
-  # the reasoning of the day rather than as current counts. The test is about the
+  # 66 on 63, 0.90 kept 73 on 47. Only the chosen share is recomputed, and the
+  # run emits it as `clustering_stations_kept` / `clustering_months_used`.
+  #
+  # That 66 briefly read as stale. It was not: the count had silently fallen to
+  # 65 because this module resolved geography from the current MOENV register
+  # alone, and 萬里 left that register when it retired in 2025 — taking itself
+  # out of a 2010-2017 network it belonged to. Reading the reviewed supplement
+  # restored 66. A figure that disagrees with the code is not automatically the
+  # figure that is wrong. The test is about the
   # network, so stations weigh more than months and 63 months is ample for a
   # correlation; 0.95 is the choice. Stations below
   # the share and months any kept station misses are both counted, never filled.

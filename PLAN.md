@@ -482,7 +482,7 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 - **交叉驗證** — 用 PM2.5/PM10 ratio、SO2/NOx ratio 作為組成觀測對照以篩選來源假說；PM2.5/PM10 單一比值不能唯一辨識或量化來源
 
 **驗收**
-- [x] **已取代**：全台 1 km 濃度場不出；最近鄰 0.6–67 km，1 km 宣稱網絡給不起的解析度，改以緩衝 LOO 實測 `field_skill`
+- [x] **已取代**：全台 1 km 濃度場不出；最近鄰 0.6–67 km，1 km 宣稱網路給不起的解析度，改以緩衝 LOO 實測 `field_skill`
 - [x] Moran's I 顯著性、LISA 圖 ✅（M6：Cliff–Ord 殘差虛無、correlogram 變號、LISA BH 後 0/60）
 - [ ] **延後**：至少 5 年的後推軌跡資料庫與分群；不阻擋現行 M6／M7 發布
 - [x] 網站第 3 章空間結構與第 4 章 CBPF 高值時段的風速／風向型態上線；沒有資料就不放軌跡動畫

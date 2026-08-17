@@ -245,12 +245,19 @@ const cellFor = (method: string, buffer: number) =>
     量測對象是第八章那個基準模型的<strong>殘差</strong>，不是 PM2.5 本身——
     濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
     還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
-    千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，
-    {network.placed} 站有座標、{network.complete} 站每月都有值；本章沿用分析執行時的座標快照，
+    千筆站月當獨立樣本的推論是錯的。網路是 {network.stations} 站 × {network.months} 個月，
+    {network.placed} 站有座標、{network.complete} 站每月都有值；
+    {network.historical.length > 0 && (
+      <>
+        其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊——
+        該站已停用而從清冊消失，位置改依審閱過的環境部歷史測站紀錄補上，
+        來源與查證日期記在 <code>conf/station_geo_historical.yaml</code>。
+        本章結果是在納入之後重算的；
+      </>
+    )}
     {network.unplaced.length > 0 && (
       <>
-        {network.unplaced.join("、")}當時因沒有座標而被排除。網站地圖後來依審閱過的環境部
-        歷史測站紀錄補上位置，但本章結果沒有因此重算；
+        {network.unplaced.join("、")}仍無任何官方來源可定位，照實排除；
       </>
     )}
     虛無分布一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
@@ -436,7 +443,7 @@ const cellFor = (method: string, buffer: number) =>
 
       <p>
         全台 1 公里濃度場是計畫書上的目標，但測站最近鄰距離從 0.6 到 67 公里，
-        1 公里的格子宣稱了網絡給不起的解析度。所以先量「補值的技巧」本身：
+        1 公里的格子宣稱了網路給不起的解析度。所以先量「補值的技巧」本身：
         留一站交叉驗證，並加上 20 與 40 公里的緩衝——把目標站周圍整圈都藏起來，
         因為那才是「地圖上兩站之間那片空白」真正的問題。變異圖在每個 fold 內重配，
         兩種變異圖家族並列（correlogram 會變號，球型不一定是對的模型）。
@@ -471,7 +478,7 @@ const cellFor = (method: string, buffer: number) =>
         ——600 公尺外就有鄰站時，它量到的是近重複點之間的內插。
         {field.failed_folds > 0 && (
           <>
-            {" "}緩衝把西部網絡挖掉大半時 fold 會失敗，共 {n(field.failed_folds, 0)}
+            {" "}緩衝把西部網路挖掉大半時 fold 會失敗，共 {n(field.failed_folds, 0)}
             次，以空值連同原因記錄、不計入平均。
           </>
         )}

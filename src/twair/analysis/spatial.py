@@ -258,11 +258,22 @@ def placed_panel(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
     register's current eight. 離島空品區 did not exist as a zone before 2018;
     ``conf/stations.yaml`` records that override, and using today's partition on
     a 2010-2017 panel would be testing a map drawn after the fact.
+
+    The geography is **resolved**, not the raw current register, for the same
+    reason. The current register lists stations that exist *now*, so a station
+    retired since the panel window vanishes from it — 萬里 measured through 2025
+    and reports in all 96 panel months, and was dropped from every spatial
+    statistic here purely because MOENV's register was fetched after it retired.
+    Its coordinates are in this repository, reviewed and provenanced in
+    ``conf/station_geo_historical.yaml``; ``resolve_station_geo`` fills only names
+    the current register lacks and can never overwrite or alias one. Using
+    today's register to decide who existed in 2010-2017 is the same error as
+    using today's eight zones on the same panel.
     """
-    from twair.ingest.station_meta import load_station_geo
+    from twair.ingest.station_meta import resolve_station_geo
     from twair.store.stations import build_station_table, normalise_name_expr
 
-    register = load_station_geo()
+    register = resolve_station_geo()
     if register.height == 0:
         raise ValueError(
             "the station register cache is empty (conf/station_geo.yaml absent) — every "
@@ -272,7 +283,18 @@ def placed_panel(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
 
     era = build_station_table(geography=False).select(STATION, pl.col("airzone").alias("zone_era"))
     geo = register.select(
-        STATION, "lat", "lon", "county", "township", "airzone_official", "station_type_official"
+        STATION,
+        "lat",
+        "lon",
+        "county",
+        "township",
+        "airzone_official",
+        "station_type_official",
+        # Carried through so the coverage ledger can say *on what authority* each
+        # station is placed. One of them is not the current MOENV register, and a
+        # reader comparing this network to the register should be able to see
+        # which without leaving the parquet.
+        "geo_source",
     )
 
     out = (
@@ -313,6 +335,7 @@ def station_coverage(
                 "offshore": bool(group["offshore"][0]),
                 "lat": None if lat is None else float(lat),
                 "lon": None if group["lon"][0] is None else float(group["lon"][0]),
+                "geo_source": group["geo_source"][0] if "geo_source" in group.columns else None,
                 "zone_era": str(group["zone_era"][0]),
                 "airzone_official": group["airzone_official"][0],
                 "complete_every_month": station in complete,
@@ -1406,7 +1429,7 @@ def station_dissimilarity(conf: SpatialConf, *, root: Path | None = None) -> Dis
     the test would find all partitions equally good — an artefact of the
     monsoon, not evidence about zoning.
     """
-    from twair.ingest.station_meta import load_station_geo
+    from twair.ingest.station_meta import resolve_station_geo
     from twair.paths import processed_dir
     from twair.store.stations import build_station_table
 
@@ -1433,7 +1456,9 @@ def station_dissimilarity(conf: SpatialConf, *, root: Path | None = None) -> Dis
     counts = published.group_by(STATION).agg(pl.len().alias("published_months"))
     required = float(conf.clustering["min_station_share"]) * len(months)
 
-    register = load_station_geo()
+    # Resolved, matching `placed_panel` — the two must describe the same network
+    # or the partition test scores a different set of stations from the headline.
+    register = resolve_station_geo()
     if register.height == 0:
         raise ValueError(
             "the station register cache is empty — the ensemble null is geographic and "

@@ -219,6 +219,7 @@ class TestNumbersComeFromFiles:
                     "bin_hi_km": [10.0, 150.0],
                     "i": [0.348, 0.104],
                     "z": [2.46, 1.10],
+                    "significant_bh": [True, False],
                 }
             ),
         )
@@ -227,6 +228,33 @@ class TestNumbersComeFromFiles:
 
         assert "降至" in section
         assert "反號至" not in section
+
+    def test_the_bands_surviving_correction_are_named_not_left_to_a_z_value(
+        self, outputs: Path
+    ) -> None:
+        """Restoring one station to M6's network moved two near bands from
+        significant to not, without changing their z much. Printing z alone
+        would have hidden that, so the report names the survivors."""
+        _write(
+            outputs,
+            "m6_spatial",
+            "correlogram",
+            pl.DataFrame(
+                {
+                    "bin_lo_km": [0.0, 30.0, 100.0],
+                    "bin_hi_km": [10.0, 50.0, 150.0],
+                    "i": [0.277, 0.237, -0.230],
+                    "z": [1.98, 3.06, -4.55],
+                    "significant_bh": [False, True, True],
+                }
+            ),
+        )
+
+        section = reporting._spatial_distance_section()
+
+        assert "2/3 個" in section
+        assert "30–50 km" in section and "100–150 km" in section
+        assert "0–10 km、" not in section, "a band that failed correction is not a survivor"
 
     def test_missing_m6_is_reported_not_faked(self, outputs: Path) -> None:
         report = reporting.build_spatial_report()
