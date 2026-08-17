@@ -36,6 +36,10 @@ log = logging.getLogger(__name__)
 RETRY_STATUSES = frozenset({429})
 
 
+class DownloadContractError(RuntimeError):
+    """A streamed response violated a caller's explicit byte or media contract."""
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """Transport failures, 429, and 5xx. Nothing else.
 
@@ -173,18 +177,75 @@ class PoliteClient:
     def get_text(self, url: str, **kwargs: Any) -> str:
         return self.get(url, **kwargs).text
 
-    def stream_to_file(self, url: str, dest: Path, **kwargs: Any) -> Path:
+    def stream_to_file(
+        self,
+        url: str,
+        dest: Path,
+        *,
+        expected_bytes: int | None = None,
+        max_bytes: int | None = None,
+        allowed_content_types: frozenset[str] | None = None,
+        **kwargs: Any,
+    ) -> Path:
         """Download to ``dest`` atomically via a ``.part`` file."""
+        for value, label in ((expected_bytes, "expected_bytes"), (max_bytes, "max_bytes")):
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            ):
+                raise ValueError(f"{label} must be a positive integer")
+        if expected_bytes is not None and max_bytes is not None and expected_bytes > max_bytes:
+            raise ValueError("expected_bytes cannot exceed max_bytes")
+        reviewed_types = (
+            {value.lower() for value in allowed_content_types}
+            if allowed_content_types is not None
+            else None
+        )
         self._throttle.wait(url)
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".part")
         log.info("downloading %s → %s", url, dest)
-        with self._client.stream("GET", url, **kwargs) as response:
-            response.raise_for_status()
-            with tmp.open("wb") as fh:
-                for chunk in response.iter_bytes(chunk_size=1 << 20):
-                    fh.write(chunk)
-        tmp.replace(dest)
+        try:
+            with self._client.stream("GET", url, **kwargs) as response:
+                response.raise_for_status()
+                content_type = (
+                    response.headers.get("Content-Type", "").partition(";")[0].strip().lower()
+                )
+                if reviewed_types is not None and content_type not in reviewed_types:
+                    raise DownloadContractError(
+                        f"download content type is not reviewed: {content_type or '<missing>'}"
+                    )
+                declared_header = response.headers.get("Content-Length")
+                declared_bytes: int | None = None
+                if declared_header is not None:
+                    try:
+                        declared_bytes = int(declared_header)
+                    except ValueError as exc:
+                        raise DownloadContractError(
+                            "download Content-Length is not an integer"
+                        ) from exc
+                    if declared_bytes < 0:
+                        raise DownloadContractError("download Content-Length is negative")
+                    if max_bytes is not None and declared_bytes > max_bytes:
+                        raise DownloadContractError("download exceeds the maximum byte count")
+                    if expected_bytes is not None and declared_bytes != expected_bytes:
+                        raise DownloadContractError(
+                            "download Content-Length differs from the expected byte count"
+                        )
+                received_bytes = 0
+                with tmp.open("wb") as fh:
+                    for chunk in response.iter_bytes(chunk_size=1 << 20):
+                        received_bytes += len(chunk)
+                        if max_bytes is not None and received_bytes > max_bytes:
+                            raise DownloadContractError("download exceeds the maximum byte count")
+                        fh.write(chunk)
+                if declared_bytes is not None and received_bytes != declared_bytes:
+                    raise DownloadContractError("download byte count differs from Content-Length")
+                if expected_bytes is not None and received_bytes != expected_bytes:
+                    raise DownloadContractError("download differs from the expected byte count")
+            tmp.replace(dest)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
         return dest
 
 

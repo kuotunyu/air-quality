@@ -1,0 +1,59 @@
+"analysis":
+  "readiness_generation_sha256": "1f76ea400995080027701f80c311438fab3e6d823f5665681b9ca79a4aad81fd"
+  "benchmark_generation_sha256": "25cc89fdb57d1e64754edd5c3a7bbb140cad88e5e178137875dafae2103f0cc6"
+  "input_sha256":
+    "readiness_manifest": "089f92e9b844796ea43a8ad0fd5f14d40ac3089bd4ebfa75dfb4fc783bc3b120"
+    "hourly_pairs": "48638dd4e6bfe294e2857f7a3a826c449b2c10cc4cf6c4d18b88e7b1e0e4d215"
+    "satellite_context": "bed41c137e3cbcb1fbb8b22d1b53d589219c2f236e349e9eede4de0f36540b87"
+    "benchmark_manifest": "d1a8010b0ed33e5ac3229709a1cd1ff49e4e95e8f8e92c0d6055a864f4cf1a3f"
+    "fold_membership": "312b502717452b26f302d6d25cb1ee5c60f11144e9df051e76a79b909f62e3a7"
+  "date_folds": 25
+  "station_folds": 10
+  "satellite_sources": ["maiac_aod", "s5p_no2", "s5p_so2"]
+  "feature_sets":
+    "raw_micro": []
+    "micro_only": ["pm25_mean"]
+    "micro_weather": ["pm25_mean", "humidity_mean", "temperature_mean"]
+    "micro_satellite": ["pm25_mean", "maiac_aod", "s5p_no2", "s5p_so2"]
+    "micro_weather_satellite":
+      - "pm25_mean"
+      - "humidity_mean"
+      - "temperature_mean"
+      - "maiac_aod"
+      - "s5p_no2"
+      - "s5p_so2"
+  "comparisons":
+    - "candidate": "micro_only"
+      "reference": "raw_micro"
+      "name": "micro_only_minus_raw_micro"
+    - "candidate": "micro_weather"
+      "reference": "raw_micro"
+      "name": "micro_weather_minus_raw_micro"
+    - "candidate": "micro_satellite"
+      "reference": "raw_micro"
+      "name": "micro_satellite_minus_raw_micro"
+    - "candidate": "micro_weather_satellite"
+      "reference": "raw_micro"
+      "name": "micro_weather_satellite_minus_raw_micro"
+    - "candidate": "micro_weather"
+      "reference": "micro_only"
+      "name": "micro_weather_minus_micro_only"
+    - "candidate": "micro_satellite"
+      "reference": "micro_only"
+      "name": "micro_satellite_minus_micro_only"
+    - "candidate": "micro_weather_satellite"
+      "reference": "micro_weather"
+      "name": "micro_weather_satellite_minus_micro_weather"
+    - "candidate": "micro_weather_satellite"
+      "reference": "micro_satellite"
+      "name": "micro_weather_satellite_minus_micro_satellite"
+  "model":
+    "n_estimators": 200
+    "learning_rate": 0.05
+    "num_leaves": 31
+    "min_child_samples": 10
+    "subsample": 0.8
+    "subsample_freq": 1
+    "colsample_bytree": 0.8
+    "n_jobs": 1
+    "seed": 20260812

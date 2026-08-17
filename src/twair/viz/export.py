@@ -317,7 +317,11 @@ def export_l1(
     return ExportResult(written, sum(p.stat().st_size for p in written))
 
 
-def export_meta(destination: Path | None = None) -> Path:
+def export_meta(
+    destination: Path | None = None,
+    *,
+    provenance: tuple[str | None, bool] | None = None,
+) -> Path:
     """Stations, measurands, coverage and provenance — the site's index.
 
     Stations without coordinates are included with null ``lon``/``lat``. The
@@ -344,7 +348,7 @@ def export_meta(destination: Path | None = None) -> Path:
 
     unplaced = [r["station_name"] for r in station_records if r.get("lat") is None]
 
-    _sha, _dirty = git_state()
+    _sha, _dirty = provenance if provenance is not None else git_state()
     payload = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "twair_version": __version__,
@@ -440,7 +444,11 @@ def _hourly_observations() -> int | None:
     return None if total is None else int(total)
 
 
-def write_manifest(destination: Path | None = None) -> Path:
+def write_manifest(
+    destination: Path | None = None,
+    *,
+    provenance: tuple[str | None, bool] | None = None,
+) -> Path:
     """Checksum every exported file.
 
     A figure on the site should be traceable to the bytes that produced it. The
@@ -461,7 +469,7 @@ def write_manifest(destination: Path | None = None) -> Path:
             }
         )
 
-    _sha, _dirty = git_state()
+    _sha, _dirty = provenance if provenance is not None else git_state()
     return write_json(
         root / "manifest.json",
         {
@@ -475,14 +483,18 @@ def write_manifest(destination: Path | None = None) -> Path:
 
 
 def export_all(
-    destination: Path | None = None, *, levels: tuple[str, ...] = ("L0", "L1")
+    destination: Path | None = None,
+    *,
+    levels: tuple[str, ...] = ("L0", "L1"),
+    provenance: tuple[str | None, bool] | None = None,
 ) -> dict[str, ExportResult]:
     """Build every layer the site needs, then the manifest."""
     root = destination or web_data_dir()
+    snapshot = provenance if provenance is not None else git_state()
     root.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, ExportResult] = {}
-    meta = export_meta(root)
+    meta = export_meta(root, provenance=snapshot)
     results["meta"] = ExportResult([meta], meta.stat().st_size)
 
     if "L0" in levels:
@@ -490,7 +502,7 @@ def export_all(
     if "L1" in levels:
         results["L1"] = export_l1(root)
 
-    manifest = write_manifest(root)
+    manifest = write_manifest(root, provenance=snapshot)
     results["manifest"] = ExportResult([manifest], manifest.stat().st_size)
     return results
 

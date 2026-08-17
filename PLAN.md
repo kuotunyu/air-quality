@@ -161,7 +161,7 @@ air-quality/
 | **ERA5**（Copernicus CDS） | **邊界層高度 BLH**、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
 | **Sentinel-5P TROPOMI** | NO₂ 對流層柱濃度與 SO₂ 垂直柱濃度 | 🟡 2025 站月 Stage A、M8 關聯與 held-out predictive-value 診斷已交付；校正與融合尚未交付 |
 | **MODIS MAIAC AOD** | 氣膠光學厚度 | 🟡 2025 station-month batch export／checkpoint、M8 關聯與 held-out predictive-value 診斷已交付；AOD 校正與融合尚未交付 |
-| **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | ⬜ Phase 6 延後；尚未取得 |
+| **智慧城鄉空品微型感測器** | 低成本 PM2.5 感測器 | 🟡 2025-01 來源、觀測、readiness、grouped predictive benchmark 與 reference-station satellite-context predictive-value limit 已交付；2025 全年 readiness audit 已交付；validated calibration 與融合未交付 |
 | **NOAA HYSPLIT + GDAS** | 後推軌跡 | ⬜ 未納入目前 release；Phase 5 以已量測的 CBPF 交付 |
 | **內政部 人口統計網格** | 人口加權暴露 | ⬜ 未取得，因此不發布人口暴露數字 |
 
@@ -493,7 +493,10 @@ Mixed Model with AR(1)、同樣的逐步剔除順序。
 ### Phase 6 — 衛星 + 微型感測器融合
 
 **交付判定：Stage A 來源、M8 Stage B 關聯與 held-out predictive-value 診斷、ERA5 2024–2025
-robustness 已交付；校正與融合仍延後。** 2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
+robustness，以及微型感測器 2025-01 觀測、readiness、grouped predictive benchmark、
+reference-station satellite-context predictive-value limit 與 2025 全年 readiness audit 已交付；
+validated calibration 與融合仍延後。**
+2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
 generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 `--generation` 版本分開量測共同 coverage 與 pooled／within-station／within-month
 關聯。這不是因果、不是校正，
@@ -528,8 +531,40 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
   兩年 replication 為 177／222、205／222
 - **AOD／柱濃度校正（延後）** — ERA5 的 predictive generalisation 不是 satellite calibration performance；
   不用它代替獨立 calibration target 或融合場留出測站評估
-- **微型感測器校正** — 數千個低成本感測器對鄰近標準站做 calibration transfer（含濕度校正），量化校正前後誤差
-- **資料融合** — 地面站（準但稀疏）+ 衛星（廣但粗）+ 微感測器（密但雜）→ 高解析度濃度場
+- **微型感測器來源與 readiness（已交付）** — `twair ingest micro-sensor-catalog --month 202501
+  --confirm-network` 量得 10,999 筆站點清冊，75／93 個預期日別變數檔案存在、18 個缺席；
+  archive catalogue 本身仍不能解讀為感測器回報完整率。其後取得 1 月 1–25 日 PM2.5、溫度與相對濕度，
+  readiness panel 量得 282,581 筆 primary-radius device-hour（1 km），其中 271,138 筆可進模型，涵蓋
+  470 個裝置、60 個標準站與 25 日；原始缺值與排除原因均保留
+- **微型感測器 2025 全年 readiness audit（已交付）** —
+  `twair analyze micro-sensor-annual-readiness` 的 immutable generation
+  `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`
+  將 365 日日曆分成 322 個已解析日期與 43 個來源目錄缺席日期，量得
+  2,775,609 筆 device-day 與 11,556 個裝置。其中 1,708 個裝置通過空間篩選；
+  在明確標為寬鬆的「3 個 active months、30 個 trio dates、360 個 trio-observed hours、
+  距最近標準站不超過 10 km」條件下，1,343 個裝置符合寬鬆 eligibility 門檻。
+  這不是 calibration、不是 bias estimation、不是 sensor fusion；沒有取得衛星資料，也沒有補值。
+  最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場
+- **微型感測器 grouped predictive benchmark（已交付）** — 25 個 held-date fold 與
+  10 個 air-zone-aware held-station fold 都只以 train partition fit。相對 raw micro，
+  micro+weather 的 device-hour median ΔRMSE 分別為 −0.618 µg/m³ 與 −0.649 µg/m³；
+  但在 held-station 下，weather 相對 micro-only 的 median ΔRMSE 為 +0.022 µg/m³，
+  所以這不是 validated calibration、不是 sensor fusion、不使用衛星特徵，也不是全年或季節驗證
+- **一月 reference-station satellite-context predictive-value limit（已交付）** —
+  `twair analyze micro-sensor-satellite-value` 產生 immutable generation
+  `a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974`。三個衛星變數都完整的
+  269,952 筆共同 cohort device-hour 涵蓋 468 個裝置、58 個標準站；另有 1,186 筆排除列因標準站的
+  MAIAC 為 null 而留在 exclusion ledger。25 個 held-date fold 與 10 個 air-zone-aware held-station fold
+  共完成 140 次 fit、539,904 筆 prediction，獨立 verifier 逐列重建。held-station 是主要證據：
+  micro+satellite 相對 micro-only 的 device-hour median ΔRMSE 為 +0.320 µg/m³（3／10 fold 改善），
+  micro+weather+satellite 相對 micro+weather 為 +0.127 µg/m³（3／10 fold 改善）。held-date 的對應值
+  為 −0.951 與 −0.953 µg/m³（各 25／25 fold 改善），但每月標準站 satellite context 在一月內不隨
+  日期改變，且相同標準站同時出現在 train／test，所以這只是次要的 station-descriptor 證據。
+  它不是微型感測器位置的衛星觀測值、不是 sensor fusion，也不支持 calibration、未見測站增益、
+  跨季節或高解析度濃度場宣稱
+- **微型感測器 validated calibration（延後）** — 需要更長期間、獨立 calibration target、
+  外部留出期間與 drift／季節檢查後，才能把 predictive benchmark 升級成校正結論
+- **資料融合（延後）** — 地面站（準但稀疏）+ 衛星（廣但粗）+ 微感測器（密但雜）→ 高解析度濃度場
   - 方法：geostatistical fusion / RF with satellite covariates / Bayesian hierarchical model
 
 **驗收**
@@ -563,16 +598,39 @@ generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 - [x] **ERA5 2024–2025 robustness**：74 個共同測站完成逐年 replication、同站跨年、同年留站與
   跨年留站；兩年共同 rows 為 636,244／632,760，2,664 次 serial fit 綁定完整 input checksum；
   三種 transfer 的 combined 同時改善數為 63／74、66／74、70／74
+- [x] **微型感測器來源目錄 pilot**：2025-01 量得 10,999 筆站點清冊、75／93 個預期日別變數
+  檔案存在、18 個缺席；archive catalogue 不能解讀為感測器回報完整率
+- [x] **微型感測器全年 readiness audit**：322 個已解析日期、43 個來源目錄缺席日期、
+  2,775,609 筆 device-day 與 11,556 個裝置均經獨立 verifier 重算；寬鬆 eligibility
+  門檻下為 1,343 個裝置，只用於設計下一個 held-station／held-time 實驗
+- [x] **微型感測器 readiness 與 grouped predictive benchmark**：282,581 筆 primary-radius device-hour（1 km），
+  其中 271,138 筆涵蓋 470 個裝置、60 個標準站與 25 日；25 個 held-date fold 與
+  10 個 air-zone-aware held-station fold 的 micro+weather 對 raw micro device-hour median ΔRMSE
+  分別為 −0.618 µg/m³、−0.649 µg/m³。不是 validated calibration、不是 sensor fusion、
+  不使用衛星特徵，且不是全年或季節驗證
+- [x] **微型感測器 satellite-context predictive-value limit**：
+  `twair analyze micro-sensor-satellite-value` 的 generation
+  `a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974` 以
+  269,952 筆共同 cohort device-hour、468 個裝置、58 個標準站、25 個 held-date fold 與
+  10 個 air-zone-aware held-station fold 完成 140 次 fit、539,904 筆 prediction；1,186 筆排除列
+  照原始 null 邊界報告。held-station 是主要證據，micro+satellite − micro-only 與
+  micro+weather+satellite − micro+weather 的 device-hour median ΔRMSE 分別為
+  +0.320 µg/m³（3／10 fold 改善）與 +0.127 µg/m³（3／10 fold 改善）。每月標準站 satellite context
+  不是微型感測器位置的衛星觀測值、不是 sensor fusion，未支持未見測站的穩定增量預測價值
 - [ ] **延後**：至少 1 年的日 PM2.5 融合產品；解析度必須由獨立驗證決定，不能預設為 1 km
 - [ ] **延後**：融合場的留出測站評估
-- [ ] **延後**：微感測器校正前後 RMSE 對照
+- [ ] **延後**：跨季節／跨年度與外部 target 的 validated calibration、drift 檢查及校正前後 RMSE 對照
 - [ ] **延後**：若重啟本階段，以 Markdown／Parquet／網站章節交付，不新增 Quarto 工具鏈
 
 **下一個條件**：M8 的 combined all-satellite feature set 在多數 2025 held-out folds 顯示增量預測資訊，
 但這不是未來年度 transfer；ERA5 的 combined 相對 ERA5-only 跨年留站結果也正好 37／74 改善、
 37／74 變差，因此仍不直接改寫 M4。校正與融合必須另有獨立 calibration target、留出測站與
-coverage／null contract；在這些條件完成前，不發布融合濃度場。微型感測器可作為獨立資料與
-校正 track 評估，不把 ERA5 robustness 或 M8 predictive value 當成替代證據。
+coverage／null contract；在這些條件完成前，不發布融合濃度場。微型感測器的 2025-01 grouped
+predictive benchmark 已量測 raw／micro-only／micro+weather 的 held-date 與 held-station 差異；後續
+reference-station satellite-context 測試在 held-date 顯示次要增益，卻沒有在主要 held-station 證據中
+提供穩定增量價值。兩項期間都只有 25 日，不能取代跨季節 validated calibration。不把 ERA5 robustness、
+M8 predictive value 或這兩個一月 benchmark 當成融合證據。全年 readiness audit 只證明可以開始設計
+更嚴格的 held-station／held-time calibration 實驗，不會自動把 1,343 個寬鬆候選裝置變成已校正裝置。
 
 ---
 

@@ -206,6 +206,141 @@ def ingest_airtw(
     )
 
 
+@ingest_app.command("micro-sensor-catalog")
+def ingest_micro_sensor_catalog(
+    month: str = typer.Option(..., "--month", help="Calendar month in YYYYMM form."),
+    confirm_network: bool = typer.Option(
+        False,
+        "--confirm-network",
+        help="Confirm the small official station-metadata and directory requests.",
+    ),
+) -> None:
+    """Snapshot official low-cost-sensor metadata and one archive directory."""
+    if not confirm_network:
+        raise typer.BadParameter(
+            "micro-sensor catalogue acquisition requires --confirm-network",
+            param_hint="--confirm-network",
+        )
+    from twair.config import ConfigError
+    from twair.ingest import micro_sensors
+
+    source = micro_sensors.load_micro_sensor_source()
+    try:
+        source.month_path(month)
+    except ConfigError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--month") from exc
+    with micro_sensors.FileGatorHistoryBackend(source) as backend:
+        written = micro_sensors.acquire_micro_sensor_catalog(
+            month,
+            backend=backend,
+            source=source,
+        )
+    station = written.manifest["station_metadata"]
+    archive = written.manifest["archive_catalog"]
+    console.print(f"generation: [cyan]{written.generation_sha256}[/cyan]")
+    console.print(
+        f"stations: [green]{int(station['rows']):,}[/green] station rows; "
+        f"[yellow]{int(station['rows_in_duplicate_coordinates']):,}[/yellow] "
+        "rows in duplicate coordinates"
+    )
+    console.print(
+        f"archives: [green]{int(archive['present']):,}[/green] archive files present; "
+        f"[yellow]{int(archive['absent']):,}[/yellow] archive files absent"
+    )
+    console.print(f"wrote raw: {written.raw_directory}")
+    console.print(f"wrote normalized: {written.interim_directory}")
+
+
+@ingest_app.command("micro-sensor-day")
+def ingest_micro_sensor_day(
+    catalog_generation: str = typer.Option(
+        ...,
+        "--catalog-generation",
+        help="Immutable micro-sensor catalogue generation SHA-256.",
+    ),
+    day: str = typer.Option(..., "--date", help="Calendar day in YYYY-MM-DD form."),
+    confirm_download: bool = typer.Option(
+        False,
+        "--confirm-download",
+        help="Confirm download of the three catalogue-selected daily ZIP archives.",
+    ),
+) -> None:
+    """Acquire one reviewed low-cost-sensor day without parsing observations."""
+    if not confirm_download:
+        raise typer.BadParameter(
+            "micro-sensor observation acquisition requires --confirm-download",
+            param_hint="--confirm-download",
+        )
+    from twair.config import ConfigError
+    from twair.ingest import micro_sensors
+
+    source = micro_sensors.load_micro_sensor_source()
+    try:
+        catalog = micro_sensors.load_catalog_generation(
+            catalog_generation,
+            source=source,
+        )
+        micro_sensors.select_observation_archives(catalog, day=day, source=source)
+    except (ConfigError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            str(exc),
+            param_hint="--catalog-generation/--date",
+        ) from exc
+    with micro_sensors.FileGatorHistoryBackend(source) as backend:
+        written = micro_sensors.acquire_micro_sensor_day(
+            catalog_generation,
+            day=day,
+            backend=backend,
+            source=source,
+        )
+    members = written.manifest["members"]
+    total_bytes = sum(int(identity["bytes"]) for identity in members.values())
+    console.print(f"generation: [cyan]{written.generation_sha256}[/cyan]")
+    console.print(f"date: [green]{day}[/green]")
+    console.print(
+        f"archives: [green]{len(members):,}[/green] archive files; "
+        f"[green]{total_bytes:,}[/green] bytes"
+    )
+    console.print(f"wrote raw: {written.directory}")
+
+
+@ingest_app.command("micro-sensor-parse")
+def ingest_micro_sensor_parse(
+    generation: str = typer.Option(
+        ...,
+        "--generation",
+        help="Immutable raw micro-sensor observation generation SHA-256.",
+    ),
+    confirm_parse: bool = typer.Option(
+        False,
+        "--confirm-parse",
+        help="Confirm parsing of the three verified daily observation archives.",
+    ),
+) -> None:
+    """Parse one verified low-cost-sensor day without repairing observations."""
+    if not confirm_parse:
+        raise typer.BadParameter(
+            "micro-sensor observation parsing requires --confirm-parse",
+            param_hint="--confirm-parse",
+        )
+    from twair.config import ConfigError
+    from twair.ingest import micro_sensor_observations
+
+    try:
+        written = micro_sensor_observations.parse_micro_sensor_observation_generation(generation)
+    except (ConfigError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--generation") from exc
+    members = written.manifest["members"]
+    total_rows = sum(int(identity["summary"]["rows"]) for identity in members.values())
+    console.print(f"generation: [cyan]{written.generation_sha256}[/cyan]")
+    console.print(f"date: [green]{written.manifest['date']}[/green]")
+    console.print(
+        f"parsed: [green]{len(members):,}[/green] Parquet members; "
+        f"[green]{total_rows:,}[/green] source rows"
+    )
+    console.print(f"wrote interim: {written.directory}")
+
+
 @ingest_app.command("satellite")
 def ingest_satellite(
     year: int = typer.Option(2025, "--year", help="Calendar year to acquire."),
@@ -1030,6 +1165,191 @@ def analyze_satellite_robustness(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-readiness")
+def analyze_micro_sensor_readiness() -> None:
+    """Measure calibration-test readiness without fitting or fusing values."""
+    from twair.analysis.micro_sensor_calibration import (
+        run_micro_sensor_calibration_readiness,
+        write_micro_sensor_calibration_readiness_result,
+    )
+
+    result = run_micro_sensor_calibration_readiness()
+    written = write_micro_sensor_calibration_readiness_result(result)
+
+    primary = result.summary["primary"]
+    console.print(
+        "Micro-sensor calibration readiness: "
+        f"{int(primary['eligible_pairs']):,} eligible ground-micro device-hours"
+    )
+    console.print(
+        "Coverage and pairing evidence only; not calibration or fusion, and satellite "
+        "values remain reference-station monthly context."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
+@analysis_app.command("micro-sensor-annual-readiness")
+def analyze_micro_sensor_annual_readiness() -> None:
+    """Measure the reviewed 2025 cohort without fitting or fusing values."""
+    from twair.analysis.micro_sensor_annual_readiness import (
+        run_and_write_annual_micro_sensor_readiness,
+    )
+
+    result, written = run_and_write_annual_micro_sensor_readiness()
+
+    calendar = result.summary["calendar"]
+    console.print(
+        "Annual micro-sensor cohort readiness: "
+        f"{int(calendar['complete_dates'])} complete date(s); "
+        f"{int(calendar['catalogue_absent_dates'])} catalogue-absent date(s); "
+        f"{int(result.summary['devices']):,} measured device(s)"
+    )
+    console.print(
+        "Readiness evidence only; not calibration, fusion, satellite acquisition, "
+        "or a high-resolution PM2.5 field."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
+@analysis_app.command("micro-sensor-annual-agreement")
+def analyze_micro_sensor_annual_agreement(
+    confirm_compute: bool = typer.Option(
+        False,
+        "--confirm-compute",
+        help="Run the reviewed one-thread Q4-supported cross-station agreement.",
+    ),
+) -> None:
+    """Plan or run the reviewed Q4-supported cross-station agreement."""
+    from twair.analysis.micro_sensor_annual_agreement import (
+        annual_agreement_run_plan,
+        run_and_write_annual_agreement,
+    )
+
+    plan = annual_agreement_run_plan()
+    if not confirm_compute:
+        console.print("Q4-supported cross-station agreement")
+        console.print(f"reviewed annual readiness generation: {plan.annual_generation_sha256}")
+        console.print(
+            f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB DuckDB memory limit; "
+            "network, GEE, GPU: disabled"
+        )
+        console.print(f"checkpoints: {plan.checkpoint_root}")
+        console.print(f"output generations: {plan.output_root}")
+        console.print("held-station within observed Q4 support: estimable")
+        console.print("held-quarter and joint station-quarter: not estimable")
+        console.print("no annual temporal or seasonal generalization claim")
+        console.print("PLAN ONLY — run again with --confirm-compute to compute and publish")
+        return
+
+    result = run_and_write_annual_agreement()
+    generation = result.manifest.get("generation_sha256")
+    written = result.written
+    if (
+        result.manifest.get("complete") is not True
+        or not isinstance(generation, str)
+        or result.directory.name != generation
+        or not isinstance(written, dict)
+        or not written
+        or any(not isinstance(path, Path) or not path.is_file() for path in written.values())
+    ):
+        raise RuntimeError("annual agreement combined result was not persisted and verified")
+    folds = getattr(result, "folds", None)
+    allowed_states = {
+        "scored",
+        "unscored_empty_train",
+        "unscored_insufficient_train",
+        "unscored_empty_test",
+        "unscored_single_target",
+    }
+    if (
+        not isinstance(folds, pl.DataFrame)
+        or folds.height != 29
+        or not {"fold", "fold_state"}.issubset(folds.columns)
+        or folds["fold"].n_unique() != 29
+        or folds["fold_state"].null_count()
+        or not set(folds["fold_state"]).issubset(allowed_states)
+    ):
+        raise RuntimeError("annual agreement verified fold states changed")
+    fold_states = {
+        str(state): int(count)
+        for state, count in folds.group_by("fold_state").len().sort("fold_state").iter_rows()
+    }
+    console.print("Q4-supported cross-station agreement")
+    console.print(f"reviewed annual readiness generation: {plan.annual_generation_sha256}")
+    console.print(
+        f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB DuckDB memory limit; "
+        "network, GEE, GPU: disabled"
+    )
+    console.print(f"checkpoints: {plan.checkpoint_root}")
+    console.print(f"output generations: {plan.output_root}")
+    console.print(f"Annual reference-station agreement generation: {generation}")
+    console.print(
+        "verified fold states: "
+        + ", ".join(f"{state}={count}" for state, count in fold_states.items())
+    )
+    console.print("Held-station within observed Q4 support only.")
+    console.print("Held-quarter: not estimable")
+    console.print("Joint station-quarter: not estimable")
+    console.print(
+        "No annual temporal or seasonal generalization, validated calibration, fusion, "
+        "satellite feature, or high-resolution PM2.5 field is claimed."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
+@analysis_app.command("micro-sensor-benchmark")
+def analyze_micro_sensor_benchmark() -> None:
+    """Test January micro-sensor prediction on held dates and stations."""
+    from twair.analysis.micro_sensor_calibration_benchmark import (
+        run_micro_sensor_calibration_benchmark,
+        write_micro_sensor_calibration_benchmark_result,
+    )
+
+    result = run_micro_sensor_calibration_benchmark()
+    written = write_micro_sensor_calibration_benchmark_result(result)
+
+    summary = result.summary
+    console.print(
+        "January micro-sensor predictive benchmark: "
+        f"{int(summary['eligible_rows']):,} eligible device-hours; "
+        f"{int(summary['folds'])} held-date and held-station folds"
+    )
+    console.print(
+        "January held-out prediction only; not validated calibration or sensor fusion, "
+        "and satellite context is not a model feature."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
+@analysis_app.command("micro-sensor-satellite-value")
+def analyze_micro_sensor_satellite_value() -> None:
+    """Test reference-station monthly satellite context on held-out groups."""
+    from twair.analysis.micro_sensor_satellite_value import (
+        run_micro_sensor_satellite_value,
+        write_micro_sensor_satellite_value_result,
+    )
+
+    result = run_micro_sensor_satellite_value()
+    written = write_micro_sensor_satellite_value_result(result)
+
+    summary = result.summary
+    console.print(
+        "January satellite-context predictive benchmark: "
+        f"{int(summary['cohort_rows']):,} common-cohort device-hours; "
+        f"{int(summary['excluded_rows']):,} explicitly excluded rows"
+    )
+    console.print(
+        "Held-station evidence is primary; satellite values are reference-station monthly "
+        "context, not calibration, fusion, or a micro-sensor-location satellite value."
+    )
+    for name, path in written.items():
+        console.print(f"wrote {name}: {path}")
+
+
 @analysis_app.command("era5-robustness")
 def analyze_era5_robustness(
     generation: str = typer.Option(
@@ -1669,6 +1989,7 @@ def export_web(
     story: bool = typer.Option(True, "--story/--no-story", help="Also build chapter payloads."),
 ) -> None:
     """Export meta, L0 (station-month JSON) and L1 (station-day Parquet)."""
+    from twair.provenance import git_state
     from twair.viz.export import export_all, write_manifest
     from twair.viz.story import export_story
 
@@ -1681,7 +2002,8 @@ def export_web(
             "see docs/legal.md."
         )
 
-    results = export_all(levels=selected)
+    provenance = git_state()
+    results = export_all(levels=selected, provenance=provenance)
     for name, result in results.items():
         console.print(f"{name}: [green]{result.summary()}[/green]")
 
@@ -1689,7 +2011,7 @@ def export_web(
         paths = export_story()
         total = sum(p.stat().st_size for p in paths)
         console.print(f"story: [green]{len(paths)} file(s), {total / 1e6:.1f} MB[/green]")
-        write_manifest()
+        write_manifest(provenance=provenance)
 
     from twair.viz.export import web_data_dir
 

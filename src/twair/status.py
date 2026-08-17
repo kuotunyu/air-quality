@@ -105,6 +105,37 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "micro_sensor_calibration_readiness",
+        "twair analyze micro-sensor-readiness",
+        "ground-micro pairing readiness; not calibration or fusion",
+        feeds_web=False,
+    ),
+    Module(
+        "micro_sensor_annual_readiness",
+        "twair analyze micro-sensor-annual-readiness",
+        "annual ground-micro cohort readiness; not calibration or fusion",
+        feeds_web=False,
+    ),
+    Module(
+        "micro_sensor_annual_agreement",
+        "twair analyze micro-sensor-annual-agreement",
+        "Q4-supported cross-station agreement; held-quarter and joint not estimable; "
+        "not calibration or fusion",
+        feeds_web=False,
+    ),
+    Module(
+        "micro_sensor_calibration_benchmark",
+        "twair analyze micro-sensor-benchmark",
+        "January held-date and held-station prediction; not validated calibration or fusion",
+        feeds_web=False,
+    ),
+    Module(
+        "micro_sensor_satellite_value",
+        "twair analyze micro-sensor-satellite-value",
+        "held-station reference-station monthly satellite value; not fusion",
+        feeds_web=False,
+    ),
+    Module(
         "m8_era5_value",
         "twair analyze era5-value",
         "held-out ERA5 weather value beyond station measurements",

@@ -13,8 +13,10 @@ cloning the repo sees first.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from twair.freshness import FreshnessReport
 from twair.status import (
@@ -112,6 +114,79 @@ class TestTheReproduceTableCannotRot:
         assert declared_reproduce_targets()[module.reproduce] is True
         assert module.feeds_web is False
         assert "multi-year" in module.what
+
+    def test_micro_sensor_readiness_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(
+            item for item in MODULES if item.directory == "micro_sensor_calibration_readiness"
+        )
+
+        assert module.reproduce == "twair analyze micro-sensor-readiness"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "not calibration or fusion" in module.what
+
+    def test_annual_micro_sensor_readiness_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(item for item in MODULES if item.directory == "micro_sensor_annual_readiness")
+
+        assert module.reproduce == "twair analyze micro-sensor-annual-readiness"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "not calibration or fusion" in module.what
+
+    def test_annual_reference_station_agreement_has_the_exact_plan_only_return_command(
+        self,
+    ) -> None:
+        module = next(item for item in MODULES if item.directory == "micro_sensor_annual_agreement")
+
+        assert module.reproduce == "twair analyze micro-sensor-annual-agreement"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "Q4-supported cross-station agreement" in module.what
+        assert "held-quarter and joint not estimable" in module.what
+        assert "not calibration or fusion" in module.what
+
+    def test_the_declared_agreement_command_executes_without_hidden_required_arguments(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import twair.analysis.micro_sensor_annual_agreement as agreement
+        from twair import cli
+
+        module = next(item for item in MODULES if item.directory == "micro_sensor_annual_agreement")
+        monkeypatch.setenv("TWAIR_DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            agreement,
+            "run_and_write_annual_agreement",
+            lambda: pytest.fail("status reproduction command computed without confirmation"),
+        )
+
+        result = CliRunner().invoke(cli.app, module.reproduce.split()[1:])
+
+        assert result.exit_code == 0
+        assert "PLAN ONLY" in result.output
+
+    def test_micro_sensor_benchmark_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(
+            item for item in MODULES if item.directory == "micro_sensor_calibration_benchmark"
+        )
+
+        assert module.reproduce == "twair analyze micro-sensor-benchmark"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "held-date" in module.what
+        assert "held-station" in module.what
+        assert "not validated calibration or fusion" in module.what
+
+    def test_micro_sensor_satellite_value_has_an_exact_non_web_return_command(self) -> None:
+        module = next(item for item in MODULES if item.directory == "micro_sensor_satellite_value")
+
+        assert module.reproduce == "twair analyze micro-sensor-satellite-value"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "held-station" in module.what
+        assert "reference-station monthly" in module.what
+        assert "not fusion" in module.what
 
     def test_an_undeclared_output_directory_is_reported_rather_than_ignored(self) -> None:
         """A new module that nobody wrote down is the failure being guarded."""

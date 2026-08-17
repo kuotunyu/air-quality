@@ -106,7 +106,7 @@ $$v = WS \cdot \cos\left(\frac{\theta \cdot \pi}{180}\right)$$
 
 1. **顯著性水準（Alpha）的誤用**：將 $\alpha$ 從 $0.05$ 降低至 $0.01$，是使得拒絕虛無假設（真實分配不等於常態分配）的門檻變得更嚴格，而非使得資料「自動變成常態性」。
 2. **大觀測樣本下的檢定效能飽和**：
-   Kolmogorov-Smirnov 檢定與 Shapiro-Wilk 檢定，其統計檢定力（Power）會隨著樣本數 $N$ 的增長而趨向於 $1.0$。在巨量原始觀測下（月聚合 $N pprox 7{,}000$，本專案逐時 $N \approx 3.4\text{ 億}$），任何物理上微小且不影響中央極限定理（CLT）漸近性質的極微小偏誤，都會被檢定判定為「極其顯著地偏離常態」（$p\text{-value} = 0.000$）。
+   Kolmogorov-Smirnov 檢定與 Shapiro-Wilk 檢定，其統計檢定力（Power）會隨著樣本數 $N$ 的增長而趨向於 $1.0$。在巨量原始觀測下（月聚合 $N \approx 7{,}000$，本專案逐時 $N \approx 3.4\text{ 億}$），任何物理上微小且不影響中央極限定理（CLT）漸近性質的極微小偏誤，都會被檢定判定為「極其顯著地偏離常態」（$p\text{-value} = 0.000$）。
 
 ### 3. 實測證據與校正
 在 [src/twair/analysis/pitfalls.py](src/twair/analysis/pitfalls.py) 的 `normality_test_fallacy` 中，使用完全常態的分佈與僅有極微小偏態的分佈在不同樣本數 $N$ 下仿真：
@@ -235,7 +235,7 @@ t 統計量被膨脹。三個方法論決定（各修正一個常見錯誤）：
    模型下模擬；由 $MX=0$，「逐次重配」等價於把 iid 誤差投影過殘差製造矩陣
    $M$，一次抽樣只需一次矩陣乘法。
 2. **殘差的 $E[I]$ 不是 $-1/(n-1)$**：要用 Cliff–Ord 動差（依賴整個設計矩陣）。
-   其 $\mathrm{Var}[I]$ 為近似，Monte-Carlo 實測在本面板 $k/npprox0.18$ 下
+   其 $\mathrm{Var}[I]$ 為近似，Monte-Carlo 實測在本面板 $k/n \approx 0.18$ 下
    **高估 11%**（方向保守），故發表之 p 值一律取自模擬虛無。
 3. **不發表單一 Moran's I**：I 是「場 × 權重矩陣」的共同性質，且實測
    correlogram 會變號，單一數字是異號帶的加權混合。
@@ -558,6 +558,111 @@ $(1,0,1)(1,0,1)_{24}$、每 72 小時一個預測原點。**18/18 次擬合全�
 經由全量大數據測試：
 * 實測發現風向 `888` 與 `999` 哨兵碼**僅存在於 1993–2004 年的檔案中**（比例達 2.6–6.4%），在 2005 之後的檔案中完全消失。這解釋了為什麼 2010–2017 這個窗口在錯誤使用連續線性風向時沒有被極端異常值（如 999 角度）直接摧毀模型 ──── 因為這個哨兵碼在該特定年份是不存在的。
 * 儘管如此，本專案在 [src/twair/qc/rainfall.py](src/twair/qc/rainfall.py) 與 [src/twair/qc/sentinels.py](src/twair/qc/sentinels.py) 中，將品管規格當作一等公民。對於 `RAINFALL` 與 `RAIN_INT`，將 `NR` 強制轉化為物理數值 $0.0$，而對於 `PH_RAIN` 則保留為 `null`（因為沒下雨時，雨水的酸鹼值是未定義的）。
+
+---
+
+## 微型感測器 2025 全年 readiness audit
+
+全年 audit 不先擬合模型，而是先確認是否有可以設計 held-station 與 held-time 實驗的觀測 cohort。
+`twair analyze micro-sensor-annual-readiness` 每次只以單日 PM2.5、相對濕度與溫度來源做
+DuckDB aggregation，保留每個變數的 source rows、nulls、distinct timestamps、observed hours 與
+extreme-range counts。只有三個變數在同一小時都有非 null 值才計為 trio-observed hour；這是
+coverage flag，不是補值。每日結果原子寫入 checkpoint，年度彙總再以 bounded DuckDB scan／COPY 建立。
+
+immutable generation `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`
+由獨立 verifier 重算 322 個已解析日期；365 日日曆的另 43 個來源目錄缺席日期依然缺席。
+輸出共 2,775,609 筆 device-day 與 11,556 個裝置。座標條件要求每筆 PM2.5 座標有效，且全年
+longitude／latitude 的最小與最大值相同；座標沒有被平均、修復或移到最近標準站。
+
+| 座標／空間狀態 | 裝置數 |
+|---|---:|
+| 通過空間篩選 | 1,708 |
+| invalid or null coordinate | 6,049 |
+| moving coordinate | 3,794 |
+| outside Taiwan | 4 |
+| missing PM2.5 coordinate | 1 |
+
+因此有 1,708 個裝置通過空間篩選。在明確標為寬鬆的「3 個 active months、30 個 trio dates、
+360 個 trio-observed hours、距最近標準站不超過 10 km」條件下，
+1,343 個裝置符合寬鬆 eligibility 門檻。ground overlap 只計最近標準站在該小時明確有效且
+非 null 的 PM2.5；缺列與有列但 flag 不是 valid 或 PM2.5 為 null 繼續分開計數。
+
+這不是 calibration、不是 bias estimation、不是 sensor fusion；沒有取得衛星資料，也沒有補值。
+最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
+全年 audit 只將下一個 calibration 實驗從「有沒有足夠 cohort」變成可以用 held-station／held-time 設計回答的問題。
+
+## 微型感測器 Q4-supported cross-station agreement protocol
+
+`twair analyze micro-sensor-annual-agreement` 的修訂 protocol 先為每個標準站與本地日期建立唯一的
+canonical PM2.5 target。`ground_station_present_hours` 計算該站當日實際存在的逐時列；
+`ground_station_eligible_hours` 只計入非 null、finite 且 flag 為 valid 的 PM2.5。eligible hours
+至少 18 才計算當日算術平均，否則公開 target 保持 null。這兩個 station-day 欄位不取代既有的
+device-specific trio-hour provenance，也不因個別裝置的 PM2.5／溫度／濕度重疊時段不同而改變。
+
+Protocol 固定保留 5 個 held-station、4 個 held-quarter 與 20 個 joint station-quarter fold 定義，
+並把每個 fold 明確標為 `scored`、`unscored_empty_train`、`unscored_insufficient_train`、
+`unscored_empty_test` 或 `unscored_single_target`。只有 `scored` fold 產生 prediction；score 與 delta
+仍為所有 fold 保留列，未評分者的 metric 為 null，並保存 intended 與實際 scored population 的
+row count 與 hash。現有支持只允許 Q4 內 held-station 的跨站 agreement；held-quarter 與 joint
+station-quarter 不可估，不能宣稱全年 temporal／seasonal generalization、validated calibration、
+sensor fusion 或高解析度濃度場。新的 production generation 尚未執行與獨立驗證，因此本節只描述
+方法契約，不報告新結果。
+
+## 微型感測器 grouped predictive benchmark
+
+2025-01-01 至 2025-01-25 的 readiness panel 先把每個微型感測器小時配到 primary-radius 內最近的
+標準站小時。282,581 筆 primary-radius device-hour（1 km）中，只有 PM2.5、溫度、相對濕度、標準站 PM2.5、
+距離與 coverage 都通過既定契約的 271,138 筆進入模型；它們涵蓋 470 個裝置、60 個標準站。
+排除列沒有刪除或補值，而是與原因一起保留在 readiness generation。
+
+評估使用兩種互補的 grouped split：
+
+1. **25 個 held-date fold**：每次完整留出一天，避免同一天的裝置小時同時出現在 train 與 test。
+2. **10 個 air-zone-aware held-station fold**：同一標準站配到的所有裝置小時一起留出，測量未見地點的
+   spatial transfer；分層只平衡官方空品區，不把 test station 的 target 洩漏給模型。
+
+每個 fold 比較三個 predictor：直接使用微型感測器 PM2.5 的 `raw_micro`、只以微型感測器 PM2.5 fit 的
+`micro_only` LightGBM，以及加入溫度／相對濕度的 `micro_weather` LightGBM。模型固定 seed、
+`n_jobs=1`，且每個 fold 只在 train partition fit；不使用衛星特徵。device-hour 保留裝置為觀測單位，
+reference-station-hour 則先在同一標準站小時平均各裝置 prediction，再計算 RMSE／MAE／R²／bias。
+
+| Holdout／尺度 | micro-only − raw：median ΔRMSE | micro+weather − raw：median ΔRMSE | micro+weather − micro-only：median ΔRMSE |
+|---|---:|---:|---:|
+| held-date／device-hour | −0.497 µg/m³ | **−0.618 µg/m³** | −0.120 µg/m³ |
+| held-date／reference-station-hour | −0.577 µg/m³ | −0.480 µg/m³ | −0.039 µg/m³ |
+| held-station／device-hour | −0.582 µg/m³ | **−0.649 µg/m³** | +0.022 µg/m³ |
+| held-station／reference-station-hour | −0.295 µg/m³ | −0.091 µg/m³ | +0.205 µg/m³ |
+
+表中負值表示 candidate 的 RMSE 較低。結果支持 `micro_only` 相對 raw micro 在這 25 日內的 grouped
+predictive improvement；weather 在 held-date 有增益，但沒有改善 held-station 相對 `micro_only` 的
+median RMSE。獨立 verifier 從 readiness panel 串行重做 70 次 fit，35 個 fold 與 542,276 筆 prediction
+bit-exact；獨立 NumPy 公式的 scores／deltas 最大差為 2.66e-15。
+
+這不是 validated calibration、不是 sensor fusion、不使用衛星特徵，也不是因果、全年／跨季節穩定性、
+長期 drift 或高解析度濃度場證據。要進入 calibration，仍需要更長期間與獨立 target；要進入三源融合，
+還需要另行定義衛星／地面／微感測器共同特徵、空間產物與完整的留出測站驗證。
+
+### 每月標準站 satellite context 是否增加未見測站的預測資訊
+
+`twair analyze micro-sensor-satellite-value` 延續相同 split，但只讓三個衛星來源都完整的列進入五個
+共同 cohort feature sets。generation
+`a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974` 量得
+269,952 筆共同 cohort device-hour、468 個裝置、58 個標準站與 25 日；1,186 筆排除列因標準站 MAIAC
+為 null 而留在獨立 ledger，沒有填補。25 個 held-date fold 與 10 個 air-zone-aware held-station fold
+共完成 140 次 fit、539,904 筆 prediction。獨立 verifier 串行重做全部 fit，prediction bit-exact；
+scores 與 deltas 的最大絕對差分別為 1.78e-15、2.66e-15。
+
+方法比較 `micro_satellite` − `micro_only`，以及 `micro_weather_satellite` − `micro_weather`，因此每一列
+只回答加入 satellite context 的增量。兩者在 held-date／device-hour 的 median ΔRMSE 分別為
+−0.951、−0.953 µg/m³，各有 25／25 fold 改善；但每月標準站 satellite context 在一月內固定，
+且同一標準站同時出現在 train 與 test，這只是次要的 station-descriptor 證據。
+
+held-station 是主要證據：兩個比較的 device-hour median ΔRMSE 分別是
++0.320 µg/m³（3／10 fold 改善）與 +0.127 µg/m³（3／10 fold 改善）；reference-station-hour 則是
++0.488 µg/m³（3／10）與 +0.221 µg/m³（4／10）。正值表示加入衛星 context 後 RMSE 更高，所以這批
+一月資料沒有顯示穩定的未見測站增量預測價值。這些值不是微型感測器位置的衛星觀測值、
+不是 sensor fusion，也不是 validated calibration、因果／來源歸因、跨季節、drift、future transfer
+或高解析度濃度場證據。
 
 ---
 

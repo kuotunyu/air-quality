@@ -1,0 +1,115 @@
+"schema_version": 1
+"source":
+  "provider": "Ministry of Environment Civil IoT Taiwan Data Service Platform"
+  "history_base_url": "https://history.colife.org.tw/"
+  "history_root_path": "/空氣品質/環境部_智慧城鄉空品微型感測器"
+  "station_metadata_filename": "MOENV_iot_station.csv"
+  "routes":
+    "get_config": "/getconfig"
+    "get_user": "/getuser"
+    "get_directory": "/getdir"
+    "download": "/download"
+  "required_variables":
+    - "pm25"
+    - "humidity"
+    - "temperature"
+  "archive_filename_pattern": "^(?P<prefix>.+)_(?P<variable>pm25|humidity|temperature)_(?P<date>[0-9]{8})\\.zip$"
+  "max_directory_entries": 1000
+  "observation_pilot":
+    "max_archive_bytes": 250000000
+    "max_total_bytes": 700000000
+    "allowed_content_types":
+      - "application/zip"
+      - "application/x-zip-compressed"
+      - "application/octet-stream"
+    "max_zip_members": 8
+    "max_uncompressed_bytes_per_archive": 4000000000
+  "parser":
+    "timestamp_format": "%Y-%m-%d %H:%M:%S"
+    "value_columns":
+      "pm25": "PM2.5"
+      "humidity": "humidity"
+      "temperature": "temperature"
+    "schemas":
+      "pm25":
+        - "header": ["deviceId", "PM2.5", "time", "lon", "lat"]
+          "fields":
+            "device_id": "deviceId"
+            "value": "PM2.5"
+            "timestamp": "time"
+            "longitude": "lon"
+            "latitude": "lat"
+        - "header": ["stationID", "phenomenonTime", "PM2.5", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "PM2.5"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+        - "header": ["stationID", "PM2.5", "phenomenonTime", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "PM2.5"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+      "humidity":
+        - "header": ["deviceId", "humidity", "time", "lon", "lat"]
+          "fields":
+            "device_id": "deviceId"
+            "value": "humidity"
+            "timestamp": "time"
+            "longitude": "lon"
+            "latitude": "lat"
+        - "header": ["stationID", "Relative humidity", "phenomenonTime", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "Relative humidity"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+        - "header": ["stationID", "phenomenonTime", "Relative humidity", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "Relative humidity"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+      "temperature":
+        - "header": ["deviceId", "temperature", "time", "lon", "lat"]
+          "fields":
+            "device_id": "deviceId"
+            "value": "temperature"
+            "timestamp": "time"
+            "longitude": "lon"
+            "latitude": "lat"
+        - "header": ["stationID", "phenomenonTime", "Temperature", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "Temperature"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+        - "header": ["stationID", "Temperature", "phenomenonTime", "StationLongitude", "StationLatitude"]
+          "fields":
+            "device_id": "stationID"
+            "value": "Temperature"
+            "timestamp": "phenomenonTime"
+            "longitude": "StationLongitude"
+            "latitude": "StationLatitude"
+"analysis":
+  "coverage_thresholds": [15, 30, 45, 60]
+  "primary_minimum_rows": 45
+  "distance_bands_km": [0.5, 1, 2, 3, 5, 10]
+  "primary_distance_km": 1
+  "threads": 1
+  "extreme_ranges":
+    "pm25":
+      "minimum": 0
+      "maximum": 1000
+    "humidity":
+      "minimum": 0
+      "maximum": 100
+    "temperature":
+      "minimum": -100
+      "maximum": 100

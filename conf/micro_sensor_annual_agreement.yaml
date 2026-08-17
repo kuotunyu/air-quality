@@ -1,0 +1,36 @@
+"analysis":
+  "protocol_revision": 2
+  "target_definition": "canonical_reference_station_day_pm25"
+  "ground_minimum_eligible_hours": 18
+  "evaluation_name": "q4_supported_cross_station_agreement"
+  "annual_generation_sha256": "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
+  "distance_bands_km": [0.5, 1.0, 2.0]
+  "primary_distance_km": 0.5
+  "primary_devices": 124
+  "primary_stations": 13
+  "minimum_active_months": 3
+  "minimum_trio_dates": 30
+  "minimum_trio_hours": 360
+  "minimum_source_rows": 1080
+  "minimum_observed_hours": 18
+  "station_folds": 5
+  "quarters": [1, 2, 3, 4]
+  "ridge_alpha": 1.0
+  "threads": 1
+  "memory_limit_gb": 6
+  "claim_boundary":
+    "q4_supported_cross_station_agreement": true
+    "held_station_within_observed_q4_support": true
+    "held_quarter_estimable": false
+    "joint_station_quarter_estimable": false
+    "annual_temporal_generalization": false
+    "seasonal_generalization": false
+    "reference_station_agreement_only": true
+    "validated_calibration": false
+    "sensor_bias_estimate": false
+    "sensor_fusion": false
+    "colocated_ground_truth": false
+    "high_resolution_field": false
+    "satellite_feature_used": false
+    "values_imputed": false
+    "causal_analysis": false

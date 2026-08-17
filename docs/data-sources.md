@@ -110,7 +110,118 @@ register 永遠優先，歷史資料不覆蓋同名現行紀錄。
 | Copernicus ERA5 | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | ✅ 2024–2025 年逐時來源與多年度／留出測站 robustness 已完成 |
 | Sentinel-5P TROPOMI | NO2/SO2/CO 柱濃度 | Google Earth Engine |
 | MODIS MAIAC AOD | 1 km 氣膠光學厚度 | Google Earth Engine |
-| 智慧城鄉微型感測器 | 高密度 PM2.5 | 環境部開放平臺 |
+| 智慧城鄉微型感測器 | 高密度低成本 PM2.5 觀測候選來源 | ✅ 2025-01 來源、觀測、readiness、grouped predictive benchmark 與 reference-station satellite-context predictive-value limit 已完成；2025 全年 readiness audit 已完成；validated calibration 與融合未交付 |
+
+### 2026-08-12 智慧城鄉微型感測器來源、一月 predictive benchmark 與全年 readiness audit
+
+來源為環境部「[民生公共物聯網－空氣品質](https://ci.taiwan.gov.tw/dsp/Views/dataset/air.aspx)」的
+站點清冊，以及其「[歷史資料](https://history.colife.org.tw/)」瀏覽器公開的 archive catalogue。
+下列指令先擷取清冊與目錄 metadata；這一步本身不下載日別觀測 ZIP：
+
+```bash
+uv run twair ingest micro-sensor-catalog --month 202501 --confirm-network
+```
+
+這次來源目錄 pilot 產生 immutable generation
+`c841ef16d7cc55920b6ab5b7b274c2f8b5e68e754d8cce4e1a5677f997e8e05b`。
+獨立重讀後量得 10,999 筆站點清冊；其中 232 組重複座標涵蓋 806 筆站點列，均照來源原樣保留，
+沒有合併或刪除。2025-01 以 31 日 × PM2.5／溫度／相對濕度建立 93 列完整日曆：
+75／93 個預期日別變數檔案存在，18 個缺席；三個變數都只有 1 月 1–25 日出現在來源目錄，
+1 月 26–31 日缺席。
+
+`archive_present` 只表示官方歷史目錄列出該 ZIP，不能解讀為感測器回報完整率。後續以來源容量上限
+逐日取得並解析 2025-01-01 至 2025-01-25 的 PM2.5、溫度與相對濕度；1 月 26–31 日仍是來源目錄中
+缺席的日期，不補值、不向前填補。`twair analyze micro-sensor-readiness` 產生 immutable generation
+`1f76ea400995080027701f80c311438fab3e6d823f5665681b9ca79a4aad81fd`：共量得
+282,581 筆 primary-radius device-hour（1 km），其中 271,138 筆同時通過微型感測器三變數、標準站 PM2.5、
+距離與 coverage 契約，可進 predictive benchmark；這些列涵蓋 470 個裝置、60 個標準站與 25 日。
+其餘列仍留在輸出並以明確排除原因報告，不刪除也不插補。
+
+`twair analyze micro-sensor-benchmark` 以同一批 271,138 筆列建立 25 個 held-date fold 與
+10 個 air-zone-aware held-station fold；每個 fold 的模型只看 train partition。它比較 raw micro、
+只用微型感測器 PM2.5 的 LightGBM，以及加入溫度／相對濕度的 LightGBM，並同時在 device-hour 與
+reference-station-hour 尺度評分。輸出 generation 為
+`25cc89fdb57d1e64754edd5c3a7bbb140cad88e5e178137875dafae2103f0cc6`；35 個 fold 產生
+542,276 筆 held-out prediction。獨立 verifier 從 readiness panel 串行重做 70 次 fit，35 個 fold 與
+542,276 筆 prediction 均 bit-exact；獨立公式重算的 210 筆 scores 與 210 筆 deltas 最大浮點差為
+2.66e-15。
+
+| Holdout／評分尺度 | micro-only − raw：median ΔRMSE | micro+weather − raw：median ΔRMSE | micro+weather − micro-only：median ΔRMSE |
+|---|---:|---:|---:|
+| held-date／device-hour | −0.497 µg/m³ | **−0.618 µg/m³** | −0.120 µg/m³ |
+| held-date／reference-station-hour | −0.577 µg/m³ | −0.480 µg/m³ | −0.039 µg/m³ |
+| held-station／device-hour | −0.582 µg/m³ | **−0.649 µg/m³** | +0.022 µg/m³ |
+| held-station／reference-station-hour | −0.295 µg/m³ | −0.091 µg/m³ | +0.205 µg/m³ |
+
+負值表示表中左側 candidate 的 RMSE 較低。micro-only 在兩種 holdout 的 device-hour 中位數都優於
+raw micro；加入 weather 在 held-date 仍有增益，但在 held-station 相對 micro-only 的中位數沒有改善。
+因此這是 2025 年 1 月的 grouped predictive benchmark：不是 validated calibration、不是 sensor fusion、
+不使用衛星特徵，也不支持全年／季節穩定性、長期 drift、因果或高解析度濃度場。低成本感測器仍不能
+視為標準監測站的等價替代；validated calibration 需要更長期間與獨立 target，融合場則需要另一套
+留出測站驗證。
+
+#### 2025 全年 readiness audit
+
+`twair analyze micro-sensor-annual-readiness` 將全年運算限在逐日 DuckDB aggregation 與可重用
+checkpoint，沒有把全年 device-hour 一次收進記憶體。獨立 verifier 已逐日重算 immutable
+generation `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`。
+365 日日曆中有 322 個已解析日期與 43 個來源目錄缺席日期；缺席日期沒有被補成零。
+全年輸出共 2,775,609 筆 device-day，涵蓋 11,556 個裝置。
+
+| 座標／空間狀態 | 裝置數 |
+|---|---:|
+| 通過空間篩選 | 1,708 |
+| invalid or null coordinate | 6,049 |
+| moving coordinate | 3,794 |
+| outside Taiwan | 4 |
+| missing PM2.5 coordinate | 1 |
+
+表中的 1,708 個裝置通過空間篩選，但還不是 calibration cohort。在 320 列門檻網格中，
+明確標為寬鬆的「3 個 active months、30 個 trio dates、360 個 trio-observed hours、
+距最近標準站不超過 10 km」一列量得 1,343 個裝置符合寬鬆 eligibility 門檻。
+其餘通過空間篩選的裝置中，221 個少於 3 個 active months、5 個少於 30 個 trio dates、
+139 個距最近標準站超過 10 km；四種去向的裝置數都保留在 exclusion ledger，沒有靜默移除。
+
+這不是 calibration、不是 bias estimation、不是 sensor fusion；沒有取得衛星資料，也沒有補值。
+最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
+這個 audit 只支持下一步為這批寬鬆候選裝置設計獨立 target、held-station 與 held-time 實驗。
+
+#### Q4-supported cross-station agreement protocol（待執行）
+
+全年 readiness evidence 的後續 agreement protocol 已改為每個標準站／日期唯一的 canonical
+PM2.5 target：使用完整標準站日內的 valid、finite、non-null 小時，而不是依每個微型感測器的
+三變數重疊小時各自平均；少於 18 個 eligible station hours 時 target 保持 null。所有 29 個
+held-station、held-quarter 與 joint fold 都會持久化狀態，但現有觀測支持只允許 Q4 內的
+held-station agreement。held-quarter 與 joint station-quarter 明確不可估，也不支持全年 temporal、
+seasonal、calibration 或 fusion claim。`twair analyze micro-sensor-annual-agreement` 目前可檢視 plan；
+修訂後的 production generation 尚未執行與獨立驗證，因此此處不列新結果。
+
+#### 每月標準站 satellite context 的增量預測測試
+
+`twair analyze micro-sensor-satellite-value` 把同一個 readiness generation 的 `maiac_aod`、
+`s5p_no2`、`s5p_so2` 加到一月 benchmark，但這三個值是每月標準站 satellite context，
+不是微型感測器位置的衛星觀測值。immutable generation
+`a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974` 使用三個來源都完整的
+269,952 筆共同 cohort device-hour，涵蓋 468 個裝置、58 個標準站與 25 日；因富貴角、恆春的
+MAIAC 為 null，另有 1,186 筆排除列保留在 `exclusions.parquet`，沒有填補。
+
+同一共同 cohort 在 25 個 held-date fold 與 10 個 air-zone-aware held-station fold 各測一次，
+共完成 140 次 fit、539,904 筆 prediction。獨立 verifier 不呼叫正式分析的 scoring／summary functions，
+逐 fold 串行重做 140 次 fit；所有 prediction bit-exact，scores 與 deltas 的最大絕對差分別為
+1.78e-15、2.66e-15，五個 input 與八個 output SHA-256 在重算前後均未改變。
+
+| Holdout／尺度 | micro+satellite − micro-only：median ΔRMSE（改善 fold） | micro+weather+satellite − micro+weather：median ΔRMSE（改善 fold） |
+|---|---:|---:|
+| held-date／device-hour | −0.951 µg/m³（25／25） | −0.953 µg/m³（25／25） |
+| held-date／reference-station-hour | −1.259 µg/m³（25／25） | −1.276 µg/m³（25／25） |
+| held-station／device-hour | **+0.320 µg/m³（3／10 fold 改善）** | **+0.127 µg/m³（3／10 fold 改善）** |
+| held-station／reference-station-hour | +0.488 µg/m³（3／10） | +0.221 µg/m³（4／10） |
+
+負值表示加入 satellite context 後 RMSE 較低，正值表示較高。held-station 是主要證據：在未見標準站
+上，兩個最直接的 satellite 增量比較其中位數都變差，而且只有 3／10 個 device-hour fold 改善。
+held-date 的改善是次要的 station-descriptor 證據，因為一月內每個標準站的 satellite context 固定，
+且相同標準站同時出現在 train 與 test。結果沒有支持穩定的未見測站增量預測價值；這不是 sensor fusion、
+validated calibration、因果／來源歸因、跨季節或未來 transfer，也不是高解析度濃度場。
 
 ### 2026-08-11 ERA5 2025 來源取得邊界
 

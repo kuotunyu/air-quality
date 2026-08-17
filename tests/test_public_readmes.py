@@ -220,3 +220,126 @@ def test_both_readmes_keep_hugging_face_to_l0_l1_and_owner_confirmed_publication
         in en
     )
     assert "full HF Dataset publishes at closeout" not in en
+
+
+def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_readiness_from_calibration_and_fusion() -> (
+    None
+):
+    zh, en = _readmes()
+    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
+    sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+    methodology = (REPO_ROOT / "docs" / "methodology.md").read_text(encoding="utf-8")
+    zh_prose = " ".join(zh.split())
+    en_prose = " ".join(en.split())
+    plan_prose = " ".join(plan.split())
+    sources_prose = " ".join(sources.split())
+    methodology_prose = " ".join(methodology.split())
+
+    assert "微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付" in zh_prose
+    assert (
+        "January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered"
+        in en_prose
+    )
+    assert "validated calibration 與融合仍延後" in zh_prose
+    assert "validated calibration and fusion remain deferred" in en_prose
+
+    for text in (plan_prose, sources_prose):
+        assert "10,999 筆站點清冊" in text
+        assert "75／93 個預期日別變數檔案存在" in text
+        assert "18 個缺席" in text
+        assert "不能解讀為感測器回報完整率" in text
+
+    for text in (plan_prose, sources_prose, methodology_prose):
+        assert "282,581 筆 primary-radius device-hour" in text
+        assert "271,138 筆" in text
+        assert "470 個裝置" in text
+        assert "60 個標準站" in text
+        assert "25 個 held-date fold" in text
+        assert "10 個 air-zone-aware held-station fold" in text
+        assert "−0.618 µg/m³" in text
+        assert "−0.649 µg/m³" in text
+        assert "不是 validated calibration" in text
+        assert "不是 sensor fusion" in text
+        assert "不使用衛星特徵" in text
+
+    assert "twair ingest micro-sensor-catalog --month 202501 --confirm-network" in sources
+    assert "twair analyze micro-sensor-readiness" in sources
+    assert "twair analyze micro-sensor-benchmark" in sources
+    assert "c841ef16d7cc55920b6ab5b7b274c2f8b5e68e754d8cce4e1a5677f997e8e05b" in sources
+    assert "1f76ea400995080027701f80c311438fab3e6d823f5665681b9ca79a4aad81fd" in sources
+    assert "25cc89fdb57d1e64754edd5c3a7bbb140cad88e5e178137875dafae2103f0cc6" in sources
+    assert "https://history.colife.org.tw/" in sources
+    assert "https://ci.taiwan.gov.tw/dsp/Views/dataset/air.aspx" in sources
+    assert "觀測 ZIP 尚未下載" not in " ".join(
+        (zh_prose, en_prose, plan_prose, sources_prose, methodology_prose)
+    )
+
+    assert "微型感測器 2025 全年 readiness audit 已交付" in zh_prose
+    assert "2025 annual micro-sensor readiness audit delivered" in en_prose
+
+    annual_details = (plan_prose, sources_prose, methodology_prose)
+    for text in annual_details:
+        assert "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb" in text
+        assert "365 日日曆" in text
+        assert "322 個已解析日期" in text
+        assert "43 個來源目錄缺席日期" in text
+        assert "2,775,609 筆 device-day" in text
+        assert "11,556 個裝置" in text
+        assert "1,708 個裝置通過空間篩選" in text
+        assert "1,343 個裝置符合寬鬆 eligibility 門檻" in text
+        assert "3 個 active months" in text
+        assert "30 個 trio dates" in text
+        assert "360 個 trio-observed hours" in text
+        assert "距最近標準站不超過 10 km" in text
+        assert "不是 calibration、不是 bias estimation、不是 sensor fusion" in text
+        assert "沒有取得衛星資料，也沒有補值" in text
+        assert "最近標準站不是微型感測器位置的 colocated ground truth" in text
+        assert "沒有建立高解析度 PM2.5 場" in text
+
+    for text in (sources, methodology):
+        assert "| invalid or null coordinate | 6,049 |" in text
+        assert "| moving coordinate | 3,794 |" in text
+        assert "| outside Taiwan | 4 |" in text
+        assert "| missing PM2.5 coordinate | 1 |" in text
+
+    assert "四種去向的裝置數都保留在 exclusion ledger，沒有靜默移除" in sources_prose
+    assert "座標沒有被平均、修復或移到最近標準站" in methodology_prose
+    assert "flag 不是 valid 或 PM2.5 為 null" in methodology_prose
+
+
+def test_public_docs_publish_the_verified_satellite_context_limit_without_calling_it_fusion() -> (
+    None
+):
+    zh, en = _readmes()
+    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
+    sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
+    methodology = (REPO_ROOT / "docs" / "methodology.md").read_text(encoding="utf-8")
+    zh_prose = " ".join(zh.split())
+    en_prose = " ".join(en.split())
+    detailed = tuple(" ".join(text.split()) for text in (plan, sources, methodology))
+
+    assert "一月 reference-station satellite-context predictive-value limit 已交付" in zh_prose
+    assert (
+        "January 2025 reference-station satellite-context predictive-value limit delivered"
+        in en_prose
+    )
+    assert "validated calibration 與融合仍延後" in zh_prose
+    assert "validated calibration and fusion remain deferred" in en_prose
+
+    for text in detailed:
+        assert "twair analyze micro-sensor-satellite-value" in text
+        assert "a308372bbbb02ea49362b732579649d498c98831f3ec9a4f7cc07bba1f8ff974" in text
+        assert "269,952 筆共同 cohort device-hour" in text
+        assert "1,186 筆排除列" in text
+        assert "468 個裝置" in text
+        assert "58 個標準站" in text
+        assert "25 個 held-date fold" in text
+        assert "10 個 air-zone-aware held-station fold" in text
+        assert "140 次 fit" in text
+        assert "539,904 筆 prediction" in text
+        assert "+0.320 µg/m³（3／10 fold 改善）" in text
+        assert "+0.127 µg/m³（3／10 fold 改善）" in text
+        assert "每月標準站 satellite context" in text
+        assert "不是微型感測器位置的衛星觀測值" in text
+        assert "不是 sensor fusion" in text
+        assert "held-station 是主要證據" in text
