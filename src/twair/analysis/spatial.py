@@ -311,6 +311,8 @@ def station_coverage(
                 "months_in_panel": group.height,
                 "placed": lat is not None,
                 "offshore": bool(group["offshore"][0]),
+                "lat": None if lat is None else float(lat),
+                "lon": None if group["lon"][0] is None else float(group["lon"][0]),
                 "zone_era": str(group["zone_era"][0]),
                 "airzone_official": group["airzone_official"][0],
                 "complete_every_month": station in complete,
@@ -323,7 +325,33 @@ def station_coverage(
                 ),
             }
         )
-    return pl.DataFrame(rows).sort(STATION)
+    return _attach_nearest_neighbour(pl.DataFrame(rows).sort(STATION))
+
+
+def _attach_nearest_neighbour(coverage: pl.DataFrame) -> pl.DataFrame:
+    """Great-circle km to the closest other main-island station.
+
+    The choice of k-nearest weights over a distance band rests on this spacing —
+    `conf/spatial.yaml` says so in prose — and nothing recomputed it, so the
+    range it quotes could not go stale in a way anyone would notice. It is a
+    property of the network, so it ships beside the network.
+
+    Offshore stations are excluded from both sides: they are tens of kilometres
+    of open water from anything, so including them would widen the range while
+    describing a different question from the one the weights choice asks.
+    """
+    mainland = coverage.filter(pl.col("placed") & ~pl.col("offshore"))
+    if mainland.height < 2:
+        return coverage.with_columns(pl.lit(None, dtype=pl.Float64).alias("km_nearest_neighbour"))
+    distance = pairwise_km(mainland["lat"].to_numpy(), mainland["lon"].to_numpy())
+    np.fill_diagonal(distance, np.inf)
+    nearest = pl.DataFrame(
+        {
+            STATION: mainland[STATION],
+            "km_nearest_neighbour": distance.min(axis=1),
+        }
+    )
+    return coverage.join(nearest, on=STATION, how="left")
 
 
 def _complete_stations(panel: pl.DataFrame) -> set[str]:
@@ -1265,6 +1293,29 @@ def run_spatial(
     if "partition" in steps:
         bundle = station_dissimilarity(settings, root=root)
         agreement, clusters = partition_agreement(bundle, settings, rng=rng)
+        # Appended rather than built above, because these are measured by the
+        # partition step and metadata must not claim them when it did not run.
+        metadata = pl.concat(
+            [
+                metadata,
+                pl.DataFrame(
+                    {
+                        "key": [
+                            "clustering_stations_kept",
+                            "clustering_months_used",
+                            "station_correlation_raw",
+                            "station_correlation_anomaly",
+                        ],
+                        "value": [
+                            str(len(bundle.stations)),
+                            str(bundle.months_used),
+                            str(bundle.raw_correlation),
+                            str(bundle.anomaly_correlation),
+                        ],
+                    }
+                ),
+            ]
+        )
 
     lisa_table = lisa(panel, settings, rng=rng) if "lisa" in steps else None
     inference = inference_price(panel, settings) if "inference" in steps else None
@@ -1327,6 +1378,15 @@ class DissimilarityBundle:
     months_used: int
     months_window: int
     excluded: pl.DataFrame
+    raw_correlation: float
+    anomaly_correlation: float
+
+
+def _mean_off_diagonal_correlation(series: np.ndarray) -> float:
+    """Mean pairwise correlation between station series, diagonal excluded."""
+    correlation = np.asarray(np.corrcoef(series))
+    off_diagonal = ~np.eye(correlation.shape[0], dtype=bool)
+    return float(correlation[off_diagonal].mean())
 
 
 def station_dissimilarity(conf: SpatialConf, *, root: Path | None = None) -> DissimilarityBundle:
@@ -1424,8 +1484,15 @@ def station_dissimilarity(conf: SpatialConf, *, root: Path | None = None) -> Dis
             "too few for a correlation anyone should trust"
         )
 
+    # Measured on both sides of the switch below, because the switch is the
+    # methodological claim: on raw series every station in Taiwan correlates
+    # with every other one at roughly the same high value, which is the monsoon
+    # and not a partition anyone drew. `conf/spatial.yaml` states that in a
+    # comment; these two numbers are the same statement, recomputed each run.
+    raw_correlation = _mean_off_diagonal_correlation(matrix)
     if bool(conf.clustering["remove_island_climatology"]):
         matrix = matrix - matrix.mean(axis=0, keepdims=True)
+    anomaly_correlation = _mean_off_diagonal_correlation(matrix)
 
     # Z-score each station's series so that Ward-on-rows equals Ward under the
     # correlation distance (see the dataclass docstring for the identity).
@@ -1459,6 +1526,8 @@ def station_dissimilarity(conf: SpatialConf, *, root: Path | None = None) -> Dis
         months_used=int(matrix.shape[1]),
         months_window=len(months),
         excluded=excluded,
+        raw_correlation=raw_correlation,
+        anomaly_correlation=anomaly_correlation,
     )
 
 

@@ -6,10 +6,14 @@
 
 "weights":
   # k-nearest rather than a distance band, and the reason is measured, not
-  # aesthetic: the station network's nearest-neighbour spacing runs from 0.6 km
-  # to 67 km on the main island, so any single band radius either isolates the
-  # sparse east or connects half the west coast to itself. k-nearest gives every
-  # station the same number of neighbours by construction and leaves no isolate.
+  # aesthetic: the station network's nearest-neighbour spacing spans two orders
+  # of magnitude on the main island, so any single band radius either isolates
+  # the sparse east or connects half the west coast to itself. k-nearest gives
+  # every station the same number of neighbours by construction and leaves no
+  # isolate. The spacing is recomputed on every run —
+  # `station_coverage.parquet` carries `km_nearest_neighbour` per station, and
+  # `reports/03-spatial.md` prints its range — rather than being typed here,
+  # where it would go stale the way the clustering block's figures did.
   "family": "knn"
   "k": 5
   # Row-standardised, so I reads as the correlation between a station and the
@@ -76,17 +80,28 @@
   "window_end": "2017-12"
   # The monthly table withholds a mean below its coverage threshold, and those
   # nulls stay excluded here — so demanding a published mean in all 96 window
-  # months leaves 6 stations, which is no network. Measured trade-off: share
-  # 0.98 keeps 43 stations on 86 common months, 0.95 keeps 66 on 63, 0.90 keeps
-  # 73 on 47. The test is about the network, so stations weigh more than months
-  # and 63 months is ample for a correlation; 0.95 is the choice. Stations below
+  # months leaves 6 stations, which is no network. Trade-off as measured when
+  # this was chosen: share 0.98 kept 43 stations on 86 common months, 0.95 kept
+  # 66 on 63, 0.90 kept 73 on 47. Only the chosen share is recomputed — the run
+  # emits `clustering_stations_kept` and `clustering_months_used`, and it now
+  # keeps 65 rather than the 66 recorded here, so read the two alternatives as
+  # the reasoning of the day rather than as current counts. The test is about the
+  # network, so stations weigh more than months and 63 months is ample for a
+  # correlation; 0.95 is the choice. Stations below
   # the share and months any kept station misses are both counted, never filled.
   "min_station_share": 0.95
   "distance": "correlation_seasonal_anomaly"
-  # Without this every station in Taiwan correlates at ~0.73 because they share
-  # one winter maximum, and the test would report all zones equally good. Removing
-  # the island-wide monthly mean drops the mean pairwise correlation to ~0.01 and
-  # is what makes the comparison about zoning rather than about the monsoon.
+  # Without this every station in Taiwan correlates highly because they share one
+  # winter maximum, and the test would report all zones equally good. Removing the
+  # island-wide monthly mean collapses the mean pairwise correlation to near zero,
+  # which is what makes the comparison about zoning rather than about the monsoon.
+  #
+  # Both sides are measured on every run and land in `metadata.parquet` as
+  # `station_correlation_raw` and `station_correlation_anomaly`; the kept-station
+  # and common-month counts for the chosen share land there too. They are not
+  # restated here. The figures that used to be — ~0.73 raw and 66 kept stations —
+  # had gone stale against 0.786 and 65 with nothing to catch it, which is the
+  # whole argument for emitting them instead of typing them.
   "remove_island_climatology": true
   "linkage": "ward"
   "k_grid": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
@@ -101,6 +116,8 @@
   # 5 km, not the 1 km PLAN.md asks for. Two real stations fall inside one 1 km
   # cell at the dense end of the network while the sparse end has no station
   # within 60 km, so a 1 km cell asserts a resolution the network cannot deliver.
+  # The spacing behind that is measured on every run rather than typed here:
+  # `station_coverage.parquet` carries `km_nearest_neighbour` per station.
   "resolution_km": 5.0
   # Leave-one-out is optimistic when neighbours are 1 km away: it scores
   # interpolation between near-duplicates. Blocked folds withhold everything

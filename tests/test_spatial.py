@@ -20,12 +20,14 @@ import pytest
 from twair.analysis.spatial import (
     DissimilarityBundle,
     SpatialConf,
+    _mean_off_diagonal_correlation,
     benjamini_hochberg,
     block_bootstrap_mean,
     build_weights,
     cliff_ord_moments,
     load_spatial_conf,
     residual_null_draws,
+    station_coverage,
 )
 from twair.geometry import EARTH_RADIUS_KM, haversine_km, pairwise_km
 
@@ -66,14 +68,110 @@ class TestGeometry:
         assert pytest.approx(6371.0088) == EARTH_RADIUS_KM
 
 
+class TestStationSpacing:
+    """The spacing that decides knn over a distance band is now measured, not typed.
+
+    It lived in a `conf/spatial.yaml` comment and nothing recomputed it. The
+    clustering block of the same file carried two figures that had gone stale
+    exactly that way, which is the argument for these.
+    """
+
+    @staticmethod
+    def _panel() -> pl.DataFrame:
+        """Two close mainland stations, one far one, one island, one unplaced."""
+        stations = [
+            ("near-a", 23.5, 120.5, False),
+            ("near-b", 23.5, 120.6, False),  # ~10 km from near-a
+            ("far", 24.5, 121.5, False),  # ~140 km away
+            ("island", 23.57, 119.56, True),  # offshore, closer to nothing
+            ("unplaced", None, None, False),
+        ]
+        return pl.DataFrame(
+            [
+                {
+                    "station_name": name,
+                    "month": month,
+                    "lat": lat,
+                    "lon": lon,
+                    "offshore": offshore,
+                    "zone_era": "中部空品區",
+                    "airzone_official": "中部空品區",
+                }
+                for name, lat, lon, offshore in stations
+                for month in range(3)
+            ]
+        )
+
+    def test_the_spacing_is_the_distance_to_the_closest_other_mainland_station(self) -> None:
+        coverage = station_coverage(self._panel(), load_spatial_conf())
+        spacing = dict(
+            zip(
+                coverage["station_name"].to_list(),
+                coverage["km_nearest_neighbour"].to_list(),
+                strict=True,
+            )
+        )
+
+        expected = haversine_km(23.5, 120.5, 23.5, 120.6)
+        assert spacing["near-a"] == pytest.approx(expected, rel=1e-12)
+        assert spacing["near-b"] == pytest.approx(expected, rel=1e-12)
+        assert spacing["far"] > 100.0
+
+    def test_offshore_and_unplaced_stations_carry_no_spacing(self) -> None:
+        """Both sides excluded: an island is open water from everything, and a
+        station with no coordinates cannot be measured at all. Including either
+        would widen the range while describing a different question."""
+        coverage = station_coverage(self._panel(), load_spatial_conf())
+        spacing = dict(
+            zip(
+                coverage["station_name"].to_list(),
+                coverage["km_nearest_neighbour"].to_list(),
+                strict=True,
+            )
+        )
+
+        assert spacing["island"] is None
+        assert spacing["unplaced"] is None
+        assert coverage["km_nearest_neighbour"].drop_nulls().len() == 3
+
+
+class TestIslandClimatology:
+    """Removing the island-wide monthly mean is a claim, so it carries a number."""
+
+    def test_series_sharing_one_seasonal_cycle_correlate_almost_perfectly(self) -> None:
+        season = np.sin(np.linspace(0, 4 * np.pi, 48))
+        rng = np.random.default_rng(0)
+        raw = np.array([season * 10.0 + rng.normal(0, 0.5, 48) for _ in range(6)])
+
+        assert _mean_off_diagonal_correlation(raw) > 0.95
+
+    def test_removing_the_shared_cycle_collapses_that_correlation(self) -> None:
+        season = np.sin(np.linspace(0, 4 * np.pi, 48))
+        rng = np.random.default_rng(0)
+        raw = np.array([season * 10.0 + rng.normal(0, 0.5, 48) for _ in range(6)])
+
+        anomaly = raw - raw.mean(axis=0, keepdims=True)
+
+        assert abs(_mean_off_diagonal_correlation(anomaly)) < 0.3
+
+    def test_the_diagonal_is_excluded_so_a_perfect_self_match_cannot_inflate_it(
+        self,
+    ) -> None:
+        independent = np.random.default_rng(1).normal(size=(40, 200))
+
+        assert abs(_mean_off_diagonal_correlation(independent)) < 0.05
+
+
 class TestWeights:
     def test_every_row_of_a_knn_matrix_sums_to_one(self) -> None:
         w = build_weights(grid_coords(5, 5), family="knn", parameter=4, conf=load_spatial_conf())
         assert w.dense.sum(axis=1) == pytest.approx(np.ones(25))
 
     def test_k_nearest_leaves_no_station_without_a_neighbour(self) -> None:
-        # The reason knn is the primary family: the network spans 0.6 km to 67 km
-        # of nearest-neighbour distance, so any single band isolates somebody.
+        # The reason knn is the primary family: nearest-neighbour distance spans
+        # two orders of magnitude across the network, so any single band isolates
+        # somebody. The range itself is measured per run — see TestStationSpacing
+        # and `station_coverage.parquet` — rather than restated here.
         w = build_weights(grid_coords(4, 6), family="knn", parameter=5, conf=load_spatial_conf())
         assert w.n_islands == 0
 
@@ -365,6 +463,13 @@ def _two_regime_bundle(noise: float, seed: int) -> DissimilarityBundle:
         months_used=months,
         months_window=months,
         excluded=pl.DataFrame({"station_name": [], "excluded_reason": []}),
+        # Measured on the same synthetic series, so the fixture stays internally
+        # consistent. No default on the dataclass: a bundle that forgot to
+        # measure these should fail loudly rather than ship a nan.
+        raw_correlation=_mean_off_diagonal_correlation(matrix),
+        anomaly_correlation=_mean_off_diagonal_correlation(
+            matrix - matrix.mean(axis=0, keepdims=True)
+        ),
     )
 
 
@@ -425,6 +530,10 @@ class TestPartitionAgreement:
             months_used=months,
             months_window=months,
             excluded=pl.DataFrame({"station_name": [], "excluded_reason": []}),
+            raw_correlation=_mean_off_diagonal_correlation(matrix),
+            anomaly_correlation=_mean_off_diagonal_correlation(
+                matrix - matrix.mean(axis=0, keepdims=True)
+            ),
         )
         agree, _ = partition_agreement(bundle, load_spatial_conf(), rng=np.random.default_rng(2))
         era = agree.filter(pl.col("partition") == "zone_era").to_dicts()[0]

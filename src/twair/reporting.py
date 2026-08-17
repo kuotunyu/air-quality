@@ -551,11 +551,41 @@ def _spatial_agreement_section() -> str:
   （silhouette {_signed(float(best["silhouette"]))}；北群對南群）{ari_line}。
 
 **一句話：分區不是亂劃、但比資料支持的粒度細。**
+{_spatial_climatology_note()}"""
 
-相關取於距島均值的異常量，不是生料——生料的全島相關幾乎全是季風，
-任何分割都會看起來一致。那個生料相關值記錄在 `conf/spatial.yaml`，
-本報告不轉述它，理由與第五節相同。
+
+def _spatial_climatology_note() -> str:
+    """Why the correlation is taken on anomalies, priced in both directions."""
+    metadata = _load("m6_spatial", "metadata")
+    if metadata is None:
+        return ""
+    meta = {row["key"]: row["value"] for row in metadata.iter_rows(named=True)}
+    raw = meta.get("station_correlation_raw")
+    anomaly = meta.get("station_correlation_anomaly")
+    if raw is None or anomaly is None:
+        return ""
+
+    return f"""
+相關取於距島均值的異常量，不是生料。生料上全島測站兩兩平均相關
+**{float(raw):.3f}**——大家共用同一個冬季高峰，任何分割都會看起來一致；
+扣掉逐月全島均值之後降到 **{float(anomaly):.3f}**，這一步才讓比較是關於分區
+而不是關於季風。兩個值都由 `metadata.parquet` 每次執行重算。
 """
+
+
+def _spatial_spacing_clause() -> str:
+    """The nearest-neighbour range, which is why 1 km is refused."""
+    coverage = _load("m6_spatial", "station_coverage")
+    if coverage is None or "km_nearest_neighbour" not in coverage.columns:
+        return "測站間距遠大於一個 1 km 的格子"
+    spacing = coverage["km_nearest_neighbour"].drop_nulls()
+    if spacing.len() == 0:
+        return "測站間距遠大於一個 1 km 的格子"
+    return (
+        f"本島 {spacing.len()} 個有座標測站的最近鄰距離跨越兩個數量級——\n"
+        f"從 **{as_float(spacing.min()):.1f} km** 到 **{as_float(spacing.max()):.0f} km**，"
+        f"中位數 {as_float(spacing.median()):.1f} km"
+    )
 
 
 def _spatial_field_section() -> str:
@@ -570,10 +600,9 @@ def _spatial_field_section() -> str:
 
     return f"""## 五、測站之間的空白（`field_skill.parquet`）
 
-1 km 濃度場**不出**：測站間距遠大於一個 1 km 的格子，所以那個解析度是網絡
-給不起的。實測的最近鄰間距與這個判定的完整理由記錄在 `conf/spatial.yaml`；
-那個間距目前沒有任何模組重算成 parquet，所以本報告不轉述它的數值——**這份
-報告只寫得出它能指回檔案的數字**。
+1 km 濃度場**不出**：{_spatial_spacing_clause()}，
+所以 1 km 的格子宣稱了網絡給不起的解析度。這個間距由
+`station_coverage.parquet` 的 `km_nearest_neighbour` 每次執行重算。
 
 取而代之量補值技巧本身：留一站（樂觀上界）與 {"/".join(f"{value:.0f}" for value in buffers)} km
 緩衝交叉驗證，涵蓋 {field["station_name"].n_unique()} 站 × {field["month"].n_unique()} 個月，
