@@ -277,6 +277,16 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_rea
     assert "微型感測器 2025 全年 readiness audit 已交付" in zh_prose
     assert "2025 annual micro-sensor readiness audit delivered" in en_prose
 
+    # The annual agreement ran on 2026-08-17 and only 5 of its 29 folds are
+    # scorable. A public claim of "delivered" that omits that denominator would
+    # be the exact overstatement this test exists to prevent, so both READMEs
+    # have to carry the fold accounting beside the delivery.
+    assert "Q4-supported cross-station agreement" in zh_prose
+    assert "29 個 fold 中只有 5 個可評分" in zh_prose
+    assert "held-quarter 與 joint station-quarter 不可估計" in zh_prose
+    assert "5 of 29 folds scorable" in en_prose
+    assert "held-quarter and joint station-quarter are not estimable" in en_prose
+
     annual_details = (plan_prose, sources_prose, methodology_prose)
     for text in annual_details:
         assert "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb" in text

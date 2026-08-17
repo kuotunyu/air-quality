@@ -495,8 +495,14 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 
 **交付判定：Stage A 來源、M8 Stage B 關聯與 held-out predictive-value 診斷、ERA5 2024–2025
 robustness，以及微型感測器 2025-01 觀測、readiness、grouped predictive benchmark、
-reference-station satellite-context predictive-value limit 與 2025 全年 readiness audit 已交付；
-validated calibration 與融合仍延後。**
+reference-station satellite-context predictive-value limit、2025 全年 readiness audit 與
+Q4-supported cross-station agreement 已交付；validated calibration 與融合仍延後。**
+
+微型感測器全年 agreement 於 2026-08-17 以 322 個完整日曆日實跑：29 個 fold 中
+**只有 5 個可評分**，18 個測試集為空、6 個訓練集為空，全部標記為 unscored 而非以零計。
+排除原因中最大宗是 `device_day_absent`（29,222 列，對合格的 9,562 列）——
+**這個感測網的限制在於「有沒有資料」，不在於準不準。**
+held-quarter 與 joint station-quarter 明確不可估計，不宣稱年度時序或季節泛化。
 2025 legacy 76 站與 immutable 77 站 S5P／MAIAC
 generation 都保留 null 與 provenance；`twair analyze m8 --year 2025` 及其
 `--generation` 版本分開量測共同 coverage 與 pooled／within-station／within-month
