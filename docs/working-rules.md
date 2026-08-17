@@ -725,6 +725,28 @@ costs one extra mypy pass and is the only way to see a POSIX-only error from
 here. The same reasoning as the empty-data run above: an environment CI has and
 you do not is an environment your gates have never actually tested.
 
+### Distinguish a timeout from a threshold before you raise either
+
+`check_site_quality.mjs` has failed twice in CI with
+「Chrome did not open a debugging port within 15000ms」, the second time on a
+commit that changed one Python script the web job does not run. Re-running the
+same commit passed. Same code, same platform, one red and one green: an
+environment flake, not a finding.
+
+CI now passes `--cdp-timeout-ms 45000`, an option the gate already had.
+
+**The distinction that makes this safe is worth stating, because the two look
+alike from the outside.** A *timeout* bounds how long the harness waits for
+something to be ready; raising it changes no verdict, only the patience before
+the harness gives up. A *threshold* — an APCA floor, a minimum tap target, a
+pixel count — is the verdict. Raising a threshold to make a red build green is
+deleting the finding, and it is never the fix. Neither is re-running until it
+passes: that trains people to close red builds without reading them, which is
+the precise failure that lets a real one through.
+
+If a flake keeps recurring, make the harness more patient or more deterministic.
+Never make the check less able to fail.
+
 ### `text=True` decodes by locale, and the child does not have to agree
 
 `subprocess.run(..., text=True)` without an explicit `encoding=` decodes with

@@ -218,5 +218,16 @@ jobs:
       # found two: the smallest-type figure could not be reproduced, and
       # chapter 3's axis had missed a type-size increase and sat below the prose
       # around it. Chrome is preinstalled on ubuntu-latest.
+      # `--cdp-timeout-ms` raises how long the harness waits for headless Chrome
+      # to open its debugging port, and nothing else. Every check the gate makes
+      # is unchanged; this is patience with a browser starting on a shared
+      # runner, not a loosened threshold.
+      #
+      # The default 15s has now timed out twice in CI on commits that could not
+      # have caused it — the second time on a commit touching one Python script
+      # this job does not run. Re-running the same commit passed. The job takes
+      # minutes, so a genuine "Chrome is broken" failure surfacing 30s later
+      # costs nothing, while a flake trains people to re-run red builds without
+      # reading them.
       - name: The site still holds the design numbers PRODUCT.md publishes
-        run: node scripts/check_site_quality.mjs
+        run: node scripts/check_site_quality.mjs --cdp-timeout-ms 45000
