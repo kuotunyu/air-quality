@@ -87,11 +87,18 @@ If you need a figure and cannot measure it, write `TODO: measure` and say so.
 
 ## 🔒 Protected identities — non-negotiable
 
-The authors and supervisor of the 2018 undergraduate control project are
-protected identities. Their names must not appear in tracked paths or content,
-generated payloads, alt text, comments, docstrings, configuration,
-documentation, or commit messages. Refer to the work only as「一份 2018
-年的大學畢業專題」or "the 2018 method". Never reproduce its figures.
+A small number of private individuals are protected identities. Their names must
+not appear in tracked paths or content, generated payloads, alt text, comments,
+docstrings, configuration, documentation, or commit messages. The digest
+inventory in `conf/anonymity.yaml` is the authority on who they are; it holds no
+plaintext.
+
+**Do not reintroduce the frame either.** This project no longer describes itself
+against any particular earlier study, and prose that reaches for one — naming a
+source document, quoting its published figures, citing its page numbers — is a
+regression even when no person is named. The methodological findings are stated
+as general facts about method choices, because that is what they are, and each
+arm of every comparison is fitted here. See `docs/working-rules.md`.
 
 Formal scholarly citations and conventional technical eponyms are allowed
 when they make a method, evidence source, limitation, or reproducible parameter
