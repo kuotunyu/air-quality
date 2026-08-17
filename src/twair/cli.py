@@ -1977,6 +1977,15 @@ def report_core() -> None:
     console.print(f"wrote {path}")
 
 
+@report_app.command("spatial")
+def report_spatial() -> None:
+    """Build reports/03-spatial.md from the M6 outputs."""
+    from twair.reporting import build_spatial_report
+
+    path = build_spatial_report()
+    console.print(f"wrote {path}")
+
+
 export_app = typer.Typer(help="Phase 3: build the data layers the website reads.")
 app.add_typer(export_app, name="export")
 

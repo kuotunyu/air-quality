@@ -47,7 +47,7 @@ def _resultant(values: list[float]) -> float:
 class TestCircularMean:
     """Wind direction is circular; the arithmetic mean is simply wrong."""
 
-    def test_the_wraparound_case_the_2018_project_got_wrong(self) -> None:
+    def test_the_arithmetic_mean_of_350_and_10_points_due_south(self) -> None:
         """350° and 10° average to due north, not due south."""
         arithmetic = (350 + 10) / 2
 

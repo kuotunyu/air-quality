@@ -155,6 +155,105 @@ class TestNumbersComeFromFiles:
 
         assert "1,234" in section, "the sample size must come from the panel file"
 
+    def test_the_spatial_moran_table_is_read_not_hardcoded(self, outputs: Path) -> None:
+        _write(
+            outputs,
+            "m6_spatial",
+            "partition_price",
+            pl.DataFrame(
+                {
+                    "control": ["pooled", "within_zone_separate_fits"],
+                    "design_columns": [13, 104],
+                    "r_squared": [0.8215, 0.8695],
+                    "mean_i": [0.4242, 0.0111],
+                    "mean_i_lo": [0.4, 0.0],
+                    "mean_i_hi": [0.45, 0.02],
+                    "months_scored": [96, 96],
+                    "months_significant_bh": [55, 9],
+                }
+            ),
+        )
+
+        section = reporting._spatial_partition_section()
+
+        assert "+0.424" in section, "the pooled mean I must come from the file"
+        assert "+0.011" in section
+        assert "55/96" in section
+
+    def test_the_terms_the_two_way_correction_costs_are_derived(self, outputs: Path) -> None:
+        """The list of terms losing significance is a query, not a memory."""
+        _write(
+            outputs,
+            "m6_spatial",
+            "inference_price",
+            pl.DataFrame(
+                {
+                    "term": ["PM10", "RAINFALL", "PM10", "RAINFALL"],
+                    "cov_type": ["iid", "iid", "cluster_twoway", "cluster_twoway"],
+                    "coefficient": [0.4, -0.5, 0.4, -0.5],
+                    "se": [0.005, 0.17, 0.03, 0.37],
+                    "t": [86.28, -2.77, 14.07, -1.29],
+                    "p": [0.0, 0.005, 0.0, 0.196],
+                    "se_inflation_vs_iid": [1.0, 1.0, 6.13, 2.14],
+                    "psd_fix_applied": [False, False, False, False],
+                }
+            ),
+        )
+
+        section = reporting._spatial_inference_section()
+
+        assert "86.28" in section and "14.07" in section
+        assert "失去顯著：RAINFALL" in section, "RAINFALL crosses 0.05, PM10 does not"
+        assert "PM10、" not in section.split("失去顯著：")[1]
+
+    def test_a_correlogram_that_never_changes_sign_is_not_called_a_dipole(
+        self, outputs: Path
+    ) -> None:
+        _write(
+            outputs,
+            "m6_spatial",
+            "correlogram",
+            pl.DataFrame(
+                {
+                    "bin_lo_km": [0.0, 100.0],
+                    "bin_hi_km": [10.0, 150.0],
+                    "i": [0.348, 0.104],
+                    "z": [2.46, 1.10],
+                }
+            ),
+        )
+
+        section = reporting._spatial_distance_section()
+
+        assert "降至" in section
+        assert "反號至" not in section
+
+    def test_missing_m6_is_reported_not_faked(self, outputs: Path) -> None:
+        report = reporting.build_spatial_report()
+
+        text = report.read_text(encoding="utf-8")
+        assert "尚未產出" in text
+        assert "analyze m6" in text
+
+    def test_the_header_block_survives_interpolation(self, outputs: Path) -> None:
+        """A multi-line metadata block must not break out of the blockquote."""
+        _write(
+            outputs,
+            "m6_spatial",
+            "metadata",
+            pl.DataFrame(
+                {
+                    "key": ["seed", "residual_null_draws", "weights", "panel_stations"],
+                    "value": ["12345", "999", "knn(5)", "72"],
+                }
+            ),
+        )
+
+        text = reporting.build_spatial_report().read_text(encoding="utf-8")
+
+        block = [line for line in text.splitlines() if "12345" in line]
+        assert block and all(line.startswith(">") for line in block)
+
     def test_m2_summary_aggregates_the_scores_file(self, outputs: Path) -> None:
         _write(
             outputs,

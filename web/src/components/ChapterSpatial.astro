@@ -242,7 +242,7 @@ const cellFor = (method: string, buffer: number) =>
   </p>
 
   <p>
-    量測對象是第八章那個復刻模型的<strong>殘差</strong>，不是 PM2.5 本身——
+    量測對象是第八章那個基準模型的<strong>殘差</strong>，不是 PM2.5 本身——
     濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
     還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
     千筆站月當獨立樣本的推論是錯的。網絡是 {network.stations} 站 × {network.months} 個月，

@@ -96,7 +96,7 @@ D1–D11 是這個專案的骨架：**每個模組都應該可追溯到其中一
 | 查詢/儲存 | **DuckDB** + **Parquet(zstd)**，Hive 分區 | 免資料庫伺服器；同一份 Parquet 給 Python 與瀏覽器共用 |
 | Schema 驗證 | `twair.store.schema` 的 typed contract | 驗證 key、dtype 與重複列；衝突資料拒絕而不猜測 |
 | 抓取 | **httpx** + **tenacity** + **gdown** | async + 重試 + Google Drive |
-| 統計 | statsmodels + scipy | M1 復刻、OLS、趨勢與 bootstrap 推論 |
+| 統計 | statsmodels + scipy | M1 基準、OLS、趨勢與 bootstrap 推論 |
 | ML | scikit-learn + **LightGBM** | 主力模型；TreeSHAP 直接由 LightGBM 計算，不另外安裝 `shap` |
 | 時序 | **statsforecast**（AutoARIMA）+ rolling-origin backtest | SARIMA 已作為 M12 實測；N-HiTS/PatchTST 不在目前 release boundary |
 | 空間 | geopandas, **libpysal/esda**, **pykrige**, shapely | Moran's I、Kriging |
@@ -298,7 +298,7 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 
 ---
 
-### Phase 2 — 核心分析：復刻 → 修正 → 對照 ⭐
+### Phase 2 — 核心分析：基準 → 修正 → 對照 ⭐
 
 **目標**：先把有缺陷的做法真的配適出來，再證明修正之後結論不同。
 
@@ -344,11 +344,13 @@ year=YYYY/month=MM/part-*.parquet   # zstd, row group 128MB
 3. **風向線性化** — 用線性 WD_HR 得到的「風向係數」vs 極座標圖顯示的真實方位依賴
 4. **常態檢定謬誤** — 大樣本下 p 值必然顯著；調低 α 不會讓資料變常態
 5. **NO/NO2/NOx 恆等式** — 為什麼逐步刪除會來回震盪
-6. **in-sample vs out-of-sample** — 原模型在 2018–2025 資料上的表現
+6. **in-sample vs out-of-sample** — 基準模型在 2018–2025 資料上的表現
 
 **驗收**
-- [x] M1 有 52 列公布值／復刻值對照，報告逐項說明樣本與係數差異
-- [x] **已取代**：沒有為湊數實作原始 model zoo；M2 交付 LightGBM feature-set 對照、rolling-origin、LOSO、LOYO、RMSE／MAE／R²／高值 F1 與兩條 baseline
+- [x] **已取代**：逐列比對外部公布值的驗收已隨那份對照一起移除。M1 現在交付的
+      是基準本身——6,771 個站月、13 個參數的 OLS 係數、VIF 與相關係數，寫入
+      `data/outputs/m1_baseline/`，由 `uv run twair report core` 逐項輸出
+- [x] **已取代**：沒有為湊數堆一整櫃模型；M2 交付 LightGBM feature-set 對照、rolling-origin、LOSO、LOYO、RMSE／MAE／R²／高值 F1 與兩條 baseline
 - [x] 五組 feature-set 的 TreeSHAP importance 已輸出
 - [x] M3 六組方法學問題由 14 個 Parquet 產物與網站方法章交付
 - [x] **已取代**：`reports/01-core.md` 直接由 Parquet 重生；repo 不使用 Quarto

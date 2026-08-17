@@ -1,6 +1,6 @@
-# 核心分析：復刻、重做、對照
+# 核心分析：基準、重做、對照
 
-> 由 `uv run twair report core` 產生於 2026-08-17T07:36:38+00:00。
+> 由 `uv run twair report core` 產生於 2026-08-17T16:56:18+00:00。
 > 每一個數字都來自 `data/outputs/` 下的 Parquet，報告不會與結果脫節。
 
 ---

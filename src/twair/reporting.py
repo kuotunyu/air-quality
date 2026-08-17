@@ -21,7 +21,25 @@ from twair.scalars import as_float
 
 log = logging.getLogger(__name__)
 
-__all__ = ["build_core_report"]
+__all__ = ["build_core_report", "build_spatial_report"]
+
+# The parquet carries the design's internal name; the report is read by people.
+# Kept next to the report rather than in the analysis module because it is a
+# presentation choice, and because a control the module stops emitting should
+# vanish from the table rather than appear under a stale label.
+_SPATIAL_CONTROLS: tuple[tuple[str, str, str], ...] = (
+    ("pooled", "合併式（未分層）", ""),
+    ("zone_era_dummies", "七區截距", ""),
+    ("zone_official_today", "今日分區截距", "時代錯置對照"),
+    ("within_zone_separate_fits", "字面上的「分區各跑一次」", ""),
+    ("station_dummies", "測站固定效果", "天花板"),
+)
+_SPATIAL_COVARIANCES: tuple[tuple[str, str], ...] = (
+    ("iid", "iid（基準模型自己的假設）"),
+    ("cluster_month", "聚類月（空間）"),
+    ("cluster_station", "聚類站（時間）"),
+    ("cluster_twoway", "two-way（CGM）"),
+)
 
 
 def _load(module: str, name: str) -> pl.DataFrame | None:
@@ -353,13 +371,272 @@ def _m3_section() -> str:
     return "\n".join(parts) + "\n"
 
 
+def _spatial_missing(step: str) -> str:
+    return f"_M6 的 `{step}` 尚未產出。跑 `uv run twair analyze m6`。_\n"
+
+
+def _signed(value: float, places: int = 3) -> str:
+    """Render with an explicit sign, because the sign is the finding here."""
+    return f"{value:+.{places}f}"
+
+
+def _quote(text: str) -> str:
+    """Prefix every line, so an interpolated block stays inside the blockquote."""
+    return "\n".join(f"> {line}" if line else ">" for line in text.strip().splitlines())
+
+
+def _spatial_partition_section() -> str:
+    price = _load("m6_spatial", "partition_price")
+    if price is None:
+        return _spatial_missing("partition_price")
+
+    rows = []
+    by_control = {row["control"]: row for row in price.iter_rows(named=True)}
+    for key, label, aside in _SPATIAL_CONTROLS:
+        row = by_control.get(key)
+        if row is None:
+            continue
+        name = f"{label}（{aside}）" if aside else label
+        interval = ""
+        if row["mean_i_lo"] is not None and row["mean_i_hi"] is not None:
+            interval = f"（{_signed(float(row['mean_i_lo']))}, {_signed(float(row['mean_i_hi']))}）"
+        # The row with the least residual dependence is the finding, so it is
+        # emphasised — found by comparison rather than by remembering which one
+        # won, because which one wins is exactly what a re-run could change.
+        best = float(row["mean_i"]) == min(float(other["mean_i"]) for other in by_control.values())
+        mark = "**" if best else ""
+        rows.append(
+            f"| {name} | {row['design_columns']} | {float(row['r_squared']):.4f} | "
+            f"{mark}{_signed(float(row['mean_i']))}{mark}{interval} | "
+            f"{mark}{row['months_significant_bh']}/{row['months_scored']}{mark} |"
+        )
+
+    pooled = by_control.get("pooled")
+    separate = by_control.get("within_zone_separate_fits")
+    measured = ""
+    if pooled is not None and separate is not None:
+        measured = (
+            f"每月殘差 Moran's I 從合併式的 {_signed(float(pooled['mean_i']))}\n"
+            f"降到分區各自配適的 {_signed(float(separate['mean_i']))}——\n"
+        )
+
+    return f"""缺陷清單把 D7 記成「78 個測站的空間維度沒用」。量測之後這句話被修正：
+{measured}按空品區分層、每區各跑一次本來就**有**用空間。可檢定的問題是
+**那個分層是不是足夠的空間控制**，而答案分成兩半。
+
+## 一、分層本身：大部分有效
+
+基準模型（M1）的殘差在五種空間控制下的每月 Moran's I 平均
+（`partition_price.parquet`）：
+
+| 控制 | 參數 | R² | 平均 I（95% CI） | BH 顯著月數 |
+|---|---|---|---|---|
+{chr(10).join(rows)}
+
+分區分層比測站固定效果更有效（斜率也隨區變）。差值不寫成比例：I 是正規化
+相關，沒有可加分解性質。
+"""
+
+
+def _spatial_inference_section() -> str:
+    price = _load("m6_spatial", "inference_price")
+    if price is None:
+        return _spatial_missing("inference_price")
+
+    pm10 = price.filter(pl.col("term") == "PM10")
+    by_cov = {row["cov_type"]: row for row in pm10.iter_rows(named=True)}
+    rows = []
+    for key, label in _SPATIAL_COVARIANCES:
+        row = by_cov.get(key)
+        if row is None:
+            continue
+        name = label
+        if key == "cluster_twoway":
+            fixed = "觸發" if row["psd_fix_applied"] else "未觸發"
+            name = f"{label}，{fixed} PSD 修復"
+        emphasis = "**" if key == "cluster_twoway" else ""
+        rows.append(
+            f"| {name} | {emphasis}{float(row['t']):.2f}{emphasis} | "
+            f"×{float(row['se_inflation_vs_iid']):.2f} |"
+        )
+
+    # Which terms the correction actually costs, rather than a remembered list.
+    def significant(cov: str) -> set[str]:
+        subset = price.filter((pl.col("cov_type") == cov) & (pl.col("p") < 0.05))
+        return set(subset["term"].to_list())
+
+    dropped = significant("iid") - significant("cluster_twoway")
+    # Design-matrix order, not alphabetical: a reader comparing this list against
+    # the fit should not have to re-sort it in their head.
+    lost = [term for term in price.filter(pl.col("cov_type") == "iid")["term"] if term in dropped]
+    lost_line = ""
+    if lost:
+        wind = (
+            "\n最後一項即 D3——同一個係數上，編碼錯誤（D3）與推論錯誤（D7）疊加。"
+            if lost[-1] == "WD_HR"
+            else ""
+        )
+        lost_line = f"\n\ntwo-way 下失去顯著：{'、'.join(lost)}。{wind}"
+
+    return f"""## 二、但 t 值通常報自合併式模型
+
+同一設計、只換共變異估計量（`inference_price.parquet`），看 PM10 這一項：
+
+| 共變異 | t(PM10) | SE 膨脹 |
+|---|---|---|
+{chr(10).join(rows)}{lost_line}
+"""
+
+
+def _spatial_distance_section() -> str:
+    correlogram = _load("m6_spatial", "correlogram")
+    lisa = _load("m6_spatial", "lisa")
+    if correlogram is None:
+        return _spatial_missing("correlogram")
+
+    near = correlogram.sort("bin_lo_km").row(0, named=True)
+    far = correlogram.sort("i").row(0, named=True)
+    sign_change = "反號至" if float(far["i"]) < 0 <= float(near["i"]) else "降至"
+
+    lisa_line = ""
+    if lisa is not None:
+        lisa_line = (
+            f"\n\nLISA（`lisa.parquet`）：{lisa.height} 站中 raw 顯著 "
+            f"{int(lisa['significant_raw'].sum())} 站、"
+            f"**BH 校正後 {int(lisa['significant_bh'].sum())} 站**。\n"
+            "相依是整個場的性質，不是幾個可剔除的「異常站」。"
+        )
+
+    near_band = f"{float(near['bin_lo_km']):.0f}–{float(near['bin_hi_km']):.0f} km"
+    far_band = f"{float(far['bin_lo_km']):.0f}–{float(far['bin_hi_km']):.0f} km"
+
+    return f"""## 三、距離結構：偶極，不是一團正相關
+
+站均殘差的 correlogram（`correlogram.parquet`）在 {near_band} 為
+{_signed(float(near["i"]))}（z={_signed(float(near["z"]), 2)}）、{far_band} {sign_change}
+**{_signed(float(far["i"]))}（z={_signed(float(far["z"]), 2)}）**。北部與南部殘差反向
+共變——這也是為什麼本報告不發表單一的 Moran's I。{lisa_line}
+"""
+
+
+def _spatial_agreement_section() -> str:
+    agreement = _load("m6_spatial", "partition_agreement")
+    if agreement is None:
+        return _spatial_missing("partition_agreement")
+
+    official = agreement.filter(pl.col("partition") == "zone_era")
+    ward = agreement.filter(pl.col("partition").str.starts_with("ward_k"))
+    if official.is_empty() or ward.is_empty():
+        return _spatial_missing("partition_agreement")
+
+    row = official.row(0, named=True)
+    best = ward.sort("silhouette", descending=True).row(0, named=True)
+    # A Polars aggregate is typed as the union of every value a cell could hold,
+    # including bytes, so mypy refuses to format it directly.
+    k_lo = int(as_float(ward["k"].min()))
+    k_hi = int(as_float(ward["k"].max()))
+    matched = ward.filter(pl.col("k") == row["k"])
+    ari_line = ""
+    if not matched.is_empty():
+        ari_line = f"，官方 k 下一致性 ARI {float(matched['ari_vs_zone_era'][0]):.2f}"
+
+    return f"""## 四、官方分區 vs 純地理
+
+虛無是 {row["ensemble_draws"]} 個只知道地理的隨機 Voronoi 分割（隨機重貼標籤任何連續分割都贏，
+不成其為檢定）。時代七區＋離島桶（`partition_agreement.parquet`）：
+
+- 區內−區間相關差 {_signed(float(row["separation_r"]))}，居 ensemble
+  **{100 * float(row["pct_vs_geographic_ensemble_separation"]):.1f} 百分位**——分區載有超出鄰接性的資訊，不是亂劃的；
+- 但 silhouette 僅 {_signed(float(row["silhouette"]))}，Ward 掃 k={k_lo}..{k_hi} 偏好 **k={best["k"]}**
+  （silhouette {_signed(float(best["silhouette"]))}；北群對南群）{ari_line}。
+
+**一句話：分區不是亂劃、但比資料支持的粒度細。**
+
+相關取於距島均值的異常量，不是生料——生料的全島相關幾乎全是季風，
+任何分割都會看起來一致。那個生料相關值記錄在 `conf/spatial.yaml`，
+本報告不轉述它，理由與第五節相同。
+"""
+
+
+def _spatial_field_section() -> str:
+    field = _load("m6_spatial", "field_skill")
+    if field is None:
+        return _spatial_missing("field_skill")
+
+    buffers = sorted({float(v) for v in field["buffer_km"].to_list() if v})
+    methods = sorted(set(field["method"].to_list()))
+    kriging = [name for name in methods if name.startswith("kriging")]
+    failures = field["failed"].drop_nulls().len()
+
+    return f"""## 五、測站之間的空白（`field_skill.parquet`）
+
+1 km 濃度場**不出**：測站間距遠大於一個 1 km 的格子，所以那個解析度是網絡
+給不起的。實測的最近鄰間距與這個判定的完整理由記錄在 `conf/spatial.yaml`；
+那個間距目前沒有任何模組重算成 parquet，所以本報告不轉述它的數值——**這份
+報告只寫得出它能指回檔案的數字**。
+
+取而代之量補值技巧本身：留一站（樂觀上界）與 {"/".join(f"{value:.0f}" for value in buffers)} km
+緩衝交叉驗證，涵蓋 {field["station_name"].n_unique()} 站 × {field["month"].n_unique()} 個月，
+比較 {len(methods)} 種方法（{"、".join(methods)}），
+其中 {len(kriging)} 個變異圖家族並列、逐 fold 重配。
+本次執行記錄到 {failures} 個失敗 fold。數字見網站第三章與 parquet。
+"""
+
+
+def _spatial_header() -> str:
+    metadata = _load("m6_spatial", "metadata")
+    if metadata is None:
+        return "所有數字由 `uv run twair analyze m6` 產出，表格存於 `data/outputs/m6_spatial/*.parquet`。"
+
+    meta = {row["key"]: row["value"] for row in metadata.iter_rows(named=True)}
+    return f"""所有數字由 `uv run twair analyze m6` 產出（seed {meta.get("seed", "?")}、
+{meta.get("residual_null_draws", "?")} 次模擬虛無、{meta.get("weights", "?")}、BH 校正），
+表格存於 `data/outputs/m6_spatial/*.parquet`。面板為
+{meta.get("panel_stations", "?")} 站 × {meta.get("panel_months", "?")} 個月，
+其中 {meta.get("panel_stations_placed", "?")} 站有座標、{meta.get("panel_stations_complete", "?")} 站每月都回報。"""
+
+
+def build_spatial_report() -> Path:
+    """Write ``reports/03-spatial.md`` from the M6 outputs."""
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    destination = REPORTS_DIR / "03-spatial.md"
+
+    generated = datetime.now(UTC).isoformat(timespec="seconds")
+    content = f"""# 03 — 空間結構：「分區各跑一次」買到了什麼
+
+> 由 `uv run twair report spatial` 產生於 {generated}。
+> 本報告採 Markdown，與 `reports/01-core.md` 使用同一套公開報告契約；repo 不使用
+> Quarto 工具鏈。這項交付取代了早期 `.qmd` 藍圖，判定記在 [PLAN.md](../PLAN.md) 的 Phase 5。
+>
+{_quote(_spatial_header())}
+> 方法推導見 [docs/methodology.md](../docs/methodology.md) 的 D7 節。
+
+## 問題的修正
+
+{_spatial_partition_section()}
+{_spatial_inference_section()}
+{_spatial_distance_section()}
+{_spatial_agreement_section()}
+{_spatial_field_section()}
+## 範圍限制
+
+1. 本報告只為 **OLS 階段**定價。修正的是「誤差互相獨立」這個假設，而 t 值
+   不等於整個推論；帶 AR(1) 誤差結構的模型有自己的標準誤，本 repo 沒有計算。
+2. 殘差 I 是場相依的**下界**（解釋變數自帶空間結構；面板被完整度篩選）。
+3. **不做**人口加權暴露：repo 無人口網格。所需輸入與來源要求記錄於
+   `conf/spatial.yaml`。
+"""
+    destination.write_text(content, encoding="utf-8")
+    return destination
+
+
 def build_core_report() -> Path:
     """Write ``reports/01-core.md`` from whatever analysis outputs exist."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     destination = REPORTS_DIR / "01-core.md"
 
     generated = datetime.now(UTC).isoformat(timespec="seconds")
-    content = f"""# 核心分析：復刻、重做、對照
+    content = f"""# 核心分析：基準、重做、對照
 
 > 由 `uv run twair report core` 產生於 {generated}。
 > 每一個數字都來自 `data/outputs/` 下的 Parquet，報告不會與結果脫節。

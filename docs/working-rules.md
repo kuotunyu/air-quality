@@ -976,7 +976,7 @@ surfaces somewhere less useful.
 ### Testing
 
 - Tests are **specifications**, named as claims:
-  `test_the_wraparound_case_the_2018_project_got_wrong`.
+  `test_the_arithmetic_mean_of_350_and_10_points_due_south`.
 - Fixtures mirror real observed formats, not invented ones.
 - Where a fast implementation shadows a readable one (`parse_expr` vs
   `parse_token`), a test asserts they agree.
