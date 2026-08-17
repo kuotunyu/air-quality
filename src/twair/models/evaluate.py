@@ -1,6 +1,6 @@
 """Out-of-sample evaluation: splits, baselines and metrics.
 
-The 2018 project reported only in-sample fit — AIC, BIC and a stepwise search
+A common practice is to report only in-sample fit — AIC, BIC and a stepwise search
 over the same rows the model was estimated on. Nothing there could detect
 overfitting, and nothing there answered the question a reader actually has:
 would this model have been any use on data it had not seen?

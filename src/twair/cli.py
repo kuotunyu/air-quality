@@ -806,7 +806,7 @@ def analyze_m2(
 
     # The baselines first and in the same table, because a model score without
     # persistence beside it is not a result — which is the entire complaint
-    # this module makes about the 2018 project.
+    # this module makes about the baseline.
     with pl.Config(tbl_rows=40, tbl_width_chars=120, float_precision=4):
         console.print(tables["summary"])
 
@@ -1200,7 +1200,7 @@ def analyze_m11(
     sample: int = typer.Option(12, "--sample", help="Stations used for the costly comparisons."),
     fraction: float = typer.Option(0.05, "--fraction", help="Share of known readings to hide."),
 ) -> None:
-    """M11 — what the 2018 project's one sentence about missing values cost."""
+    """M11 — what disposing of missing values in one sentence costs."""
     import polars as pl
 
     from twair.analysis.imputation import run_imputation
@@ -1223,13 +1223,13 @@ def analyze_m11(
         .sort("strategy", "gap_bucket")
     )
 
-    # The comparison the whole module exists for: the original's method against
+    # The comparison the whole module exists for: the neighbour method against
     # the alternatives, on its own window, with an error attached at last.
     rows = {row["strategy"]: row for row in pooled.iter_rows(named=True)}
     neighbour, interpolation = rows.get("neighbor"), rows.get("interpolate")
     if neighbour and interpolation and neighbour["mae"] and interpolation["mae"]:
         console.print(
-            f"\nthe 2018 method reaches [bold]{neighbour['recovery_rate']:.0%}[/bold] of the "
+            f"\nthe neighbour method reaches [bold]{neighbour['recovery_rate']:.0%}[/bold] of the "
             f"hidden readings at [bold]{neighbour['mae']:.2f}[/bold] µg/m³ mean absolute error; "
             f"interpolation reaches {interpolation['recovery_rate']:.0%} at "
             f"{interpolation['mae']:.2f}"
@@ -1250,7 +1250,7 @@ def analyze_m12(
     years: str = typer.Option("2015:2025", "--years", "-y", help="Period to analyse."),
     stations: str = typer.Option(None, "--stations", help="Comma-separated subset."),
 ) -> None:
-    """M12 — SARIMA, the model the 2018 project set aside as 「實屬不便」."""
+    """M12 — SARIMA, the model routinely set aside as too inconvenient to fit."""
     from twair.models.sarima import run_sarima
     from twair.paths import outputs_dir
 

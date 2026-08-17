@@ -1,7 +1,7 @@
 """Tests for M2 — the hourly redo.
 
-These pin the design choices that separate M2 from the 2018 method. Each one
-was a defect in the original, so a regression here would quietly restore it.
+These pin the design choices that separate M2 from the M1 baseline. Each one
+was a defect in that baseline, so a regression here would quietly restore it.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ class TestFeatureSets:
 
 class TestModellingFrame:
     def test_frame_is_hourly_not_aggregated(self, tmp_path: Path) -> None:
-        """The single biggest difference from the original."""
+        """The single biggest difference from the baseline."""
         root = _store(tmp_path, hours=48)
 
         frame = build_modelling_frame(root, period=(2015, 2015))

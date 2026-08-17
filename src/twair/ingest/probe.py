@@ -236,7 +236,7 @@ def write_sources_doc(summary: dict[str, Any], sample: Path | None) -> None:
 | 測站型態分組 | {", ".join(summary["station_groups"])} |
 
 **這是本專案最重要的發現之一**：可取得的逐時資料回溯到
-{summary["hourly_year_min"]} 年，而 2018 年的原始畢業專題只使用了 2010–2017 共 8 年。
+{summary["hourly_year_min"]} 年，而 M1 基準只使用了 2010–2017 共 8 年。
 
 > 注意：環保署於 1993 年擴充測站網後才有接近 80 站的規模，
 > 1993 年以前的資料測站極少，分析時必須考慮測站數的時變性，

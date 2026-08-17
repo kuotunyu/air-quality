@@ -9,7 +9,7 @@ Three problems the raw archives leave unsolved:
    and drop it entirely. The zone is therefore recovered from the older files
    and carried forward.
 3. **Station type.** Traffic, industrial, background and national-park stations
-   measure fundamentally different things. The 2018 project treated this as a
+   measure fundamentally different things. It is tempting to treat this as a
    nuisance and discarded the pollutants that were not common to all types;
    here it becomes a model variable.
 """

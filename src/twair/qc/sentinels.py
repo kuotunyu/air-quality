@@ -129,7 +129,7 @@ def apply_sentinels(
 def sentinel_report(frame: pl.DataFrame) -> pl.DataFrame:
     """Per-year sentinel rates, for the Phase 2 write-up.
 
-    Answers the question the 2018 project could not: how often were 888/999
+    Answers a question a monthly panel cannot: how often were 888/999
     actually present in the years it analysed?
     """
     wind = frame.filter(pl.col("flag").is_in(list(SENTINEL_FLAGS)))

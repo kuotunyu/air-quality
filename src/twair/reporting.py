@@ -116,7 +116,7 @@ def _m2_section() -> str:
     leak_note = _leak_comparison(rolling)
 
     sections = [
-        "M2 用同一批資料，把原專題的每一個方法選擇反過來做，並且**一律報告樣本外表現**。",
+        "M2 用同一批資料，把基準的每一個方法選擇反過來做，並且**一律報告樣本外表現**。",
         "",
         "### 滾動原點驗證（訓練用過去、測試用未來）",
         "",
@@ -177,7 +177,7 @@ persistence（「這小時等於上小時」）以 R² {float(persistence["r2"][
 2. **要做預報就必須加入落後項。** 這是 Phase 7 的工作，屆時 persistence 是
    必須超越的門檻，而不是拿來比較的對象。
 
-原專題同樣沒有落後項，也同樣沒有報告任何基準——差別在於它沒有機會發現這一點。"""
+月平均面板同樣沒有落後項，也同樣沒有報告任何基準——所以看不見這一點。"""
 
 
 def _leak_comparison(rolling: pl.DataFrame) -> str:
@@ -205,7 +205,7 @@ PM2.5 在定義上是 PM10 的子集，用後者預測前者是恆等式而非�
 | RMSE | {rmse_honest:.3f} | {rmse_leaking:.3f} | {rmse_leaking - rmse_honest:+.3f} |
 
 也就是說，含 PM10 的模型有 **{share:.0f}%** 的解釋力來自這個定義上的重疊，
-而不是來自任何關於 PM2.5 成因的知識。原專題的 β_PM10 = 0.413、t = 92.75
+而不是來自任何關於 PM2.5 成因的知識。基準裡 PM10 那個極高的 t 值
 正是這一項在撐場面。"""
 
 
@@ -225,7 +225,7 @@ def _m3_section() -> str:
     parts = ["同一批資料，兩種做法，兩個結論。"]
 
     if variance is not None:
-        # `station_month` and not `monthly_mean`: the 2018 project averaged to
+        # `station_month` and not `monthly_mean`: the baseline averages to
         # one value per station per month, and `monthly_mean` additionally pools
         # all 78 stations into one national series. Quoting the national figure
         # here charged the original with losing variance it kept — 20.3% where
@@ -238,12 +238,12 @@ def _m3_section() -> str:
                 "",
                 "### 陷阱 1：月平均抹掉了什麼",
                 "",
-                f"原專題把逐時資料平均成「每站每月一個值」，變異只剩 "
+                f"基準把逐時資料平均成「每站每月一個值」，變異只剩 "
                 f"**{100 * float(own[0]):.1f}%**。日夜循環、週末效應、污染事件"
                 f"全部消失在平均裡。",
                 "",
                 f"若再把各站併成單一全台月序列，只剩 **{100 * float(pooled[0]):.1f}%**"
-                f"——兩者的差額是**測站之間**的變異，那一半原專題並沒有丟掉。",
+                f"——兩者的差額是**測站之間**的變異，那一半基準並沒有丟掉。",
                 "",
                 _table(variance),
             ]
@@ -255,7 +255,7 @@ def _m3_section() -> str:
             "",
             _table(wind),
             "",
-            "線性相關係數很小，但分方位看濃度差距很大。原專題得到 0.089 並稱「無相關」——",
+            "線性相關係數很小，但分方位看濃度差距很大。線性處理會得到很小的值並稱「無相關」——",
             "問題不在那個數字小，而在**那個方法只可能產生小數字**，無論真實的方向依賴多強。",
             "",
             _table(sectors, limit=12),
@@ -273,7 +273,7 @@ def _m3_section() -> str:
             "反而略勝** sin/cos 編碼（R² 0.537 對 0.524）。樹可以對同一變數反覆切分，",
             "把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎不造成損失。",
             "",
-            "這並不能為原專題解套——它用的是 Pearson 相關、OLS 與線性混合模型。",
+            "這並不能為線性處理解套——基準用的正是 Pearson 相關與 OLS。",
             "在**同一批資料上用 OLS** 比較兩種編碼：",
             "",
             _table(
@@ -283,7 +283,7 @@ def _m3_section() -> str:
             "",
             f"線性模型下 sin/cos 的解釋力是原始方位角的 **{ratio:.2f} 倍**"
             f"（R² {float(raw['r_squared'][0]):.4f} → {float(encoded['r_squared'][0]):.4f}）。",
-            "編碼方式在原專題所用的方法家族裡是決定性的，在樹模型裡不是。",
+            "編碼方式在線性模型這個家族裡是決定性的，在樹模型裡不是。",
         ]
 
     if leakage is not None:
@@ -307,7 +307,7 @@ def _m3_section() -> str:
             "",
             "### 陷阱 6：樣本內與樣本外",
             "",
-            "原專題以 AIC、BIC 選模，兩者都算在配適用的同一批資料上。",
+            "以 AIC、BIC 選模時，兩者都算在配適用的同一批資料上。",
             "同一個模型分別在訓練列與未見過的未來列上評分：",
             "",
             _table(validation),
@@ -345,7 +345,7 @@ def _m3_section() -> str:
             "",
             "`NO + NO2 = NOx` 是恆等式，三者同時進模型就沒有唯一解。",
             "重抽樣重配適後，這三個係數劇烈擺盪，而一個可識別的變數幾乎不動。",
-            "原專題跑了八輪逐步剔除看著正負號翻轉，並把翻轉當成關於氮化學的發現。",
+            "逐步剔除會看著正負號一輪一輪翻轉，很容易把翻轉當成關於氮化學的發現。",
             "",
             _table(stability),
         ]

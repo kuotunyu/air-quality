@@ -59,7 +59,7 @@ __all__ = [
 # peak in low-wind bins. These observations do not identify source identity or
 # position, transport distance, or contribution.
 #
-# 陽明 was the original sixth and had to be dropped: it has PM2.5 for 2025 but
+# 陽明 was the sixth candidate and had to be dropped: it has PM2.5 for 2025 but
 # no WS_HR or WD_HR, so every row died on the wind features. That is a real
 # limit rather than a bad pick — **this model cannot serve a station without an
 # anemometer**, and 3 of 77 stations are in that position. `build_space_bundle`

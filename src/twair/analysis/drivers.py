@@ -1,7 +1,7 @@
 """M2 — what actually drives hourly PM2.5.
 
 The counterpart to :mod:`twair.analysis.baseline`. Same underlying data,
-every one of the original's method choices reversed:
+every one of the baseline's method choices reversed:
 
 ============================  ==============================  ===========================
                               2018                            here
@@ -78,7 +78,7 @@ POLLUTANTS = (
     "WS_HR",
 )
 
-# NO, NO2 and NOx cannot all be used: NO + NO2 = NOx exactly. The original kept
+# NO, NO2 and NOx cannot all be used: NO + NO2 = NOx exactly. The baseline keeps
 # all three and let a stepwise search thrash between them. Here NOx carries the
 # level and NO2/NOx the photochemical age, which is the same information
 # without the singularity.
@@ -86,14 +86,14 @@ _CHEMISTRY = ("CO", "NOx", "O3", "SO2", "no2_nox_ratio", "ox")
 _WEATHER = ("AMB_TEMP", "RH", "RAINFALL", "WS_HR", *WIND_FEATURES)
 
 FEATURE_SETS: dict[str, tuple[str, ...]] = {
-    # What the original effectively had, minus the leak.
+    # What the baseline effectively has, minus the leak.
     "chemistry_only": _CHEMISTRY,
     "weather_only": _WEATHER,
     # The honest specification.
     "full": (*_CHEMISTRY, *_WEATHER, *TEMPORAL_FEATURES),
     # Same as `full` plus the definitional leak, to quantify what it was worth.
     "full_with_pm10": (*_CHEMISTRY, *_WEATHER, *TEMPORAL_FEATURES, "PM10"),
-    # The original's own wind treatment, for the M3 contrast.
+    # The baseline's own wind treatment, for the M3 contrast.
     "full_raw_wind": (
         *_CHEMISTRY,
         "AMB_TEMP",
@@ -114,7 +114,7 @@ def build_modelling_frame(
 ) -> pl.DataFrame:
     """Hourly station-level matrix with every feature attached.
 
-    Defaults to the original's window so the two analyses are compared on the
+    Defaults to the baseline's window so the two analyses are compared on the
     same years rather than on different data.
     """
     start, end = period
@@ -329,7 +329,7 @@ def baseline_scores(frame: pl.DataFrame, *, n_splits: int = 4) -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
-# The 2018 project's own window, so M1 and M2 are compared on the same years
+# The baseline's own window, so M1 and M2 are compared on the same years
 # rather than on different subsets of the record.
 DEFAULT_PERIOD = (2010, 2017)
 

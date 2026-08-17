@@ -1,6 +1,6 @@
 """Tests for M3 — the paired methodological demonstrations.
 
-Each function claims something about the 2018 method. These tests check that
+Each function claims something about a method choice. These tests check that
 the demonstration actually demonstrates it, on data where the answer is known
 in advance. A demonstration that would look convincing whatever the truth is
 worth nothing.
@@ -72,7 +72,7 @@ class TestNormalityFallacy:
         assert (skewed["skewness"] > 0.3).all()
 
     def test_lowering_the_threshold_does_not_rescue_the_large_sample(self) -> None:
-        """The original's stated remedy, applied to a case where truth is known."""
+        """The usual remedy, applied to a case where the truth is known."""
         largest = (
             normality_test_fallacy()
             .filter(pl.col("data") == "slightly_skewed")
@@ -240,7 +240,7 @@ class TestCollinearityInstability:
     def test_collinear_coefficients_swing_and_the_identified_one_does_not(
         self, tmp_path: Path
     ) -> None:
-        """The instability the original read as a finding about nitrogen."""
+        """The instability that is easily read as a finding about nitrogen."""
         root = self._store_with_identity(tmp_path)
 
         stability = collinearity_instability(root, period=(2010, 2010), n_bootstrap=25)["stability"]
@@ -337,10 +337,10 @@ class TestAllPitfallsRunner:
 class TestTheAggregationTheOriginalActuallyPerformed:
     """Pitfall 1 charged monthly averaging with a loss half of which was spatial.
 
-    The 2018 project averaged to one value per station per month, N = 7,286.
+    The baseline averages to one value per station per month.
     This function grouped by month alone, pooling every station into a single
-    national series — a second and much lossier operation the original never
-    performed. It published 20.3% retained where the original's own aggregation
+    national series — a second and much lossier operation the baseline never
+    performs. It published 20.3% retained where the per-station aggregation
     retains 40.3%, and the difference is almost exactly the between-station
     variance.
 

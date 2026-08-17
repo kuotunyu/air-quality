@@ -1,7 +1,7 @@
 """Chemical ratios and combinations.
 
 Individual pollutant concentrations answer "how much"; ratios between them
-describe relative composition. The 2018 project used each pollutant only in
+describe relative composition. A plain specification uses each pollutant only in
 isolation, and used PM10 as a predictor rather than as a reference.
 
 ``PM10`` appears here, and only here. It is excluded from the predictor set

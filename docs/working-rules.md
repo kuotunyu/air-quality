@@ -15,22 +15,22 @@
 
 ## What this project is
 
-A reanalysis of a 2018 university graduation project (《台灣地區之 PM2.5 之影響分析》)
-using Taiwan MOENV hourly air-quality data from **1982–2025**.
+A reanalysis of Taiwan MOENV hourly air-quality data from **1982–2025**.
 
 The point is **not** "same analysis, newer tools". It is:
 
-> Take the original's defects one at a time, and show with the same data that
-> fixing them changes the conclusions.
+> Take one flawed method choice at a time and show, on the same rows, that
+> correcting it changes the conclusion.
 
-Every module should be traceable to a defect in `PLAN.md`'s table (D1–D11).
-If a piece of work does not map to one, ask whether it belongs.
+The flawed arm is fitted here, by `analysis/baseline.py`, so both arms are real.
+Every module should be traceable to a row of `PLAN.md`'s D1–D11 table. If a
+piece of work does not map to one, ask whether it belongs.
 
 ## The governing principle
 
 **Measure and publish data quality; never silently repair it.**
 
-The original disposed of its data problems in one sentence
+Data problems are often disposed of in one sentence
 (「將有遺漏值之資料以鄰近測站之資料代替」). Here the *rate* of every problem is
 itself a result. Concretely:
 
@@ -128,8 +128,8 @@ Sentinels 888 / 999 are handled by `twair.qc.sentinels`, but measured over all
 44 years they exist **only in 1993–2004** (2.6–6.4%), and are completely absent
 in 1982–1992 and 2005–2025.
 
-**The 2018 project's 2010–2017 window contains zero of them.** Phase 0 listed
-this as a defect of that work; the full data disproved it. Do not reintroduce
+**The baseline's 2010–2017 window contains zero of them.** Phase 0 listed
+this as a defect of the window; the full data disproved it. Do not reintroduce
 the claim. The circular-mean objection is separate and still stands.
 
 ### The two ReadMe editions define 888/999 the opposite way round
@@ -153,7 +153,7 @@ a migration over the flag, not a repair over the value.
 
 About 90% of hourly rainfall cells carry `NR` (無降雨). Excluding them turns
 "mean rainfall" into "mean rainfall intensity while raining" — 2.32 mm against
-a true 0.23. The M1 replication found this by failing to match the original.
+a true 0.23. The M1 baseline found this by producing an implausible mean.
 
 **The conversion is pollutant-specific.** `RAINFALL` and `RAIN_INT` become 0;
 `PH_RAIN`, `RAIN_COND` and `RAIN_TEMP` stay null, because the pH of rain that
@@ -187,7 +187,7 @@ Measured, and it contradicted the expectation: LightGBM does *slightly better*
 with the raw bearing (R² 0.537) than with sin/cos (0.524), because trees split
 repeatedly and can carve 0-360 into as many pieces as they need.
 
-Under OLS — which is what the 2018 project used — sin/cos gives **2.55x** the
+Under OLS — which is what the baseline uses — sin/cos gives **2.55x** the
 R² of the raw bearing (0.0254 to 0.0647). State the distinction; do not claim
 the encoding helps everywhere.
 
@@ -471,7 +471,7 @@ rather than an error status, so downloads are verified by magic bytes.
 
 ### Gap filling is opt-in, marked, and never near the store
 
-`qc/gapfill.py` implements the 2018 project's own method (`neighbor`) beside
+`qc/gapfill.py` implements the neighbour method beside
 three alternatives so it can be priced, not so it can be used. `none` is the
 shipped strategy. Every filled column gains `<column>_imputed`, and `_mark`
 derives that flag by comparing against the pre-fill frame rather than trusting
@@ -865,29 +865,28 @@ full drafting note.
 
 ## Protected identities — settled, and not negotiable
 
-The 2018 project's authors and supervisor are protected identities. Their names
+A small number of private individuals are protected identities. Their names
 do not belong in tracked paths or content, prose, code comments, alt text,
-commit messages, configuration, or exported JSON. **No figure, screenshot or
-layout from the original is reproduced** — every chart in chapter 5 is
-recomputed here from the raw data.
+commit messages, configuration, or exported JSON. No figure, screenshot or
+layout from any third-party document is reproduced — every chart here is
+computed from the raw data by this project.
 
 This is not a ban on scientific attribution. Formal citations and conventional
 technical eponyms remain when they identify a method, evidence source,
 limitation, or reproducible parameter, with enough bibliographic context to
 verify them. Decorative or nonessential personal attribution does not.
 
-The control-group comparison itself uses two kinds of material, neither of
-which requires identifying its authors or supervisor:
+**The frame goes too, not only the names.** Since 2026-08-17 this project does
+not describe itself against any particular earlier study. The comparison is
+between method choices, and *both arms are fitted here* — the flawed one by
+`analysis/baseline.py`, on the same rows as the corrected one. That is what
+licenses the comparison, and it needs no external document.
 
-* **method choices** (monthly means, PM10 as a predictor, linearised wind) —
-  methodological facts, discussable on their own terms;
-* **published numbers** (β=0.4133, t=92.75, r=0.8865, the VIFs) — facts, not
-  expression, and independently recomputable here.
-
-Frame the comparison as *a method* against *a better method*, never as a person
-against a better person. The recurring phrasing is "一份 2018 年的大學畢業專題"
-and "當年的做法" — never "我的專題" in a way that drags a co-author along, and
-never anything that would let a reader identify the people involved.
+So prose that reaches for one is a regression even when nobody is named:
+identifying a source study, quoting its published coefficients, citing its page
+numbers, or wording like 「原專題」/「當年的做法」. Say what the choice is and
+what it costs. Every cost in D1–D11 was measured in this repository, which is
+why none of them needs a citation.
 
 Before any publish step, run `uv run python scripts/check_repository_anonymity.py`.
 The checker reads only normalized digests and redacts every match. It is

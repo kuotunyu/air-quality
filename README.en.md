@@ -45,12 +45,11 @@ readings are flagged, not deleted. Out-of-range values keep their number so
 they stay inspectable. Aggregates below a coverage threshold return **null**,
 never a biased mean. Every gap on every chart is a real gap.
 
-### On the 2018 project
+### The comparison is against a method, not against anyone
 
-It is the starting point, not the subject. This repository names no author or
-supervisor, and reproduces none of its figures — only its *method choices*
-(matters of methodological fact) and its *published numbers* (independently
-verifiable). The original PDF is gitignored and is not redistributed.
+The flawed arm is not a description: it is a model actually fitted here, by
+`analysis/baseline.py`. Both arms therefore run on the same rows and every cost
+below is measured rather than asserted.
 
 Two of those choices turn out to matter a great deal:
 
@@ -97,7 +96,7 @@ flowchart TD
 
     subgraph Analytics [Analysis Modules]
         L -->|twair qc outliers| N_out[Isolated Excursion vs Network Episode]
-        M -->|M1| N[2018 Method Replication]
+        M -->|M1| N[Naive Monthly OLS Baseline]
         M -->|M2-M3| O[Hourly Drivers & Pitfall Analysis]
         M -->|M4-M5| P[Weather Normalisation & Detection Limits]
         M -->|M6-M12| T[Spatial / Forecast / Health / Sensitivity Analyses]
@@ -120,7 +119,7 @@ flowchart TD
 | | Description |
 |---|---|
 | 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025, downloadable from [chapter 10](https://kuotunyu.github.io/air-quality/data/) and packageable as a Hugging Face Dataset. The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
-| 📊 **Reproducible Science** | Step-by-step replication of the 2018 method, followed by rigorous corrections and quantitative comparisons. |
+| 📊 **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
 | 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
 | 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
 | 🔧 **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |

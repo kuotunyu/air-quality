@@ -1,6 +1,6 @@
 """Data quality reporting over the canonical store.
 
-The 2018 project disposed of its data-quality problems in one sentence:
+Data-quality problems are often disposed of in one sentence:
 「本專題將有遺漏值之資料以鄰近測站之資料代替」. What follows is the opposite
 approach — every quality property is measured, published, and left visible for
 the analysis stage to reason about.
@@ -209,7 +209,7 @@ def sentinel_rates(root: Path | None = None) -> pl.DataFrame:
     """Wind-direction sentinel occurrence per year.
 
     Settles the Phase 0 question: were 888/999 actually present during
-    2010-2017, the window the 2018 project analysed?
+    2010-2017, the window the M1 baseline is fitted on?
     """
     parts = [
         part.filter(pl.col("flag").is_in(list(SENTINEL_FLAGS)))
@@ -244,7 +244,7 @@ def pm_pair_diagnostics(root: Path | None = None) -> pl.DataFrame:
 
     PM2.5 is a physical subset of PM10, so ``PM2.5 > PM10`` cannot happen — but
     the two are measured by separate instruments with independent errors, and
-    it does. Quantifying that rate matters because the 2018 project used PM10
+    it does. Quantifying that rate matters because the baseline uses PM10
     as a *predictor* of PM2.5 and reported r = 0.887 on monthly means. Computing
     the same correlation hourly shows how much of that came from averaging away
     independent instrument noise rather than from any relationship.
@@ -582,7 +582,7 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
 ## 測站生命週期
 
 監測網從 1990 年代初的十餘站擴張到近 80 站。**跨年度比較「全台平均」時，
-測站組成的變動會與空氣品質變化混淆**，這是原專題完全未處理的問題。
+測站組成的變動會與空氣品質變化混淆**，這是月平均面板完全未處理的問題。
 
 {_md_table(lifecycle, ["station_name", "first_year", "last_year", "years_present", "has_gap"], limit=40)}
 
@@ -605,7 +605,7 @@ def write_markdown(results: dict[str, pl.DataFrame]) -> Path:
 PM2.5 在定義上是 PM10 的子集，因此 `PM2.5 > PM10` **物理上不可能發生**——
 但兩者由不同儀器獨立量測，誤差各自獨立，所以實際上會發生。
 
-這件事之所以重要：2018 年原始畢業專題把 **PM10 當作 PM2.5 的解釋變數**，
+這件事之所以重要：M1 基準把 **PM10 當作 PM2.5 的解釋變數**，
 並在月平均資料上得到 r = 0.887。同樣的相關係數改用逐時資料計算會低得多——
 差額來自月平均把獨立的儀器雜訊平均掉了，而不是來自任何真實關係。
 

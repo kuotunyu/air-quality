@@ -59,7 +59,7 @@ pollutants:
     unit: ppb
     valid_range: [0, 1000]
     # NO + NO2 = NOx 為恆等式。三者不可同時進入線性模型
-    # （2018 原專題的逐步剔除震盪即源於此）。
+    # （逐步剔除會來回震盪即源於此）。
     identity: NO + NO2
   "NO":
     name_zh: 一氧化氮

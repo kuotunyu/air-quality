@@ -118,9 +118,9 @@ MODULES: tuple[Module, ...] = (
     ),
     Module("m9_forecast", "twair analyze m9", "forecasting scored against persistence"),
     Module("m10_health", "twair analyze m10", "attributable fraction and its assumption"),
-    Module("m11_imputation", "twair analyze m11", "what the 2018 gap-filling sentence cost"),
-    Module("m12_sarima", "twair analyze m12", "the model the 2018 project called inconvenient"),
-    Module("m6_spatial", "twair analyze m6", "what the 2018 zone stratification bought"),
+    Module("m11_imputation", "twair analyze m11", "what filling gaps from a neighbour costs"),
+    Module("m12_sarima", "twair analyze m12", "SARIMA, and what its inconvenience costs"),
+    Module("m6_spatial", "twair analyze m6", "what zone stratification actually buys"),
     Module(
         "qc_outliers",
         "twair qc outliers",

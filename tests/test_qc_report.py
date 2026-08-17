@@ -1,6 +1,6 @@
 """The quality report, which is one of the four things this project publishes.
 
-`qc/report.py` is the module that answers the 2018 project's one-sentence
+`qc/report.py` is the module that answers the one-sentence
 dismissal of its data problems — 「本專題將有遺漏值之資料以鄰近測站之資料代替」 —
 by measuring every quality property instead. It writes `data/outputs/qc/` and
 `docs/data-quality.md`, and it was 83 statements at 0% coverage.

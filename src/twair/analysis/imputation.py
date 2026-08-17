@@ -1,6 +1,6 @@
 """D11: what the one sentence about missing values was worth.
 
-The 2018 project wrote 「將有遺漏值之資料以鄰近測站之資料代替」 and moved on.
+Gaps are often disposed of with 「以鄰近測站之資料代替」 and no further comment.
 No count of how many values that was, no estimate of how wrong they were, no
 statement of which station donated to which. Criticising the sentence is free.
 This module prices it.
@@ -12,7 +12,7 @@ Three questions, in the order they have to be asked:
    almost entirely in how they behave as a gap gets longer.
 2. **How wrong are the invented values?** Hide readings that exist, ask each
    strategy to reconstruct them, compare against what was really there. This is
-   the measurement the original could have made with its own data and did not.
+   the measurement that is available from the data itself and is rarely made.
 A third question — *does any of it change the conclusion?* — is deliberately
 **not** answered here, and the reason is worth recording because the attempt
 looked like it worked.
@@ -71,7 +71,7 @@ STATION = "station_name"
 TIMESTAMP = "ts_local"
 TARGET = "PM2.5"
 
-# The original's own window, so the comparison is on its data rather than on a
+# The baseline's own window, so the comparison is on that data rather than on a
 # period chosen to flatter one of the answers.
 PERIOD = (2010, 2017)
 

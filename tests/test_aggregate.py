@@ -1,7 +1,7 @@
 """Tests for daily and monthly aggregation.
 
 The circular-mean tests are the important ones: they encode the single
-statistical error that runs through the whole 2018 project.
+statistical error the M1 baseline reproduces on purpose.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class TestCircularMean:
         """350° and 10° average to due north, not due south."""
         arithmetic = (350 + 10) / 2
 
-        assert arithmetic == 180.0, "this is what the original computed"
+        assert arithmetic == 180.0, "this is what a plain arithmetic mean gives"
         assert _mean([350.0, 10.0]) == pytest.approx(0.0, abs=1e-6)
 
     def test_identical_directions_are_preserved(self) -> None:
@@ -112,7 +112,7 @@ def _write_store(tmp_path: Path, frame: pl.DataFrame) -> Path:
 
 class TestDailyAggregation:
     def test_sparse_days_lose_their_mean_but_keep_their_counts(self, tmp_path: Path) -> None:
-        """The 2018 project averaged regardless of how many hours contributed."""
+        """The baseline averages regardless of how many hours contributed."""
         rows = [("二林", "PM2.5", datetime(2015, 6, 1, h), 20.0 + h) for h in range(5)]
         root = _write_store(tmp_path, _hourly(rows))
 

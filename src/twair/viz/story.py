@@ -629,7 +629,7 @@ def _export_spatial(root: Path) -> list[Path]:
 
 
 def _export_sarima(root: Path) -> list[Path]:
-    """Chapter 5's coda: the model the 2018 project set aside, priced.
+    """Chapter 5's coda: the model routinely set aside, priced.
 
     Two things go in, and they answer different questions. The selection cost is
     the whole of 「實屬不便」 with seconds attached; the horizon table is whether
@@ -723,7 +723,7 @@ def _export_sarima(root: Path) -> list[Path]:
                 # the same claim twice in a row — which it did on the first run.
                 "verdict": (
                     "它在最該有用的期距上被一行規則打敗，會贏的地方又贏得不夠多。"
-                    "原文給了正確的答案，和一個不完整的理由；現在兩者都有數字。"
+                    "常見說法給了正確的答案，和一個不完整的理由；現在兩者都有數字。"
                 ),
                 "not_comparable": (
                     "那些是 74 站、另一組原點、另一批列上算出來的；"

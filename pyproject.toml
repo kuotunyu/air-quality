@@ -36,7 +36,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Classical statistics — everything M1 (replication of the 2018 method) needs.
+# Classical statistics — everything the M1 baseline fit needs.
 # Deliberately excludes the ML stack: shap pulls in numba, which needs a
 # compiler toolchain, and M1 must stay installable without one.
 analysis = [

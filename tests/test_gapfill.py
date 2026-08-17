@@ -1,6 +1,6 @@
 """Tests for gap filling.
 
-The 2018 project replaced its missing values with data from a nearby station
+Replacing missing values with data from a nearby station is the method under test
 and said so in one clause. The point of this module is not to do that better;
 it is to make the same choice measurable. So what gets pinned here is mostly
 what the strategies must *not* do: overwrite a real reading, bridge a gap

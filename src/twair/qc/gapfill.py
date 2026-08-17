@@ -1,12 +1,12 @@
 """Gap filling — switchable, recorded, and never the default.
 
-The 2018 project disposed of every missing value in one sentence:
+Missing values are often disposed of in one sentence:
 「將有遺漏值之資料以鄰近測站之資料代替」. No count, no error estimate, no
 statement of which stations donated to which. That single clause is the largest
 undocumented decision in the work this project re-examines, and criticising it
 is cheap. Pricing it is not.
 
-So the original's method is implemented here alongside the alternatives, and
+So that method is implemented here alongside the alternatives, and
 the comparison runs on the same data. `analysis/imputation.py` is what turns
 this module into an answer.
 
@@ -269,11 +269,11 @@ def _neighbor(
     params: dict[str, Any],
     geography: pl.DataFrame | None,
 ) -> tuple[pl.DataFrame, tuple[str, ...]]:
-    """The 2018 method: borrow from a nearby station.
+    """The neighbour method: borrow from a nearby station.
 
     Implemented as the regression `conf/qc.yaml` specifies rather than as a
     raw substitution, because a bare copy ignores that two stations measure
-    different mean levels — and the original's own wording (「代替」) is
+    different mean levels — and the wording 「代替」 is
     ambiguous between the two. Regression is the more favourable reading, so
     pricing *it* is the honest comparison.
 

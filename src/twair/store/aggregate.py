@@ -1,6 +1,6 @@
 """Daily and monthly aggregates, done properly.
 
-Two things the 2018 project got wrong at exactly this step, both fixed here:
+Two things commonly go wrong at exactly this step, both handled here:
 
 **Coverage is checked before averaging.** That project collapsed hourly data to
 monthly means with no record of how many valid hours went into each value, so a

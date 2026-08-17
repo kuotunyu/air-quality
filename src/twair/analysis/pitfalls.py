@@ -1,9 +1,9 @@
 """M3 — the same data, two methods, two conclusions.
 
-Six paired demonstrations, each isolating one decision the 2018 project made
-and showing what the other choice yields on identical rows. This is the part of
-the project that is worth reading: not "here is a better model" but "here is
-why the earlier answer was not an answer".
+Six paired demonstrations, each isolating one modelling decision and showing
+what the other choice yields on identical rows. This is the part of the project
+that is worth reading: not "here is a better model" but "here is why the other
+answer was not an answer".
 
 Each function returns the *evidence* — a frame you can plot or tabulate —
 rather than a verdict. The reader should be able to disagree with the
@@ -44,11 +44,11 @@ def diurnal_cycle_lost_to_monthly_means(
 
     Returns the hourly and weekday profiles alongside the monthly series. The
     monthly series is flat where the others are not, and the gap is the
-    information the original discarded before it began analysing.
+    information the baseline discards before any analysis begins.
 
     **Two monthly aggregations, and the difference between them is the point.**
-    The 2018 project averaged to one value per station per month — N = 7,286,
-    and this store's own count over the same window is 7,269. Pooling every
+    The baseline averages to one value per station per month — 7,269 in this
+    store over the same window. Pooling every
     station into a single national mean per month is a *different* and much
     lossier operation, and this function used to report only that one:
 
@@ -57,12 +57,12 @@ def diurnal_cycle_lost_to_monthly_means(
         monthly_mean   (n =    96)     sd  8.7286    retained 0.203
 
     So the published figure was 20.3% — and half of the 79.7% it charged to
-    monthly averaging is between-station variance the 2018 project kept. The
+    monthly averaging is between-station variance the baseline keeps. The
     exact n-weighted decomposition over these 5,136,594 rows agrees:
     Var(E[X | month]) is 0.20105 of the total and Var(E[X | station, month]) is
     0.40234, leaving 0.20129 as the purely spatial part.
 
-    The honest number for what the original's own aggregation cost is 40.3%
+    The honest number for what per-station monthly averaging costs is 40.3%
     retained, not 20.3%. Both ship, because a reader comparing them learns
     something a single row cannot say: averaging over time and averaging over
     space cost about the same, and only one of them was the mistake under
@@ -106,10 +106,10 @@ def diurnal_cycle_lost_to_monthly_means(
         .sort("month")
     )
 
-    # One value per station per month: the aggregation the 2018 project actually
+    # One value per station per month: the aggregation the baseline actually
     # performed, and the one this pitfall is about. Not published until now, so
     # the loss it charged to monthly averaging included the between-station
-    # variance that the original retained. See the docstring for the numbers.
+    # variance that the baseline retains. See the docstring for the numbers.
     station_month = hourly.group_by(
         "station_name", pl.col("ts_local").dt.truncate("1mo").alias("month")
     ).agg(pl.col("value").mean().alias("mean"), pl.len().alias("n"))
@@ -150,11 +150,11 @@ def wind_direction_linearisation(
     Produces two things:
 
     * the correlation between PM2.5 and the raw bearing, which is what the
-      original reported (0.089, and duly called "no correlation");
+      a linear treatment reports, and duly calls "no correlation";
     * the mean concentration by 30° sector, which shows a large and orderly
       directional dependence that a linear correlation cannot express.
 
-    The point is not that the original got a small number. It is that a small
+    The point is not that the number is small. It is that a small
     number was the only thing that method could produce, however strong the
     real dependence.
     """
@@ -226,7 +226,7 @@ def normality_test_fallacy(
 ) -> pl.DataFrame:
     """Pitfall 4 — what a significant normality test at large N means.
 
-    The original wrote (p.37) that because every variable was rejected, the
+    A common move is to argue that because every variable was rejected, the
     rejection threshold should be lowered to 0.01 so that none would be, and
     concluded the data were therefore normal.
 
@@ -282,7 +282,7 @@ def collinearity_instability(
 
     ``NO + NO2 = NOx`` holds by definition, so a model containing all three has
     no unique solution: the fit can trade coefficients between them freely
-    without changing a single prediction. The original ran eight rounds of
+    without changing a single prediction. Stepwise elimination runs rounds of
     stepwise elimination watching signs flip, and read the flipping as a
     substantive finding about nitrogen chemistry.
 
@@ -485,9 +485,9 @@ def in_sample_versus_out_of_sample(
     feature_set: str = "full",
     seed: int = 0,
 ) -> pl.DataFrame:
-    """Pitfall 6 — the gap the original had no way to see.
+    """Pitfall 6 — the gap an in-sample criterion cannot see.
 
-    The 2018 project selected its model by AIC and BIC computed on the same
+    Selecting a model by AIC and BIC computed on the same
     rows it was fitted to. Nothing in that procedure can detect a model that
     has learned the sample rather than the phenomenon.
 
@@ -560,10 +560,10 @@ def wind_encoding_in_a_linear_model(
     carve 0-360 into as many pieces as they need, so linearity across the wrap
     point costs them almost nothing.
 
-    That does not rescue the original. Its methods were Pearson correlation,
+    That does not rescue the linear treatment. The methods here are Pearson correlation,
     OLS and a linear mixed model, and for those the encoding is decisive. This
     fits the same rows both ways under OLS, which is the comparison that
-    matches what the 2018 project actually did.
+    matches what the baseline actually does.
     """
     import statsmodels.api as sm
 

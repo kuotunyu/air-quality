@@ -74,7 +74,7 @@ API 文件：<https://opendata.cwa.gov.tw/dist/opendata-swagger.html>
    前往 ERA5 資料集頁面 → 「Terms of use」→ Accept
 4. 填入 `.env` 的 `CDSAPI_KEY`
 
-> ERA5 提供**邊界層高度（boundary layer height）**——原始畢業專題最關鍵的
+> ERA5 提供**邊界層高度（boundary layer height）**——站內氣象觀測最關鍵的
 > 缺失變數。污染物濃度大致正比於排放量除以混合層體積。
 
 下載採排隊制，大範圍請求可能等數小時，建議背景批次執行。

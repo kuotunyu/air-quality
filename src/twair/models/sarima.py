@@ -1,10 +1,10 @@
-"""D10: the model the 2018 project abandoned for being inconvenient.
+"""D10: the model routinely abandoned for being inconvenient.
 
 Its own words, p.137: 「SARIMA 不在本專題繼續討論…在此實屬不便」. A project whose
 premise is answering that work's choices one at a time cannot leave this one
 answered by also not doing it.
 
-**The measurement changed the shape of the criticism.** The original was right
+**The measurement changed the shape of the criticism.** The complaint is right
 that it is inconvenient — automatic order selection on hourly data is
 genuinely, quantifiably expensive. What it did not do was say *how* expensive,
 or check whether the expense bought anything. One clause reads as a personal

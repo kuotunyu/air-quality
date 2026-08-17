@@ -1,6 +1,6 @@
 """Meteorological features.
 
-The centrepiece is wind. The 2018 project fed ``WD_HR`` — a compass bearing —
+The centrepiece is wind. A plain specification feeds ``WD_HR`` — a compass bearing —
 into correlation, regression and a mixed model as an ordinary continuous
 variable. On that scale 1° and 359° sit at opposite ends while being one degree
 apart in reality, so any coefficient estimated for it is uninterpretable.
@@ -62,7 +62,7 @@ def add_wind_features(
 ) -> pl.DataFrame:
     """Attach both wind encodings, leaving the raw bearing in place.
 
-    The raw column stays so that M3 can show, on one dataset, what the original
+    The raw column stays so that M3 can show, on one dataset, what the baseline
     obtained by using it directly.
     """
     missing = [c for c in (direction, speed) if c not in frame.columns]

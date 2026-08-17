@@ -1,8 +1,9 @@
-"""Tests for M1 — the deliberate reproduction of the 2018 method.
+"""Tests for M1 — the naive monthly-mean OLS baseline.
 
-The replication is only useful if it stays faithful to the original's choices,
-including the wrong ones. These tests pin those choices so a later "improvement"
-cannot quietly drift the baseline that every comparison rests on.
+The baseline is only useful while it stays wrong in exactly the ways it is meant
+to be wrong. These tests pin each of those choices, so a later "improvement"
+cannot quietly drift the contrast case every comparison rests on — and so that
+M6, which reconstructs this fit, keeps testing the model it thinks it is.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ class TestNaiveAggregation:
         assert panel["month"].dt.year().unique().to_list() == [2012]
 
     def test_wind_direction_is_averaged_arithmetically(self, tmp_path: Path) -> None:
-        """The original's error, reproduced on purpose: 350 and 10 average to 180."""
+        """The error, on purpose: 350 and 10 average to 180 — due south."""
         values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 1.0)
         rows = _full_month("二林", 2012, 6, values)
         rows = [r for r in rows if r[1] != "WD_HR"]
@@ -91,11 +92,11 @@ class TestNaiveAggregation:
         panel = naive_monthly_panel(root)
 
         assert panel["WD_HR"].to_list() == [pytest.approx(180.0)], (
-            "M1 must not use the circular mean — it exists to reproduce the original"
+            "the baseline must not use the circular mean — being wrong here is its purpose"
         )
 
     def test_sparse_months_are_kept_without_a_coverage_check(self, tmp_path: Path) -> None:
-        """The original applied no threshold; a one-hour month counted the same."""
+        """No threshold is applied; a one-hour month counts the same as a full one."""
         values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 5.0)
         rows = [
             ("二林", p, datetime(2012, 6, 1, 0), v, Flag.VALID.value) for p, v in values.items()

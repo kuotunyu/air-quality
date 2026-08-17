@@ -1,6 +1,6 @@
 """Tests for the out-of-sample evaluation harness.
 
-The 2018 project reported only in-sample fit, so these tests are as much about
+In-sample-only reporting is the failure mode here, so these tests are as much about
 pinning what "out of sample" means as about arithmetic.
 """
 

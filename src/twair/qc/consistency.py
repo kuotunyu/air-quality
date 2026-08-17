@@ -9,7 +9,7 @@ Two kinds of problem, deliberately handled differently:
   set would be arbitrary, so these are reported rather than flagged.
 
 Nothing here deletes data. The violation *rate* — which station, which year,
-which pollutant — is itself a result worth publishing, and the 2018 project's
+which pollutant — is itself a result worth publishing, and a one-line
 practice of quietly substituting neighbouring stations made exactly this
 invisible.
 """

@@ -459,7 +459,7 @@ class TestPartitionAgreement:
 
 
 def _synthetic_panel(seed: int, month_shock: float = 0.0) -> pl.DataFrame:
-    """A tiny station-month panel wearing the original's column names.
+    """A tiny station-month panel wearing the baseline's column names.
 
     Predictors are noise; the response is a linear function of them plus an
     optional shock shared by every station within a month — the dependence

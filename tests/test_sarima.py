@@ -1,4 +1,4 @@
-"""Tests for M12 — SARIMA, the model the 2018 project set aside.
+"""Tests for M12 — SARIMA, the model routinely set aside.
 
 The thing worth testing here is not whether SARIMA forecasts well. It is
 whether the *evaluation* is honest: that a split tests on its own span and not

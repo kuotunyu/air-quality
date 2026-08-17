@@ -42,7 +42,7 @@ flag_placement:
     example: "#"
     retains_value: false
 
-# 缺漏填補策略。預設不填補 —— 原始畢業專題「以鄰近測站之資料代替」
+# 缺漏填補策略。預設不填補 —— 「以鄰近測站之資料代替」這種處理
 # 是一句話帶過的黑盒，本專案把它變成可切換、可稽核、可比較的選項。
 #
 # 實作在 src/twair/qc/gapfill.py，比較在 src/twair/analysis/imputation.py
@@ -60,7 +60,7 @@ gapfill:
       description: 時間軸線性內插
       max_gap_hours: 3
     neighbor:
-      description: 鄰近測站迴歸（復刻 2018 原專題做法，供對照）
+      description: 鄰近測站迴歸（有缺陷的常見做法，供對照）
       max_distance_km: 30
       min_correlation: 0.7
     iterative:
@@ -146,7 +146,7 @@ stuck:
   # RAINFALL 九成的格子是實測的 0。
   pollutants: ["PM2.5", "PM10", "SO2", "NO2", "O3", "CO"]
 
-# 聚合覆蓋率門檻。原始畢業專題直接把逐時平均成月值，
+# 聚合覆蓋率門檻。常見做法是直接把逐時平均成月值，
 # 未檢查該月實際有多少有效小時 —— 這會讓資料稀疏的測站與完整測站等權。
 aggregation:
   hourly_to_daily:

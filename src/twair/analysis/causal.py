@@ -320,7 +320,7 @@ def placebo_distribution(
 ) -> list[float]:
     """The same estimate in unmarked same-calendar control years.
 
-    This is the control the 2018 project's methods had no equivalent of. If a
+    This is the control a plain before/after comparison has no equivalent of. If a
     model systematically misses late May, it will miss late May 2021 too, and
     the miss will look exactly like a marked-window contrast. Unmarked does not
     establish that nothing else happened; it records only the absence of this

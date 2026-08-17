@@ -1,14 +1,14 @@
-"""D7 — what the 2018 project's 「分 8 區各跑一次」 actually bought.
+"""D7 — what 「分 8 區各跑一次」 actually buys.
 
 The defect list records D7 as「78 個測站的空間維度沒用」. That is nearly right and
-the "nearly" is the interesting part: the original did not ignore space, it
+the "nearly" is the interesting part: the baseline does not ignore space, it
 *stratified* by air-quality zone and fitted the model once inside each zone. So
 the honest question is not "did they use space" but **was that stratification an
 adequate spatial control**, and that question has an answer with a number.
 
 The answer is a residual diagnostic, not a claim about the air. PM2.5 is
 obviously spatially autocorrelated; saying so is not a finding. What matters is
-whether the *residuals* of the fitted model still are, because the original's
+whether the *residuals* of the fitted model still are, because the baseline's
 inference — 6,771 station-months treated as independent observations, t
 statistics in the eighties — is valid only if they are not.
 
@@ -716,7 +716,7 @@ def _score(
 
 
 def _design_of(frame: pl.DataFrame) -> np.ndarray:
-    """The original's design matrix, intercept first, in a fixed column order."""
+    """The baseline's design matrix, intercept first, in a fixed column order."""
     from twair.analysis.baseline import BASELINE_PREDICTORS
 
     return np.column_stack(
@@ -916,7 +916,7 @@ class _Fit:
 def _least_squares(design: np.ndarray, y: np.ndarray) -> _Fit:
     """Least squares by SVD, so a rank-deficient design returns a fit and a warning.
 
-    NO, NO2 and NOx enter the original's specification together and NO + NO2 ≡
+    NO, NO2 and NOx enter the baseline's specification together and NO + NO2 ≡
     NOx, so the pooled design is singular in all but rounding error and a
     within-zone design over three stations is worse. `lstsq` gives the minimum-norm
     solution, which leaves the *residuals* — the only thing this module reads —
@@ -964,7 +964,7 @@ def partition_price(
 ) -> pl.DataFrame:
     """THE HEADLINE: how much spatial dependence each control actually removes.
 
-    Five controls on the original's own design, in increasing strength:
+    Five controls on the baseline's own design, in increasing strength:
 
     ``pooled``
         the fit exactly as M1 publishes it — no spatial control at all.
@@ -980,7 +980,7 @@ def partition_price(
         fully interacted fit produce the same residuals, and one design keeps the
         null machinery identical across controls.
     ``station_dummies``
-        a fixed effect per station: far stronger than anything the original did,
+        a fixed effect per station: far stronger than the zone stratification,
         included as the ceiling. If dependence survives even this, no amount of
         stratifying by area would have fixed it.
 
@@ -1666,7 +1666,7 @@ def lisa(panel: pl.DataFrame, conf: SpatialConf, *, rng: np.random.Generator) ->
 
 
 # --------------------------------------------------------------------------- #
-# the inference price — the original's own t-statistics, re-priced
+# the inference price — the baseline's own t-statistics, re-priced
 # --------------------------------------------------------------------------- #
 def inference_price(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
     """The pooled fit's standard errors under covariances that admit dependence.
@@ -1680,7 +1680,7 @@ def inference_price(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
     own column**, never applied silently.
 
     This is deliberately not a spatial-lag or error model: those change the
-    estimand, and then the before/after against the original's own numbers —
+    estimand, and then the before/after against the baseline's own numbers —
     the entire point — evaporates. Same design, same coefficients, different
     covariance.
     """

@@ -51,7 +51,7 @@ docs/report/
 # --- notebooks ---
 .ipynb_checkpoints/
 
-# --- original graduation project source PDF ---
+# --- a private source PDF, kept outside the repository ---
 # Contains author names. Decide explicitly before publishing (see docs/legal.md).
 # The file was moved out of this repository on 2026-08-17 and is not expected to
 # be here. The rule is kept anyway so that returning it cannot commit it.
