@@ -1,6 +1,6 @@
 """M2 — what actually drives hourly PM2.5.
 
-The counterpart to :mod:`twair.analysis.replication`. Same underlying data,
+The counterpart to :mod:`twair.analysis.baseline`. Same underlying data,
 every one of the original's method choices reversed:
 
 ============================  ==============================  ===========================

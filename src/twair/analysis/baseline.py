@@ -1,14 +1,15 @@
-"""M1 — replicate the 2018 graduation project, errors included.
+"""M1 — the naive monthly-mean OLS baseline, built wrong on purpose.
 
-This module deliberately reproduces the original method rather than a corrected
-version of it. That is the point: every later claim of the form "fixing X
-changes the conclusion" needs a baseline that demonstrably reproduces X.
+This module takes the discarded option at every decision point rather than the
+corrected one. That is the point: a claim of the form "fixing X changes the
+conclusion" needs a baseline that actually contains X, fitted on the same rows.
 
 It therefore **does not** use :mod:`twair.store.aggregate`, which averages
 circular quantities as vectors and withholds means below a coverage threshold.
-The original did neither, so neither does this.
+This baseline does neither, because doing both correctly is what it exists to be
+contrasted against.
 
-What the original did (第三章, 第五章):
+The specification it fits:
 
 * period 2010–2017, monthly means per station
 * hourly values averaged straight to monthly, with no daily step and no check
@@ -40,16 +41,16 @@ from twair.store.writer import scan_observations
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "ORIGINAL_PREDICTORS",
-    "ReplicationResult",
+    "BASELINE_PREDICTORS",
+    "BaselineResult",
     "naive_monthly_panel",
-    "run_replication",
-    "write_replication_report",
+    "run_baseline",
+    "write_baseline_report",
 ]
 
-# The response and the twelve predictors, in the original's own order (p.57).
+# The response and the twelve predictors the baseline specification uses.
 RESPONSE = "PM2.5"
-ORIGINAL_PREDICTORS = (
+BASELINE_PREDICTORS = (
     "AMB_TEMP",
     "CO",
     "NO",
@@ -63,32 +64,32 @@ ORIGINAL_PREDICTORS = (
     "WD_HR",
     "WS_HR",
 )
-ORIGINAL_PERIOD = (2010, 2017)
+BASELINE_PERIOD = (2010, 2017)
 
 
 def naive_monthly_panel(
     root: Path | None = None,
     *,
-    period: tuple[int, int] = ORIGINAL_PERIOD,
+    period: tuple[int, int] = BASELINE_PERIOD,
     valid_only: bool = True,
 ) -> pl.DataFrame:
-    """Monthly arithmetic means per station — the 2018 aggregation, reproduced.
+    """Monthly arithmetic means per station — the naive aggregation.
 
     Three deliberate departures from :func:`twair.store.aggregate.aggregate_daily`:
 
     1. **Arithmetic mean for every variable**, wind direction included. This is
-       wrong for a circular quantity and is exactly what the original did.
+       wrong for a circular quantity, and being wrong here is the point: M3
+       measures what it costs.
     2. **No coverage threshold.** A station-month built from three valid hours
        carries the same weight as one built from seven hundred.
-    3. **No daily intermediate.** Hours are averaged straight to months, per
-       「將逐時資料合併為各測站之月資料」.
+    3. **No daily intermediate.** Hours are averaged straight to months.
 
     ``valid_only`` controls whether agency-rejected readings are excluded. The
-    original never says which it did, so the choice is exposed and its effect
-    measured rather than assumed.
+    specification settles it either way, so the choice is exposed as a parameter
+    and its effect measured rather than assumed.
     """
     start, end = period
-    needed = [RESPONSE, *ORIGINAL_PREDICTORS]
+    needed = [RESPONSE, *BASELINE_PREDICTORS]
 
     in_period = scan_observations(root).filter(pl.col("ts_local").dt.year().is_between(start, end))
 
@@ -136,8 +137,9 @@ def naive_monthly_panel(
         if column not in wide.columns:
             wide = wide.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
 
-    # The original's N implies complete cases: 7,286 rows over 96 months is
-    # about 76 stations reporting every variable in every month.
+    # Complete cases only. A row missing any of the thirteen variables cannot
+    # enter an OLS that uses all of them, and dropping it here keeps the panel
+    # and the fit describing the same rows.
     return (
         wide.select("station_name", "month", *needed)
         .drop_nulls(needed)
@@ -146,7 +148,7 @@ def naive_monthly_panel(
 
 
 @dataclass
-class ReplicationResult:
+class BaselineResult:
     panel: pl.DataFrame
     descriptive: pl.DataFrame
     correlations: pl.DataFrame
@@ -157,7 +159,7 @@ class ReplicationResult:
 
 def _descriptive(panel: pl.DataFrame) -> pl.DataFrame:
     rows = []
-    for column in [RESPONSE, *ORIGINAL_PREDICTORS]:
+    for column in [RESPONSE, *BASELINE_PREDICTORS]:
         series = panel[column]
         rows.append(
             {
@@ -178,24 +180,24 @@ def _correlations(panel: pl.DataFrame) -> pl.DataFrame:
             "variable": column,
             "r": panel.select(pl.corr(RESPONSE, column)).item(),
         }
-        for column in ORIGINAL_PREDICTORS
+        for column in BASELINE_PREDICTORS
     ]
     return pl.DataFrame(rows)
 
 
 def _ols(panel: pl.DataFrame) -> pl.DataFrame:
-    """OLS with VIF, matching the original's specification exactly.
+    """OLS with VIF, fitting the baseline specification exactly.
 
     NO, NO2 and NOx all enter together even though NO + NO2 = NOx by
     definition. The design is singular in all but rounding error, which is what
-    produced the original's VIFs in the tens of thousands.
+    drives the VIFs into the tens of thousands — the measurement M3 reports.
     """
     import numpy as np
     import statsmodels.api as sm
     from statsmodels.stats.outliers_influence import variance_inflation_factor
 
     frame = panel.to_pandas()
-    x = sm.add_constant(frame[list(ORIGINAL_PREDICTORS)], has_constant="add")
+    x = sm.add_constant(frame[list(BASELINE_PREDICTORS)], has_constant="add")
     y = frame[RESPONSE]
 
     model = sm.OLS(y, x).fit()
@@ -223,15 +225,15 @@ def _ols(panel: pl.DataFrame) -> pl.DataFrame:
     ).with_columns(pl.lit(float(model.rsquared)).alias("r_squared"))
 
 
-def run_replication(
+def run_baseline(
     root: Path | None = None,
     *,
     valid_only: bool = True,
-) -> ReplicationResult:
+) -> BaselineResult:
     """Fit the specification and return every table it produces."""
     panel = naive_monthly_panel(root, valid_only=valid_only)
 
-    return ReplicationResult(
+    return BaselineResult(
         panel=panel,
         descriptive=_descriptive(panel),
         correlations=_correlations(panel),
@@ -241,7 +243,7 @@ def run_replication(
     )
 
 
-def write_replication_report(result: ReplicationResult) -> dict[str, Path]:
+def write_baseline_report(result: BaselineResult) -> dict[str, Path]:
     """Persist the tables for the report and for M6.
 
     ``panel`` and ``ols`` are not report material. M6 reconstructs this fit from
@@ -249,7 +251,7 @@ def write_replication_report(result: ReplicationResult) -> dict[str, Path]:
     residuals it tests provably belong to this model rather than to a re-derived
     lookalike. Dropping either would break that check.
     """
-    destination = outputs_dir("m1_replication")
+    destination = outputs_dir("m1_baseline")
     destination.mkdir(parents=True, exist_ok=True)
 
     written: dict[str, Path] = {}

@@ -51,9 +51,9 @@ def _table(frame: pl.DataFrame, columns: list[str] | None = None, *, limit: int 
 
 
 def _m1_section() -> str:
-    panel = _load("m1_replication", "panel")
-    correlations = _load("m1_replication", "correlations")
-    ols = _load("m1_replication", "ols")
+    panel = _load("m1_baseline", "panel")
+    correlations = _load("m1_baseline", "correlations")
+    ols = _load("m1_baseline", "ols")
     if panel is None or correlations is None or ols is None:
         return "_基準模型尚未執行。跑 `uv run twair analyze m1`。_\n"
 

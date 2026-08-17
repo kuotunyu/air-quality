@@ -1,6 +1,6 @@
 """Specifications for M6 — spatial structure and what the zone stratification bought.
 
-Every fixture here is synthetic. Nothing reads ``data/outputs/m1_replication`` or
+Every fixture here is synthetic. Nothing reads ``data/outputs/m1_baseline`` or
 the 341M-row store, because all of ``data/`` is gitignored and a test that
 reaches a local artefact passes here and fails for everyone else. The whole file
 must pass with ``TWAIR_DATA_DIR`` pointed at an empty directory.
@@ -465,22 +465,22 @@ def _synthetic_panel(seed: int, month_shock: float = 0.0) -> pl.DataFrame:
     optional shock shared by every station within a month — the dependence
     structure month clustering exists to price.
     """
-    from twair.analysis.replication import ORIGINAL_PREDICTORS, RESPONSE
+    from twair.analysis.baseline import BASELINE_PREDICTORS, RESPONSE
 
     rng = np.random.default_rng(seed)
     stations, months = 12, 30
     rows: list[dict[str, object]] = []
     shocks = rng.normal(0, month_shock, months) if month_shock else np.zeros(months)
-    beta = rng.normal(0, 1, len(ORIGINAL_PREDICTORS))
+    beta = rng.normal(0, 1, len(BASELINE_PREDICTORS))
     for s in range(stations):
         for m in range(months):
-            x = rng.normal(0, 1, len(ORIGINAL_PREDICTORS))
+            x = rng.normal(0, 1, len(BASELINE_PREDICTORS))
             row: dict[str, object] = {
                 "station_name": f"s{s:02d}",
                 "month": m,
                 RESPONSE: float(x @ beta + shocks[m] + rng.normal(0, 0.5)),
             }
-            row.update({name: float(v) for name, v in zip(ORIGINAL_PREDICTORS, x, strict=True)})
+            row.update({name: float(v) for name, v in zip(BASELINE_PREDICTORS, x, strict=True)})
             rows.append(row)
     return pl.DataFrame(rows)
 
@@ -526,7 +526,7 @@ class TestLisa:
     @staticmethod
     def _panel_with_hot_cluster(seed: int) -> pl.DataFrame:
         """Residuals near zero everywhere except four adjacent stations."""
-        from twair.analysis.replication import ORIGINAL_PREDICTORS
+        from twair.analysis.baseline import BASELINE_PREDICTORS
 
         rng = np.random.default_rng(seed)
         coords = grid_coords(4, 5)
@@ -546,7 +546,7 @@ class TestLisa:
                     "station_type_official": "general",
                     "offshore": False,
                 }
-                row.update({name: float(rng.normal()) for name in ORIGINAL_PREDICTORS})
+                row.update({name: float(rng.normal()) for name in BASELINE_PREDICTORS})
                 rows.append(row)
         return pl.DataFrame(rows)
 

@@ -119,7 +119,7 @@ class TestNumbersComeFromFiles:
     def test_sample_size_is_read_not_hardcoded(self, outputs: Path) -> None:
         _write(
             outputs,
-            "m1_replication",
+            "m1_baseline",
             "panel",
             pl.DataFrame(
                 {
@@ -130,13 +130,13 @@ class TestNumbersComeFromFiles:
         )
         _write(
             outputs,
-            "m1_replication",
+            "m1_baseline",
             "correlations",
             pl.DataFrame({"variable": ["PM10"], "r": [0.889]}),
         )
         _write(
             outputs,
-            "m1_replication",
+            "m1_baseline",
             "ols",
             pl.DataFrame(
                 {

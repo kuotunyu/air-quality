@@ -778,12 +778,12 @@ def analyze_m1(
     ),
 ) -> None:
     """M1 — fit the naive monthly-mean baseline that M3 prices and M6 corrects."""
-    from twair.analysis.replication import run_replication, write_replication_report
+    from twair.analysis.baseline import run_baseline, write_baseline_report
 
-    result = run_replication(valid_only=valid_only)
+    result = run_baseline(valid_only=valid_only)
     console.print(f"N = [bold]{result.n:,}[/bold] station-months, {result.n_stations} stations\n")
     console.print(result.ols)
-    paths = write_replication_report(result)
+    paths = write_baseline_report(result)
     for name, path in paths.items():
         console.print(f"wrote {name}: {path}")
 

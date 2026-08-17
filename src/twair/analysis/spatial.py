@@ -197,7 +197,7 @@ def load_m1_artefacts(root: Path | None = None) -> tuple[pl.DataFrame, pl.DataFr
     ``data/`` is gitignored, so a fresh clone has neither file and the error says
     which command produces them.
     """
-    base = outputs_dir("m1_replication") if root is None else root / "outputs" / "m1_replication"
+    base = outputs_dir("m1_baseline") if root is None else root / "outputs" / "m1_baseline"
     panel_path, ols_path = base / "panel.parquet", base / "ols.parquet"
     for path in (panel_path, ols_path):
         if not path.exists():
@@ -217,15 +217,15 @@ def reconstruct_residuals(panel: pl.DataFrame, ols: pl.DataFrame) -> pl.DataFram
     catches the failure that would otherwise be invisible: a column-order or
     name mismatch produces residuals that look completely plausible.
     """
-    from twair.analysis.replication import ORIGINAL_PREDICTORS, RESPONSE
+    from twair.analysis.baseline import BASELINE_PREDICTORS, RESPONSE
 
     coefficients = {row["term"]: float(row["coefficient"]) for row in ols.iter_rows(named=True)}
-    unknown = [term for term in coefficients if term not in (*ORIGINAL_PREDICTORS, "Intercept")]
+    unknown = [term for term in coefficients if term not in (*BASELINE_PREDICTORS, "Intercept")]
     if unknown:
         raise ValueError(f"ols.parquet carries terms M6 does not know how to apply: {unknown}")
 
     fitted = pl.lit(coefficients["Intercept"], dtype=pl.Float64)
-    for name in ORIGINAL_PREDICTORS:
+    for name in BASELINE_PREDICTORS:
         fitted = fitted + pl.col(name) * coefficients[name]
 
     out = panel.with_columns(
@@ -717,10 +717,10 @@ def _score(
 
 def _design_of(frame: pl.DataFrame) -> np.ndarray:
     """The original's design matrix, intercept first, in a fixed column order."""
-    from twair.analysis.replication import ORIGINAL_PREDICTORS
+    from twair.analysis.baseline import BASELINE_PREDICTORS
 
     return np.column_stack(
-        [np.ones(frame.height)] + [frame[name].to_numpy() for name in ORIGINAL_PREDICTORS]
+        [np.ones(frame.height)] + [frame[name].to_numpy() for name in BASELINE_PREDICTORS]
     )
 
 
@@ -989,7 +989,7 @@ def partition_price(
     has no decomposition property, and a ratio of two I values would look like a
     variance share while being nothing of the kind.
     """
-    from twair.analysis.replication import RESPONSE
+    from twair.analysis.baseline import RESPONSE
 
     work = panel.with_row_index("_row")
     y = work[RESPONSE].to_numpy()
@@ -1687,10 +1687,10 @@ def inference_price(panel: pl.DataFrame, conf: SpatialConf) -> pl.DataFrame:
     import statsmodels.api as sm
     from scipy import stats
 
-    from twair.analysis.replication import ORIGINAL_PREDICTORS, RESPONSE
+    from twair.analysis.baseline import BASELINE_PREDICTORS, RESPONSE
 
     frame = panel.to_pandas()
-    x = sm.add_constant(frame[list(ORIGINAL_PREDICTORS)], has_constant="add")
+    x = sm.add_constant(frame[list(BASELINE_PREDICTORS)], has_constant="add")
     y = frame[RESPONSE]
     terms = ["Intercept" if c == "const" else c for c in x.columns]
 

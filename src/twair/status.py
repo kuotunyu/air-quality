@@ -72,7 +72,7 @@ class Module:
 # so a renamed command breaks a test rather than misleading a reader.
 MODULES: tuple[Module, ...] = (
     Module("qc", "twair qc report", "data-quality measurement over all 44 years", feeds_web=False),
-    Module("m1_replication", "twair analyze m1", "replication of the 2018 method"),
+    Module("m1_baseline", "twair analyze m1", "naive monthly-mean OLS baseline"),
     Module("m2_drivers", "twair analyze m2", "hourly redo, 5.13M rows"),
     Module("m3_pitfalls", "twair analyze m3", "six paired method comparisons"),
     Module("m4_deweather", "twair analyze m4", "meteorological normalisation"),

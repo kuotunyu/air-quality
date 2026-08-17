@@ -49,7 +49,7 @@
   "cov_types": ["iid", "cluster_month", "cluster_station", "cluster_twoway"]
 
 "panel":
-  "source_module": "m1_replication"
+  "source_module": "m1_baseline"
   # The 2018 panel is 2010-2017, and in those years there were SEVEN air-quality
   # zones. 離島空品區 only became a zone in 2018 — conf/stations.yaml carries the
   # override recording that. Testing today's eight-zone partition on that panel

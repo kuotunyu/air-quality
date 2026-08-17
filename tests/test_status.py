@@ -228,7 +228,7 @@ class TestStaleness:
 
         assert by_name["qc"].feeds_web is False
         assert by_name["qc_outliers"].feeds_web is False
-        assert by_name["m1_replication"].feeds_web is True
+        assert by_name["m1_baseline"].feeds_web is True
 
 
 class TestNextSteps:

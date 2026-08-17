@@ -14,9 +14,9 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from twair.analysis.replication import (
-    ORIGINAL_PERIOD,
-    ORIGINAL_PREDICTORS,
+from twair.analysis.baseline import (
+    BASELINE_PERIOD,
+    BASELINE_PREDICTORS,
     RESPONSE,
     naive_monthly_panel,
 )
@@ -57,19 +57,19 @@ def _full_month(
 class TestSpecification:
     def test_pm10_is_among_the_predictors(self) -> None:
         """The leak is deliberate: this baseline must contain it, not fix it."""
-        assert "PM10" in ORIGINAL_PREDICTORS
+        assert "PM10" in BASELINE_PREDICTORS
 
     def test_the_collinear_triple_all_enter_together(self) -> None:
         """NO + NO2 = NOx by definition, which is what drives the VIFs."""
-        assert {"NO", "NO2", "NOx"} <= set(ORIGINAL_PREDICTORS)
+        assert {"NO", "NO2", "NOx"} <= set(BASELINE_PREDICTORS)
 
 
 class TestNaiveAggregation:
     def test_period_matches_the_original(self) -> None:
-        assert ORIGINAL_PERIOD == (2010, 2017)
+        assert BASELINE_PERIOD == (2010, 2017)
 
     def test_years_outside_the_window_are_excluded(self, tmp_path: Path) -> None:
-        values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 1.0)
+        values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 1.0)
         rows = _full_month("二林", 2009, 6, values) + _full_month("二林", 2012, 6, values)
         root = _store(tmp_path, rows)
 
@@ -79,7 +79,7 @@ class TestNaiveAggregation:
 
     def test_wind_direction_is_averaged_arithmetically(self, tmp_path: Path) -> None:
         """The original's error, reproduced on purpose: 350 and 10 average to 180."""
-        values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 1.0)
+        values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 1.0)
         rows = _full_month("二林", 2012, 6, values)
         rows = [r for r in rows if r[1] != "WD_HR"]
         rows += [
@@ -96,7 +96,7 @@ class TestNaiveAggregation:
 
     def test_sparse_months_are_kept_without_a_coverage_check(self, tmp_path: Path) -> None:
         """The original applied no threshold; a one-hour month counted the same."""
-        values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 5.0)
+        values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 5.0)
         rows = [
             ("二林", p, datetime(2012, 6, 1, 0), v, Flag.VALID.value) for p, v in values.items()
         ]
@@ -109,7 +109,7 @@ class TestNaiveAggregation:
 
     def test_incomplete_rows_are_dropped(self, tmp_path: Path) -> None:
         """The published N implies complete cases across all thirteen variables."""
-        values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 1.0)
+        values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 1.0)
         complete = _full_month("二林", 2012, 6, values)
         # 關山 never reports SO2, so its month cannot be a complete case.
         partial = [r for r in _full_month("關山", 2012, 6, values) if r[1] != "SO2"]
@@ -127,7 +127,7 @@ class TestNaiveAggregation:
             naive_monthly_panel(root)
 
     def test_rejected_readings_are_excluded_by_default(self, tmp_path: Path) -> None:
-        values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 1.0)
+        values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 1.0)
         rows = _full_month("二林", 2012, 6, values)
         rows = [
             (r[0], r[1], r[2], r[3], Flag.INSTRUMENT_CHECK_INVALID.value) if r[1] == RESPONSE else r
@@ -144,7 +144,7 @@ class TestNaiveAggregation:
 
     def test_no_rain_hours_count_toward_the_rainfall_mean(self, tmp_path: Path) -> None:
         """NR is a measured zero. Excluding it inflated the mean tenfold."""
-        values = dict.fromkeys([RESPONSE, *ORIGINAL_PREDICTORS], 1.0)
+        values = dict.fromkeys([RESPONSE, *BASELINE_PREDICTORS], 1.0)
         rows = [r for r in _full_month("二林", 2012, 6, values) if r[1] != "RAINFALL"]
         rows += [
             ("二林", "RAINFALL", datetime(2012, 6, 1, 0), 4.0, Flag.VALID.value),
