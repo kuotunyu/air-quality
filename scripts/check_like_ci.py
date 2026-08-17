@@ -82,9 +82,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--job", help="run only this job key (test, web)")
     parser.add_argument("--list", action="store_true", help="print the steps and exit")
+    parser.add_argument(
+        "--workflow",
+        type=Path,
+        default=WORKFLOW,
+        help="read a different workflow file; exists so the extraction is testable",
+    )
     args = parser.parse_args()
 
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(args.workflow.read_text(encoding="utf-8"))
     jobs: dict[str, Any] = workflow["jobs"]
     if args.job:
         if args.job not in jobs:
@@ -94,11 +100,22 @@ def main() -> int:
     planned: list[tuple[str, str, str, str | None]] = []
     skipped: list[str] = []
     for key, job in jobs.items():
-        for name, command, cwd in steps(job):
+        found = steps(job)
+        if not found:
+            raise SystemExit(
+                f"job {key!r} yielded no `run:` steps — has the workflow changed shape? "
+                "Refusing to report success for having done nothing."
+            )
+        for name, command, cwd in found:
             if name in SETUP_STEPS:
                 skipped.append(f"{key}: {name}")
                 continue
             planned.append((key, name, local(command), cwd))
+
+    # A runner that finds nothing to run must not exit 0. This is the same
+    # defect the prose gates shipped with: silence read as a pass.
+    if not planned:
+        raise SystemExit("no steps to run after skipping setup — refusing to report success")
 
     if args.list:
         for key, name, command, cwd in planned:
