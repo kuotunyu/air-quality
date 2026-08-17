@@ -1,0 +1,214 @@
+"""The five numbers on the first screen are retyped in six files. Do they agree?
+
+「降了 60%」, 「43%」, 「42.2%」, 「2.55 倍」 and 「32.1%」 are the most-read figures
+this project publishes — the opening sentence of both READMEs — and they also
+appear in `PLAN.md`, `docs/methodology.md`, `docs/working-rules.md` and the
+generated `reports/01-core.md`. Only the last of those regenerates from the data.
+
+`tests/test_public_readmes.py` pins them as literal strings, which catches a
+deletion or a reword. It cannot catch drift: when the analysis moves, the test
+fails, and the fix is to update the prose *and the assertion* to whatever the new
+number is — with nothing checking that the new number is the one the data
+actually holds.
+
+This compares them against the committed story payloads, which is the same source
+the site draws and the only copy CI can see, `data/` being gitignored:
+
+* `story/trend-national.json` — the 2006-anchored fall, by the definition
+  `make_social_card.facts()` uses, imported rather than restated
+* `story/deweather.json` — the weather share of that fall, and the independent
+  per-station median that is quoted beside it
+* `story/pitfalls.json` — the PM10 leak's share of R², and the ratio sin/cos
+  encoding buys over a raw bearing under OLS
+
+Design notes, both learned the hard way while writing `check_published_spatial.py`
+the same night:
+
+**Integer and exact-decimal claims never get a tolerance.** Only figures the
+prose deliberately rounds do, at one unit of the last place printed.
+
+**A pattern that stops matching is a reported problem, not silence.** Rewording
+a sentence must not switch its own check off.
+
+    uv run python scripts/check_published_headline.py
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+STORY = REPO_ROOT / "web" / "public" / "data" / "story"
+
+SOURCES = {
+    "README.md": REPO_ROOT / "README.md",
+    "README.en.md": REPO_ROOT / "README.en.md",
+    "PLAN.md": REPO_ROOT / "PLAN.md",
+    "methodology.md": REPO_ROOT / "docs" / "methodology.md",
+    "working-rules.md": REPO_ROOT / "docs" / "working-rules.md",
+}
+
+
+def load(name: str) -> dict[str, Any]:
+    path = STORY / f"{name}.json"
+    if not path.exists():
+        raise SystemExit(f"no payload at {path} — run `twair export web` first")
+    payload: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return payload
+
+
+def card_facts() -> dict[str, Any]:
+    """`make_social_card.facts()`, imported so the fall has one definition.
+
+    Restating "(first - last) / first over the balanced window" here would create
+    a second place for that choice to be made, which is the defect this file is
+    about.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_social_card", REPO_ROOT / "scripts" / "make_social_card.py"
+    )
+    if spec is None or spec.loader is None:  # pragma: no cover - packaging accident
+        raise SystemExit("cannot import scripts/make_social_card.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    facts: dict[str, Any] = module.facts()
+    return facts
+
+
+def agrees(quoted: float, actual: float, places: int | None) -> bool:
+    if places is None:
+        return quoted == actual
+    return abs(quoted - actual) <= 10.0**-places
+
+
+def compare(where: str, what: str, quoted: float, actual: float, places: int | None) -> str | None:
+    if agrees(quoted, actual, places):
+        return None
+    return f"{where:<17} {what:<32} says {quoted:g}, data has {actual:g}"
+
+
+class Claim:
+    """One sentence, the number it quotes, and where the truth lives."""
+
+    def __init__(
+        self,
+        what: str,
+        pattern: str,
+        actual: float,
+        places: int | None,
+        *,
+        scale: float = 1.0,
+        files: tuple[str, ...] = (),
+    ) -> None:
+        self.what = what
+        self.pattern = re.compile(pattern)
+        self.actual = actual * scale
+        self.places = places
+        self.files = files
+
+    def check(self, where: str, text: str) -> list[str]:
+        matches = list(self.pattern.finditer(text))
+        if not matches:
+            return [f"{where:<17} {self.what:<32} no longer matches — reworded or removed?"]
+        problems = []
+        for match in matches:
+            # The patterns carry one alternative per language, so every branch
+            # but the matching one yields None.
+            captured = next((g for g in match.groups() if g is not None), None)
+            if captured is None:
+                problems.append(f"{where:<17} {self.what:<32} matched but captured nothing")
+                continue
+            quoted = float(captured)
+            problem = compare(where, self.what, quoted, self.actual, self.places)
+            if problem and problem not in problems:
+                problems.append(problem)
+        return problems
+
+
+def build_claims() -> list[Claim]:
+    trend = card_facts()
+    deweather = load("deweather")
+    pitfalls = load("pitfalls")
+
+    leak = {row["feature_set"]: row for row in pitfalls["tables"]["leakage_price"]}
+    honest = float(leak["full"]["r2"])
+    leaking = float(leak["full_with_pm10"]["r2"])
+    leak_share = (leaking - honest) * 100.0 / leaking
+
+    wind = {row["encoding"]: row for row in pitfalls["tables"]["wind_linear_model_encoding"]}
+    raw_r2 = float(wind["raw_bearing"]["r_squared"])
+    encoded_r2 = float(wind["sin_cos"]["r_squared"])
+
+    return [
+        Claim(
+            "national fall since 2006",
+            r"降了\s*(\d+)%|fell\s*(?:by\s*)?(\d+)%",
+            float(trend["drop_pct"]),
+            0,
+            files=("README.md", "README.en.md"),
+        ),
+        Claim(
+            "weather share of the fall",
+            r"其中\s*(\d+)%\s*歸於|assigns\s*(\d+)%\s*of that fall",
+            float(deweather["panel"]["weather_share_of_fall"]),
+            0,
+            scale=100.0,
+            files=("README.md", "README.en.md"),
+        ),
+        Claim(
+            "median per-station share",
+            r"答案是\s*([\d.]+)%|the answer is\s*([\d.]+)%|中位數\s*\|\s*\*{0,2}([\d.]+)%",
+            float(deweather["median_weather_share"]),
+            1,
+            scale=100.0,
+            files=("README.md", "README.en.md"),
+        ),
+        Claim(
+            "PM10 leak share of R2",
+            r"([\d.]+)%\s*的\s*R²|([\d.]+)% of the leaking model|貢獻率高達\s*\*{0,2}([\d.]+)%",
+            leak_share,
+            1,
+            files=("README.md", "README.en.md", "PLAN.md", "methodology.md"),
+        ),
+        # Anchored to the two sentences that make this claim, not to 「N 倍」.
+        # A bare ratio pattern also matched 「鄰站法比內插差 2.8 倍」 (M11) and
+        # 「缺口長度變化 20 倍」 — both true, both about something else. A gate
+        # that reports true sentences as errors is a gate that gets switched off.
+        Claim(
+            "sin/cos advantage under OLS",
+            r"原始方位角的\s*\*{0,2}([\d.]+)\s*倍|效能提升達\s*\*{0,2}([\d.]+)\s*倍",
+            encoded_r2 / raw_r2,
+            2,
+            files=("README.md", "PLAN.md", "methodology.md"),
+        ),
+    ]
+
+
+def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    claims = build_claims()
+
+    problems: list[str] = []
+    for claim in claims:
+        for name in claim.files:
+            path = SOURCES[name]
+            if not path.exists():
+                problems.append(f"{name} is missing")
+                continue
+            problems.extend(claim.check(name, path.read_text(encoding="utf-8")))
+
+    for claim in claims:
+        print(f"{claim.what:<32} = {claim.actual:g}")
+    print(f"disagreements                    : {len(problems)}")
+    for problem in problems:
+        print(f"  {problem}")
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

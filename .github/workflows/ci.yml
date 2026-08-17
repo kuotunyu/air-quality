@@ -142,6 +142,16 @@ jobs:
       - name: The spatial numbers in prose match the published payload
         run: uv run python scripts/check_published_spatial.py
 
+      # The five figures on the first screen — the national fall, the weather
+      # share, the independent per-station median, the PM10 leak's share of R²
+      # and what sin/cos encoding buys — are retyped across six files and are the
+      # most-read numbers this project publishes. test_public_readmes.py pins
+      # them as strings, which catches a reword but not drift: when the analysis
+      # moves, the honest fix updates prose and assertion together, and nothing
+      # checks the new figure against the data.
+      - name: The first-screen numbers match the data behind them
+        run: uv run python scripts/check_published_headline.py
+
       - name: Test (Pytest)
         run: uv run pytest
 

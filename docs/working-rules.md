@@ -953,7 +953,21 @@ than `data/outputs/`: the payload is the only copy CI can see.
 ```bash
 uv run python scripts/check_published_forecast.py   # M9, four files
 uv run python scripts/check_published_spatial.py    # M6, methodology.md + PLAN.md
+uv run python scripts/check_published_headline.py   # the first screen, six files
 ```
+
+Three properties any further one needs, each learned by getting it wrong:
+
+- **Integer counts compare exactly.** A tolerance of one unit makes every
+  off-by-one agree, and off-by-one on a station count is what these are for.
+- **A pattern that stops matching is a reported problem**, never silence — a
+  reworded sentence must not switch off its own check.
+- **Anchor to the sentence, not to the shape of the number.** A bare 「N 倍」
+  pattern also matched two true sentences about something else, and a gate that
+  fails on a correct claim is a gate that gets switched off.
+
+Test each against deliberately stale input before trusting it. All three above
+reported zero disagreements against the real files while still being broken.
 
 Re-run the analysis, re-export, **then** run these — they compare prose against
 the payload, so an un-exported run makes them complain about the prose instead of
