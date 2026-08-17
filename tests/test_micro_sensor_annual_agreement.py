@@ -3217,26 +3217,95 @@ def test_evaluation_identity_binds_the_trusted_panel_claim_boundary_and_ordered_
     monkeypatch.setattr(agreement, "resolve_station_geo", lambda: geography)
 
     result = agreement.evaluate_annual_agreement(panel)
+    manifest: dict[str, Any] = dict(result.manifest)
+    outputs = {
+        "folds": result.folds,
+        "predictions": result.predictions,
+        "scores": result.scores,
+        "deltas": result.deltas,
+    }
 
-    assert result.manifest["panel_generation_sha256"] == "a" * 64
-    assert result.manifest["claim_boundary"] == dict(
+    assert manifest["panel_generation_sha256"] == "a" * 64
+    assert manifest["claim_boundary"] == dict(
         agreement.load_annual_agreement_config().claim_boundary
     )
-    assert result.manifest["output_rows"] == {
-        "folds": result.folds.height,
-        "predictions": result.predictions.height,
-        "scores": result.scores.height,
-        "deltas": result.deltas.height,
-    }
-    assert result.manifest["output_hashes"] == {
-        "deltas": "1237efddd2ea7ea25d262b28041bb4822235f5c9f762022935913abe802cf91e",
-        "folds": "af6613bdde7beb85cf02b0ab2074722ea57464f70d82a1f2d358431db5cafbfc",
-        "predictions": ("6b823ec478eb051e0f2d89cafcc71f766db3aa25230756f441fc55f6da2a0f59"),
-        "scores": "23f2e10d810151ec1f0c45e2a1e9eb2e6461ab5f4a0cc7d66d320a20a167eb4d",
-    }
-    assert result.manifest["generation_sha256"] == (
-        "1ce9563e93549db8dfd65788298fac2d309422be0e29467f1511fbbd9b51c0ae"
+    assert list(manifest["output_rows"]) == list(outputs)
+    assert manifest["output_rows"] == {name: frame.height for name, frame in outputs.items()}
+
+    # `folds` is the only output with no floating-point column, and it is the
+    # only one of the four whose digest can be pinned here.
+    #
+    # The other three carry model output, and `_agreement_frame_hash` digests
+    # the full-precision repr of every float64, so one unit in the last place
+    # rewrites the digest completely. That is not hypothetical. Forcing a
+    # different OpenBLAS kernel on one machine — same code, same input, same
+    # process — moves `pooled_weather_ridge`'s first prediction by exactly one
+    # ULP (0x1.85099ac5c5952p+3 against 0x1.85099ac5c5951p+3) and rewrites
+    # `predictions`, `scores` and `deltas`. Measured on Windows and on Linux,
+    # same CPU: both agree bit-for-bit with each other, and both move under
+    # OPENBLAS_CORETYPE=NEHALEM and =SANDYBRIDGE. `folds` held across all of it.
+    #
+    # `ubuntu-latest` is a pool and nothing guarantees two runs get the same host
+    # CPU, so pinning the three float digests asserted which machine CI got:
+    # it passed at 06:42 and 11:00 and failed at 14:32 on identical code. What
+    # this test is named for — that the identity binds its components — is
+    # checked below without depending on the host's kernel selection.
+    assert (
+        manifest["output_hashes"]["folds"]
+        == "af6613bdde7beb85cf02b0ab2074722ea57464f70d82a1f2d358431db5cafbfc"
     )
+    assert list(manifest["output_hashes"]) == list(outputs)
+    assert manifest["output_hashes"] == {
+        name: agreement._agreement_frame_hash(frame) for name, frame in outputs.items()
+    }
+
+    # Binding, stated as the property rather than as one machine's digest: the
+    # generation identity is the hash of everything above it, so perturbing any
+    # single component has to move it.
+    identity = {key: value for key, value in manifest.items() if key != "generation_sha256"}
+    assert agreement._canonical_hash(identity) == manifest["generation_sha256"]
+    for mutation in (
+        {"panel_generation_sha256": "b" * 64},
+        {"claim_boundary": {**manifest["claim_boundary"], "invented_claim": True}},
+        {"config": {**manifest["config"], "ridge_alpha": 2.0}},
+        {"output_rows": {**manifest["output_rows"], "folds": 0}},
+        {"output_hashes": {**manifest["output_hashes"], "predictions": "c" * 64}},
+    ):
+        assert agreement._canonical_hash({**identity, **mutation}) != manifest["generation_sha256"]
+
+    # A model change is what the three float digests were really catching, so it
+    # is still caught here — at a tolerance four orders of magnitude wider than
+    # the one-ULP dispatch difference and far tighter than any change a model
+    # would make.
+    overall = result.scores.filter(
+        (pl.col("scope") == "overall") & (pl.col("unit") == "station_day")
+    )
+
+    def measured(evaluation: str, model: str, column: str) -> float:
+        selected = overall.filter((pl.col("evaluation") == evaluation) & (pl.col("model") == model))
+        assert selected.height == 1
+        return float(selected.row(0, named=True)[column])
+
+    assert measured("joint", "raw_micro", "rmse") == pytest.approx(1.0, rel=1e-12)
+    assert measured("joint", "pooled_micro_ridge", "rmse") == pytest.approx(
+        0.1362187782780167, rel=1e-12
+    )
+    assert measured("joint", "pooled_weather_ridge", "rmse") == pytest.approx(
+        0.13858150678284598, rel=1e-12
+    )
+    assert measured("held_station", "pooled_micro_ridge", "r2") == pytest.approx(
+        0.9989729834227442, rel=1e-12
+    )
+    assert measured("held_station", "pooled_weather_ridge", "r2") == pytest.approx(
+        0.9988032348512023, rel=1e-12
+    )
+    assert measured("held_quarter", "pooled_micro_ridge", "mae") == pytest.approx(
+        0.08763440860215077, rel=1e-12
+    )
+    assert measured("held_quarter", "pooled_weather_ridge", "mae") == pytest.approx(
+        0.09090669726243772, rel=1e-12
+    )
+
     assert result.folds.rows() == result.folds.sort("evaluation", "fold").rows()
     assert (
         result.predictions.rows()

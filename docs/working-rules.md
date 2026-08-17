@@ -725,6 +725,63 @@ costs one extra mypy pass and is the only way to see a POSIX-only error from
 here. The same reasoning as the empty-data run above: an environment CI has and
 you do not is an environment your gates have never actually tested.
 
+### A hash of float64 output tests which machine CI got, not what the code does
+
+`ubuntu-latest` is a pool, not a machine: nothing guarantees two runs get the
+same host CPU. OpenBLAS picks its kernel from whatever CPU it lands on, and that
+is enough to move a fitted value by one unit in the last place. One ULP rewrites
+a SHA-256 completely.
+
+This was not a theory. `test_evaluation_identity_binds_the_trusted_panel_claim_boundary_and_ordered_output_hashes`
+pinned the digests of the agreement evaluation's four outputs. It **passed at
+06:42, passed at 11:00, and failed at 14:32** on a commit whose diff touched only
+Markdown and one unrelated test.
+
+The mechanism was confirmed on one machine, holding everything else fixed and
+changing only the dispatch path:
+
+| dispatch | `folds` | `predictions` / `scores` / `deltas` |
+| --- | --- | --- |
+| baseline (Windows and Linux, same CPU) | `af6613bd…` | `6b823ec4…` |
+| `NPY_DISABLE_CPU_FEATURES="AVX2 FMA3"` | `af6613bd…` | `6b823ec4…` |
+| `OPENBLAS_CORETYPE=HASWELL` / `=ZEN` / `=PRESCOTT` | `af6613bd…` | `6b823ec4…` |
+| `OPENBLAS_CORETYPE=NEHALEM` | `af6613bd…` | **all three change** |
+| `OPENBLAS_CORETYPE=SANDYBRIDGE` | `af6613bd…` | **all three change** |
+
+The whole difference is the last hex digit of one double:
+
+```
+baseline   12.15742243411356    0x1.85099ac5c5952p+3
+NEHALEM    12.157422434113558   0x1.85099ac5c5951p+3
+```
+
+Two things follow.
+
+**Windows and Linux on the same CPU agree bit-for-bit.** The OS is not the
+variable and `--platform linux` will not find this; the CPU is the variable.
+Only the three-feature model moves — the single-feature fits are identical
+everywhere, because they never reach a real GEMM.
+
+**`threadpool_limits(limits=1)` does not help.** Thread count was already pinned,
+and pinning it is still right for reproducibility within a machine. It says
+nothing about which kernel gets selected.
+
+So: a digest over exact float64 is a fine *record* of what a run produced, and a
+bad *assertion* that two runs agree. Pin digests of structural output only —
+`folds` has no float column and held across every configuration above. Assert
+numbers with `pytest.approx`; `rel=1e-12` sits four orders of magnitude above ULP
+noise and still catches a 1e-7 perturbation of `ridge_alpha`. And when a test
+claims an identity *binds* its components, test that claim directly — mutate each
+component and assert the digest moves — rather than pinning one host's answer.
+
+**Still open:** published generation manifests embed these same float digests, so
+`evaluation_generation_sha256` and the `generation_sha256` above it inherit the
+limit. Re-running the analysis on different hardware yields a different
+generation id for identical inputs. Nothing depends on that being stable today —
+the manifests record what a run produced, and no gate compares them across
+machines — but the identity should not be described as machine-independent until
+the numeric payload is quantised before it is hashed.
+
 ### A credential in a URL leaks by two routes, not one
 
 `net.quiet_http` was written after httpx logged a real CWA key at INFO. Its
