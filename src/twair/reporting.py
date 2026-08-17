@@ -366,7 +366,7 @@ def build_core_report() -> Path:
 
 ---
 
-## M1 — 復刻 2018 年的分析
+## M1 — 刻意有缺陷的月平均基準
 
 {_m1_section()}
 

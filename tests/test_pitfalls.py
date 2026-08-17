@@ -400,7 +400,7 @@ class TestTheAggregationTheOriginalActuallyPerformed:
         )
 
     def test_the_station_month_count_is_stations_times_months(self, tmp_path: Path) -> None:
-        """7,269 station-months in the real store against the 2018 report's 7,286."""
+        """7,269 station-months exist in the store; the complete-case panel is 6,771."""
         result = diurnal_cycle_lost_to_monthly_means(
             self._two_stations(tmp_path), period=(2010, 2010)
         )

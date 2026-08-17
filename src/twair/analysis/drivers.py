@@ -6,7 +6,7 @@ every one of the baseline's method choices reversed:
 ============================  ==============================  ===========================
                               2018                            here
 ============================  ==============================  ===========================
-resolution                    monthly means, N ≈ 7,286        hourly, N ≈ 10^6
+resolution                    monthly means, N = 6,771        hourly, N ≈ 10^6
 wind direction                raw bearing 0-360               sin/cos plus u/v vector
 PM10                          a predictor                     excluded; ratio only
 time of day, day of week      averaged away                   cyclic features

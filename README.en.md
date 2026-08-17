@@ -31,10 +31,11 @@ Three things come out of it:
    raw annual archives, but in four different container formats, two date
    orders, and with a quality-flag convention that changes from year to year.
    This project parses all of it into one canonical, per-row-provenanced store.
-2. **A methodological comparison.** A 2018 undergraduate project analysed a
-   subset of this data using monthly means ($N = 7{,}286$), OLS with stepwise
-   elimination, and a mixed model with AR(1). Re-running that method beside a
-   corrected one, on the same data, prices each choice.
+2. **A methodological comparison.** Monthly means, stepwise-eliminated OLS
+   and PM10 predicting its own subset were standard practice for a generation
+   of Taiwanese air-quality work. The flawed arm is *fitted here* — 6,771
+   station-months over 72 stations — so both arms run on the same rows and
+   every difference is measured rather than quoted.
 3. **A site that lets you check the work**, including SQL over the whole record
    in your own browser.
 

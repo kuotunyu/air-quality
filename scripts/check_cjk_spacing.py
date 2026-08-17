@@ -80,7 +80,13 @@ NUL = "\x00"
 MUST_KEEP = (
     ("第 1 版", "index.html"),
     ("165 公尺", "index.html"),
-    ("N = 7,286", "methods/index.html"),
+    # Was ("N = 7,286", "methods/index.html"), a sample size transcribed from an
+    # external document. This gate was pinning it in place, so removing the
+    # figure from the chapter would have failed the build — the probe outlived
+    # the reason it existed. The chapter now states the panel this repository
+    # actually fits, 6,771 station-months, which `m1_baseline/panel.parquet`
+    # can be checked against.
+    ("6,771", "methods/index.html"),
 )
 
 

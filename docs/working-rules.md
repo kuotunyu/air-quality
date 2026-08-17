@@ -315,6 +315,30 @@ the level this project actually cares about. The same trap caught `PRODUCT.md`
 in the same pass, from the other direction: 52 KB of prose that looks inert and
 is re-derived by three CI gates.
 
+### Searching for the label only ever finds the label
+
+Removing an external comparison from this repository was done by grepping for the
+words that named it. That found every one of them and reported the tree clean.
+Seventeen references survived, because the load-bearing part of a quoted
+comparison is not its label — it is the **numbers**. `7,286`, `0.4133`, `92.75`
+and `0.8865` carry no marker at all, and no pattern about 專題 was ever going to
+match them. One survivor was a full English paragraph; another was a sentence on
+the live methods page describing an external study's design.
+
+**A gate was holding one of them in place.** `check_cjk_spacing.py`'s `MUST_KEEP`
+asserted that `N = 7,286` appears on `methods/index.html`, so removing the figure
+would have failed the build. A probe written to protect a claim outlived the
+claim and started enforcing it.
+
+The check that works is **per quantity, not per word**: for each number a
+comparison uses, is this repository's own measurement there instead of somebody
+else's? Every figure in the methods chapter is now traceable to
+`data/outputs/m1_baseline/` — 6,771 station-months over 72 stations from
+`panel.parquet`, β 0.4020 and t 86.28 from `ols.parquet`.
+
+The same reasoning applies to any future removal: enumerate the *claims*, then
+check each one, rather than grepping for whatever happened to name them.
+
 ### Never write a backslash escape into a file through a shell heredoc
 
 `docs/methodology.md` carried two LaTeX formulas whose `\approx` had become a

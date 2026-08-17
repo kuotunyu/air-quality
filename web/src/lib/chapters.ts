@@ -120,7 +120,7 @@ export const CHAPTERS: readonly Chapter[] = [
     slug: "methods",
     nav: "方法學對照",
     title: "方法選擇的量化代價",
-    question: "2018 年的方法選擇各自付出了什麼可量化代價？",
+    question: "每一個方法選擇各自付出了什麼可量化代價？",
     claim: "同一份資料做兩次，一次用常見但有缺陷的做法，一次用修正後的——逐項量出每個選擇的代價。",
   },
   {
