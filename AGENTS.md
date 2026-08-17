@@ -113,7 +113,25 @@ current tree or add a baseline exemption.
 
 ## ✅ Before you say a task is done
 
-Run every gate below. Every one must pass.
+```bash
+uv run python scripts/check_like_ci.py
+```
+
+**This runs what CI runs, read from `.github/workflows/ci.yml` itself**, so there
+is one list of gates in this repository and it cannot fall behind. It skips only
+environment setup (installing Python, `uv sync`, `npm ci`) and names what it
+skipped. Unlike CI it does not stop at the first failure, because knowing that
+three gates are red rather than one changes what you do next.
+
+`--list` shows the steps without running them; `--job test` runs the Python half
+alone when you have not touched `web/`.
+
+This section used to enumerate the gates by hand. It listed six while CI ran
+seventeen, so a task could pass everything named here and still turn the build
+red — which it did, twice, on one afternoon. The individual commands below remain
+because their *reasons* are worth reading, not because the list is the interface.
+
+---
 
 ```bash
 uv run python scripts/check_history_identity.py
