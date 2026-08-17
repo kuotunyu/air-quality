@@ -315,6 +315,39 @@ the level this project actually cares about. The same trap caught `PRODUCT.md`
 in the same pass, from the other direction: 52 KB of prose that looks inert and
 is re-derived by three CI gates.
 
+### `.env` points at a partial copy, and nothing says which store you are reading
+
+The canonical data on this machine lives at `D:\twair-data` — 288 GB, the full
+44-year store plus 322 micro-sensor observation generations. The tracked `.env`
+says:
+
+```
+TWAIR_DATA_DIR=data
+```
+
+which resolves to the workspace's own `data/`, a **partial** copy holding 25 of
+those 322 generations. Both directories have the same shape, both make
+`twair status` print a healthy store, and nothing in any command's output names
+which root it just read.
+
+That cost a wrong conclusion. `twair analyze micro-sensor-annual-readiness`
+failed with `micro-sensor parsed generation not found`, and counting what was on
+disk gave 25 against a config pinning 322 — from which the obvious and entirely
+wrong inference was that the acquisition had never been completed and would need
+roughly 300 GB nobody had. The data had been complete for days, one drive over.
+
+**Before concluding anything from what is or is not in `data/`, check which root
+you are actually reading.** `TWAIR_DATA_DIR` is read at call time, so it can be
+pointed anywhere per command:
+
+```bash
+TWAIR_DATA_DIR="D:/twair-data" uv run twair status
+```
+
+The project entry point already says to set it "when the canonical data lives
+outside the active worktree". It is easy to read that as advice for worktrees
+and miss that it applies to the main checkout too.
+
 ### Searching for the label only ever finds the label
 
 Removing an external comparison from this repository was done by grepping for the
