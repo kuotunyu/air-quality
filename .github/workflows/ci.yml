@@ -163,6 +163,13 @@ jobs:
       - name: The first-screen numbers match the data behind them
         run: uv run python scripts/check_published_headline.py
 
+      # D10 states the whole M12 result three times over — the panel, the timing
+      # table that prices the inconvenience, and the RMSE table that says what it
+      # bought. Every figure was already a field in story/sarima.json; only the
+      # copying stood between them.
+      - name: The SARIMA numbers in prose match the published payload
+        run: uv run python scripts/check_published_sarima.py
+
       - name: Test (Pytest)
         run: uv run pytest
 

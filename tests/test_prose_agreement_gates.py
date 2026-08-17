@@ -22,20 +22,21 @@ from __future__ import annotations
 
 import pytest
 from scripts import check_published_headline as headline
+from scripts import check_published_sarima as sarima
 from scripts import check_published_spatial as spatial
 
 
 class TestIntegersCompareExactly:
     """The defect that made the spatial gate ornamental on its first run."""
 
-    @pytest.mark.parametrize("gate", [spatial, headline])
+    @pytest.mark.parametrize("gate", [spatial, headline, sarima])
     def test_an_off_by_one_count_is_a_disagreement(self, gate: object) -> None:
         # `places=None` means "an exact integer". A tolerance here is what let
         # 60 stations agree with 61.
         assert not gate.agrees(60.0, 61.0, None)  # type: ignore[attr-defined]
         assert gate.agrees(61.0, 61.0, None)  # type: ignore[attr-defined]
 
-    @pytest.mark.parametrize("gate", [spatial, headline])
+    @pytest.mark.parametrize("gate", [spatial, headline, sarima])
     def test_a_rounded_decimal_still_gets_its_last_place(self, gate: object) -> None:
         """The payload rounds on export, so three decimals of 0.1555 may
         honestly print either way. Real drift is further off than that."""
@@ -84,6 +85,45 @@ class TestTypographyIsNotADisagreement:
     def test_the_spatial_gate_reads_the_same_sign(self) -> None:
         assert spatial.num("−0.230") == pytest.approx(-0.230)
         assert spatial.num("**+0.156**") == pytest.approx(0.156)
+
+
+class TestASeparatorMustNotEatItsNeighbour:
+    """The SARIMA gate matched and read the wrong number before it read none.
+
+    A greedy `.{0,3}` between 「秒」 and the observation count swallowed 「、8,」
+    and captured 612 out of 8,612. The gate then reported 「says 612, payload has
+    8612」 — a disagreement that looks entirely real and would send someone to
+    edit a document that was correct. Failing to match is safer than that.
+    """
+
+    def test_the_fits_sentence_reads_a_thousands_separated_count(self) -> None:
+        sentence = "**18/18 次擬合全部收斂**，\n中位數 11 秒、8,612 個有效觀測點。"
+        payload = {
+            "fits": {"converged": 18, "total": 18, "median_seconds": 11.0, "median_observed": 8612}
+        }
+
+        assert sarima.check_fits(sentence, payload) == []
+
+    def test_the_same_sentence_wrapped_differently_still_matches(self) -> None:
+        """Prose here is hard-wrapped, so a newline can land anywhere in a
+        clause. The first version used `[^\\n]` and called the sentence missing."""
+        payload = {
+            "fits": {"converged": 18, "total": 18, "median_seconds": 11.0, "median_observed": 8612}
+        }
+
+        one_line = "**18/18 次擬合全部收斂**，中位數 11 秒、8,612 個有效觀測點。"
+
+        assert sarima.check_fits(one_line, payload) == []
+
+    def test_a_missing_fits_sentence_is_reported(self) -> None:
+        payload = {
+            "fits": {"converged": 18, "total": 18, "median_seconds": 11.0, "median_observed": 8612}
+        }
+
+        problems = sarima.check_fits("這段沒有提到擬合。", payload)
+
+        assert len(problems) == 1
+        assert "次擬合全部收斂" in problems[0]
 
 
 class TestControlTableAgreement:

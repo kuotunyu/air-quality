@@ -976,9 +976,15 @@ than `data/outputs/`: the payload is the only copy CI can see.
 uv run python scripts/check_published_forecast.py   # M9, four files
 uv run python scripts/check_published_spatial.py    # M6, methodology.md + PLAN.md
 uv run python scripts/check_published_headline.py   # the first screen, six files
+uv run python scripts/check_published_sarima.py     # D10's three tables
 ```
 
-Three properties any further one needs, each learned by getting it wrong:
+They do not share a module, and should not: **no script in `scripts/` imports a
+sibling**, because the folder is standalone programs with no `__init__.py` and
+mypy runs on it separately for that reason. Shared logic belongs in
+`src/twair/`, which the scripts already import from.
+
+Four properties any further one needs, each learned by getting it wrong:
 
 - **Integer counts compare exactly.** A tolerance of one unit makes every
   off-by-one agree, and off-by-one on a station count is what these are for.
@@ -987,9 +993,17 @@ Three properties any further one needs, each learned by getting it wrong:
 - **Anchor to the sentence, not to the shape of the number.** A bare 「N 倍」
   pattern also matched two true sentences about something else, and a gate that
   fails on a correct claim is a gate that gets switched off.
+- **Separators are non-greedy, and prose here is hard-wrapped.** A greedy
+  `.{0,3}` between 「秒」 and a count swallowed 「、8,」 and read 612 out of 8,612;
+  `[^\n]` in the same pattern called a wrapped sentence missing. Use `.{0,n}?`
+  with `re.S`.
 
-Test each against deliberately stale input before trusting it. All three above
-reported zero disagreements against the real files while still being broken.
+Test each against deliberately stale input before trusting it — and **check that
+it fails for the right reason**. All four above reported zero disagreements
+against the real files while still being broken, and one of them, once it
+matched, reported a difference that looked entirely real. A gate that reads the
+wrong number is worse than one that reads none: it sends someone to edit a
+document that was correct.
 
 Re-run the analysis, re-export, **then** run these — they compare prose against
 the payload, so an un-exported run makes them complain about the prose instead of
