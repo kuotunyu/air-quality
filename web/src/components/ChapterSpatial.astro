@@ -23,6 +23,10 @@ const network = spatial.network as {
   placed: number;
   complete: number;
   unplaced: string[];
+  // Stations placed on an authority other than the current MOENV register.
+  // Separate from `unplaced`: one says "we found this elsewhere", the other
+  // "no official source places this at all", and the page says each.
+  historical: string[];
   weights: string;
   null_draws: number;
 };
