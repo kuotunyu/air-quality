@@ -61,10 +61,13 @@ jobs:
       # docs/methodology.md shipped seventeen links that resolved relative to
       # docs/, so every 「[src/twair/…](src/twair/…)」 was a 404 on GitHub. The
       # same file also held four correct `../` links, so it had been inconsistent
-      # for a long time with nothing able to see it. Offline: external URLs are
-      # never fetched, because an upstream outage must not redden this build.
-      - name: Every internal markdown link points at a file that exists
-        run: uv run python scripts/check_markdown_links.py
+      # for a long time with nothing able to see it. The site's `repoFile()`
+      # targets are checked too: they are strings, so moving `docs/legal.md`
+      # would 404 the live page and the Astro build would not care. Offline:
+      # external URLs are never fetched, because an upstream outage must not
+      # redden this build.
+      - name: Every link into this repository points at a file that exists
+        run: uv run python scripts/check_internal_links.py
 
       - name: Lint (Ruff)
         run: |
