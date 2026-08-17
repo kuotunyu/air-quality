@@ -3,7 +3,7 @@
  * Chapter 3 — spatial structure, and what 「分區各跑一次」 bought.
  *
  * D7 recorded the defect as 「78 個測站的空間維度沒用」, and measuring it
- * corrected the record: the 2018 project *stratified* by zone, and that
+ * corrected the record: the baseline *stratified* by zone, and that
  * stratification removed most of the spatial dependence. The chapter therefore
  * runs on two questions that can each come out either way — was the
  * stratification an adequate control (mostly yes), and are its standard errors
@@ -80,7 +80,7 @@ const scopeLimits = spatial.scope_limits as string[];
 const refusals = spatial.refusals as string[];
 
 const CONTROL_LABELS: Record<string, string> = {
-  pooled: "合併式（原文推論所依據）",
+  pooled: "合併式（未分層）",
   zone_era_dummies: "七區截距",
   zone_official_today: "今日分區截距（時代錯置對照）",
   within_zone_separate_fits: "字面上的「分區各跑一次」",
@@ -153,8 +153,8 @@ const cellFor = (method: string, buffer: number) =>
 <section id="space" class="page">
   <ChapterIntro slug="space">
   <p class="lede">
-    原始清單把這個缺陷記成「78 個測站的空間維度沒用」。
-    動手量了之後，這句話需要修正：當年的做法是按空品區分層、每區各跑一次——所以誠實的問題不是「有沒有用空間」，而是<strong>那個分層是不是足夠的空間控制</strong>。
+    常見的批評是「有這麼多測站，空間維度卻沒用上」。
+    動手量了之後，這句話需要修正：按空品區分層、每區各跑一次本來就用了空間——所以誠實的問題不是「有沒有用空間」，而是<strong>那個分層是不是足夠的空間控制</strong>。
   </p>
   </ChapterIntro>
 
@@ -238,7 +238,7 @@ const cellFor = (method: string, buffer: number) =>
   </EvidenceFigure>
 
   <p>
-    這個問題有數字可答，而且答案對原文比清單上的指控公平。
+    這個問題有數字可答，而且答案比那句批評公平。
   </p>
 
   <p>
@@ -327,14 +327,14 @@ const cellFor = (method: string, buffer: number) =>
           {" "}{literal.months_significant_bh}。
         </strong>
         它比測站固定效果還有效——因為它讓每個係數都隨區改變，不只截距。
-        當年那個被清單指控「沒用空間」的做法，其實移除了大部分的空間相依。
+        那個被指控「沒用空間」的做法，其實移除了大部分的空間相依。
       </p>
       <p>
         但「大部分」不是全部：站均殘差場的 I 仍是
         +{n(spatial.station_mean_i.i as number, 3)}（z = {n(spatial.station_mean_i.z as number, 2)}，
         p = {n(spatial.station_mean_i.p as number, 3)}）。更要緊的是——
-        原文各表的 t 統計量出自<strong>合併式</strong>模型，
-        也就是上圖最上面那一列，而不是它自己分區跑的那個版本。
+        但要注意 t 統計量通常報自<strong>合併式</strong>模型，
+        也就是上圖最上面那一列，而不是分層之後的那個版本。
       </p>
     </div>
   )}
@@ -382,8 +382,8 @@ const cellFor = (method: string, buffer: number) =>
   <h2>把 t 統計量重新標價</h2>
 
   <p>
-    係數完全不動、設計完全不動，只換共變異估計量——這樣得出的前後對照才對得上
-    原文自己刊的數字。聚類月允許同月內任意站間相依（空間的修正）；聚類站允許
+    係數完全不動、設計完全不動，只換共變異估計量——這樣前後對照才只反映相依性
+    這一個變因。聚類月允許同月內任意站間相依（空間的修正）；聚類站允許
     同站內任意月間相依（時間的修正）；two-way 兩者皆允許：
   </p>
 
@@ -400,7 +400,7 @@ const cellFor = (method: string, buffer: number) =>
         {inference.rows.map((r) => (
           <tr>
             <td>
-              {r.cov_type === "iid" && "iid——原文自己的假設"}
+              {r.cov_type === "iid" && "iid——基準模型的假設"}
               {r.cov_type === "cluster_month" && "聚類月（空間）"}
               {r.cov_type === "cluster_station" && "聚類站（時間）"}
               {r.cov_type === "cluster_twoway" && "two-way（CGM）"}
@@ -711,7 +711,7 @@ const cellFor = (method: string, buffer: number) =>
    * One rule, not two. This was written twice in a row, the first asking for
    * `tabular-nums` and the second immediately setting it back to `normal`, so
    * the first declaration never did anything. These labels are prose — 「合併式
-   * （原文推論所依據）」 — and have no figures to line up.
+   * （未分層）」 — and have no figures to line up.
    *
    * `balance`, because the column is 176px at 1440 and every one of these names
    * carries a parenthetical. Greedy breaking put 「論所依據）」 on the second line

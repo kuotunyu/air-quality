@@ -335,7 +335,7 @@ export const deweatherEvidence = deweather as {
 };
 
 /**
- * Chapter 5's coda: D10 — the model the 2018 project set aside as inconvenient.
+ * Chapter 5's coda: the model usually set aside as too inconvenient to fit.
  *
  * `not_comparable` is a field rather than a comment because the chapter prints
  * it. These origins are not M9's origins, and the one thing a reader will want
@@ -373,7 +373,7 @@ export const sarimaEvidence = sarima as {
   no_lightgbm: string;
 };
 
-/** Pitfall 07: what the 2018 project's gap-filling sentence cost. */
+/** Pitfall 07: what filling gaps from a neighbouring station costs. */
 export interface GapScore {
   strategy: string;
   gap_bucket: string;

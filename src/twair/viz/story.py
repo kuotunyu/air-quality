@@ -687,8 +687,6 @@ def _export_sarima(root: Path) -> list[Path]:
         write_json(
             root / "sarima.json",
             {
-                "quote": "SARIMA 不在本專題繼續討論⋯⋯在此實屬不便",
-                "quote_page": 137,
                 "period": [2015, 2025],
                 "order": "(1,0,1)(1,0,1)₂₄",
                 "stations": int(fits["station_name"].n_unique()),
