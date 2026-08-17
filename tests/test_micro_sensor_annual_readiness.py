@@ -33,6 +33,18 @@ from twair.ingest.micro_sensor_observations import OBSERVATION_OUTPUT_SCHEMA
 from twair.net import sha256_file
 from twair.store.schema import PARTITION_SCHEMA
 
+# The lock-contention test spawns a holder process that must survive the parent's
+# console signals, which needs a new process group on Windows and nothing on
+# POSIX. `subprocess.CREATE_NEW_PROCESS_GROUP` exists only in the Windows stub,
+# so this has to be a statement rather than the obvious conditional expression:
+# mypy narrows `sys.platform` in an `if`, but evaluated both arms of the ternary
+# and failed on Linux with "Module has no attribute" while passing on Windows.
+# CI caught it; no local run could have.
+if sys.platform == "win32":
+    _NEW_PROCESS_GROUP = subprocess.CREATE_NEW_PROCESS_GROUP
+else:
+    _NEW_PROCESS_GROUP = 0
+
 
 def _identity(label: str) -> str:
     return hashlib.sha256(label.encode()).hexdigest()
@@ -807,7 +819,7 @@ def test_the_annual_run_lock_rejects_a_live_writer_and_is_released_by_process_ex
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0),
+        creationflags=_NEW_PROCESS_GROUP,
     )
     assert holder.stdout is not None
     assert holder.stdout.readline().strip() == "locked"

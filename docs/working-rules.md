@@ -634,6 +634,40 @@ The general shape is worth keeping: a check that has never run in the
 environment it is supposed to protect has not been passing, it has been
 untested.
 
+### Development is Windows and CI is Linux, so type-check both
+
+Three CI failures have now been Linux-only while every local gate was green: the
+ANSI styling that split a CLI option across raw-string spans, a Chrome
+debugging-port timeout, and `subprocess.CREATE_NEW_PROCESS_GROUP`, which exists
+only in typeshed's Windows stub. The last one is the instructive one, because the
+runtime code was already correct:
+
+```python
+subprocess.Popen(
+    argv,
+    creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0),
+)
+```
+
+That branches correctly at run time and is *unverifiable* locally. mypy narrows
+`sys.platform` in an `if` statement but evaluated both arms of this conditional
+expression, so it passed against the Windows stub here and failed against the
+POSIX stub in CI. The fix is the statement form, assigned once at module level.
+
+**mypy can be told which platform to assume, so this is catchable before pushing:**
+
+```bash
+uv run mypy --platform linux src tests
+uv run mypy --platform linux scripts
+```
+
+Run against the broken code that reproduces CI's exact error; run against the fix
+and it passes. Add it whenever a change touches `subprocess`, `os`, `signal`,
+`pathlib` internals or anything else whose stubs are platform-conditional — it
+costs one extra mypy pass and is the only way to see a POSIX-only error from
+here. The same reasoning as the empty-data run above: an environment CI has and
+you do not is an environment your gates have never actually tested.
+
 ### A credential in a URL leaks by two routes, not one
 
 `net.quiet_http` was written after httpx logged a real CWA key at INFO. Its
