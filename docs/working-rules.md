@@ -1028,6 +1028,34 @@ near-rewrite of the historical-geography contract, which was already built, and
 an invented blocker about extracting a shared module, which this repository had
 already ruled out.
 
+The day after that was written, `check_internal_links.py` — written *after*
+`check_like_ci.py` was fixed for reporting success on an empty scan, and after
+this very paragraph — turned out to have the same hole and no tests at all. It
+now raises on finding no markdown files, no internal links, or no `repoFile`
+calls, and carries eleven tests.
+
+An audit of the rest came back clean and bounded, which is worth recording so
+nobody re-runs it: the four other CI gates without tests (`check_chapter_titles`,
+`check_cjk_spacing`, `check_publication_structure`, `check_palette`) all already
+refuse an empty scan. `check_agency_flags` and `check_verdict_meteorology` are
+analysis scripts, not gates — no exit code, not in `ci.yml`.
+
+### A verification command can report success for having verified nothing
+
+This is the same defect as above, one level out — in the commands used to check
+the gates rather than in the gates.
+
+    gh run watch "$RUN" --exit-status --compact 2>&1 | tail -15
+
+Two faults in one line. `gh run list --commit` does not match a **short** sha, so
+`$RUN` was empty; and the pipe means the exit status comes from `tail`, not from
+`gh`. It printed a 404 and exited 0, and would have been read as a green CI run.
+
+So: never let the thing whose status you care about be anywhere but the end of a
+pipeline — or capture `PIPESTATUS`. Pass full shas to `gh run list --commit`, or
+filter `--branch` output by `headSha` yourself. And a poll loop needs a distinct
+exit for "never reached a conclusion", separate from pass and from fail.
+
 Re-run the analysis, re-export, **then** run these — they compare prose against
 the payload, so an un-exported run makes them complain about the prose instead of
 the export.
