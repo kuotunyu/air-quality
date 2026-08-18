@@ -5,14 +5,23 @@ retyped into prose against the committed story payloads. Both reported zero
 disagreements against the real files while unable to catch the drift they exist
 for, which is why these tests exist and why they are all about failing.
 
-Two defects, both found only by running the gates against deliberately stale
+Three defects, each found only by running a gate against deliberately stale
 input:
 
 * integer counts were compared with a tolerance — `places=0` set the slack to
   `10**-0 == 1.0`, so 60 stations against 61 agreed, and off-by-one on a station
   count is the whole point;
 * a pattern that stopped matching returned no problems, so rewording a sentence
-  switched off its own check with no output at all.
+  switched off its own check with no output at all;
+* a greedy separator matched and read the **wrong** number, reporting a
+  disagreement that looked entirely real.
+
+**None of these was a discovery.** `check_published_forecast.py` predates all of
+them and already compared at the printed precision and already reported a table
+that matched nothing. The later gates were written beside a working example
+without carrying its properties across, which makes them regressions rather than
+new problems — so it is tested here too, and cannot lose what the others had to
+be taught.
 
 A gate verified only against correct files is a gate whose failure path has
 never run. These tests are that failure path, kept.
@@ -22,6 +31,7 @@ from __future__ import annotations
 
 import pytest
 from scripts import check_published_detection as detection
+from scripts import check_published_forecast as forecast
 from scripts import check_published_headline as headline
 from scripts import check_published_sarima as sarima
 from scripts import check_published_spatial as spatial
@@ -155,6 +165,38 @@ class TestAConclusionCanOutliveTheNumbersUnderIt:
 
     def test_matching_chance_exactly_is_not_below_it(self) -> None:
         assert detection.check_the_reading_still_holds([self._event(3.3, 3.3)])
+
+
+class TestTheGateThatAlreadyHadThisRight:
+    """`check_published_forecast.py` predates the other four and had both
+    properties from the start: it compares at the printed precision rather than
+    with a tolerance, and it reports a table that matched nothing.
+
+    The defects in the later gates were therefore **regressions**, not
+    discoveries — a working example sat beside them and its properties were not
+    carried over. Tested here so the oldest gate cannot lose what the newer ones
+    had to be taught.
+    """
+
+    def test_it_compares_at_the_printed_precision(self) -> None:
+        assert forecast.compare("f", 1, "r2", 0.5061, 0.5064, 3) is None
+        assert forecast.compare("f", 1, "r2", 0.506, 0.512, 3) is not None
+
+    def test_a_table_that_matched_nothing_is_reported(self) -> None:
+        expected = {1: {"model_r2": 0.5, "skill_persistence": 0.1}}
+
+        problems = forecast.check_table(
+            "forecast.py docstring",
+            forecast._MD_ROW,
+            "this prose has no table in it",
+            expected,
+            fields=("model_r2", "skill_persistence"),
+        )
+
+        assert any("no rows matched at all" in p for p in problems)
+
+    def test_a_unicode_minus_is_read_as_negative(self) -> None:
+        assert forecast.num("−0.262") == pytest.approx(-0.262)
 
 
 class TestControlTableAgreement:

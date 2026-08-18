@@ -1018,6 +1018,16 @@ matched, reported a difference that looked entirely real. A gate that reads the
 wrong number is worse than one that reads none: it sends someone to edit a
 document that was correct.
 
+**None of those defects was new.** `check_published_forecast.py` was written
+first and already had the first two properties — it compares at the printed
+precision, and it reports a table that matched nothing. The four that followed
+were written beside a working example without carrying its properties across.
+The general form is worth more than the specific rules above: **when you add the
+second of something, read the first one properly.** That failure also produced a
+near-rewrite of the historical-geography contract, which was already built, and
+an invented blocker about extracting a shared module, which this repository had
+already ruled out.
+
 Re-run the analysis, re-export, **then** run these — they compare prose against
 the payload, so an un-exported run makes them complain about the prose instead of
 the export.
