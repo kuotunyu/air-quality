@@ -62,9 +62,11 @@ def markdown_files() -> list[Path]:
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
+    files = markdown_files()
+
     checked = 0
     broken: list[str] = []
-    for path in markdown_files():
+    for path in files:
         relative = path.relative_to(REPO_ROOT).as_posix()
         for match in LINK.finditer(path.read_text(encoding="utf-8", errors="replace")):
             target = match.group(1)
@@ -92,7 +94,18 @@ def main() -> int:
             if not (REPO_ROOT / target).exists():
                 broken.append(f"{relative}  ->  repoFile({target!r})")
 
-    print(f"markdown files   : {len(markdown_files())}")
+    # Finding nothing is not the same as finding nothing wrong. If SKIP_PARTS
+    # ever excluded the whole tree, or `repoFile` were renamed, this would print
+    # three zeroes and exit 0 — the defect `check_like_ci.py` shipped with, in a
+    # file written an hour after that one was fixed and the rule written down.
+    if not files:
+        raise SystemExit("no markdown files found — refusing to report success for scanning none")
+    if not checked:
+        raise SystemExit(f"{len(files)} markdown files but no internal links — has the tree moved?")
+    if not site_links:
+        raise SystemExit("no repoFile() calls found in web/src — was the helper renamed?")
+
+    print(f"markdown files   : {len(files)}")
     print(f"markdown links   : {checked}")
     print(f"site repoFile()  : {site_links}")
     print(f"broken           : {len(broken)}")
