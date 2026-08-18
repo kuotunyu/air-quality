@@ -21,6 +21,7 @@ never run. These tests are that failure path, kept.
 from __future__ import annotations
 
 import pytest
+from scripts import check_published_detection as detection
 from scripts import check_published_headline as headline
 from scripts import check_published_sarima as sarima
 from scripts import check_published_spatial as spatial
@@ -29,14 +30,14 @@ from scripts import check_published_spatial as spatial
 class TestIntegersCompareExactly:
     """The defect that made the spatial gate ornamental on its first run."""
 
-    @pytest.mark.parametrize("gate", [spatial, headline, sarima])
+    @pytest.mark.parametrize("gate", [spatial, headline, sarima, detection])
     def test_an_off_by_one_count_is_a_disagreement(self, gate: object) -> None:
         # `places=None` means "an exact integer". A tolerance here is what let
         # 60 stations agree with 61.
         assert not gate.agrees(60.0, 61.0, None)  # type: ignore[attr-defined]
         assert gate.agrees(61.0, 61.0, None)  # type: ignore[attr-defined]
 
-    @pytest.mark.parametrize("gate", [spatial, headline, sarima])
+    @pytest.mark.parametrize("gate", [spatial, headline, sarima, detection])
     def test_a_rounded_decimal_still_gets_its_last_place(self, gate: object) -> None:
         """The payload rounds on export, so three decimals of 0.1555 may
         honestly print either way. Real drift is further off than that."""
@@ -124,6 +125,36 @@ class TestASeparatorMustNotEatItsNeighbour:
 
         assert len(problems) == 1
         assert "次擬合全部收斂" in problems[0]
+
+
+class TestAConclusionCanOutliveTheNumbersUnderIt:
+    """D8's table can be corrected cell by cell and stop meaning what it says.
+
+    「測不到，不是等於零」 rests on every event passing fewer stations than chance
+    predicts. A re-run that pushed one above its expectation could be copied
+    faithfully into the table — every cell agreeing — while the sentence beneath
+    became false. So the relation is checked against the payload, not the prose.
+    """
+
+    @staticmethod
+    def _event(passed: float, expected: float) -> dict[str, object]:
+        return {
+            "event": "COVID-19 全國三級警戒",
+            "n_credible": passed,
+            "n_expected_by_chance": expected,
+        }
+
+    def test_passing_fewer_than_chance_is_what_the_sentence_claims(self) -> None:
+        assert detection.check_the_reading_still_holds([self._event(1, 3.3)]) == []
+
+    def test_passing_more_than_chance_is_reported_even_if_the_table_is_correct(self) -> None:
+        problems = detection.check_the_reading_still_holds([self._event(4, 3.3)])
+
+        assert len(problems) == 1
+        assert "低於機率預期" in problems[0]
+
+    def test_matching_chance_exactly_is_not_below_it(self) -> None:
+        assert detection.check_the_reading_still_holds([self._event(3.3, 3.3)])
 
 
 class TestControlTableAgreement:

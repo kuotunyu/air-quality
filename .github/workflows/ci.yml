@@ -170,6 +170,14 @@ jobs:
       - name: The SARIMA numbers in prose match the published payload
         run: uv run python scripts/check_published_sarima.py
 
+      # D8's detection table, plus the relation its conclusion rests on. 「測不到，
+      # 不是等於零」 holds only while every event passes fewer stations than
+      # chance predicts; updating the table cell by cell after a re-run would
+      # leave that sentence standing on numbers that stopped supporting it, so
+      # the relation is checked against the payload directly.
+      - name: The detection limits in prose still support what is said about them
+        run: uv run python scripts/check_published_detection.py
+
       - name: Test (Pytest)
         run: uv run pytest
 

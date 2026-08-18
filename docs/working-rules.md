@@ -977,7 +977,20 @@ uv run python scripts/check_published_forecast.py   # M9, four files
 uv run python scripts/check_published_spatial.py    # M6, methodology.md + PLAN.md
 uv run python scripts/check_published_headline.py   # the first screen, six files
 uv run python scripts/check_published_sarima.py     # D10's three tables
+uv run python scripts/check_published_detection.py  # D8's table, and its reading
 ```
+
+**A table can be corrected cell by cell and stop meaning what it says.** D8's
+「測不到，不是等於零」 holds only while every event passes fewer stations than
+chance predicts. A re-run that pushed one above its expectation could be copied
+faithfully — every cell agreeing — while the sentence beneath became false, so
+that relation is checked against the payload directly. When a gate's numbers
+support a *conclusion*, check the relation the conclusion rests on, not only the
+digits it is written from.
+
+A gate is only possible where prose retypes a number. The health chapter has no
+gate because nothing retypes it: those figures live on the site and are read from
+`health.json` at build time. **Check for a prose copy before promising one.**
 
 They do not share a module, and should not: **no script in `scripts/` imports a
 sibling**, because the folder is standalone programs with no `__init__.py` and
