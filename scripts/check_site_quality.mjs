@@ -552,6 +552,29 @@ function editorialHomepageOrderProblems({ opening, routes, primary, map, postMap
   return [];
 }
 
+function homepageMobileTypeProblems({
+  viewportWidth,
+  root,
+  finding,
+  routeLabel,
+  routeIntro,
+  routeClaim,
+}) {
+  const problems = [];
+  const ratio = (value) => value / root;
+  const close = (actual, expected) =>
+    Number.isFinite(actual) && Number.isFinite(expected) && Math.abs(actual - expected) <= 0.01;
+  const expected = viewportWidth <= 480
+    ? { finding: 1.1, routeLabel: 1.1, routeIntro: 0.95, routeClaim: 0.95 }
+    : { finding: 1.2, routeLabel: 1.2, routeIntro: 1, routeClaim: 1 };
+  for (const [role, value] of Object.entries({ finding, routeLabel, routeIntro, routeClaim })) {
+    if (!close(ratio(value), expected[role])) {
+      problems.push(`homepage ${role} type ratio changed`);
+    }
+  }
+  return problems;
+}
+
 function sourcesClaimBoundaryProblems(text) {
   const required = [
     "低風速高值型",
@@ -2312,6 +2335,45 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality homepage editorial order self-test passed");
 
+  const completeMobileType = {
+    viewportWidth: 375,
+    root: 20,
+    finding: 22,
+    routeLabel: 22,
+    routeIntro: 19,
+    routeClaim: 19,
+  };
+  const completeWideType = {
+    viewportWidth: 1440,
+    root: 22,
+    finding: 26.4,
+    routeLabel: 26.4,
+    routeIntro: 22,
+    routeClaim: 22,
+  };
+  if (
+    homepageMobileTypeProblems(completeMobileType).length ||
+    homepageMobileTypeProblems(completeWideType).length
+  ) {
+    throw new Error("the homepage mobile-type predicate rejects a complete type scale");
+  }
+  const missedMobileTypeProblems = [];
+  for (const role of ["finding", "routeLabel", "routeIntro", "routeClaim"]) {
+    const problems = homepageMobileTypeProblems({
+      ...completeMobileType,
+      [role]: completeMobileType[role] + 1,
+    });
+    if (!problems.some((problem) => problem.includes(`homepage ${role} type ratio changed`))) {
+      missedMobileTypeProblems.push(role);
+    }
+  }
+  if (missedMobileTypeProblems.length) {
+    throw new Error(
+      `the homepage mobile-type predicate accepts ${missedMobileTypeProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality homepage mobile type self-test passed");
+
   const completeChapterOpening = {
     viewport: { width: 1280, height: 720 },
     smallestVisibleText: 18,
@@ -3343,6 +3405,10 @@ async function main() {
       const inspectAll = (selector, container = null, centreOnly = false) =>
         [...document.querySelectorAll(selector)].map((element) =>
           inspect(element, container, centreOnly));
+      const fontSize = (selector) => {
+        const element = document.querySelector(selector);
+        return element ? Number.parseFloat(getComputedStyle(element).fontSize) : Number.NaN;
+      };
       const offset = (value, size) => value.endsWith("%")
         ? parseFloat(value) / 100 * size : parseFloat(value);
       const anchored = (element, container, axes) => {
@@ -3401,6 +3467,14 @@ async function main() {
           scaleTicks,
           "inline",
         ).filter((tick) => tick.visible),
+        mobileType: {
+          viewportWidth: innerWidth,
+          root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+          finding: fontSize("#hero .hero-finding"),
+          routeLabel: fontSize("#hero .start-here-label"),
+          routeIntro: fontSize("#hero .start-here-intro"),
+          routeClaim: fontSize("#hero .start-here-claim"),
+        },
         editorialLayout: {
           mode: atlas && getComputedStyle(atlas).gridTemplateColumns.trim().split(/\\s+/).length > 1
             ? "wide" : "stacked",
@@ -3447,6 +3521,7 @@ async function main() {
       }),
       ...editorialHomepageLayoutProblems(geometry.editorialLayout),
       ...editorialHomepageOrderProblems(geometry.editorialOrder),
+      ...homepageMobileTypeProblems(geometry.mobileType),
     ];
     if (geometry.primaryRouteCount !== 1) {
       problems.push(`homepage has ${geometry.primaryRouteCount} primary routes, expected one`);

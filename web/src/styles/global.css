@@ -1562,6 +1562,16 @@ main > section:first-child {
    controls keep their 44px block target; only duplicated inline air is returned
    to the title, whose own box remains the ellipsis boundary. */
 @media (max-width: 30rem) {
+  body #hero .hero-finding,
+  body #hero .start-here-label {
+    font-size: 1.1rem;
+  }
+
+  body #hero .start-here-intro,
+  body #hero .start-here-claim {
+    font-size: 0.95rem;
+  }
+
   body .shell .column .handle {
     gap: var(--space-1);
     padding-inline: var(--space-2);
