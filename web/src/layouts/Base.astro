@@ -275,15 +275,29 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
             <span class="rail-open-bars" aria-hidden="true"></span>
             章節
           </label>
-          <p class="handle-at">
+          <p
+            class="handle-at"
+            data-site-identity
+            aria-label={here ? `${chapterLabel(here.n)}　${here.title}` : "台灣空氣品質再分析"}
+          >
             {
               here ? (
                 <>
                   <span class="handle-n">{chapterLabel(here.n)}</span>
-                  <span class="handle-t">{here.title}</span>
+                  <span class="handle-t handle-t-full" data-site-identity-full>{here.title}</span>
+                  <span class="handle-t handle-t-short" data-site-identity-short aria-hidden="true">
+                    {here.nav}
+                  </span>
                 </>
               ) : (
-                <span class="handle-t">台灣空氣品質再分析</span>
+                <>
+                  <span class="handle-t handle-t-full" data-site-identity-full>
+                    台灣空氣品質再分析
+                  </span>
+                  <span class="handle-t handle-t-short" data-site-identity-short aria-hidden="true">
+                    空氣品質再分析
+                  </span>
+                </>
               )
             }
           </p>
@@ -688,6 +702,10 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      .handle-t-short {
+        display: none;
       }
 
       .rail-shut,

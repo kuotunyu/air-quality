@@ -56,6 +56,19 @@ const ROUTES = [
   "/explore/",
   "/data/",
 ];
+const COMPACT_IDENTITY_ACCESSIBLE_NAMES = new Map([
+  ["/", "台灣空氣品質再分析"],
+  ["/trend/", "第一章　長期趨勢與氣象校正"],
+  ["/stations/", "第二章　測站個別統計"],
+  ["/space/", "第三章　空間結構與官方分區"],
+  ["/sources/", "第四章　污染來向與風速條件"],
+  ["/detection/", "第五章　事件效應的偵測極限"],
+  ["/forecast/", "第六章　預測技巧與有效期距"],
+  ["/health/", "第七章　健康負擔與它的假設"],
+  ["/methods/", "第八章　方法選擇的量化代價"],
+  ["/explore/", "第九章　資料查詢"],
+  ["/data/", "第十章　資料與方法"],
+]);
 const CHAPTER_ROUTES = ROUTES.filter((route) => route !== "/");
 const CHAPTER_OPENING_VIEWPORTS = [
   { width: 375, height: 812 },
@@ -518,38 +531,13 @@ function chapterOpeningProblems(state) {
   return problems;
 }
 
-function mobileHandleTitleProblems(state, expectedTitle = "") {
+function compactIdentityProblems(state, expected) {
   const problems = [];
-  const title = state?.title;
-  const number = state?.number;
-  if (!state || !title || !number) return ["mobile handle current chapter is missing"];
-  if (!number.visible || !number.text) problems.push("mobile handle chapter number is not readable");
-  if (!title.visible || !title.text) problems.push("mobile handle current title is not readable");
-  if (expectedTitle && title.text !== expectedTitle) {
-    problems.push("mobile handle does not name the full chapter");
-  }
-  if (
-    !Number.isFinite(title.width) || !Number.isFinite(title.fontSize) ||
-    title.width <= 0 || title.fontSize <= 0
-  ) {
-    problems.push("mobile handle current title has invalid geometry");
-  } else if (title.width + CSS_PX_SERIALIZATION_EPSILON < title.fontSize * 2) {
-    problems.push(
-      `mobile handle current title is ${title.width}px wide ` +
-        `(${title.fontSize}px font; 2em readable floor)`,
-    );
-  }
-  if (
-    !Number.isFinite(title.clientWidth) || !Number.isFinite(title.scrollWidth) ||
-    title.scrollWidth <= title.clientWidth
-  ) {
-    problems.push("mobile handle long title does not overflow its own box");
-  } else if (
-    title.textOverflow !== "ellipsis" || title.overflowX !== "hidden" ||
-    title.whiteSpace !== "nowrap"
-  ) {
-    problems.push("mobile handle long title does not use a real ellipsis");
-  }
+  if (!state?.visible) problems.push("compact site identity is missing");
+  if (state?.accessibleName !== expected) problems.push("compact site identity changed");
+  if (!state?.visibleText?.trim()) problems.push("compact site identity has no visible text");
+  if (state?.clientWidth < state?.scrollWidth) problems.push("compact site identity is clipped");
+  if (state?.textOverflow === "ellipsis") problems.push("compact site identity uses ellipsis");
   return problems;
 }
 
@@ -2322,73 +2310,6 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality homepage atlas self-test passed");
 
-  const completeMobileHandleTitle = {
-    number: { visible: true, text: "第八章" },
-    title: {
-      visible: true,
-      text: "方法選擇的量化代價",
-      width: 48,
-      fontSize: 20,
-      clientWidth: 48,
-      scrollWidth: 96,
-      textOverflow: "ellipsis",
-      overflowX: "hidden",
-      whiteSpace: "nowrap",
-    },
-  };
-  const missedMobileHandleProblems = [];
-  const expectMobileHandleProblem = (name, state, expected, expectedTitle = "") => {
-    const problems = mobileHandleTitleProblems(state, expectedTitle);
-    if (!problems.some((problem) => problem.includes(expected))) {
-      missedMobileHandleProblems.push(name);
-    }
-  };
-  if (mobileHandleTitleProblems(completeMobileHandleTitle, "方法選擇的量化代價").length) {
-    throw new Error("the mobile-handle predicate rejects a readable ellipsis");
-  }
-  expectMobileHandleProblem(
-    "short navigation label",
-    {
-      ...completeMobileHandleTitle,
-      title: { ...completeMobileHandleTitle.title, text: "方法學對照" },
-    },
-    "does not name the full chapter",
-    "方法選擇的量化代價",
-  );
-  expectMobileHandleProblem(
-    "less-than-two-em title box",
-    {
-      ...completeMobileHandleTitle,
-      title: { ...completeMobileHandleTitle.title, width: 24 },
-    },
-    "2em readable floor",
-  );
-  expectMobileHandleProblem(
-    "ancestor-only clipping",
-    {
-      ...completeMobileHandleTitle,
-      title: {
-        ...completeMobileHandleTitle.title,
-        clientWidth: 96,
-        scrollWidth: 96,
-      },
-    },
-    "does not overflow its own box",
-  );
-  expectMobileHandleProblem(
-    "clipped without an ellipsis",
-    {
-      ...completeMobileHandleTitle,
-      title: { ...completeMobileHandleTitle.title, textOverflow: "clip" },
-    },
-    "does not use a real ellipsis",
-  );
-  if (missedMobileHandleProblems.length) {
-    throw new Error(
-      `the mobile-handle predicate accepts ${missedMobileHandleProblems.join(", ")}`,
-    );
-  }
-
   const completeChapterOpening = {
     viewport: { width: 1280, height: 720 },
     smallestVisibleText: 18,
@@ -2478,6 +2399,65 @@ async function lifecycleSelfTest() {
     );
   }
   console.log("site quality chapter opening self-test passed");
+
+  const completeCompactIdentity = {
+    visible: true,
+    accessibleName: "台灣空氣品質再分析",
+    visibleText: "空氣品質再分析",
+    clientWidth: 144,
+    scrollWidth: 144,
+    textOverflow: "clip",
+  };
+  if (compactIdentityProblems(completeCompactIdentity, "台灣空氣品質再分析").length) {
+    throw new Error("the compact-identity predicate rejects complete identity evidence");
+  }
+  const completeChapterCompactIdentity = {
+    ...completeCompactIdentity,
+    accessibleName: "第八章　方法選擇的量化代價",
+    visibleText: "第八章 方法學對照",
+  };
+  if (
+    compactIdentityProblems(
+      completeChapterCompactIdentity,
+      "第八章　方法選擇的量化代價",
+    ).length
+  ) {
+    throw new Error("the compact-identity predicate rejects a complete chapter identity");
+  }
+  const missedCompactIdentityProblems = [];
+  const expectCompactIdentityProblem = (name, state, expected) => {
+    const problems = compactIdentityProblems(state, "台灣空氣品質再分析");
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedCompactIdentityProblems.push(name);
+    }
+  };
+  expectCompactIdentityProblem("missing identity", null, "is missing");
+  expectCompactIdentityProblem(
+    "wrong accessible identity",
+    { ...completeCompactIdentity, accessibleName: "空氣品質" },
+    "identity changed",
+  );
+  expectCompactIdentityProblem(
+    "empty visual identity",
+    { ...completeCompactIdentity, visibleText: "" },
+    "no visible text",
+  );
+  expectCompactIdentityProblem(
+    "clipped visual identity",
+    { ...completeCompactIdentity, scrollWidth: 145 },
+    "is clipped",
+  );
+  expectCompactIdentityProblem(
+    "ellipsized visual identity",
+    { ...completeCompactIdentity, textOverflow: "ellipsis" },
+    "uses ellipsis",
+  );
+  if (missedCompactIdentityProblems.length) {
+    throw new Error(
+      `the compact-identity predicate accepts ${missedCompactIdentityProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality compact identity self-test passed");
 
   const restartOrder = [];
   const replacement = await replaceBrowser(
@@ -3073,8 +3053,6 @@ const PROBE = `(() => {
   const rail = document.querySelector(".rail");
   const main = document.querySelector("main");
   const handle = document.querySelector(".handle");
-  const handleNumber = handle?.querySelector(".handle-n") ?? null;
-  const handleTitle = handle?.querySelector(".handle-t") ?? null;
   const railStyle = rail ? getComputedStyle(rail) : null;
   const handleStyle = handle ? getComputedStyle(handle) : null;
   const railRect = rail?.getBoundingClientRect() ?? null;
@@ -3085,32 +3063,25 @@ const PROBE = `(() => {
       railRect.left < innerWidth - 1 && railRect.bottom > 1 && railRect.top < innerHeight - 1,
   );
   out.mainWidth = main ? +main.getBoundingClientRect().width.toFixed(1) : 0;
-  out.primaryHeadingText = main?.querySelector("h1")?.textContent.trim() ?? "";
   out.handleVisible = Boolean(
     handle && handleStyle?.display !== "none" && handleStyle?.visibility !== "hidden" &&
       handle.getClientRects().length,
   );
-  const handlePart = (element) => {
-    if (!element) return null;
-    const rect = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
-    return {
-      visible: style.display !== "none" && style.visibility !== "hidden" &&
-        rect.width > 0 && rect.height > 0,
-      text: element.textContent.trim(),
-      width: +rect.width.toFixed(3),
-      fontSize: +parseFloat(style.fontSize).toFixed(3),
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-      textOverflow: style.textOverflow,
-      overflowX: style.overflowX,
-      whiteSpace: style.whiteSpace,
-    };
-  };
-  out.mobileHandleTitle = {
-    number: handlePart(handleNumber),
-    title: handlePart(handleTitle),
-  };
+  const compactIdentity = document.querySelector("[data-site-identity]");
+  const compactIdentityStyle = compactIdentity ? getComputedStyle(compactIdentity) : null;
+  const compactIdentityRect = compactIdentity?.getBoundingClientRect() ?? null;
+  out.compactIdentity = compactIdentity && compactIdentityStyle && compactIdentityRect
+    ? {
+        visible: compactIdentityStyle.display !== "none" &&
+          compactIdentityStyle.visibility !== "hidden" &&
+          compactIdentityRect.width > 0 && compactIdentityRect.height > 0,
+        accessibleName: compactIdentity.getAttribute("aria-label") ?? "",
+        visibleText: compactIdentity.innerText.trim(),
+        clientWidth: compactIdentity.clientWidth,
+        scrollWidth: compactIdentity.scrollWidth,
+        textOverflow: compactIdentityStyle.textOverflow,
+      }
+    : null;
   if (out.smallestFont === Infinity) out.smallestFont = 0;
   return out;
 })()`;
@@ -6304,14 +6275,14 @@ async function main() {
         if (width === 375 && r.railVisible) {
           failures.push(`${route} @${width} ${theme}: persistent rail is visible on mobile`);
         }
-        if (width === 375 && route === "/methods/") {
-          for (
-            const problem of mobileHandleTitleProblems(
-              r.mobileHandleTitle,
-              r.primaryHeadingText,
-            )
-          ) {
-            failures.push(`${route} @${width} ${theme}: ${problem}`);
+        if (width === 375) {
+          const expectedIdentity = COMPACT_IDENTITY_ACCESSIBLE_NAMES.get(route);
+          if (!expectedIdentity) {
+            failures.push(`${route} @${width} ${theme}: compact identity contract is missing`);
+          } else {
+            for (const problem of compactIdentityProblems(r.compactIdentity, expectedIdentity)) {
+              failures.push(`${route} @${width} ${theme}: ${problem}`);
+            }
           }
         }
         for (const bad of r.lowContrast) {

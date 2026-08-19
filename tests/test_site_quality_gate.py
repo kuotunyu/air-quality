@@ -34,6 +34,7 @@ def test_the_site_quality_gate_self_tests_its_bounded_browser_protocol() -> None
         "site quality homepage first-viewport self-test passed",
         "site quality homepage atlas self-test passed",
         "site quality chapter opening self-test passed",
+        "site quality compact identity self-test passed",
         "site quality browser restart self-test passed",
         "site quality failure cleanup self-test passed",
     ]

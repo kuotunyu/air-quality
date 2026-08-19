@@ -1577,13 +1577,29 @@ main > section:first-child {
   }
 
   body .shell .column .handle .handle-n {
-    flex: none;
+    display: none;
   }
 
   body .shell .column .handle .handle-t {
     min-width: 0;
     max-inline-size: 5em;
     flex: 1 1 auto;
+  }
+
+  /* The chapter number and full title remain in the accessible identity. The
+   * visible compact alias alone avoids replacing useful words with ellipsis. */
+  body .shell .column .handle .handle-t-full {
+    display: none;
+  }
+
+  body .shell .column .handle .handle-t-short {
+    display: inline;
+    min-width: 0;
+    max-inline-size: none;
+    flex: 1 1 auto;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
   }
 }
 
