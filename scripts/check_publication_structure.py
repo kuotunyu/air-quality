@@ -279,10 +279,12 @@ class Element:
     classes: frozenset[str]
     attributes: dict[str, str | None]
     parent: Element | None
+    locally_visible: bool
     visible: bool
     start_order: int
     end_order: int | None = None
     text: list[str] = field(default_factory=list)
+    source_text: list[str] = field(default_factory=list)
     children: list[Element] = field(default_factory=list)
 
     def is_inside(self, ancestor: Element) -> bool:
@@ -300,6 +302,12 @@ class Element:
         for child in self.children:
             if child.visible and not (without_labels and "chapter-intro-label" in child.classes):
                 parts.append(child.rendered_text(without_labels=without_labels))
+        return " ".join("".join(parts).split())
+
+    def source_rendered_text(self) -> str:
+        parts = [*self.source_text]
+        for child in self.children:
+            parts.append(child.source_rendered_text())
         return " ".join("".join(parts).split())
 
 
@@ -385,13 +393,13 @@ class StructureParser(HTMLParser):
         attributes = {name.lower(): value for name, value in attrs}
         attribute_names = {name.lower() for name, _ in attrs}
         parent = self._stack[-1] if self._stack else None
-        visible = (
-            (parent is None or parent.visible)
-            and lowered not in IGNORED_SUBTREES
+        locally_visible = (
+            lowered not in IGNORED_SUBTREES
             and "hidden" not in attribute_names
             and (attributes.get("aria-hidden") or "").strip().lower() != "true"
             and not _hidden_by_inline_style(attributes.get("style"))
         )
+        visible = (parent is None or parent.visible) and locally_visible
 
         if visible and lowered in {"h1", "h2"}:
             for ancestor in self._stack:
@@ -405,6 +413,7 @@ class StructureParser(HTMLParser):
             classes=frozenset((attributes.get("class") or "").split()),
             attributes=attributes,
             parent=parent,
+            locally_visible=locally_visible,
             visible=visible,
             start_order=self._order,
         )
@@ -444,7 +453,10 @@ class StructureParser(HTMLParser):
             self._stack.pop().end_order = self._order
 
     def handle_data(self, data: str) -> None:
-        if not self._stack or not self._stack[-1].visible:
+        if not self._stack:
+            return
+        self._stack[-1].source_text.append(data)
+        if not self._stack[-1].visible:
             return
         self._stack[-1].text.append(data)
 
@@ -459,6 +471,205 @@ TREND_READING_MAP = (
     ("#trend-weather-adjustment", "排除天氣後，下降幅度剩多少？"),
     ("#trend-airzones", "各空品區是否同步改善？"),
 )
+
+STATION_STAT_KEYS = ("annual-mean", "who-annual", "who-days", "taiwan-days")
+STATION_COMPARISON_KEYS = ("conversion", "rank", "worst-day")
+
+
+def station_dossier_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    elements = parser.elements
+
+    pickers = [element for element in elements if "data-station-picker" in element.attributes]
+    if len(pickers) != 1:
+        return [*failures, f"station picker inventory changed: {len(pickers)}"]
+    picker = pickers[0]
+
+    controls = [
+        element
+        for element in elements
+        if "data-station-controls" in element.attributes and element.is_inside(picker)
+    ]
+    if len(controls) != 1:
+        failures.append(f"station controls inventory changed: {len(controls)}")
+    selects = [
+        element
+        for element in elements
+        if element.tag == "select"
+        and element.attributes.get("id") == "station-select"
+        and element.is_inside(picker)
+    ]
+    if len(selects) != 1:
+        return [*failures, f"station select inventory changed: {len(selects)}"]
+    select = selects[0]
+    options = [
+        element for element in elements if element.tag == "option" and element.is_inside(select)
+    ]
+    option_values = [element.attributes.get("value") or "" for element in options]
+    if not option_values or any(not value for value in option_values):
+        failures.append("station option values are empty")
+    if len(set(option_values)) != len(option_values):
+        failures.append("station option values are not unique")
+
+    reports = [
+        element
+        for element in elements
+        if "data-station-report" in element.attributes and element.is_inside(picker)
+    ]
+    report_values = [element.attributes.get("data-station") or "" for element in reports]
+    if not report_values or any(not value for value in report_values):
+        failures.append("station report identities are empty")
+    if len(set(report_values)) != len(report_values):
+        failures.append("station report identities are not unique")
+    if option_values != report_values:
+        failures.append("station selector and report order changed")
+
+    selected_options = [element for element in options if "selected" in element.attributes]
+    visible_reports = [element for element in reports if element.visible]
+    if len(selected_options) != 1:
+        failures.append(f"station selected-option inventory changed: {len(selected_options)}")
+    if len(visible_reports) != 1:
+        failures.append(f"station visible report inventory changed: {len(visible_reports)}")
+    if len(selected_options) == 1 and len(visible_reports) == 1:
+        selected_value = selected_options[0].attributes.get("value") or ""
+        visible_value = visible_reports[0].attributes.get("data-station") or ""
+        if selected_value != visible_value:
+            failures.append("station selector and visible identity disagree")
+
+    for report in reports:
+        station = report.attributes.get("data-station") or "<empty>"
+        identities = [
+            element
+            for element in elements
+            if "data-station-identity" in element.attributes and element.is_inside(report)
+        ]
+        if len(identities) != 1:
+            failures.append(f"station identity inventory changed for {station}: {len(identities)}")
+        displayed_names = [
+            element
+            for element in elements
+            if "data-station-name" in element.attributes
+            and element.is_inside(report)
+            and len(identities) == 1
+            and element.is_inside(identities[0])
+        ]
+        if len(displayed_names) != 1:
+            failures.append(
+                f"station displayed-name inventory changed for {station}: {len(displayed_names)}"
+            )
+        elif not displayed_names[0].locally_visible:
+            failures.append(f"station displayed name is locally hidden for {station}")
+        elif displayed_names[0].source_rendered_text() != station:
+            failures.append(f"station displayed identity disagrees for {station}")
+        years = [
+            element
+            for element in elements
+            if "data-station-year" in element.attributes and element.is_inside(report)
+        ]
+        if len(years) != 1:
+            failures.append(f"station year inventory changed for {station}: {len(years)}")
+        stats_wrappers = [
+            element
+            for element in elements
+            if "data-station-stats" in element.attributes and element.is_inside(report)
+        ]
+        if len(stats_wrappers) != 1:
+            failures.append(
+                f"station primary-stat inventory changed for {station}: {len(stats_wrappers)}"
+            )
+        else:
+            stat_keys = [
+                element.attributes.get("data-station-stat") or ""
+                for element in elements
+                if "data-station-stat" in element.attributes
+                and element.is_inside(stats_wrappers[0])
+            ]
+            if stat_keys != list(STATION_STAT_KEYS):
+                failures.append(f"station primary-stat keys changed for {station}: {stat_keys!r}")
+        comparison_wrappers = [
+            element
+            for element in elements
+            if "data-station-comparisons" in element.attributes and element.is_inside(report)
+        ]
+        if len(comparison_wrappers) != 1:
+            failures.append(
+                f"station comparison inventory changed for {station}: {len(comparison_wrappers)}"
+            )
+        else:
+            comparison_keys = [
+                element.attributes.get("data-station-comparison") or ""
+                for element in elements
+                if "data-station-comparison" in element.attributes
+                and element.is_inside(comparison_wrappers[0])
+            ]
+            if comparison_keys != list(STATION_COMPARISON_KEYS):
+                failures.append(
+                    f"station comparison keys changed for {station}: {comparison_keys!r}"
+                )
+        if (
+            len(identities) == 1
+            and len(years) == 1
+            and len(stats_wrappers) == 1
+            and len(comparison_wrappers) == 1
+        ):
+            identity = identities[0]
+            year = years[0]
+            stats = stats_wrappers[0]
+            comparisons = comparison_wrappers[0]
+            direct_children = (
+                identity.parent is report
+                and stats.parent is report
+                and comparisons.parent is report
+                and year.is_inside(identity)
+            )
+            ordered = (
+                identity.end_order is not None
+                and stats.end_order is not None
+                and identity.end_order < stats.start_order
+                and stats.end_order < comparisons.start_order
+            )
+            if not direct_children or not ordered:
+                failures.append(f"station report source order changed for {station}")
+
+    standard_notes = [
+        element
+        for element in elements
+        if "data-station-standard-note" in element.attributes and element.is_inside(picker)
+    ]
+    conversion_notes = [
+        element
+        for element in elements
+        if "data-station-conversion-note" in element.attributes and element.is_inside(picker)
+    ]
+    if len(standard_notes) != 1:
+        failures.append(f"station standard-note inventory changed: {len(standard_notes)}")
+    if len(conversion_notes) != 1:
+        failures.append(f"station conversion-note inventory changed: {len(conversion_notes)}")
+    if reports and len(standard_notes) == 1 and len(conversion_notes) == 1:
+        standard_note = standard_notes[0]
+        conversion_note = conversion_notes[0]
+        final_report_end = max(report.end_order or report.start_order for report in reports)
+        if (
+            standard_note.parent is not picker
+            or conversion_note.parent is not picker
+            or standard_note.start_order <= final_report_end
+            or standard_note.end_order is None
+        ):
+            failures.append("station interpretation notes do not follow reports")
+        elif standard_note.end_order >= conversion_note.start_order:
+            failures.append("station interpretation note order changed")
+    if any(
+        element.visible
+        and "data-chapter-reading-map" in element.attributes
+        and element.is_inside(picker)
+        for element in elements
+    ):
+        failures.append("station chapter unexpectedly contains a reading map")
+    return failures
 
 
 def trend_reading_map_failures_for_text(html: str) -> list[str]:
@@ -1218,6 +1429,282 @@ def _run_preflight() -> None:
                 f"{mutation_failures}"
             )
 
+    valid_station_dossier = """
+<div data-station-picker>
+<p id="station-say" role="status" aria-live="polite"></p>
+<div data-station-controls><label><span>測站</span><select id="station-select">
+<option value="甲站" selected>甲站</option><option value="乙站">乙站</option>
+</select></label></div>
+<article data-station-report data-station="甲站">
+<header data-station-identity><h2><span data-station-name>甲站</span></h2><span data-station-year>2025 年</span></header>
+<div data-station-stats>
+<div data-station-stat="annual-mean">10</div>
+<div data-station-stat="who-annual">2×</div>
+<div data-station-stat="who-days">20</div>
+<div data-station-stat="taiwan-days">3</div>
+</div>
+<div data-station-comparisons>
+<p data-station-comparison="conversion">1</p>
+<p data-station-comparison="rank">2</p>
+<p data-station-comparison="worst-day">30</p>
+</div>
+</article>
+<article data-station-report data-station="乙站" hidden>
+<header data-station-identity><h2><span data-station-name>乙站</span></h2><span data-station-year>2024 年</span></header>
+<div data-station-stats>
+<div data-station-stat="annual-mean">11</div>
+<div data-station-stat="who-annual">2.2×</div>
+<div data-station-stat="who-days">21</div>
+<div data-station-stat="taiwan-days">4</div>
+</div>
+<div data-station-comparisons>
+<p data-station-comparison="conversion">1</p>
+<p data-station-comparison="rank">3</p>
+<p data-station-comparison="worst-day">31</p>
+</div>
+</article>
+<p data-station-standard-note>同一把尺</p>
+<p data-station-conversion-note>粗略換算</p>
+</div>
+"""
+    valid_station_failures = station_dossier_failures_for_text(valid_station_dossier)
+    if valid_station_failures:
+        raise RuntimeError(
+            f"station dossier preflight rejected the valid control: {valid_station_failures}"
+        )
+
+    first_option = '<option value="甲站" selected>甲站</option>'
+    second_option = '<option value="乙站">乙站</option>'
+    select_block = f'<select id="station-select">\n{first_option}{second_option}\n</select>'
+    first_report = '<article data-station-report data-station="甲站">'
+    second_report = '<article data-station-report data-station="乙站" hidden>'
+    first_identity = (
+        "<header data-station-identity><h2><span data-station-name>甲站</span></h2>"
+        "<span data-station-year>2025 年</span></header>"
+    )
+    first_stats = """<div data-station-stats>
+<div data-station-stat="annual-mean">10</div>
+<div data-station-stat="who-annual">2×</div>
+<div data-station-stat="who-days">20</div>
+<div data-station-stat="taiwan-days">3</div>
+</div>"""
+    first_comparisons = """<div data-station-comparisons>
+<p data-station-comparison="conversion">1</p>
+<p data-station-comparison="rank">2</p>
+<p data-station-comparison="worst-day">30</p>
+</div>"""
+    first_report_block = (
+        f"{first_report}\n{first_identity}\n{first_stats}\n{first_comparisons}\n</article>"
+    )
+    second_report_block = """<article data-station-report data-station="乙站" hidden>
+<header data-station-identity><h2><span data-station-name>乙站</span></h2><span data-station-year>2024 年</span></header>
+<div data-station-stats>
+<div data-station-stat="annual-mean">11</div>
+<div data-station-stat="who-annual">2.2×</div>
+<div data-station-stat="who-days">21</div>
+<div data-station-stat="taiwan-days">4</div>
+</div>
+<div data-station-comparisons>
+<p data-station-comparison="conversion">1</p>
+<p data-station-comparison="rank">3</p>
+<p data-station-comparison="worst-day">31</p>
+</div>
+</article>"""
+    annual_stat = '<div data-station-stat="annual-mean">10</div>'
+    rank_comparison = '<p data-station-comparison="rank">2</p>'
+    standard_note = "<p data-station-standard-note>同一把尺</p>"
+    conversion_note = "<p data-station-conversion-note>粗略換算</p>"
+    without_standard_note = valid_station_dossier.replace(
+        "\n" + standard_note + "\n" + conversion_note,
+        "\n" + conversion_note,
+        1,
+    )
+    station_mutations = {
+        "missing picker": (
+            "station picker inventory changed",
+            valid_station_dossier.replace(" data-station-picker", "", 1),
+        ),
+        "missing select": (
+            "station select inventory changed",
+            valid_station_dossier.replace(' id="station-select"', "", 1),
+        ),
+        "duplicate select": (
+            "station select inventory changed",
+            valid_station_dossier.replace(select_block, select_block + select_block, 1),
+        ),
+        "duplicate option": (
+            "station option values are not unique",
+            valid_station_dossier.replace(second_option, first_option.replace(" selected", ""), 1),
+        ),
+        "missing report": (
+            "station selector and report order changed",
+            valid_station_dossier.replace(second_report, '<article data-station="乙站" hidden>', 1),
+        ),
+        "duplicate report": (
+            "station report identities are not unique",
+            valid_station_dossier.replace(
+                second_report,
+                '<article data-station-report data-station="甲站" hidden>',
+                1,
+            ),
+        ),
+        "reordered options": (
+            "station selector and report order changed",
+            valid_station_dossier.replace(
+                first_option + second_option, second_option + first_option, 1
+            ),
+        ),
+        "reordered reports": (
+            "station selector and report order changed",
+            valid_station_dossier.replace(
+                first_report_block + "\n" + second_report_block,
+                second_report_block + "\n" + first_report_block,
+                1,
+            ),
+        ),
+        "zero visible reports": (
+            "station visible report inventory changed",
+            valid_station_dossier.replace(first_report, first_report[:-1] + " hidden>", 1),
+        ),
+        "two visible reports": (
+            "station visible report inventory changed",
+            valid_station_dossier.replace(second_report, second_report.replace(" hidden", ""), 1),
+        ),
+        "selected report mismatch": (
+            "station selector and visible identity disagree",
+            valid_station_dossier.replace(" selected", "", 1).replace(
+                second_option, '<option value="乙站" selected>乙站</option>', 1
+            ),
+        ),
+        "missing identity": (
+            "station identity inventory changed",
+            valid_station_dossier.replace(" data-station-identity", "", 1),
+        ),
+        "missing displayed station name": (
+            "station displayed-name inventory changed",
+            valid_station_dossier.replace(" data-station-name", "", 1),
+        ),
+        "wrong displayed station name": (
+            "station displayed identity disagrees",
+            valid_station_dossier.replace(">甲站</span>", ">錯站</span>", 1),
+        ),
+        "hidden displayed station name": (
+            "station displayed name is locally hidden",
+            valid_station_dossier.replace(" data-station-name", " data-station-name hidden", 1),
+        ),
+        "aria-hidden displayed station name": (
+            "station displayed name is locally hidden",
+            valid_station_dossier.replace(
+                " data-station-name", ' data-station-name aria-hidden="true"', 1
+            ),
+        ),
+        "inline-hidden displayed station name": (
+            "station displayed name is locally hidden",
+            valid_station_dossier.replace(
+                " data-station-name", ' data-station-name style="display: none"', 1
+            ),
+        ),
+        "missing year": (
+            "station year inventory changed",
+            valid_station_dossier.replace(" data-station-year", "", 1),
+        ),
+        "missing stat": (
+            "station primary-stat keys changed",
+            valid_station_dossier.replace(annual_stat, "", 1),
+        ),
+        "duplicate stat": (
+            "station primary-stat keys changed",
+            valid_station_dossier.replace(annual_stat, annual_stat + annual_stat, 1),
+        ),
+        "identity after stats": (
+            "station report source order changed",
+            valid_station_dossier.replace(
+                first_identity + "\n" + first_stats,
+                first_stats + "\n" + first_identity,
+                1,
+            ),
+        ),
+        "comparisons before stats": (
+            "station report source order changed",
+            valid_station_dossier.replace(
+                first_stats + "\n" + first_comparisons,
+                first_comparisons + "\n" + first_stats,
+                1,
+            ),
+        ),
+        "missing comparisons": (
+            "station comparison inventory changed",
+            valid_station_dossier.replace(" data-station-comparisons", "", 1),
+        ),
+        "missing comparison": (
+            "station comparison keys changed",
+            valid_station_dossier.replace(rank_comparison, "", 1),
+        ),
+        "duplicate standard note": (
+            "station standard-note inventory changed",
+            valid_station_dossier.replace(standard_note, standard_note + standard_note, 1),
+        ),
+        "missing conversion note": (
+            "station conversion-note inventory changed",
+            valid_station_dossier.replace(conversion_note, "", 1),
+        ),
+        "note before reports": (
+            "station interpretation notes do not follow reports",
+            valid_station_dossier.replace(standard_note, "", 1).replace(
+                first_report, standard_note + first_report, 1
+            ),
+        ),
+        "note nested in final report": (
+            "station interpretation notes do not follow reports",
+            without_standard_note.replace(
+                second_report_block,
+                second_report_block.replace("</article>", standard_note + "</article>", 1),
+                1,
+            ),
+        ),
+        "reversed interpretation notes": (
+            "station interpretation note order changed",
+            valid_station_dossier.replace(
+                standard_note + "\n" + conversion_note,
+                conversion_note + "\n" + standard_note,
+                1,
+            ),
+        ),
+        "visible reading map": (
+            "station chapter unexpectedly contains a reading map",
+            valid_station_dossier.replace(
+                '<p id="station-say"',
+                '<nav data-chapter-reading-map>Map</nav><p id="station-say"',
+                1,
+            ),
+        ),
+    }
+    for key in STATION_STAT_KEYS:
+        station_mutations[f"missing {key} stat key"] = (
+            "station primary-stat keys changed",
+            valid_station_dossier.replace(
+                f'data-station-stat="{key}"', f'data-removed-station-stat="{key}"', 1
+            ),
+        )
+    for key in STATION_COMPARISON_KEYS:
+        station_mutations[f"missing {key} comparison key"] = (
+            "station comparison keys changed",
+            valid_station_dossier.replace(
+                f'data-station-comparison="{key}"',
+                f'data-removed-station-comparison="{key}"',
+                1,
+            ),
+        )
+    for name, (expected_failure, html) in station_mutations.items():
+        if html == valid_station_dossier:
+            raise RuntimeError(f"station dossier preflight did not apply {name}")
+        mutation_failures = station_dossier_failures_for_text(html)
+        if not any(expected_failure in failure for failure in mutation_failures):
+            raise RuntimeError(
+                f"station dossier preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
+            )
+
     def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
         title_id = f"evidence-{number.replace('.', '-')}-title"
         return (
@@ -1789,6 +2276,8 @@ def main(argv: list[str]) -> int:
                 failures.extend(trend_reading_map_failures_for_text(html))
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible trend reading map")
+            if slug == "stations":
+                failures.extend(station_dossier_failures_for_text(html))
 
         if failures:
             failed_chapters += 1
