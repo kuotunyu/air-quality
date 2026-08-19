@@ -487,6 +487,13 @@ brand
    首屏底部保留 9.0224px。十一個 route、六個 viewport、深淺兩色共 132 個狀態的
    document overflow 與小於 44px 的觸控目標都是 0；完整品質閘門量過 12,254 個文字
    節點、126 次 focus check，APCA Lc 低於 60 與問題數也都是 0。
+69. **2026-08-19 的 editorial scientific atlas 入口取代第 13、68 條的舊首頁幾何，
+   但保留那些條目記下的量測理由。** 手機的文件來源順序現在是「開場 → 閱讀路徑 → 地圖 →
+   地圖後證據」；唯一的主要路徑在 375×812 的初始 viewport 內可見。窄畫面的視覺識別是
+   刻意寫出的完整短標籤，不再用 ellipsis 裁掉唯一名稱，同一控制項仍保留完整的無障礙名稱。
+   桌面首頁是左文右圖的兩欄 editorial opening，地圖後證據仍留在正常文件流。完整十章索引
+   分成三個閱讀意圖群組，而三組攤平後仍是唯一 registry 的十條 canonical route，順序不變、
+   每章恰好一次。
 
 
 ## Accessibility & Inclusion
