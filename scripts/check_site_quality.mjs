@@ -595,6 +595,15 @@ function trendReadingMapProblems(state) {
   return problems;
 }
 
+function trendPrintProblems(state) {
+  const problems = [];
+  if (!state?.thesisVisible) problems.push("trend print thesis is not visible");
+  if (!state?.mapVisible) problems.push("trend print reading map is not visible");
+  if (!state?.primaryVisible) problems.push("trend print primary evidence is not visible");
+  if (!state?.sourceOrdered) problems.push("trend print source order changed");
+  return problems;
+}
+
 function compactIdentityProblems(state, expected) {
   const problems = [];
   if (!state?.visible) problems.push("compact site identity is missing");
@@ -2637,6 +2646,43 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality trend reading map self-test passed");
 
+  const completeTrendPrint = {
+    thesisVisible: true,
+    mapVisible: true,
+    primaryVisible: true,
+    sourceOrdered: true,
+  };
+  if (trendPrintProblems(completeTrendPrint).length) {
+    throw new Error("trend print predicate rejected its complete control");
+  }
+  const missedTrendPrintProblems = [];
+  const expectTrendPrintProblem = (name, mutate, expected) => {
+    const state = { ...completeTrendPrint };
+    mutate(state);
+    const problems = trendPrintProblems(state);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedTrendPrintProblems.push(name);
+    }
+  };
+  expectTrendPrintProblem("hidden thesis", (state) => {
+    state.thesisVisible = false;
+  }, "thesis is not visible");
+  expectTrendPrintProblem("hidden map", (state) => {
+    state.mapVisible = false;
+  }, "reading map is not visible");
+  expectTrendPrintProblem("hidden primary evidence", (state) => {
+    state.primaryVisible = false;
+  }, "primary evidence is not visible");
+  expectTrendPrintProblem("reordered source", (state) => {
+    state.sourceOrdered = false;
+  }, "source order changed");
+  if (missedTrendPrintProblems.length) {
+    throw new Error(
+      `the trend print predicate accepts ${missedTrendPrintProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality trend print contract self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -3932,6 +3978,33 @@ async function main() {
     }));
     return state;
   };
+
+  const trendPrintSnapshot = async () => evaluate(`(() => {
+    const rendered = (element) => {
+      if (!element) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse" || Number(style.opacity) === 0
+        ) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const follows = (first, second) => Boolean(
+      first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
+    );
+    const thesis = document.querySelector(".chapter-thesis");
+    const map = document.querySelector("[data-chapter-reading-map]");
+    const primary = document.querySelector("[data-primary-evidence]");
+    return {
+      thesisVisible: rendered(thesis),
+      mapVisible: rendered(map),
+      primaryVisible: rendered(primary),
+      sourceOrdered: follows(thesis, map) && follows(map, primary),
+    };
+  })()`);
 
   const homepageStructureProblems = async ({ enhanced }) => {
     const structure = await evaluate(`(() => {
@@ -5822,6 +5895,15 @@ async function main() {
     }
     if (printed?.background !== "#fff" || printed?.colourScheme !== "light") {
       failures.push("manual dark theme overrode the light print palette");
+    }
+  }
+  await send("Page.navigate", { url: `${origin}/trend/` });
+  if (!(await settled(evaluate, 8000, "/trend/ print reading contract"))) {
+    failures.push("trend print page never finished styling");
+  } else {
+    const state = await trendPrintSnapshot();
+    for (const problem of trendPrintProblems(state)) {
+      failures.push(`/trend/ print: ${problem}`);
     }
   }
 
