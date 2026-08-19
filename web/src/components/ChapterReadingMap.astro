@@ -26,3 +26,70 @@ if (items.length !== 3) {
     }
   </ol>
 </nav>
+
+<style>
+  .chapter-reading-map {
+    border-block-start: 1px solid var(--line);
+    padding-block-start: var(--space-2);
+  }
+
+  .chapter-reading-label {
+    margin: 0 0 var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .chapter-reading-map ol {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: chapter-question;
+  }
+
+  .chapter-reading-map li {
+    counter-increment: chapter-question;
+    border-block-start: 1px solid var(--line);
+  }
+
+  .chapter-reading-map a {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    align-items: center;
+    min-block-size: 44px;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .chapter-reading-map a::before {
+    content: "0" counter(chapter-question);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chapter-reading-map a:hover,
+  .chapter-reading-map a:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  /* These values belong to the short-landscape chapter opening above, where
+     the ordinary reading size wrapped two questions and made the map taller
+     than the argument it annotates. The links never fall below 44px. */
+  @media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+    .chapter-reading-map {
+      padding-block-start: 0;
+    }
+
+    .chapter-reading-label {
+      margin-bottom: 0;
+      font-size: var(--text-xs);
+      line-height: 1.2;
+    }
+
+    .chapter-reading-map a {
+      font-size: var(--text-xs);
+    }
+  }
+</style>

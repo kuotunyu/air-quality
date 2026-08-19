@@ -531,6 +531,70 @@ function chapterOpeningProblems(state) {
   return problems;
 }
 
+function trendReadingMapProblems(state) {
+  const problems = [];
+  if (![375, 768, 1024, 1440].includes(state?.viewportWidth)) {
+    return ["trend reading map viewport is not one of the reviewed widths"];
+  }
+  const map = state?.map;
+  const thesis = state?.thesis;
+  if (
+    !map?.visible || map.width <= 0 || map.height <= 0 ||
+    !Number.isFinite(map.left) || !Number.isFinite(map.right)
+  ) {
+    problems.push("trend reading map is not visible");
+  } else if (map.clippedByAncestor) {
+    problems.push("trend reading map is clipped by an ancestor");
+  }
+  if (!thesis?.visible || thesis.width <= 0 || thesis.height <= 0) {
+    problems.push("trend chapter thesis is not visible");
+  } else if (state.viewportWidth < 1024 && map?.top < thesis.bottom - 1) {
+    problems.push("trend reading map no longer follows the thesis on narrow screens");
+  } else if (
+    state.viewportWidth >= 1024 &&
+    (map?.left < thesis.right - 1 || map?.top >= thesis.bottom)
+  ) {
+    problems.push("trend chapter desktop opening is not a two-column composition");
+  }
+  if (state?.links?.length !== 3) problems.push("trend reading map link inventory changed");
+  if (state?.targets?.length !== 3) problems.push("trend reading map target inventory changed");
+  for (const [index, link] of (state?.links ?? []).entries()) {
+    if (!link.visible || link.width < 44 || link.height < 44 || link.clippedByAncestor) {
+      problems.push(`trend reading map link ${index + 1} target is too small`);
+    }
+  }
+  for (const [index, target] of (state?.targets ?? []).entries()) {
+    if (!target.visible || target.width <= 0 || target.height <= 0) {
+      problems.push(`trend reading map target ${index + 1} is not visible`);
+    } else if (target.clippedByAncestor) {
+      problems.push(`trend reading map target ${index + 1} is clipped by an ancestor`);
+    }
+    if (state?.anchorsMeasured) {
+      if (!Number.isFinite(target.afterJumpTop)) {
+        problems.push(`trend reading map target ${index + 1} landing geometry is invalid`);
+      } else if (target.afterJumpTop < state.stickyBottom - 1) {
+        problems.push(`trend reading map target ${index + 1} is obscured after jump`);
+      }
+    }
+  }
+  if (!state?.sourceOrdered) problems.push("trend reading map source order changed");
+  if (!state?.primary?.visible || state.primary.width <= 0 || state.primary.height <= 0) {
+    problems.push("trend primary evidence is not visible");
+  } else if (state.primary.clippedByAncestor) {
+    problems.push("trend primary evidence is clipped by an ancestor");
+  }
+  if (
+    state?.viewportWidth === 375 &&
+    state?.targets?.[0]?.top > state.viewportHeight + 1
+  ) {
+    problems.push("trend primary evidence question leaves the first phone viewport");
+  }
+  if (state?.horizontalOverflow > 1) {
+    problems.push("trend reading map causes horizontal overflow");
+  }
+  return problems;
+}
+
 function compactIdentityProblems(state, expected) {
   const problems = [];
   if (!state?.visible) problems.push("compact site identity is missing");
@@ -2477,6 +2541,102 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality chapter opening self-test passed");
 
+  const completeTrendReadingMapFor = (viewportWidth) => {
+    const wide = viewportWidth >= 1024;
+    const thesis = wide
+      ? { visible: true, top: 80, bottom: 250, left: 20, right: 480, width: 460, height: 170 }
+      : { visible: true, top: 80, bottom: 170, left: 20, right: 355, width: 335, height: 90 };
+    const map = wide
+      ? { visible: true, clippedByAncestor: false, top: 90, bottom: 250, left: 520, right: 855, width: 335, height: 160 }
+      : { visible: true, clippedByAncestor: false, top: 180, bottom: 340, left: 20, right: 355, width: 335, height: 160 };
+    return {
+      viewportWidth,
+      viewportHeight: 812,
+      thesis,
+      map,
+      links: Array.from({ length: 3 }, (_value, index) => ({
+        visible: true, clippedByAncestor: false,
+        top: map.top + index * 48,
+        bottom: map.top + 48 + index * 48,
+        width: 335,
+        height: 48,
+      })),
+      targets: Array.from({ length: 3 }, (_value, index) => ({
+        visible: true, clippedByAncestor: false,
+        top: 400 + index * 500,
+        bottom: 448 + index * 500,
+        width: 335,
+        height: 48,
+        afterJumpTop: 72,
+      })),
+      primary: {
+        visible: true, clippedByAncestor: false, top: 360, bottom: 760,
+        left: 20, right: 855, width: 835, height: 400,
+      },
+      stickyBottom: 64,
+      anchorsMeasured: true,
+      sourceOrdered: true,
+      horizontalOverflow: 0,
+    };
+  };
+  for (const viewportWidth of [375, 768, 1024, 1440]) {
+    const state = completeTrendReadingMapFor(viewportWidth);
+    if (trendReadingMapProblems(state).length) {
+      throw new Error(`trend reading-map predicate rejected ${viewportWidth}px control`);
+    }
+  }
+  const missedTrendReadingMapProblems = [];
+  const expectTrendReadingMapProblem = (name, viewportWidth, mutate, expected) => {
+    const state = completeTrendReadingMapFor(viewportWidth);
+    mutate(state);
+    const problems = trendReadingMapProblems(state);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedTrendReadingMapProblems.push(name);
+    }
+  };
+  expectTrendReadingMapProblem("hidden map", 375, (state) => {
+    state.map.visible = false;
+  }, "map is not visible");
+  expectTrendReadingMapProblem("clipped map", 1440, (state) => {
+    state.map.clippedByAncestor = true;
+  }, "map is clipped");
+  expectTrendReadingMapProblem("43px second link", 375, (state) => {
+    state.links[1].height = 43;
+  }, "link 2 target is too small");
+  expectTrendReadingMapProblem("43px-wide first link", 375, (state) => {
+    state.links[0].width = 43;
+  }, "link 1 target is too small");
+  expectTrendReadingMapProblem("hidden third target", 375, (state) => {
+    state.targets[2].visible = false;
+  }, "target 3 is not visible");
+  expectTrendReadingMapProblem("obscured second target", 375, (state) => {
+    state.targets[1].afterJumpTop = state.stickyBottom - 2;
+  }, "target 2 is obscured after jump");
+  expectTrendReadingMapProblem("reordered source", 375, (state) => {
+    state.sourceOrdered = false;
+  }, "source order changed");
+  expectTrendReadingMapProblem("horizontal overflow", 375, (state) => {
+    state.horizontalOverflow = 2;
+  }, "causes horizontal overflow");
+  expectTrendReadingMapProblem("primary question below phone viewport", 375, (state) => {
+    state.targets[0].top = 900;
+  }, "leaves the first phone viewport");
+  expectTrendReadingMapProblem("overlapping narrow stack", 768, (state) => {
+    state.map.top = 100;
+  }, "no longer follows the thesis on narrow screens");
+  expectTrendReadingMapProblem("overlapping desktop columns", 1024, (state) => {
+    state.map.left = 200;
+  }, "desktop opening is not a two-column composition");
+  expectTrendReadingMapProblem("clipped primary evidence", 1440, (state) => {
+    state.primary.clippedByAncestor = true;
+  }, "primary evidence is clipped");
+  if (missedTrendReadingMapProblems.length) {
+    throw new Error(
+      `the trend reading-map predicate accepts ${missedTrendReadingMapProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality trend reading map self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -3684,6 +3844,95 @@ async function main() {
     };
   })()`);
 
+  const trendReadingMapSnapshot = async ({ measureAnchors }) => {
+    const state = await evaluate(`(() => {
+      const rendered = (element) => {
+        if (!element) return false;
+        for (let node = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (
+            style.display === "none" || style.visibility === "hidden" ||
+            style.visibility === "collapse" || Number(style.opacity) === 0
+          ) return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const inspect = (element) => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        let visibleLeft = rect.left;
+        let visibleRight = rect.right;
+        let visibleTop = rect.top;
+        let visibleBottom = rect.bottom;
+        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+          const style = getComputedStyle(ancestor);
+          const bounds = ancestor.getBoundingClientRect();
+          if (["auto", "clip", "hidden", "scroll"].includes(style.overflowX)) {
+            visibleLeft = Math.max(visibleLeft, bounds.left);
+            visibleRight = Math.min(visibleRight, bounds.right);
+          }
+          if (["auto", "clip", "hidden", "scroll"].includes(style.overflowY)) {
+            visibleTop = Math.max(visibleTop, bounds.top);
+            visibleBottom = Math.min(visibleBottom, bounds.bottom);
+          }
+        }
+        return {
+          visible: rendered(element), top: rect.top, bottom: rect.bottom,
+          left: rect.left, right: rect.right, width: rect.width, height: rect.height,
+          clippedByAncestor: visibleRight - visibleLeft < rect.width - 1 ||
+            visibleBottom - visibleTop < rect.height - 1,
+        };
+      };
+      const map = document.querySelector("[data-chapter-reading-map]");
+      const primary = document.querySelector("[data-primary-evidence]");
+      const ids = ["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"];
+      const targets = ids.map((id) => document.getElementById(id));
+      const links = [...document.querySelectorAll("[data-chapter-reading-link]")];
+      const follows = (first, second) => Boolean(
+        first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+      return {
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+        thesis: inspect(document.querySelector(".chapter-thesis")),
+        map: inspect(map),
+        links: links.map(inspect),
+        targets: targets.map(inspect),
+        primary: inspect(primary),
+        stickyBottom: document.querySelector(".handle")?.getBoundingClientRect().bottom ?? 0,
+        anchorsMeasured: ${JSON.stringify(measureAnchors)},
+        sourceOrdered: follows(map, primary) && follows(primary, targets[1]) &&
+          follows(targets[1], targets[2]),
+        horizontalOverflow: document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    })()`);
+    if (!measureAnchors || !state) return state;
+    const afterJumpTop = await evaluate(`(async () => {
+      const ids = ["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"];
+      const originalY = scrollY;
+      const tops = [];
+      for (const id of ids) {
+        const target = document.getElementById(id);
+        if (!target) { tops.push(null); continue; }
+        history.replaceState(null, "", "#" + id);
+        target.scrollIntoView({ block: "start" });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        tops.push(target.getBoundingClientRect().top);
+      }
+      history.replaceState(null, "", location.pathname + location.search);
+      scrollTo(0, originalY);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return tops;
+    })()`);
+    state.targets = state.targets.map((target, index) => ({
+      ...target,
+      afterJumpTop: afterJumpTop[index],
+    }));
+    return state;
+  };
+
   const homepageStructureProblems = async ({ enhanced }) => {
     const structure = await evaluate(`(() => {
       const map = document.querySelector("[data-homepage-map-frame]");
@@ -4337,9 +4586,11 @@ async function main() {
         width: pageBox.width - parseFloat(pageStyle.paddingInlineStart) -
           parseFloat(pageStyle.paddingInlineEnd),
       } : null;
-      const prose = [...(page?.querySelectorAll(
-        ":scope > .chapter-intro .lede, :scope > p:not(.eyebrow)",
-      ) ?? [])].find(visible);
+      const directProse = [...(page?.querySelectorAll(":scope > p:not(.eyebrow)") ?? [])]
+        .find(visible);
+      const introProse = [...(page?.querySelectorAll(":scope > .chapter-intro .lede") ?? [])]
+        .find(visible);
+      const prose = directProse ?? introProse;
       const evidence = [...(page?.querySelectorAll(":scope > .evidence-figure") ?? [])]
         .find(visible);
       const evidenceStyle = evidence ? getComputedStyle(evidence) : null;
@@ -5495,6 +5746,63 @@ async function main() {
     );
     for (const problem of shellProblems) {
       failures.push(`/trend/ @${width}x${height} light shell boundary: ${problem}`);
+    }
+  }
+  console.log("site-quality stage: trend reading map");
+  for (const [width, height] of [
+    [375, 812],
+    [768, 1024],
+    [1024, 900],
+    [1440, 900],
+  ]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    for (const theme of ["light", "dark"]) {
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      await send("Emulation.setEmulatedMedia", {
+        media: "",
+        features: [
+          { name: "prefers-color-scheme", value: theme === "light" ? "dark" : "light" },
+        ],
+      });
+      await send("Page.navigate", { url: `${origin}/trend/` });
+      if (!(await settled(evaluate, 8000, `/trend/ @${width}x${height} ${theme} reading map`))) {
+        failures.push(`/trend/ @${width}x${height} ${theme}: reading map never finished styling`);
+        continue;
+      }
+      const state = await trendReadingMapSnapshot({ measureAnchors: true });
+      for (const problem of trendReadingMapProblems(state)) {
+        failures.push(`/trend/ @${width}x${height} ${theme}: ${problem}`);
+      }
+    }
+  }
+  await evaluate('localStorage.setItem("twair-theme", "light")');
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  for (const [width, height] of [[375, 812], [1440, 900]]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    if (
+      !(await navigateWithoutPageScripts(send, waitForEvent, `${origin}/trend/`, () =>
+        settled(evaluate, 8000, `/trend/ @${width}x${height} no-JavaScript reading map`),
+      ))
+    ) {
+      failures.push(`/trend/ @${width}x${height} no-JavaScript light: reading map never styled`);
+      continue;
+    }
+    const state = await trendReadingMapSnapshot({ measureAnchors: false });
+    for (const problem of trendReadingMapProblems(state)) {
+      failures.push(`/trend/ @${width}x${height} no-JavaScript light: ${problem}`);
     }
   }
   await evaluate('localStorage.setItem("twair-theme", "dark")');
@@ -6983,6 +7291,10 @@ async function main() {
       }
     }
     if (route === "/trend/") {
+      const readingMapZoomSnapshot = await trendReadingMapSnapshot({ measureAnchors: false });
+      for (const problem of trendReadingMapProblems(readingMapZoomSnapshot)) {
+        failures.push(`${state}: ${problem}`);
+      }
       const trendZoomSnapshot = await trendGuideSnapshot();
       recordTrendGuideGeometry(
         trendZoomSnapshot,

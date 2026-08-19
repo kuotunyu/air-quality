@@ -7,13 +7,56 @@ interface Props {
 
 const { slug } = Astro.props;
 const chapter = chapterBySlug(slug);
+const hasReadingMap = Astro.slots.has("reading-map");
 ---
 
-<header class="chapter-intro">
+<header class={`chapter-intro${hasReadingMap ? " has-reading-map" : ""}`}>
   <p class="eyebrow">{chapterLabel(chapter.n)}</p>
   <h1>{chapter.title}</h1>
   <div class="chapter-thesis">
     <slot />
   </div>
-  {Astro.slots.has("reading-map") && <slot name="reading-map" />}
+  {hasReadingMap && <slot name="reading-map" />}
 </header>
+
+<style>
+  @media (min-width: 64rem) {
+    .chapter-intro.has-reading-map {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(16rem, 0.75fr);
+      column-gap: var(--space-4);
+      align-items: end;
+    }
+
+    .chapter-intro.has-reading-map > :global([data-chapter-reading-map]) {
+      grid-column: 2;
+      grid-row: 1 / span 3;
+    }
+  }
+
+  /* At 1280 × 720 the spanning map made this header 253.969px tall because
+     its wrapped rows enlarged all three grid tracks. Compacting only this
+     shallow desktop state keeps the questions and 44px targets intact while
+     returning the lower half of the viewport to the first piece of evidence. */
+  @media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+    .chapter-intro.has-reading-map {
+      align-items: start;
+      grid-template-rows: min-content min-content min-content;
+      margin-bottom: 0;
+    }
+
+    .chapter-intro.has-reading-map > .eyebrow,
+    .chapter-intro.has-reading-map > h1 {
+      margin-bottom: 0;
+    }
+
+    .chapter-intro.has-reading-map > .eyebrow,
+    .chapter-intro.has-reading-map > .chapter-thesis :global(.lede) {
+      line-height: 1.35;
+    }
+
+    .chapter-intro.has-reading-map + :global([data-primary-evidence]) {
+      margin-block-start: 0;
+    }
+  }
+</style>
