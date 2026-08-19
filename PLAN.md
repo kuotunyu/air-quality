@@ -20,7 +20,7 @@
 | 公開報告 | 核心分析與空間分析以可重生的 Markdown 報告交付 | `reports/01-core.md`、`reports/03-spatial.md` |
 | 網站 | 首頁加 10 個主題 route；圖表建置為 SVG，資料查詢在瀏覽器內以 DuckDB-WASM 執行 | `web/src/lib/chapters.ts`、`npm --prefix web run build` |
 | 預測 | M9 在 1／6／24／48 小時各跑 4 個 rolling-origin split，並保留 persistence 與 climatology 基準；Space bundle 可重建 | `data/outputs/m9_forecast/`、`uv run twair export space` |
-| 發布邊界 | GitHub Pages 與 HF Space 已公開；L0／L1 HF Dataset 先完成本機 bundle 與載入驗證，再由 owner 決定遠端上架；完整 L2 不發布，PyPI 仍是選配 | README 與本文件 Phase 7–8 |
+| 發布邊界 | GitHub Pages 與 HF Space 已公開；L0／L1 HF Dataset 的本機 bundle 與載入驗證已完成，刻意留到正常工程收尾後由 owner 做最後的上架或不發布決定；完整 L2 不發布，PyPI 仍是選配，UI 改版再另案進行 | README 與本文件 Phase 7–8 |
 
 下方驗收標記採三種交付判定：
 
@@ -682,6 +682,8 @@ persistence、climatology 與實際觀測。Tracked app 不含完整資料；mod
 - **不報死亡人數、GEMM、壽命或人口暴露**：repo 沒有人口、年齡結構、基礎死亡率與暴露面，不能用小數位掩飾缺資料
 
 #### 收尾
+收尾順序固定為：先完成工程與文件收尾，再由 owner 對 L0／L1 HF Dataset 做最後的上架或不發布決定；網站 UI 改版在兩者之後另案進行。非本科讀者試讀因目前沒有合適參與者而延後，這項使用者研究不由 automated quality gate 替代，也不阻擋工程收尾。
+
 1. **CI 與 freshness 分工**：`ci.yml` 驗證 commit；`freshness.yml` 每週離線判斷是否漏掉已完整發布的年度；
    資料更新仍是本機、可檢查的 ingest → build → aggregate → export，不讓排程自動改寫 repo 或 HF Dataset
 2. **文件**
@@ -699,8 +701,9 @@ persistence、climatology 與實際觀測。Tracked app 不含完整資料；mod
 **驗收**
 - [x] **已取代**：CI、weekly freshness 與 Pages workflow 分工，排程只檢查而不 mutation；不以「每日自動 push 7 天」當品質證據
 - [x] 首頁與全 10 章上線，沒有 JavaScript 時仍保有主要敘事與圖表
-- [ ] **人工發布**：L0／L1 HF Dataset 本機 bundle 與載入 gate 通過後，由 owner 決定上架；完整 L2 不列入發布；HF Space 已公開且 tracked bundle 可重建
-- [ ] **人工驗收**：請非本科讀者完成一次 README／首頁試讀；automated quality gate 不能冒充使用者研究
+- [ ] **最後人工發布決定**：L0／L1 HF Dataset 本機 bundle 與載入 gate 已通過；正常工程收尾完成後，由 owner 決定上架或明確不發布。完整 L2 永不列入發布；HF Space 已公開且 tracked bundle 可重建
+- [ ] **延後人工驗收**：目前沒有合適的非本科參與者，因此 README／首頁試讀延後；automated quality gate 不能冒充使用者研究，這項延後不阻擋工程收尾
+- [ ] **另案 UI 改版**：只在正常工程收尾與 HF 最終決定之後開始，不混入本階段的資料、分析或發布變更
 - [ ] **選配**：PyPI 發布；目前以 `uv sync` 與 repo CLI 重現，不阻擋網站／研究 release
 
 ---
