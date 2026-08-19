@@ -494,6 +494,10 @@ brand
    桌面首頁是左文右圖的兩欄 editorial opening，地圖後證據仍留在正常文件流。完整十章索引
    分成三個閱讀意圖群組，而三組攤平後仍是唯一 registry 的十條 canonical route，順序不變、
    每章恰好一次。
+70. **第一章以明確的三段論證開場。** `/trend/` 依 source order 呈現量測結論、
+   三個普通錨點問題與第一張核心證據圖。連結在已審查的手機、平板與桌面寬度
+   保持可見並可由鍵盤操作；它們不建立第二套章節 registry，也不修改任何圖表
+   series、缺值斷線、caption 或資料工具。
 
 
 ## Accessibility & Inclusion
