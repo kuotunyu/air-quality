@@ -534,7 +534,10 @@ function chapterOpeningProblems(state) {
 function compactIdentityProblems(state, expected) {
   const problems = [];
   if (!state?.visible) problems.push("compact site identity is missing");
-  if (state?.accessibleName !== expected) problems.push("compact site identity changed");
+  if (state?.accessibilitySource !== "accessibility-tree") {
+    problems.push("compact site identity accessibility tree was not checked");
+  }
+  if (state?.accessibleText !== expected) problems.push("compact site identity changed");
   if (!state?.visibleText?.trim()) problems.push("compact site identity has no visible text");
   if (state?.clientWidth < state?.scrollWidth) problems.push("compact site identity is clipped");
   if (state?.textOverflow === "ellipsis") problems.push("compact site identity uses ellipsis");
@@ -1450,6 +1453,8 @@ function editorialHomepageLayoutProblems({ mode, opening, routes, map, postMap, 
         .every((key) => Number.isFinite(rect[key]))
     ) {
       problems.push(`homepage editorial ${name} geometry is missing`);
+    } else if (!rect.visible || rect.width <= 0 || rect.height <= 0) {
+      problems.push(`homepage editorial ${name} is not visible`);
     }
   }
   if (problems.length) return problems;
@@ -2246,6 +2251,7 @@ async function lifecycleSelfTest() {
     left,
     width: right - left,
     height: bottom - top,
+    visible: true,
   });
   const completeWideEditorial = {
     mode: "wide",
@@ -2280,6 +2286,11 @@ async function lifecycleSelfTest() {
     "missing map geometry",
     { ...completeWideEditorial, map: null },
     "map geometry is missing",
+  );
+  expectEditorialLayoutProblem(
+    "hidden primary routes",
+    { ...completeStackedEditorial, routes: { ...completeStackedEditorial.routes, visible: false } },
+    "routes is not visible",
   );
   expectEditorialLayoutProblem(
     "overlapping desktop columns",
@@ -2353,6 +2364,8 @@ async function lifecycleSelfTest() {
   };
   if (
     homepageMobileTypeProblems(completeMobileType).length ||
+    homepageMobileTypeProblems({ ...completeMobileType, viewportWidth: 480 }).length ||
+    homepageMobileTypeProblems({ ...completeWideType, viewportWidth: 481 }).length ||
     homepageMobileTypeProblems(completeWideType).length
   ) {
     throw new Error("the homepage mobile-type predicate rejects a complete type scale");
@@ -2466,7 +2479,8 @@ async function lifecycleSelfTest() {
 
   const completeCompactIdentity = {
     visible: true,
-    accessibleName: "台灣空氣品質再分析",
+    accessibleText: "台灣空氣品質再分析",
+    accessibilitySource: "accessibility-tree",
     visibleText: "空氣品質再分析",
     clientWidth: 144,
     scrollWidth: 144,
@@ -2477,7 +2491,7 @@ async function lifecycleSelfTest() {
   }
   const completeChapterCompactIdentity = {
     ...completeCompactIdentity,
-    accessibleName: "第八章　方法選擇的量化代價",
+    accessibleText: "第八章　方法選擇的量化代價",
     visibleText: "第八章 方法學對照",
   };
   if (
@@ -2498,8 +2512,13 @@ async function lifecycleSelfTest() {
   expectCompactIdentityProblem("missing identity", null, "is missing");
   expectCompactIdentityProblem(
     "wrong accessible identity",
-    { ...completeCompactIdentity, accessibleName: "空氣品質" },
+    { ...completeCompactIdentity, accessibleText: "空氣品質" },
     "identity changed",
+  );
+  expectCompactIdentityProblem(
+    "unverified accessible identity",
+    { ...completeCompactIdentity, accessibilitySource: "dom-attribute" },
+    "accessibility tree was not checked",
   );
   expectCompactIdentityProblem(
     "empty visual identity",
@@ -3528,11 +3547,43 @@ async function main() {
     }
     if (
       geometry.viewport.width <= 390 &&
-      (!geometry.primaryRoute || geometry.primaryRoute.bottom > geometry.viewport.height + 1)
+      (
+        !geometry.primaryRoute || !geometry.primaryRoute.visible ||
+        geometry.primaryRoute.width <= 0 || geometry.primaryRoute.height <= 0 ||
+        geometry.primaryRoute.top < -1 ||
+        geometry.primaryRoute.bottom > geometry.viewport.height + 1
+      )
     ) {
-      problems.push("homepage primary route leaves the first mobile viewport");
+      problems.push("homepage primary route is not visible within the first mobile viewport");
     }
     return problems;
+  };
+
+  const accessibilityTextForSelector = async (selector) => {
+    const documentResult = await send("DOM.getDocument", { depth: 0, pierce: true });
+    const documentNodeId = documentResult.result?.root?.nodeId;
+    if (!documentNodeId) return null;
+    const queryResult = await send("DOM.querySelector", { nodeId: documentNodeId, selector });
+    const nodeId = queryResult.result?.nodeId;
+    if (!nodeId) return null;
+    const described = await send("DOM.describeNode", { nodeId });
+    const backendNodeId = described.result?.node?.backendNodeId;
+    if (!backendNodeId) return null;
+    const tree = await send("Accessibility.getFullAXTree", {});
+    const nodes = tree.result?.nodes ?? [];
+    const identityNode = nodes.find((node) => node.backendDOMNodeId === backendNodeId);
+    if (!identityNode) return null;
+    const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+    const staticText = [];
+    const visit = (node) => {
+      if (!node) return;
+      if (!node.ignored && node.role?.value === "StaticText" && node.name?.value) {
+        staticText.push(node.name.value);
+      }
+      for (const childId of node.childIds ?? []) visit(byId.get(childId));
+    };
+    visit(identityNode);
+    return staticText.join("").trim();
   };
 
   const chapterOpeningSnapshot = async (chartRoute) => evaluate(`(() => {
@@ -6354,6 +6405,12 @@ async function main() {
           failures.push(`${route} @${width} ${theme}: probe returned nothing`);
           continue;
         }
+        if (width === 375 && r.compactIdentity) {
+          r.compactIdentity.accessibleText = await accessibilityTextForSelector(
+            "[data-site-identity]",
+          );
+          r.compactIdentity.accessibilitySource = "accessibility-tree";
+        }
         totals.nodes += r.nodes;
         totals.tableWraps += r.tableWraps;
         totals.tableScrollers += r.tableScrollers;
@@ -6765,6 +6822,13 @@ async function main() {
             value: "normal",
             expected: "county label pairs overlap",
           },
+          {
+            name: "hidden primary route",
+            selector: "[data-homepage-primary-route]",
+            property: "display",
+            value: "none",
+            expected: "primary route is not visible within the first mobile viewport",
+          },
         ];
         for (const mutation of geometryMutations) {
           const problems = await homepageFirstViewport({
@@ -6778,6 +6842,30 @@ async function main() {
             );
           }
         }
+      }
+    }
+  }
+
+  console.log("site-quality stage: homepage 480px type boundary");
+  for (const width of [480, 481]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    await send("Page.navigate", { url: `${origin}/` });
+    if (!(await settled(evaluate, 8000, `/ @${width}px mobile type boundary`))) {
+      failures.push(`/ @${width}px mobile type boundary: page never finished styling`);
+      continue;
+    }
+    for (const problem of await homepageFirstViewport({ requireVerticalViewport: false })) {
+      if (problem.includes("type ratio changed")) {
+        failures.push(`/ @${width}px mobile type boundary: ${problem}`);
       }
     }
   }

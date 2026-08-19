@@ -9,6 +9,7 @@ the Astro source that produced it.
 
 from __future__ import annotations
 
+import itertools
 import json
 import pathlib
 import subprocess
@@ -717,6 +718,25 @@ def analytical_figure_failures_for(
     return analytical_figure_failures_for_text(page.read_text(encoding="utf-8"), expected)
 
 
+def heading_outline_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    headings = [
+        element
+        for element in parser.elements
+        if element.visible and element.tag in {f"h{level}" for level in range(1, 7)}
+    ]
+    for previous, current in itertools.pairwise(headings):
+        previous_level = int(previous.tag[1])
+        current_level = int(current.tag[1])
+        if current_level > previous_level + 1:
+            failures.append(f"heading level jumps from <{previous.tag}> to <{current.tag}>")
+    return failures
+
+
 def home_failures_for_text(html: str) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
@@ -783,13 +803,10 @@ def home_failures_for_text(html: str) -> list[str]:
             f"and one of /explore/ or /data/; found {found}"
         )
 
-    chapter_groups = [
-        element for element in visible if "data-chapter-group" in element.attributes
-    ]
+    chapter_groups = [element for element in visible if "data-chapter-group" in element.attributes]
     if len(chapter_groups) != 3:
         failures.append(
-            "expected exactly three visible chapter intent groups, "
-            f"found {len(chapter_groups)}"
+            f"expected exactly three visible chapter intent groups, found {len(chapter_groups)}"
         )
 
     chapter_links = [
@@ -909,6 +926,15 @@ def _run_preflight() -> None:
     )
     if _chapter_slugs_from_source(valid_registry) != valid_slugs:
         raise RuntimeError("registry preflight rejected the valid control")
+
+    valid_outline = "<main><h1>Page</h1><h2>Index</h2><h3>Group</h3></main>"
+    if heading_outline_failures_for_text(valid_outline):
+        raise RuntimeError("heading-outline preflight rejected the valid control")
+    jump_failures = heading_outline_failures_for_text(
+        valid_outline.replace("<h2>Index</h2>", "<h3>Index</h3>")
+    )
+    if not any("jumps from <h1> to <h3>" in failure for failure in jump_failures):
+        raise RuntimeError("heading-outline preflight accepted a skipped level")
 
     def registry_with_entries(entries: list[str]) -> str:
         return "export const CHAPTERS = [\n" + ",\n".join(entries) + "\n] as const;"
@@ -1226,7 +1252,7 @@ def _run_preflight() -> None:
         for index, destination in enumerate(start_here_destinations, start=1)
     )
     chapter_index_groups = "".join(
-        '<section data-chapter-group><h3>Intent</h3>'
+        "<section data-chapter-group><h3>Intent</h3>"
         + "".join(
             f'<a href="{destination}" data-chapter-index-link>Chapter {index}</a>'
             for index, destination in indexed_destinations
@@ -1571,6 +1597,16 @@ def main(argv: list[str]) -> int:
     for failure in home_failures:
         print(f"home: {failure}")
 
+    not_found_page = dist / "404.html"
+    if not not_found_page.exists():
+        not_found_failures = [f"missing {not_found_page.relative_to(ROOT).as_posix()}"]
+    else:
+        not_found_failures = heading_outline_failures_for_text(
+            not_found_page.read_text(encoding="utf-8")
+        )
+    for failure in not_found_failures:
+        print(f"404: {failure}")
+
     failed_chapters = 0
     slugs = chapter_slugs()
     for slug in slugs:
@@ -1591,7 +1627,8 @@ def main(argv: list[str]) -> int:
     print(f"chapters checked: {len(slugs)}")
     print(f"chapters with structure failures: {failed_chapters}")
     print(f"home with structure failures: {int(bool(home_failures))}")
-    return 1 if failed_chapters or home_failures else 0
+    print(f"404 with structure failures: {int(bool(not_found_failures))}")
+    return 1 if failed_chapters or home_failures or not_found_failures else 0
 
 
 if __name__ == "__main__":
