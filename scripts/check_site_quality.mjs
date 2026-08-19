@@ -541,6 +541,17 @@ function compactIdentityProblems(state, expected) {
   return problems;
 }
 
+function editorialHomepageOrderProblems({ opening, routes, primary, map, postMap }) {
+  const positions = [opening, routes, primary, map, postMap];
+  if (positions.some((value) => !Number.isInteger(value))) {
+    return ["homepage editorial source order is incomplete"];
+  }
+  if (!(opening < routes && routes < primary && primary < map && map < postMap)) {
+    return ["homepage editorial source order changed"];
+  }
+  return [];
+}
+
 function sourcesClaimBoundaryProblems(text) {
   const required = [
     "低風速高值型",
@@ -1408,51 +1419,28 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
   return m7Problems.concat(m5Problems, pmRatioProblems);
 }
 
-function atlasLayoutProblems({ mode, atlas, opening, map, left, right, routes }) {
+function editorialHomepageLayoutProblems({ mode, opening, routes, map, postMap, viewport }) {
   const problems = [];
-  const regions = { atlas, opening, map, left, right, routes };
-  const finiteRect = (rect) =>
-    rect && ["top", "right", "bottom", "left", "width", "height"]
-      .every((edge) => Number.isFinite(rect[edge]));
-  for (const [name, rect] of Object.entries(regions)) {
-    if (!rect) problems.push(`homepage atlas ${name} is missing`);
-    else if (!finiteRect(rect)) problems.push(`homepage atlas ${name} has non-finite geometry`);
-    else if (rect.width <= 0 || rect.height <= 0) {
-      problems.push(`homepage atlas ${name} has no rendered area`);
+  for (const [name, rect] of Object.entries({ opening, routes, map, postMap })) {
+    if (
+      !rect || !["top", "right", "bottom", "left", "width", "height"]
+        .every((key) => Number.isFinite(rect[key]))
+    ) {
+      problems.push(`homepage editorial ${name} geometry is missing`);
     }
   }
   if (problems.length) return problems;
-  if (mode !== "wide" && mode !== "stacked") {
-    return ["homepage atlas mode is missing"];
-  }
-
-  const overlapY = (a, b) => Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-  if (opening.bottom > Math.min(left.top, map.top, right.top) + 1) {
-    problems.push("homepage atlas opening does not precede the atlas row");
-  }
-
   if (mode === "wide") {
-    const atlasCentre = (atlas.left + atlas.right) / 2;
-    const mapCentre = (map.left + map.right) / 2;
-    if (Math.abs(atlasCentre - mapCentre) > 2) {
-      problems.push("homepage atlas map is not horizontally centred");
+    if (opening.right > map.left + 1) problems.push("homepage editorial columns overlap");
+    if (routes.bottom > viewport.height + 1) {
+      problems.push("homepage primary reading block leaves the first viewport");
     }
-    if (left.right > map.left + 1 || map.right > right.left + 1) {
-      problems.push("homepage atlas annotations overlap the map");
+  } else if (mode === "stacked") {
+    if (!(opening.bottom <= map.top + 1 && map.bottom <= postMap.top + 1)) {
+      problems.push("homepage editorial mobile stack changed");
     }
-    if (overlapY(left, map) < Math.min(left.height, map.height) / 2) {
-      problems.push("homepage atlas left annotation leaves the map band");
-    }
-    if (overlapY(right, map) < Math.min(right.height, map.height) / 2) {
-      problems.push("homepage atlas right annotation leaves the map band");
-    }
-    if (routes.top < Math.max(left.bottom, map.bottom, right.bottom) - 1) {
-      problems.push("homepage atlas routes interrupt the atlas row");
-    }
-  } else if (
-    map.bottom > left.top + 1 || left.bottom > right.top + 1 || right.bottom > routes.top + 1
-  ) {
-    problems.push("homepage atlas stacked reading order is broken");
+  } else {
+    problems.push("homepage editorial layout mode is missing");
   }
   return problems;
 }
@@ -2236,79 +2224,93 @@ async function lifecycleSelfTest() {
     width: right - left,
     height: bottom - top,
   });
-  const completeWideAtlas = {
+  const completeWideEditorial = {
     mode: "wide",
-    atlas: atlasPart({ top: 20, right: 1160, bottom: 900, left: 40 }),
-    opening: atlasPart({ top: 20, right: 1160, bottom: 140, left: 40 }),
-    map: atlasPart({ top: 180, right: 740, bottom: 720, left: 460 }),
-    left: atlasPart({ top: 220, right: 420, bottom: 650, left: 40 }),
-    right: atlasPart({ top: 220, right: 1160, bottom: 600, left: 780 }),
-    routes: atlasPart({ top: 760, right: 1160, bottom: 880, left: 40 }),
+    opening: atlasPart({ top: 20, right: 700, bottom: 760, left: 40 }),
+    routes: atlasPart({ top: 400, right: 700, bottom: 760, left: 40 }),
+    map: atlasPart({ top: 20, right: 1160, bottom: 700, left: 760 }),
+    postMap: atlasPart({ top: 800, right: 1160, bottom: 1100, left: 40 }),
+    viewport: { width: 1200, height: 900 },
   };
-  const completeStackedAtlas = {
+  const completeStackedEditorial = {
     mode: "stacked",
-    atlas: atlasPart({ top: 20, right: 360, bottom: 900, left: 20 }),
-    opening: atlasPart({ top: 20, right: 360, bottom: 100, left: 20 }),
-    map: atlasPart({ top: 120, right: 320, bottom: 450, left: 60 }),
-    left: atlasPart({ top: 470, right: 360, bottom: 600, left: 20 }),
-    right: atlasPart({ top: 620, right: 360, bottom: 720, left: 20 }),
-    routes: atlasPart({ top: 740, right: 360, bottom: 880, left: 20 }),
+    opening: atlasPart({ top: 20, right: 360, bottom: 400, left: 20 }),
+    routes: atlasPart({ top: 180, right: 360, bottom: 400, left: 20 }),
+    map: atlasPart({ top: 420, right: 320, bottom: 800, left: 60 }),
+    postMap: atlasPart({ top: 820, right: 360, bottom: 1100, left: 20 }),
+    viewport: { width: 380, height: 820 },
   };
   if (
-    atlasLayoutProblems(completeWideAtlas).length ||
-    atlasLayoutProblems(completeStackedAtlas).length
+    editorialHomepageLayoutProblems(completeWideEditorial).length ||
+    editorialHomepageLayoutProblems(completeStackedEditorial).length
   ) {
-    throw new Error("the homepage atlas predicate rejects complete geometry");
+    throw new Error("the homepage editorial-layout predicate rejects complete geometry");
   }
-  const missedAtlasProblems = [];
-  const expectAtlasProblem = (name, geometry, expected) => {
-    const problems = atlasLayoutProblems(geometry);
-    if (!problems.some((item) => item.includes(expected))) missedAtlasProblems.push(name);
+  const missedEditorialLayoutProblems = [];
+  const expectEditorialLayoutProblem = (name, geometry, expected) => {
+    const problems = editorialHomepageLayoutProblems(geometry);
+    if (!problems.some((item) => item.includes(expected))) {
+      missedEditorialLayoutProblems.push(name);
+    }
   };
-  expectAtlasProblem(
-    "off-centre map",
-    {
-      ...completeWideAtlas,
-      map: atlasPart({ top: 180, right: 780, bottom: 720, left: 500 }),
-    },
-    "map is not horizontally centred",
+  expectEditorialLayoutProblem(
+    "missing map geometry",
+    { ...completeWideEditorial, map: null },
+    "map geometry is missing",
   );
-  expectAtlasProblem(
-    "left annotation below the map",
+  expectEditorialLayoutProblem(
+    "overlapping desktop columns",
     {
-      ...completeWideAtlas,
-      left: atlasPart({ top: 730, right: 420, bottom: 850, left: 40 }),
+      ...completeWideEditorial,
+      map: atlasPart({ top: 20, right: 1160, bottom: 700, left: 650 }),
     },
-    "left annotation leaves the map band",
+    "columns overlap",
   );
-  expectAtlasProblem(
-    "right annotation overlapping the map",
+  expectEditorialLayoutProblem(
+    "primary block below desktop viewport",
     {
-      ...completeWideAtlas,
-      right: atlasPart({ top: 220, right: 1160, bottom: 600, left: 700 }),
+      ...completeWideEditorial,
+      routes: atlasPart({ top: 700, right: 700, bottom: 902, left: 40 }),
     },
-    "annotations overlap the map",
+    "primary reading block leaves the first viewport",
   );
-  expectAtlasProblem(
-    "routes interrupting the atlas row",
+  expectEditorialLayoutProblem(
+    "reversed mobile stack",
     {
-      ...completeWideAtlas,
-      routes: atlasPart({ top: 600, right: 1160, bottom: 720, left: 40 }),
+      ...completeStackedEditorial,
+      postMap: atlasPart({ top: 700, right: 360, bottom: 980, left: 20 }),
     },
-    "routes interrupt the atlas row",
+    "mobile stack changed",
   );
-  expectAtlasProblem(
-    "stacked figures preceding the map",
-    {
-      ...completeStackedAtlas,
-      left: atlasPart({ top: 400, right: 360, bottom: 520, left: 20 }),
-    },
-    "stacked reading order is broken",
-  );
-  if (missedAtlasProblems.length) {
-    throw new Error(`the homepage atlas predicate accepts ${missedAtlasProblems.join(", ")}`);
+  if (missedEditorialLayoutProblems.length) {
+    throw new Error(
+      `the homepage editorial-layout predicate accepts ${missedEditorialLayoutProblems.join(", ")}`,
+    );
   }
-  console.log("site quality homepage atlas self-test passed");
+  console.log("site quality homepage editorial layout self-test passed");
+
+  const completeEditorialOrder = { opening: 0, routes: 1, primary: 2, map: 3, postMap: 4 };
+  if (editorialHomepageOrderProblems(completeEditorialOrder).length) {
+    throw new Error("the homepage editorial-order predicate rejects complete source order");
+  }
+  const missedEditorialOrderProblems = [];
+  const expectEditorialOrderProblem = (name, state) => {
+    const problems = editorialHomepageOrderProblems(state);
+    if (!problems.some((problem) => problem.includes("source order changed"))) {
+      missedEditorialOrderProblems.push(name);
+    }
+  };
+  expectEditorialOrderProblem("opening after routes", { ...completeEditorialOrder, opening: 1 });
+  expectEditorialOrderProblem("routes before opening", { ...completeEditorialOrder, routes: 0 });
+  expectEditorialOrderProblem("primary before routes", { ...completeEditorialOrder, primary: 1 });
+  expectEditorialOrderProblem("map before primary", { ...completeEditorialOrder, map: 2 });
+  expectEditorialOrderProblem("post-map before map", { ...completeEditorialOrder, postMap: 3 });
+  if (missedEditorialOrderProblems.length) {
+    throw new Error(
+      `the homepage editorial-order predicate accepts ${missedEditorialOrderProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality homepage editorial order self-test passed");
 
   const completeChapterOpening = {
     viewport: { width: 1280, height: 720 },
@@ -3364,6 +3366,20 @@ async function main() {
       const legend = document.querySelector("[data-homepage-map-legend]");
       const scaleBar = legend?.querySelector(".scale-bar") ?? null;
       const scaleTicks = legend?.querySelector(".scale-ticks") ?? null;
+      const opening = document.querySelector("[data-homepage-opening]");
+      const routes = document.querySelector("[data-homepage-routes]");
+      const primaryRoutes = [...document.querySelectorAll("[data-homepage-primary-route]")];
+      const mapFrame = document.querySelector("[data-homepage-map-frame]");
+      const postMap = document.querySelector("[data-homepage-post-map]");
+      const sourceIndexes = new Map();
+      const sourceWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+      let sourceIndex = 0;
+      for (let node = sourceWalker.currentNode; node; node = sourceWalker.nextNode()) {
+        sourceIndexes.set(node, sourceIndex);
+        sourceIndex += 1;
+      }
+      const sourceIndexOf = (element) => sourceIndexes.has(element)
+        ? sourceIndexes.get(element) : null;
       const geometryMutation = ${JSON.stringify(geometryMutation)};
       const mutated = geometryMutation
         ? document.querySelector(geometryMutation.selector) : null;
@@ -3385,16 +3401,24 @@ async function main() {
           scaleTicks,
           "inline",
         ).filter((tick) => tick.visible),
-        atlasLayout: {
-          mode: atlas && getComputedStyle(atlas).getPropertyValue("--atlas-columns").trim() === "3"
+        editorialLayout: {
+          mode: atlas && getComputedStyle(atlas).gridTemplateColumns.trim().split(/\\s+/).length > 1
             ? "wide" : "stacked",
-          atlas: inspect(atlas),
-          opening: inspect(document.querySelector("[data-homepage-opening]")),
-          map: inspect(document.querySelector("[data-homepage-map-frame]")),
-          left: inspect(document.querySelector("[data-homepage-atlas-left]")),
-          right: inspect(document.querySelector("[data-homepage-atlas-right]")),
-          routes: inspect(document.querySelector("[data-homepage-routes]")),
+          opening: inspect(opening),
+          routes: inspect(routes),
+          map: inspect(mapFrame),
+          postMap: inspect(postMap),
+          viewport: { width: innerWidth, height: innerHeight },
         },
+        editorialOrder: {
+          opening: sourceIndexOf(opening),
+          routes: sourceIndexOf(routes),
+          primary: sourceIndexOf(primaryRoutes[0] ?? null),
+          map: sourceIndexOf(mapFrame),
+          postMap: sourceIndexOf(postMap),
+        },
+        primaryRoute: inspect(primaryRoutes[0] ?? null),
+        primaryRouteCount: primaryRoutes.length,
         viewport: { width: innerWidth, height: innerHeight },
         scrollY,
       };
@@ -3407,8 +3431,12 @@ async function main() {
     if (requireScrollZero && geometry?.scrollY !== 0) {
       return ["homepage did not start at scroll position zero"];
     }
-    return [
-      ...firstViewportProblems({ ...geometry, requireVerticalViewport }),
+    const problems = [
+      ...firstViewportProblems({
+        ...geometry,
+        requireVerticalViewport:
+          requireVerticalViewport && geometry.editorialLayout.mode === "wide",
+      }),
       ...countyLabelProblems({
         map: geometry.map,
         labels: geometry.countyLabels,
@@ -3417,8 +3445,19 @@ async function main() {
             ? EXPECTED_DESKTOP_COUNTY_LABELS
             : null,
       }),
-      ...atlasLayoutProblems(geometry.atlasLayout),
+      ...editorialHomepageLayoutProblems(geometry.editorialLayout),
+      ...editorialHomepageOrderProblems(geometry.editorialOrder),
     ];
+    if (geometry.primaryRouteCount !== 1) {
+      problems.push(`homepage has ${geometry.primaryRouteCount} primary routes, expected one`);
+    }
+    if (
+      geometry.viewport.width <= 390 &&
+      (!geometry.primaryRoute || geometry.primaryRoute.bottom > geometry.viewport.height + 1)
+    ) {
+      problems.push("homepage primary route leaves the first mobile viewport");
+    }
+    return problems;
   };
 
   const chapterOpeningSnapshot = async (chartRoute) => evaluate(`(() => {
@@ -3561,12 +3600,12 @@ async function main() {
         enhancedOrder: Boolean(
           follows(map, after) && follows(after, notes) && follows(notes, tools)
         ),
-        levelSummaryAfterMap: Boolean(
-          follows(map, levelSummary) && follows(levelSummary, routes) &&
-          map && levelSummary && levelSummary.getBoundingClientRect().top >=
-            map.getBoundingClientRect().bottom - 1 &&
-          routes && levelSummary.getBoundingClientRect().bottom <=
-            routes.getBoundingClientRect().top + 1
+        editorialReadingOrder: Boolean(
+          follows(routes, map) && follows(map, levelSummary) &&
+          routes && map && routes.getBoundingClientRect().bottom <=
+            map.getBoundingClientRect().top + 1 &&
+          levelSummary && map.getBoundingClientRect().bottom <=
+            levelSummary.getBoundingClientRect().top + 1
         ),
       };
     })()`);
@@ -3588,7 +3627,7 @@ async function main() {
       (
         structure?.mountCount !== 1 || structure?.toolCount !== 2 ||
         !structure?.toolsOutsideMap || !structure?.enhancedOrder ||
-        !structure?.levelSummaryAfterMap
+        !structure?.editorialReadingOrder
       )
     ) {
       problems.push("homepage post-map evidence order is incomplete");

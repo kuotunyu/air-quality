@@ -2,10 +2,30 @@
 import { href } from "../lib/chapters";
 
 const paths = [
-  ["trend", "先看全台趨勢", "監測網與天氣扣除後，改善是否仍然成立。"],
-  ["stations", "查一個測站", "找到最近一個資料完整到可以比較的年份。"],
-  ["methods", "先審方法", "逐項查看每個方法選擇及其量化代價。"],
-  ["explore", "直接查資料", "在瀏覽器內以 SQL 查詢公開 Parquet。"],
+  {
+    path: "trend",
+    label: "先看全台趨勢",
+    claim: "監測網與天氣扣除後，改善是否仍然成立。",
+    primary: true,
+  },
+  {
+    path: "stations",
+    label: "查一個測站",
+    claim: "找到最近一個資料完整到可以比較的年份。",
+    primary: false,
+  },
+  {
+    path: "methods",
+    label: "先審方法",
+    claim: "逐項查看每個方法選擇及其量化代價。",
+    primary: false,
+  },
+  {
+    path: "explore",
+    label: "直接查資料",
+    claim: "在瀏覽器內以 SQL 查詢公開 Parquet。",
+    primary: false,
+  },
 ] as const;
 ---
 
@@ -14,9 +34,13 @@ const paths = [
   <p class="start-here-intro">四個最常見的問題，各選一條路開始。</p>
   <ul class="start-here-list">
     {
-      paths.map(([path, label, claim]) => (
+      paths.map(({ path, label, claim, primary }) => (
         <li>
-          <a href={href(path)}>
+          <a
+            href={href(path)}
+            class:list={{ "is-primary": primary }}
+            data-homepage-primary-route={primary ? "" : undefined}
+          >
             <span class="start-here-label">{label}</span>
             <span class="start-here-claim">{claim}</span>
             <span class="start-here-mark" aria-hidden="true">→</span>

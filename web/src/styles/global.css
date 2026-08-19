@@ -1751,10 +1751,21 @@ section > :last-child > :last-child:last-child {
   color: var(--accent);
 }
 
+.start-here-list a.is-primary {
+  color: var(--text);
+  box-shadow: inset 0.18rem 0 0 var(--accent);
+}
+
+.start-here-list a.is-primary .start-here-label,
+.start-here-list a.is-primary .start-here-mark {
+  color: var(--accent);
+}
+
 @media (min-width: 46rem) {
   .start-here-list a {
     grid-template-columns: minmax(9rem, 0.62fr) minmax(0, 1.38fr) auto;
     column-gap: var(--space-4);
+    padding-block: var(--space-2);
   }
 
   .start-here-claim {
