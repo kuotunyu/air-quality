@@ -15,4 +15,5 @@ const chapter = chapterBySlug(slug);
   <div class="chapter-thesis">
     <slot />
   </div>
+  {Astro.slots.has("reading-map") && <slot name="reading-map" />}
 </header>

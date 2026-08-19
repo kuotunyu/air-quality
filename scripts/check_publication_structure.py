@@ -454,6 +454,77 @@ class StructureParser(HTMLParser):
             self.errors.append(f"unclosed elements: {unclosed}")
 
 
+TREND_READING_MAP = (
+    ("#evidence-1-1-title", "固定測站後，下降是否仍成立？"),
+    ("#trend-weather-adjustment", "排除天氣後，下降幅度剩多少？"),
+    ("#trend-airzones", "各空品區是否同步改善？"),
+)
+
+
+def trend_reading_map_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    visible = [element for element in parser.elements if element.visible]
+    maps = [element for element in visible if "data-chapter-reading-map" in element.attributes]
+    if len(maps) != 1:
+        return [
+            *failures,
+            f"expected exactly one visible trend reading map, found {len(maps)}",
+        ]
+    reading_map = maps[0]
+    if reading_map.tag != "nav":
+        failures.append("trend reading map is not a <nav>")
+    if reading_map.attributes.get("aria-label") != "本章閱讀地圖":
+        failures.append("trend reading map accessible label changed")
+    links = [
+        element for element in visible if element.tag == "a" and element.is_inside(reading_map)
+    ]
+    marked_links = [
+        element
+        for element in visible
+        if "data-chapter-reading-link" in element.attributes and element.is_inside(reading_map)
+    ]
+    if marked_links != links:
+        failures.append("trend reading-map link markers changed")
+    observed = [(link.attributes.get("href", ""), link.rendered_text()) for link in links]
+    if observed != list(TREND_READING_MAP):
+        failures.append(f"trend reading-map links changed: {observed!r}")
+    targets: list[Element] = []
+    for href, _question in TREND_READING_MAP:
+        target_id = href.removeprefix("#")
+        candidates = [element for element in visible if element.attributes.get("id") == target_id]
+        if len(candidates) != 1:
+            failures.append(
+                f"trend reading-map target inventory changed for {href}: {len(candidates)}"
+            )
+        else:
+            targets.append(candidates[0])
+    if len(targets) == len(TREND_READING_MAP):
+        starts = [target.start_order for target in targets]
+        if starts != sorted(starts):
+            failures.append("trend reading-map target order changed")
+    primary = [element for element in visible if "data-primary-evidence" in element.attributes]
+    if len(primary) != 1:
+        failures.append(f"trend primary-evidence inventory changed: {len(primary)}")
+    elif reading_map.end_order is None or reading_map.end_order >= primary[0].start_order:
+        failures.append("trend primary evidence precedes the reading map")
+    return failures
+
+
+def visible_reading_map_count(html: str) -> int:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    return sum(
+        element.visible and "data-chapter-reading-map" in element.attributes
+        for element in parser.elements
+    )
+
+
 def failures_for_text(html: str, required_thesis_fragments: tuple[str, ...] = ()) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
@@ -1052,6 +1123,101 @@ def _run_preflight() -> None:
                 f"HTML preflight did not reject {name} for the expected reason: {mutation_failures}"
             )
 
+    valid_trend_map = """
+<header class="chapter-intro"><h1>趨勢</h1><div class="chapter-thesis">結論</div>
+<nav aria-label="本章閱讀地圖" data-chapter-reading-map><ol>
+<li><a data-chapter-reading-link href="#evidence-1-1-title">固定測站後，下降是否仍成立？</a></li>
+<li><a data-chapter-reading-link href="#trend-weather-adjustment">排除天氣後，下降幅度剩多少？</a></li>
+<li><a data-chapter-reading-link href="#trend-airzones">各空品區是否同步改善？</a></li>
+</ol></nav></header>
+<section data-primary-evidence><p id="evidence-1-1-title">圖一</p></section>
+<h2 id="trend-weather-adjustment">天氣</h2><h2 id="trend-airzones">空品區</h2>
+"""
+    valid_trend_failures = trend_reading_map_failures_for_text(valid_trend_map)
+    if valid_trend_failures:
+        raise RuntimeError(
+            f"trend reading-map preflight rejected the valid control: {valid_trend_failures}"
+        )
+
+    first_link = (
+        '<li><a data-chapter-reading-link href="#evidence-1-1-title">'
+        "固定測站後，下降是否仍成立？</a></li>"
+    )
+    second_link = (
+        '<li><a data-chapter-reading-link href="#trend-weather-adjustment">'
+        "排除天氣後，下降幅度剩多少？</a></li>"
+    )
+    third_link = (
+        '<li><a data-chapter-reading-link href="#trend-airzones">各空品區是否同步改善？</a></li>'
+    )
+    trend_mutations = {
+        "missing link": (
+            "trend reading-map links changed",
+            valid_trend_map.replace(third_link, "", 1),
+        ),
+        "non-anchor marker": (
+            "trend reading-map links changed",
+            valid_trend_map.replace(
+                first_link,
+                first_link.replace("<a ", "<span ", 1).replace("</a>", "</span>", 1),
+                1,
+            ),
+        ),
+        "unmarked fourth anchor": (
+            "trend reading-map links changed",
+            valid_trend_map.replace(
+                "</ol>", '<li><a href="#trend-airzones">額外連結</a></li></ol>', 1
+            ),
+        ),
+        "duplicate target": (
+            "target inventory changed",
+            valid_trend_map.replace('id="trend-airzones"', 'id="trend-weather-adjustment"', 1),
+        ),
+        "reordered links": (
+            "trend reading-map links changed",
+            valid_trend_map.replace(
+                second_link + "\n" + third_link, third_link + "\n" + second_link, 1
+            ),
+        ),
+        "hidden target": (
+            "target inventory changed",
+            valid_trend_map.replace(
+                '<h2 id="trend-airzones">', '<h2 id="trend-airzones" hidden>', 1
+            ),
+        ),
+        "reordered targets": (
+            "target order changed",
+            valid_trend_map.replace(
+                '<h2 id="trend-weather-adjustment">天氣</h2><h2 id="trend-airzones">空品區</h2>',
+                '<h2 id="trend-airzones">空品區</h2><h2 id="trend-weather-adjustment">天氣</h2>',
+                1,
+            ),
+        ),
+        "primary before map": (
+            "primary evidence precedes the reading map",
+            valid_trend_map.replace(
+                '<nav aria-label="本章閱讀地圖" data-chapter-reading-map><ol>',
+                '<section data-primary-evidence><p id="evidence-1-1-title">圖一</p></section>'
+                '<nav aria-label="本章閱讀地圖" data-chapter-reading-map><ol>',
+                1,
+            ).replace(
+                "</header>\n<section data-primary-evidence>"
+                '<p id="evidence-1-1-title">圖一</p></section>',
+                "</header>",
+                1,
+            ),
+        ),
+    }
+    for name, (expected_failure, html) in trend_mutations.items():
+        if html == valid_trend_map:
+            raise RuntimeError(f"trend reading-map preflight did not apply {name}")
+        mutation_failures = trend_reading_map_failures_for_text(html)
+        if not any(expected_failure in failure for failure in mutation_failures):
+            raise RuntimeError(
+                f"trend reading-map preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
+            )
+
     def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
         title_id = f"evidence-{number.replace('.', '-')}-title"
         return (
@@ -1614,10 +1780,15 @@ def main(argv: list[str]) -> int:
         if not page.exists():
             failures = [f"missing {page.relative_to(ROOT).as_posix()}"]
         else:
-            failures = failures_for(page, EXPECTED_THESIS_FRAGMENTS.get(slug, ()))
+            html = page.read_text(encoding="utf-8")
+            failures = failures_for_text(html, EXPECTED_THESIS_FRAGMENTS.get(slug, ()))
             failures.extend(
                 analytical_figure_failures_for(page, EXPECTED_ANALYTICAL_FIGURES.get(slug))
             )
+            if slug == "trend":
+                failures.extend(trend_reading_map_failures_for_text(html))
+            elif visible_reading_map_count(html):
+                failures.append("chapter unexpectedly contains a visible trend reading map")
 
         if failures:
             failed_chapters += 1

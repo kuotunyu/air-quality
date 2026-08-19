@@ -8,6 +8,7 @@
  */
 import TrendChart from "./TrendChart.astro";
 import ChapterIntro from "./ChapterIntro.astro";
+import ChapterReadingMap from "./ChapterReadingMap.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
@@ -17,6 +18,12 @@ import {
   TW_PM25_TIGHTENED_DATE,
   taiwanAnnual,
 } from "../lib/standards";
+
+const readingMap = [
+  { href: "#evidence-1-1-title", question: "固定測站後，下降是否仍成立？" },
+  { href: "#trend-weather-adjustment", question: "排除天氣後，下降幅度剩多少？" },
+  { href: "#trend-airzones", question: "各空品區是否同步改善？" },
+] as const satisfies readonly { href: `#${string}`; question: string }[];
 
 const firstYear = trend.years[0];
 const lastYear = trend.years[trend.years.length - 1];
@@ -247,6 +254,7 @@ const taiwanAnnualGuide = (
     {firstYear} 到 {lastYear} 年，全台 PM2.5 年均值從 {n(firstValue)} 降到
     {" "}{n(lastValue)} μg/m³。
   </p>
+  <ChapterReadingMap slot="reading-map" items={readingMap} />
   </ChapterIntro>
 
   <EvidenceFigure number="1.1" title="固定測站後，全台 PM2.5 的下降仍然成立嗎？" primary>
@@ -318,7 +326,7 @@ const taiwanAnnualGuide = (
     在固定的測站集合上，下降同樣成立。若兩條線分岔，結論就必須修正。
   </div>
 
-  <h2>把各年的天氣條件調整成相同水準</h2>
+  <h2 id="trend-weather-adjustment">把各年的天氣條件調整成相同水準</h2>
 
   <p>
     上一個校正量到的差異在誤差範圍內。這一個不是——它改變下降幅度的解讀。
@@ -404,7 +412,7 @@ const taiwanAnnualGuide = (
     </p>
   </div>
 
-  <h2>各空品區</h2>
+  <h2 id="trend-airzones">各空品區</h2>
   {/*
     Rewritten because the figure underneath contradicted it.
 

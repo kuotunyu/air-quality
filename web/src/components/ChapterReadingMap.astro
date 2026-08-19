@@ -1,0 +1,28 @@
+---
+interface ReadingMapItem {
+  href: `#${string}`;
+  question: string;
+}
+
+interface Props {
+  items: readonly ReadingMapItem[];
+}
+
+const { items } = Astro.props;
+if (items.length !== 3) {
+  throw new Error(`ChapterReadingMap requires exactly three items; received ${items.length}`);
+}
+---
+
+<nav class="chapter-reading-map" aria-label="本章閱讀地圖" data-chapter-reading-map>
+  <p class="chapter-reading-label">本章的三個問題</p>
+  <ol>
+    {
+      items.map((item) => (
+        <li>
+          <a href={item.href} data-chapter-reading-link>{item.question}</a>
+        </li>
+      ))
+    }
+  </ol>
+</nav>
