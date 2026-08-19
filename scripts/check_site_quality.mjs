@@ -3635,6 +3635,44 @@ async function main() {
     return problems;
   };
 
+  const chapterIndexProblems = async () => {
+    const structure = await evaluate(`(() => {
+      const visible = (element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          element.getAttribute("aria-hidden") !== "true" && rect.width > 0 && rect.height > 0;
+      };
+      const groups = [...document.querySelectorAll("[data-chapter-group]")].filter(visible);
+      const links = [...document.querySelectorAll("[data-chapter-index-link]")].filter(visible);
+      return {
+        groupCount: groups.length,
+        linkCount: links.length,
+        groupSizes: groups.map((group) =>
+          links.filter((link) => group.contains(link)).length
+        ),
+        destinations: links.map((link) => new URL(link.href, location.href).pathname),
+      };
+    })()`);
+    const problems = [];
+    if (structure?.groupCount !== 3) {
+      problems.push(`chapter index has ${structure?.groupCount ?? "unknown"} intent groups`);
+    }
+    if (structure?.linkCount !== CHAPTER_ROUTES.length) {
+      problems.push(
+        `chapter index has ${structure?.linkCount ?? "unknown"} links, ` +
+          `expected ${CHAPTER_ROUTES.length}`,
+      );
+    }
+    if (JSON.stringify(structure?.groupSizes) !== JSON.stringify([4, 3, 3])) {
+      problems.push("chapter index intent groups do not contain 4, 3 and 3 chapters");
+    }
+    if (JSON.stringify(structure?.destinations) !== JSON.stringify(CHAPTER_ROUTES)) {
+      problems.push("chapter index destinations changed canonical order");
+    }
+    return problems;
+  };
+
   const failures = [];
   const trendGuideSnapshot = () =>
     evaluate(`(() => {
@@ -5237,6 +5275,19 @@ async function main() {
       for (const problem of await homepageStructureProblems({ enhanced: false })) {
         failures.push(`/ @${width}x${height} no-JavaScript light: ${problem}`);
       }
+      for (const problem of await chapterIndexProblems()) {
+        failures.push(`/ @${width}x${height} no-JavaScript light: ${problem}`);
+      }
+    }
+  }
+  console.log("site-quality stage: shared chapter intent index");
+  await send("Page.setScriptExecutionDisabled", { value: false });
+  await send("Page.navigate", { url: `${origin}/404.html` });
+  if (!(await settled(evaluate, 8000, "/404.html chapter intent index"))) {
+    failures.push("/404.html: page never finished styling");
+  } else {
+    for (const problem of await chapterIndexProblems()) {
+      failures.push(`/404.html: ${problem}`);
     }
   }
   console.log("site-quality stage: chapter opening matrix");
@@ -6612,6 +6663,9 @@ async function main() {
       }
       if (width === 390 && theme === "light") {
         for (const problem of await homepageStructureProblems({ enhanced: true })) {
+          failures.push(`/ @${width}x${height} ${theme}: ${problem}`);
+        }
+        for (const problem of await chapterIndexProblems()) {
           failures.push(`/ @${width}x${height} ${theme}: ${problem}`);
         }
         const geometryMutations = [

@@ -24,6 +24,18 @@ TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "ty
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
 START_HERE_DATA_DESTINATIONS = {"/explore/", "/data/"}
+REQUIRED_CHAPTER_INDEX_DESTINATIONS = (
+    "/trend/",
+    "/stations/",
+    "/space/",
+    "/sources/",
+    "/detection/",
+    "/forecast/",
+    "/health/",
+    "/methods/",
+    "/explore/",
+    "/data/",
+)
 EXPECTED_THESIS_FRAGMENTS = {
     "space": ("那個分層是不是足夠的空間控制",),
 }
@@ -771,6 +783,35 @@ def home_failures_for_text(html: str) -> list[str]:
             f"and one of /explore/ or /data/; found {found}"
         )
 
+    chapter_groups = [
+        element for element in visible if "data-chapter-group" in element.attributes
+    ]
+    if len(chapter_groups) != 3:
+        failures.append(
+            "expected exactly three visible chapter intent groups, "
+            f"found {len(chapter_groups)}"
+        )
+
+    chapter_links = [
+        element
+        for element in visible
+        if element.tag == "a" and "data-chapter-index-link" in element.attributes
+    ]
+    if len(chapter_links) != 10:
+        failures.append(
+            f"expected exactly ten visible chapter index links, found {len(chapter_links)}"
+        )
+    elif any(not any(link.is_inside(group) for group in chapter_groups) for link in chapter_links):
+        failures.append("every visible chapter index link must belong to an intent group")
+
+    chapter_destinations = []
+    for link in chapter_links:
+        destination = _site_destination_from_href(link.attributes.get("href"))
+        chapter_destinations.append(destination[1] if destination else None)
+    if tuple(chapter_destinations) != REQUIRED_CHAPTER_INDEX_DESTINATIONS:
+        found = ", ".join(str(destination) for destination in chapter_destinations)
+        failures.append(f"chapter index destinations must match canonical order; found {found}")
+
     return failures
 
 
@@ -1184,10 +1225,23 @@ def _run_preflight() -> None:
         f'<a href="{destination}">Path {index}</a>'
         for index, destination in enumerate(start_here_destinations, start=1)
     )
+    chapter_index_groups = "".join(
+        '<section data-chapter-group><h3>Intent</h3>'
+        + "".join(
+            f'<a href="{destination}" data-chapter-index-link>Chapter {index}</a>'
+            for index, destination in indexed_destinations
+        )
+        + "</section>"
+        for indexed_destinations in (
+            tuple(enumerate(REQUIRED_CHAPTER_INDEX_DESTINATIONS[:4], start=1)),
+            tuple(enumerate(REQUIRED_CHAPTER_INDEX_DESTINATIONS[4:7], start=5)),
+            tuple(enumerate(REQUIRED_CHAPTER_INDEX_DESTINATIONS[7:], start=8)),
+        )
+    )
     valid_home = (
         '<h2 id="start-here-heading">Start here</h2>'
         '<nav class="start-here" aria-labelledby="start-here-heading">'
-        f"{start_here_links}</nav>"
+        f"{start_here_links}</nav>{chapter_index_groups}"
     )
     valid_home_failures = home_failures_for_text(valid_home)
     if valid_home_failures:
@@ -1276,6 +1330,33 @@ def _run_preflight() -> None:
         )
 
     home_mutations = {
+        "missing chapter group": (
+            "expected exactly three visible chapter intent groups, found 2",
+            valid_home.replace("<section data-chapter-group>", "<section>", 1),
+        ),
+        "duplicate chapter": (
+            "chapter index destinations must match canonical order",
+            valid_home.replace(
+                '<a href="/data/" data-chapter-index-link>Chapter 10</a>',
+                '<a href="/trend/" data-chapter-index-link>Chapter 10</a>',
+            ),
+        ),
+        "reordered chapters": (
+            "chapter index destinations must match canonical order",
+            valid_home.replace(
+                '<a href="/trend/" data-chapter-index-link>Chapter 1</a>'
+                '<a href="/stations/" data-chapter-index-link>Chapter 2</a>',
+                '<a href="/stations/" data-chapter-index-link>Chapter 2</a>'
+                '<a href="/trend/" data-chapter-index-link>Chapter 1</a>',
+            ),
+        ),
+        "hidden chapter": (
+            "expected exactly ten visible chapter index links, found 9",
+            valid_home.replace(
+                '<a href="/data/" data-chapter-index-link>Chapter 10</a>',
+                '<a href="/data/" data-chapter-index-link hidden>Chapter 10</a>',
+            ),
+        ),
         "empty start-here": (
             "nav.start-here must contain exactly four visible links, found 0",
             valid_home.replace(start_here_links, ""),

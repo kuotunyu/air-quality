@@ -19,29 +19,50 @@
  * fourteen Chinese characters wide. A row lets the claim have the page's own
  * measure, which is the width it was written for.
  */
-import { CHAPTERS, chapterLabel, href } from "../lib/chapters";
+import { CHAPTER_GROUPS, chapterLabel, href } from "../lib/chapters";
 ---
 
-<ol class="toc">
+<div class="toc-groups">
   {
-    CHAPTERS.map((c) => (
-      <li>
-        <a href={href(c.slug)}>
-          <span class="toc-n">{chapterLabel(c.n)}</span>
-          <span class="toc-body">
-            <span class="toc-title">{c.title}</span>
-            <span class="toc-claim">{c.claim}</span>
-          </span>
-        </a>
-      </li>
+    CHAPTER_GROUPS.map((group) => (
+      <section class="toc-group" data-chapter-group>
+        <h3 class="toc-group-label">{group.label}</h3>
+        <ol class="toc" start={group.chapters[0]?.n}>
+          {group.chapters.map((c) => (
+            <li>
+              <a href={href(c.slug)} data-chapter-index-link>
+                <span class="toc-n">{chapterLabel(c.n)}</span>
+                <span class="toc-body">
+                  <span class="toc-title">{c.title}</span>
+                  <span class="toc-claim">{c.claim}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </section>
     ))
   }
-</ol>
+</div>
 
 <style>
+  .toc-groups {
+    margin: var(--space-5) 0 var(--space-4);
+  }
+
+  .toc-group + .toc-group {
+    margin-top: var(--space-5);
+  }
+
+  .toc-group-label {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-faint);
+  }
+
   .toc {
     list-style: none;
-    margin: var(--space-5) 0 var(--space-4);
+    margin: 0;
     padding: 0;
     counter-reset: none;
   }

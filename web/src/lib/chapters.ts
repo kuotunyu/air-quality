@@ -141,6 +141,17 @@ export const CHAPTERS: readonly Chapter[] = [
   },
 ] as const;
 
+export interface ChapterGroup {
+  label: string;
+  chapters: readonly Chapter[];
+}
+
+export const CHAPTER_GROUPS: readonly ChapterGroup[] = [
+  { label: "發生了什麼", chapters: CHAPTERS.slice(0, 4) },
+  { label: "我們能知道多少", chapters: CHAPTERS.slice(4, 7) },
+  { label: "如何查驗", chapters: CHAPTERS.slice(7, 10) },
+] as const;
+
 /** 「第一章」 rather than 「第 1 章」: the numeral is Chinese in running text. */
 const NUMERALS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"] as const;
 
