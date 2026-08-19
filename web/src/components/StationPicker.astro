@@ -156,7 +156,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
           <span class="year num" data-station-year>{card.year} 年</span>
         </header>
 
-        <div class="grid grid-4 station-stats" data-station-stats>
+        <div class="station-stats" data-station-stats>
           <div class="stat" data-station-stat="annual-mean">
             <span class="stat-value">{n(card.annual_mean)}</span>
             <span class="stat-label">年均 PM2.5</span>
@@ -288,7 +288,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 
 <style>
   .picker {
-    margin-top: 1.5rem;
+    margin-top: var(--space-4);
   }
 
   .station-controls {
@@ -315,10 +315,12 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     margin-bottom: 0;
   }
   .report {
-    background: var(--bg-raised);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 1.4rem 1.5rem;
+    container-type: inline-size;
+    background: transparent;
+    border: 0;
+    border-block: 1px solid var(--line);
+    border-radius: 0;
+    padding: var(--space-4) 0;
   }
   .report header {
     display: flex;
@@ -347,9 +349,9 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     font-size: var(--text-sm);
   }
   .row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem 2.2rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: var(--space-3);
     margin-top: 1.5rem;
     padding-top: 1.2rem;
     border-top: 1px solid var(--line-soft);
@@ -372,5 +374,57 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   .dim {
     color: var(--text-faint);
     font-size: var(--text-sm);
+  }
+
+  .station-stats {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .station-stats > .stat {
+    min-width: 0;
+    padding-block: var(--space-3);
+    border-block-start: 1px solid var(--line-soft);
+  }
+
+  .picker > .note[data-station-standard-note],
+  .picker > .note[data-station-conversion-note] {
+    max-width: var(--measure);
+    background: transparent;
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  @container (min-width: 30rem) {
+    .station-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .station-stats > .stat {
+      padding-inline-end: var(--space-3);
+    }
+  }
+
+  @container (min-width: 40rem) {
+    .station-stats {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @media print {
+    .station-controls,
+    #station-say,
+    .nojs {
+      display: none !important;
+    }
+
+    .report[hidden] {
+      display: block !important;
+    }
+
+    .report {
+      break-inside: avoid;
+    }
   }
 </style>

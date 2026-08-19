@@ -604,6 +604,162 @@ function trendPrintProblems(state) {
   return problems;
 }
 
+function stationRegisterProblems(state, mode) {
+  const problems = [];
+  if (mode !== "no-JavaScript" && mode !== "print") {
+    return ["station register mode is not reviewed"];
+  }
+  if (state?.selectorVisible || (mode === "print" && state?.liveVisible)) {
+    problems.push(`station ${mode} controls remain visible`);
+  }
+  if (mode === "no-JavaScript" && !state?.noScriptVisible) {
+    problems.push("station no-JavaScript notice is not visible");
+  }
+  if (mode === "print" && state?.noScriptVisible) {
+    problems.push("station print controls remain visible");
+  }
+  if (
+    !Number.isInteger(state?.reportCount) || state.reportCount <= 0 ||
+    state?.visibleReportCount !== state.reportCount
+  ) {
+    problems.push(`station ${mode} complete report register is unavailable`);
+  }
+  if (state?.stationNameCount !== state?.reportCount) {
+    problems.push(`station ${mode} station-name inventory changed`);
+  }
+  if (state?.visibleStationNameCount !== state?.reportCount) {
+    problems.push(`station ${mode} visible station-name register is unavailable`);
+  }
+  if (state?.matchingStationNameCount !== state?.reportCount) {
+    problems.push(`station ${mode} displayed station identities disagree`);
+  }
+  if (!state?.ordered) problems.push(`station ${mode} report order changed`);
+  if (state?.standardNotes !== 1 || state?.conversionNotes !== 1) {
+    problems.push(`station ${mode} interpretation notes changed`);
+  }
+  return problems;
+}
+
+function stationDossierProblems(state) {
+  const problems = [];
+  const expectedColumns = new Map([[375, 1], [768, 2], [1024, 4], [1440, 4]]);
+  if (!expectedColumns.has(state?.viewportWidth)) {
+    return ["station dossier viewport is not one of the reviewed widths"];
+  }
+  const visibleBox = (part) =>
+    Boolean(part?.visible && part.width > 0 && part.height > 0);
+  if (!visibleBox(state?.picker)) problems.push("station dossier is not visibly rendered");
+  if (!visibleBox(state?.select)) problems.push("station selector is not visibly rendered");
+  else if (state.select.height < 44) problems.push("station selector target is shorter than 44px");
+  if (
+    !Number.isInteger(state?.optionCount) || !Number.isInteger(state?.reportCount) ||
+    state.optionCount <= 0 || state.optionCount !== state.reportCount
+  ) {
+    problems.push("station option and report inventories differ");
+  }
+  if (state?.visibleReportCount !== 1) problems.push("station dossier does not show exactly one report");
+  if (!state?.selectedValue || state.selectedValue !== state.visibleStation) {
+    problems.push("station selection and visible report differ");
+  }
+  if (!state?.identityText || state.identityText !== state.visibleStation) {
+    problems.push("station displayed identity disagrees");
+  }
+  if (!visibleBox(state?.identityName)) {
+    problems.push("station displayed station name is not visible");
+  }
+  if (!state?.identityVisible) problems.push("station identity is not visible");
+  if (!state?.yearVisible) problems.push("station year is not visible");
+  if (state?.stats?.length !== 4) problems.push("station statistic inventory changed");
+  for (const [index, stat] of (state?.stats ?? []).entries()) {
+    if (!visibleBox(stat)) problems.push(`station statistic ${index + 1} is not visible`);
+  }
+  if (state?.comparisons?.length !== 3) problems.push("station comparison inventory changed");
+  for (const [index, comparison] of (state?.comparisons ?? []).entries()) {
+    if (!visibleBox(comparison)) {
+      problems.push(`station comparison ${index + 1} is not visible`);
+    }
+  }
+  if (state?.columns !== expectedColumns.get(state.viewportWidth)) {
+    problems.push(`station statistics use the wrong ${state.viewportWidth}px column count`);
+  }
+  if (!visibleBox(state?.standardNote)) problems.push("station standard note is not visible");
+  if (!visibleBox(state?.conversionNote)) problems.push("station conversion caveat is not visible");
+  if (state?.horizontalOverflow > 1) problems.push("station dossier causes horizontal overflow");
+  const changed = state?.afterChange;
+  if (!changed?.performed) problems.push("station selection change was not exercised");
+  if (changed?.visibleReportCount !== 1) {
+    problems.push("station selection change does not leave exactly one visible report");
+  }
+  if (!changed?.selectedMatchesVisible) {
+    problems.push("station selection change shows a different report");
+  }
+  if (
+    !changed?.identityText || changed.identityText !== changed.visibleStation ||
+    changed.identityText !== changed.selectedValue
+  ) {
+    problems.push("changed displayed identity disagrees");
+  }
+  if (!visibleBox(changed?.identityName)) {
+    problems.push("changed displayed station name is not visible");
+  }
+  if (!visibleBox(changed?.identity)) {
+    problems.push("changed station identity is not visible");
+  }
+  if (!visibleBox(changed?.year)) problems.push("changed station year is not visible");
+  if (changed?.stats?.length !== 4) {
+    problems.push("changed station statistic inventory changed");
+  }
+  for (const [index, stat] of (changed?.stats ?? []).entries()) {
+    if (!visibleBox(stat)) {
+      problems.push(`changed station statistic ${index + 1} is not visible`);
+    }
+  }
+  if (changed?.comparisons?.length !== 3) {
+    problems.push("changed station comparison inventory changed");
+  }
+  for (const [index, comparison] of (changed?.comparisons ?? []).entries()) {
+    if (!visibleBox(comparison)) {
+      problems.push(`changed station comparison ${index + 1} is not visible`);
+    }
+  }
+  if (!changed?.liveIncludesStation) problems.push("station live update omits the station");
+  if (!changed?.liveIncludesYear) problems.push("station live update omits the year");
+  if (!changed?.liveIncludesFirstStat) {
+    problems.push("station live update omits the first statistic");
+  }
+  if (!changed?.liveIncludesThirdStat) {
+    problems.push("station live update omits the third statistic");
+  }
+  const restored = state?.restored;
+  if (!restored?.performed) problems.push("station selection restoration was not exercised");
+  if (restored?.visibleReportCount !== 1) {
+    problems.push("station selection restoration does not leave exactly one visible report");
+  }
+  if (!restored?.selectedMatchesVisible) {
+    problems.push("station selection restoration shows a different report");
+  }
+  if (
+    !restored?.identityText || restored.identityText !== restored.visibleStation ||
+    restored.identityText !== restored.selectedValue
+  ) {
+    problems.push("station restored displayed identity disagrees");
+  }
+  if (!visibleBox(restored?.identityName)) {
+    problems.push("station restored displayed station name is not visible");
+  }
+  if (!restored?.liveIncludesStation) {
+    problems.push("station restored live update omits the station");
+  }
+  if (!restored?.liveIncludesYear) problems.push("station restored live update omits the year");
+  if (!restored?.liveIncludesFirstStat) {
+    problems.push("station restored live update omits the first statistic");
+  }
+  if (!restored?.liveIncludesThirdStat) {
+    problems.push("station restored live update omits the third statistic");
+  }
+  return problems;
+}
+
 function compactIdentityProblems(state, expected) {
   const problems = [];
   if (!state?.visible) problems.push("compact site identity is missing");
@@ -2683,6 +2839,296 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality trend print contract self-test passed");
 
+  const completeStationDossierFor = (viewportWidth) => ({
+    viewportWidth,
+    picker: { visible: true, width: viewportWidth - 32, height: 520 },
+    select: { visible: true, width: 320, height: 44 },
+    optionCount: 79,
+    reportCount: 79,
+    visibleReportCount: 1,
+    selectedValue: "西屯",
+    visibleStation: "西屯",
+    identityText: "西屯",
+    identityName: { visible: true, width: 80, height: 32 },
+    identityVisible: true,
+    yearVisible: true,
+    stats: Array.from({ length: 4 }, () => ({ visible: true, width: 120, height: 96 })),
+    comparisons: Array.from(
+      { length: 3 },
+      () => ({ visible: true, width: 180, height: 52 }),
+    ),
+    columns: viewportWidth === 375 ? 1 : viewportWidth === 768 ? 2 : 4,
+    standardNote: { visible: true, width: 320, height: 120 },
+    conversionNote: { visible: true, width: 320, height: 80 },
+    horizontalOverflow: 0,
+    afterChange: {
+      performed: true,
+      selectedValue: "基隆",
+      visibleStation: "基隆",
+      identityText: "基隆",
+      identityName: { visible: true, width: 80, height: 32 },
+      visibleReportCount: 1,
+      selectedMatchesVisible: true,
+      identity: { visible: true, width: 180, height: 52 },
+      year: { visible: true, width: 80, height: 24 },
+      stats: Array.from({ length: 4 }, () => ({ visible: true, width: 120, height: 96 })),
+      comparisons: Array.from(
+        { length: 3 },
+        () => ({ visible: true, width: 180, height: 52 }),
+      ),
+      liveIncludesStation: true,
+      liveIncludesYear: true,
+      liveIncludesFirstStat: true,
+      liveIncludesThirdStat: true,
+    },
+    restored: {
+      performed: true,
+      selectedValue: "西屯",
+      visibleStation: "西屯",
+      identityText: "西屯",
+      identityName: { visible: true, width: 80, height: 32 },
+      visibleReportCount: 1,
+      selectedMatchesVisible: true,
+      liveIncludesStation: true,
+      liveIncludesYear: true,
+      liveIncludesFirstStat: true,
+      liveIncludesThirdStat: true,
+    },
+  });
+  for (const viewportWidth of [375, 768, 1024, 1440]) {
+    if (stationDossierProblems(completeStationDossierFor(viewportWidth)).length) {
+      throw new Error(`station dossier predicate rejected ${viewportWidth}px control`);
+    }
+  }
+  const missedStationDossierProblems = [];
+  const expectStationDossierProblem = (name, viewportWidth, mutate, expected) => {
+    const state = completeStationDossierFor(viewportWidth);
+    mutate(state);
+    const problems = stationDossierProblems(state);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedStationDossierProblems.push(name);
+    }
+  };
+  expectStationDossierProblem("hidden picker", 375, (state) => {
+    state.picker.visible = false;
+  }, "dossier is not visibly rendered");
+  expectStationDossierProblem("hidden selector", 375, (state) => {
+    state.select.visible = false;
+  }, "selector is not visibly rendered");
+  expectStationDossierProblem("zero-area selector", 375, (state) => {
+    state.select.width = 0;
+  }, "selector is not visibly rendered");
+  expectStationDossierProblem("43px selector", 375, (state) => {
+    state.select.height = 43;
+  }, "shorter than 44px");
+  expectStationDossierProblem("option mismatch", 375, (state) => {
+    state.optionCount = 78;
+  }, "inventories differ");
+  expectStationDossierProblem("two visible reports", 375, (state) => {
+    state.visibleReportCount = 2;
+  }, "exactly one report");
+  expectStationDossierProblem("zero visible reports", 375, (state) => {
+    state.visibleReportCount = 0;
+  }, "exactly one report");
+  expectStationDossierProblem("selection mismatch", 375, (state) => {
+    state.visibleStation = "基隆";
+  }, "selection and visible report differ");
+  expectStationDossierProblem("wrong displayed station name", 375, (state) => {
+    state.identityText = "錯站";
+  }, "displayed identity disagrees");
+  expectStationDossierProblem("hidden displayed station name", 375, (state) => {
+    state.identityName.visible = false;
+  }, "displayed station name is not visible");
+  expectStationDossierProblem("hidden identity", 375, (state) => {
+    state.identityVisible = false;
+  }, "identity is not visible");
+  expectStationDossierProblem("hidden year", 375, (state) => {
+    state.yearVisible = false;
+  }, "year is not visible");
+  expectStationDossierProblem("three statistics", 375, (state) => {
+    state.stats.pop();
+  }, "statistic inventory changed");
+  expectStationDossierProblem("hidden second statistic", 375, (state) => {
+    state.stats[1].visible = false;
+  }, "statistic 2 is not visible");
+  expectStationDossierProblem("two comparisons", 375, (state) => {
+    state.comparisons.pop();
+  }, "comparison inventory changed");
+  expectStationDossierProblem("hidden second comparison", 375, (state) => {
+    state.comparisons[1].visible = false;
+  }, "comparison 2 is not visible");
+  for (const [viewportWidth, wrongColumns] of [[375, 2], [768, 1], [1024, 2], [1440, 2]]) {
+    expectStationDossierProblem(`wrong ${viewportWidth}px columns`, viewportWidth, (state) => {
+      state.columns = wrongColumns;
+    }, `${viewportWidth}px column count`);
+  }
+  expectStationDossierProblem("hidden standard note", 375, (state) => {
+    state.standardNote.visible = false;
+  }, "standard note is not visible");
+  expectStationDossierProblem("hidden conversion caveat", 375, (state) => {
+    state.conversionNote.visible = false;
+  }, "conversion caveat is not visible");
+  expectStationDossierProblem("horizontal overflow", 375, (state) => {
+    state.horizontalOverflow = 2;
+  }, "causes horizontal overflow");
+  expectStationDossierProblem("selection change not exercised", 375, (state) => {
+    state.afterChange.performed = false;
+  }, "change was not exercised");
+  expectStationDossierProblem("two reports after change", 375, (state) => {
+    state.afterChange.visibleReportCount = 2;
+  }, "leave exactly one visible report");
+  expectStationDossierProblem("mismatched report after change", 375, (state) => {
+    state.afterChange.selectedMatchesVisible = false;
+  }, "shows a different report");
+  expectStationDossierProblem("wrong displayed station after change", 375, (state) => {
+    state.afterChange.identityText = "錯站";
+  }, "changed displayed identity disagrees");
+  expectStationDossierProblem("hidden displayed station after change", 375, (state) => {
+    state.afterChange.identityName.visible = false;
+  }, "changed displayed station name is not visible");
+  expectStationDossierProblem("hidden identity after change", 375, (state) => {
+    state.afterChange.identity.visible = false;
+  }, "changed station identity is not visible");
+  expectStationDossierProblem("hidden year after change", 375, (state) => {
+    state.afterChange.year.visible = false;
+  }, "changed station year is not visible");
+  expectStationDossierProblem("three statistics after change", 375, (state) => {
+    state.afterChange.stats.pop();
+  }, "changed station statistic inventory changed");
+  expectStationDossierProblem("hidden second statistic after change", 375, (state) => {
+    state.afterChange.stats[1].visible = false;
+  }, "changed station statistic 2 is not visible");
+  expectStationDossierProblem("two comparisons after change", 375, (state) => {
+    state.afterChange.comparisons.pop();
+  }, "changed station comparison inventory changed");
+  expectStationDossierProblem("hidden second comparison after change", 375, (state) => {
+    state.afterChange.comparisons[1].visible = false;
+  }, "changed station comparison 2 is not visible");
+  expectStationDossierProblem("live station omitted", 375, (state) => {
+    state.afterChange.liveIncludesStation = false;
+  }, "live update omits the station");
+  expectStationDossierProblem("live year omitted", 375, (state) => {
+    state.afterChange.liveIncludesYear = false;
+  }, "live update omits the year");
+  expectStationDossierProblem("live first statistic omitted", 375, (state) => {
+    state.afterChange.liveIncludesFirstStat = false;
+  }, "live update omits the first statistic");
+  expectStationDossierProblem("live third statistic omitted", 375, (state) => {
+    state.afterChange.liveIncludesThirdStat = false;
+  }, "live update omits the third statistic");
+  expectStationDossierProblem("selection restore not exercised", 375, (state) => {
+    state.restored.performed = false;
+  }, "selection restoration was not exercised");
+  expectStationDossierProblem("two reports after restore", 375, (state) => {
+    state.restored.visibleReportCount = 2;
+  }, "restoration does not leave exactly one visible report");
+  expectStationDossierProblem("mismatched report after restore", 375, (state) => {
+    state.restored.selectedMatchesVisible = false;
+  }, "restoration shows a different report");
+  expectStationDossierProblem("wrong displayed station after restore", 375, (state) => {
+    state.restored.identityText = "錯站";
+  }, "restored displayed identity disagrees");
+  expectStationDossierProblem("hidden displayed station after restore", 375, (state) => {
+    state.restored.identityName.visible = false;
+  }, "restored displayed station name is not visible");
+  expectStationDossierProblem("restored live station omitted", 375, (state) => {
+    state.restored.liveIncludesStation = false;
+  }, "restored live update omits the station");
+  if (missedStationDossierProblems.length) {
+    throw new Error(
+      `the station dossier predicate accepts ${missedStationDossierProblems.join(", ")}`,
+    );
+  }
+
+  const completeStationRegister = {
+    selectorVisible: false,
+    liveVisible: false,
+    noScriptVisible: true,
+    reportCount: 79,
+    visibleReportCount: 79,
+    stationNameCount: 79,
+    visibleStationNameCount: 79,
+    matchingStationNameCount: 79,
+    ordered: true,
+    standardNotes: 1,
+    conversionNotes: 1,
+  };
+  const missedStationRegisterProblems = [];
+  const expectStationRegisterProblem = (name, mode, mutate, expected) => {
+    const state = structuredClone(completeStationRegister);
+    if (mode === "print") state.noScriptVisible = false;
+    mutate(state);
+    const problems = stationRegisterProblems(state, mode);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedStationRegisterProblems.push(name);
+    }
+  };
+  if (stationRegisterProblems(completeStationRegister, "no-JavaScript").length) {
+    throw new Error("station no-JavaScript register predicate rejected the control");
+  }
+  const completePrintRegister = { ...completeStationRegister, noScriptVisible: false };
+  if (stationRegisterProblems(completePrintRegister, "print").length) {
+    throw new Error("station print register predicate rejected the control");
+  }
+  expectStationRegisterProblem("visible no-JavaScript controls", "no-JavaScript", (state) => {
+    state.selectorVisible = true;
+  }, "controls remain visible");
+  expectStationRegisterProblem("missing no-JavaScript notice", "no-JavaScript", (state) => {
+    state.noScriptVisible = false;
+  }, "notice is not visible");
+  expectStationRegisterProblem("incomplete no-JavaScript reports", "no-JavaScript", (state) => {
+    state.visibleReportCount = 78;
+  }, "complete report register is unavailable");
+  expectStationRegisterProblem("hidden no-JavaScript station name", "no-JavaScript", (state) => {
+    state.visibleStationNameCount = 78;
+  }, "visible station-name register is unavailable");
+  expectStationRegisterProblem("missing no-JavaScript station name", "no-JavaScript", (state) => {
+    state.stationNameCount = 78;
+  }, "station-name inventory changed");
+  expectStationRegisterProblem("wrong no-JavaScript station name", "no-JavaScript", (state) => {
+    state.matchingStationNameCount = 78;
+  }, "displayed station identities disagree");
+  expectStationRegisterProblem("reordered no-JavaScript reports", "no-JavaScript", (state) => {
+    state.ordered = false;
+  }, "report order changed");
+  expectStationRegisterProblem("missing no-JavaScript note", "no-JavaScript", (state) => {
+    state.standardNotes = 0;
+  }, "interpretation notes changed");
+  expectStationRegisterProblem("visible print selector", "print", (state) => {
+    state.selectorVisible = true;
+  }, "controls remain visible");
+  expectStationRegisterProblem("visible print live region", "print", (state) => {
+    state.liveVisible = true;
+  }, "controls remain visible");
+  expectStationRegisterProblem("visible print no-JavaScript notice", "print", (state) => {
+    state.noScriptVisible = true;
+  }, "controls remain visible");
+  expectStationRegisterProblem("missing print reports", "print", (state) => {
+    state.reportCount = 0;
+    state.visibleReportCount = 0;
+  }, "complete report register is unavailable");
+  expectStationRegisterProblem("hidden print station name", "print", (state) => {
+    state.visibleStationNameCount = 78;
+  }, "visible station-name register is unavailable");
+  expectStationRegisterProblem("missing print station name", "print", (state) => {
+    state.stationNameCount = 78;
+  }, "station-name inventory changed");
+  expectStationRegisterProblem("wrong print station name", "print", (state) => {
+    state.matchingStationNameCount = 78;
+  }, "displayed station identities disagree");
+  expectStationRegisterProblem("reordered print reports", "print", (state) => {
+    state.ordered = false;
+  }, "report order changed");
+  expectStationRegisterProblem("missing print note", "print", (state) => {
+    state.conversionNotes = 0;
+  }, "interpretation notes changed");
+  if (missedStationRegisterProblems.length) {
+    throw new Error(
+      `the station register predicate accepts ${missedStationRegisterProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality station dossier self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -4003,6 +4449,201 @@ async function main() {
       mapVisible: rendered(map),
       primaryVisible: rendered(primary),
       sourceOrdered: follows(thesis, map) && follows(map, primary),
+    };
+  })()`);
+
+  const stationDossierSnapshot = async ({ changeStation }) => evaluate(`(async () => {
+    const rendered = (element) => {
+      if (!element) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse" || Number(style.opacity) === 0
+        ) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const inspect = (element) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        visible: rendered(element), width: rect.width, height: rect.height,
+        top: rect.top, left: rect.left,
+      };
+    };
+    const select = document.querySelector("#station-select");
+    const reports = [...document.querySelectorAll("[data-station-report]")];
+    const text = (element) => element?.textContent?.trim() ?? "";
+    const visibleReports = () => reports.filter(rendered);
+    const shown = visibleReports()[0] ?? null;
+    const stats = shown ? [...shown.querySelectorAll("[data-station-stat]")] : [];
+    const comparisons = shown
+      ? [...shown.querySelectorAll("[data-station-comparison]")] : [];
+    const statLefts = [...new Set(stats.map((item) =>
+      Math.round(item.getBoundingClientRect().left * 10) / 10))];
+    const result = {
+      viewportWidth: innerWidth,
+      picker: inspect(document.querySelector("[data-station-picker]")),
+      select: inspect(select),
+      optionCount: select?.options.length ?? 0,
+      reportCount: reports.length,
+      visibleReportCount: visibleReports().length,
+      selectedValue: select?.value ?? null,
+      visibleStation: shown?.getAttribute("data-station") ?? null,
+      identityText: text(shown?.querySelector("[data-station-name]")),
+      identityName: inspect(shown?.querySelector("[data-station-name]")),
+      identityVisible: rendered(shown?.querySelector("[data-station-identity]")),
+      yearVisible: rendered(shown?.querySelector("[data-station-year]")),
+      stats: stats.map(inspect),
+      comparisons: comparisons.map(inspect),
+      columns: statLefts.length,
+      standardNote: inspect(document.querySelector("[data-station-standard-note]")),
+      conversionNote: inspect(document.querySelector("[data-station-conversion-note]")),
+      horizontalOverflow: document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      reportStyle: shown ? {
+        background: getComputedStyle(shown).backgroundColor,
+        borderRadius: getComputedStyle(shown).borderRadius,
+      } : null,
+      afterChange: {
+        performed: false,
+        selectedValue: null,
+        visibleStation: null,
+        identityText: null,
+        identityName: null,
+        visibleReportCount: null,
+        selectedMatchesVisible: false,
+        identity: null,
+        year: null,
+        stats: [],
+        comparisons: [],
+        liveIncludesStation: false,
+        liveIncludesYear: false,
+        liveIncludesFirstStat: false,
+        liveIncludesThirdStat: false,
+      },
+      restored: {
+        performed: false,
+        selectedValue: null,
+        visibleStation: null,
+        identityText: null,
+        identityName: null,
+        visibleReportCount: null,
+        selectedMatchesVisible: false,
+        liveIncludesStation: false,
+        liveIncludesYear: false,
+        liveIncludesFirstStat: false,
+        liveIncludesThirdStat: false,
+      },
+    };
+    if (${JSON.stringify(changeStation)} && select && select.options.length > 1) {
+      const original = select.value;
+      const replacement = [...select.options].reverse().find((option) => option.value !== original);
+      if (replacement) {
+        select.value = replacement.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const changedReports = visibleReports();
+        const changed = changedReports[0] ?? null;
+        const changedStats = changed
+          ? [...changed.querySelectorAll("[data-station-stat]")] : [];
+        const changedComparisons = changed
+          ? [...changed.querySelectorAll("[data-station-comparison]")] : [];
+        const live = text(document.querySelector("#station-say"));
+        const year = text(changed?.querySelector("[data-station-year]"));
+        const firstStat = text(changedStats[0]?.querySelector(".stat-value"));
+        const thirdStat = text(changedStats[2]?.querySelector(".stat-value"));
+        result.afterChange = {
+          performed: true,
+          selectedValue: select.value,
+          visibleStation: changed?.getAttribute("data-station") ?? null,
+          identityText: text(changed?.querySelector("[data-station-name]")),
+          identityName: inspect(changed?.querySelector("[data-station-name]")),
+          visibleReportCount: changedReports.length,
+          selectedMatchesVisible: select.value === changed?.getAttribute("data-station"),
+          identity: inspect(changed?.querySelector("[data-station-identity]")),
+          year: inspect(changed?.querySelector("[data-station-year]")),
+          stats: changedStats.map(inspect),
+          comparisons: changedComparisons.map(inspect),
+          liveIncludesStation: Boolean(replacement.value && live.includes(replacement.value)),
+          liveIncludesYear: Boolean(year && live.includes(year)),
+          liveIncludesFirstStat: Boolean(firstStat && live.includes(firstStat)),
+          liveIncludesThirdStat: Boolean(thirdStat && live.includes(thirdStat)),
+        };
+        select.value = original;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const restoredReports = visibleReports();
+        const restored = restoredReports[0] ?? null;
+        const restoredStats = restored
+          ? [...restored.querySelectorAll("[data-station-stat]")] : [];
+        const restoredLive = text(document.querySelector("#station-say"));
+        const restoredYear = text(restored?.querySelector("[data-station-year]"));
+        const restoredFirstStat = text(restoredStats[0]?.querySelector(".stat-value"));
+        const restoredThirdStat = text(restoredStats[2]?.querySelector(".stat-value"));
+        result.restored = {
+          performed: true,
+          selectedValue: select.value,
+          visibleStation: restored?.getAttribute("data-station") ?? null,
+          identityText: text(restored?.querySelector("[data-station-name]")),
+          identityName: inspect(restored?.querySelector("[data-station-name]")),
+          visibleReportCount: restoredReports.length,
+          selectedMatchesVisible: select.value === original &&
+            original === restored?.getAttribute("data-station"),
+          liveIncludesStation: Boolean(original && restoredLive.includes(original)),
+          liveIncludesYear: Boolean(restoredYear && restoredLive.includes(restoredYear)),
+          liveIncludesFirstStat: Boolean(
+            restoredFirstStat && restoredLive.includes(restoredFirstStat)
+          ),
+          liveIncludesThirdStat: Boolean(
+            restoredThirdStat && restoredLive.includes(restoredThirdStat)
+          ),
+        };
+      }
+    }
+    return result;
+  })()`);
+
+  const stationRegisterSnapshot = async () => evaluate(`(() => {
+    const rendered = (element) => {
+      if (!element) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse" || Number(style.opacity) === 0
+        ) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const reports = [...document.querySelectorAll("[data-station-report]")];
+    const optionOrder = [...document.querySelectorAll("#station-select option")]
+      .map((option) => option.value);
+    const reportOrder = reports.map((report) => report.getAttribute("data-station"));
+    const stationNames = reports.flatMap((report) =>
+      [...report.querySelectorAll("[data-station-name]")]);
+    const matchingStationNameCount = reports.filter((report) => {
+      const names = [...report.querySelectorAll("[data-station-name]")];
+      return names.length === 1 &&
+        names[0].textContent.trim() === report.getAttribute("data-station");
+    }).length;
+    return {
+      selectorVisible: rendered(document.querySelector("[data-station-controls]")),
+      liveVisible: rendered(document.querySelector("#station-say")),
+      noScriptVisible: rendered(document.querySelector(".nojs")),
+      reportCount: reports.length,
+      visibleReportCount: reports.filter(rendered).length,
+      stationNameCount: stationNames.length,
+      visibleStationNameCount: stationNames.filter(rendered).length,
+      matchingStationNameCount,
+      ordered: optionOrder.length > 0 && optionOrder.join("\\n") === reportOrder.join("\\n"),
+      standardNotes: [...document.querySelectorAll("[data-station-standard-note]")]
+        .filter(rendered).length,
+      conversionNotes: [...document.querySelectorAll("[data-station-conversion-note]")]
+        .filter(rendered).length,
     };
   })()`);
 
@@ -5879,6 +6520,67 @@ async function main() {
     }
   }
   await evaluate('localStorage.setItem("twair-theme", "dark")');
+  console.log("site-quality stage: station dossier");
+  await send("Emulation.setEmulatedMedia", { media: "" });
+  for (const [width, height] of [
+    [375, 812],
+    [768, 1024],
+    [1024, 900],
+    [1440, 900],
+  ]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    for (const theme of ["light", "dark"]) {
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      await send("Emulation.setEmulatedMedia", {
+        media: "",
+        features: [
+          { name: "prefers-color-scheme", value: theme === "light" ? "dark" : "light" },
+        ],
+      });
+      await send("Page.navigate", { url: `${origin}/stations/` });
+      if (!(await settled(evaluate, 8000, `/stations/ @${width}x${height} ${theme}`))) {
+        failures.push(`/stations/ @${width}x${height} ${theme}: dossier never finished styling`);
+        continue;
+      }
+      const state = await stationDossierSnapshot({ changeStation: true });
+      for (const problem of stationDossierProblems(state)) {
+        failures.push(`/stations/ @${width}x${height} ${theme}: ${problem}`);
+      }
+      if (
+        state?.reportStyle?.background !== "rgba(0, 0, 0, 0)" ||
+        state?.reportStyle?.borderRadius !== "0px"
+      ) {
+        failures.push(`/stations/ @${width}x${height} ${theme}: dossier remains a raised card`);
+      }
+    }
+  }
+  await evaluate('localStorage.setItem("twair-theme", "light")');
+  for (const [width, height] of [[375, 812], [1440, 900]]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    if (
+      !(await navigateWithoutPageScripts(send, waitForEvent, `${origin}/stations/`, () =>
+        settled(evaluate, 8000, `/stations/ @${width}x${height} no-JavaScript dossier`),
+      ))
+    ) {
+      failures.push(`/stations/ @${width}x${height} no-JavaScript: dossier never styled`);
+      continue;
+    }
+    const state = await stationRegisterSnapshot();
+    for (const problem of stationRegisterProblems(state, "no-JavaScript")) {
+      failures.push(`/stations/ @${width}x${height} no-JavaScript: ${problem}`);
+    }
+  }
+  await evaluate('localStorage.setItem("twair-theme", "dark")');
   console.log("site-quality stage: print contract");
   await send("Emulation.setEmulatedMedia", { media: "print" });
   await send("Page.navigate", { url: `${origin}/` });
@@ -5904,6 +6606,15 @@ async function main() {
     const state = await trendPrintSnapshot();
     for (const problem of trendPrintProblems(state)) {
       failures.push(`/trend/ print: ${problem}`);
+    }
+  }
+  await send("Page.navigate", { url: `${origin}/stations/` });
+  if (!(await settled(evaluate, 8000, "/stations/ print dossier"))) {
+    failures.push("station print page never finished styling");
+  } else {
+    const state = await stationRegisterSnapshot();
+    for (const problem of stationRegisterProblems(state, "print")) {
+      failures.push(`station print: ${problem}`);
     }
   }
 
