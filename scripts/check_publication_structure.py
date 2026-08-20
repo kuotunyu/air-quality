@@ -789,6 +789,78 @@ def analytical_figure_failures_for(
     return analytical_figure_failures_for_text(page.read_text(encoding="utf-8"), expected)
 
 
+def sources_atlas_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    visible = [element for element in parser.elements if element.visible]
+
+    intros = [
+        element
+        for element in visible
+        if element.tag == "header" and "chapter-intro" in element.classes
+    ]
+    if len(intros) != 1:
+        failures.append(f"sources chapter intro inventory changed: {len(intros)}")
+        return failures
+    intro = intros[0]
+
+    boundaries = [
+        element for element in visible if "data-sources-method-boundary" in element.attributes
+    ]
+    if len(boundaries) != 1:
+        failures.append(f"sources method-boundary inventory changed: {len(boundaries)}")
+        return failures
+    boundary = boundaries[0]
+    if not boundary.is_inside(intro):
+        failures.append("sources method boundary left the chapter intro")
+
+    ledes = [
+        element for element in visible if "lede" in element.classes and element.is_inside(intro)
+    ]
+    if len(ledes) != 1:
+        failures.append(f"sources lede inventory changed: {len(ledes)}")
+        return failures
+    lede = ledes[0]
+
+    pickers = [element for element in visible if "data-sources-picker" in element.attributes]
+    if len(pickers) != 1:
+        failures.append(f"sources picker inventory changed: {len(pickers)}")
+        return failures
+    picker = pickers[0]
+    selects = [
+        element
+        for element in visible
+        if element.tag == "select"
+        and element.attributes.get("id") == "cbpf-station"
+        and element.is_inside(picker)
+    ]
+    if not selects:
+        failures.append("sources picker inventory changed: missing visible select#cbpf-station")
+
+    primary_evidence = [
+        element for element in visible if "data-primary-evidence" in element.attributes
+    ]
+    if len(primary_evidence) != 1:
+        failures.append(f"sources primary evidence inventory changed: {len(primary_evidence)}")
+        return failures
+    primary = primary_evidence[0]
+    primary_text = primary.rendered_text()
+    if "圖 4.1" not in primary_text or "高濃度空氣在什麼風向與風速條件下出現？" not in primary_text:
+        failures.append("sources primary evidence identity changed")
+
+    if (
+        lede.end_order is None
+        or lede.end_order >= boundary.start_order
+        or boundary.start_order >= picker.start_order
+        or picker.start_order >= primary.start_order
+    ):
+        failures.append("sources opening source order changed")
+    return failures
+
+
 def heading_outline_failures_for_text(html: str) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
@@ -1215,6 +1287,94 @@ def _run_preflight() -> None:
         if not any(expected_failure in failure for failure in mutation_failures):
             raise RuntimeError(
                 f"trend reading-map preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
+            )
+
+    valid_sources_atlas = """
+<section id="sources" class="page">
+<header class="chapter-intro"><h1>污染來向與風速條件</h1>
+<div class="chapter-thesis">既有 thesis</div>
+<p class="lede">既有 lede</p>
+<aside data-sources-method-boundary><strong>先讀方法界線</strong>
+<p>CBPF 描述條件機率，不識別污染來源；尖峰風速不等於來源距離。</p></aside>
+</header>
+<div class="picker-row" data-sources-picker><select id="cbpf-station"><option selected>甲站</option></select></div>
+<section class="evidence-figure" data-primary-evidence><figure>
+<p class="figure-number">圖 4.1</p><h2>高濃度空氣在什麼風向與風速條件下出現？</h2>
+</figure></section>
+</section>
+"""
+    valid_sources_failures = sources_atlas_failures_for_text(valid_sources_atlas)
+    if valid_sources_failures:
+        raise RuntimeError(
+            f"sources atlas preflight rejected the valid control: {valid_sources_failures}"
+        )
+
+    sources_mutations = {
+        "missing boundary": "sources method-boundary inventory changed",
+        "duplicate boundary": "sources method-boundary inventory changed",
+        "hidden boundary": "sources method-boundary inventory changed",
+        "aria-hidden boundary": "sources method-boundary inventory changed",
+        "boundary outside intro": "sources method boundary left the chapter intro",
+        "picker before boundary": "sources opening source order changed",
+        "figure before boundary": "sources opening source order changed",
+        "figure before picker": "sources opening source order changed",
+        "missing picker marker": "sources picker inventory changed",
+        "non-primary Figure 4.1": "sources primary evidence inventory changed",
+    }
+    boundary = (
+        "<aside data-sources-method-boundary><strong>先讀方法界線</strong>"
+        "\n<p>CBPF 描述條件機率，不識別污染來源；尖峰風速不等於來源距離。</p></aside>"
+    )
+    picker = (
+        '<div class="picker-row" data-sources-picker><select id="cbpf-station">'
+        "<option selected>甲站</option></select></div>"
+    )
+    primary = (
+        '<section class="evidence-figure" data-primary-evidence><figure>\n'
+        '<p class="figure-number">圖 4.1</p><h2>高濃度空氣在什麼風向與風速條件下出現？</h2>\n'
+        "</figure></section>"
+    )
+    sources_mutated_html = {
+        "missing boundary": valid_sources_atlas.replace(boundary, "", 1),
+        "duplicate boundary": valid_sources_atlas.replace(boundary, boundary + boundary, 1),
+        "hidden boundary": valid_sources_atlas.replace(
+            "<aside data-sources-method-boundary>",
+            "<aside data-sources-method-boundary hidden>",
+            1,
+        ),
+        "aria-hidden boundary": valid_sources_atlas.replace(
+            "<aside data-sources-method-boundary>",
+            '<aside data-sources-method-boundary aria-hidden="true">',
+            1,
+        ),
+        "boundary outside intro": valid_sources_atlas.replace(
+            boundary + "\n</header>", "</header>\n" + boundary, 1
+        ),
+        "picker before boundary": valid_sources_atlas.replace(
+            boundary + "\n</header>\n" + picker,
+            picker + "\n" + boundary + "\n</header>",
+            1,
+        ),
+        "figure before boundary": valid_sources_atlas.replace(
+            boundary + "\n</header>\n" + picker + "\n" + primary,
+            primary + "\n" + boundary + "\n</header>\n" + picker,
+            1,
+        ),
+        "figure before picker": valid_sources_atlas.replace(
+            picker + "\n" + primary, primary + "\n" + picker, 1
+        ),
+        "missing picker marker": valid_sources_atlas.replace(" data-sources-picker", "", 1),
+        "non-primary Figure 4.1": valid_sources_atlas.replace(" data-primary-evidence", "", 1),
+    }
+    for name, expected_failure in sources_mutations.items():
+        mutation_html = sources_mutated_html[name]
+        if mutation_html == valid_sources_atlas:
+            raise RuntimeError(f"sources atlas preflight did not apply {name}")
+        mutation_failures = sources_atlas_failures_for_text(mutation_html)
+        if not any(expected_failure in failure for failure in mutation_failures):
+            raise RuntimeError(
+                f"sources atlas preflight did not reject {name} for the expected reason: "
                 f"{mutation_failures}"
             )
 
@@ -1787,6 +1947,8 @@ def main(argv: list[str]) -> int:
             )
             if slug == "trend":
                 failures.extend(trend_reading_map_failures_for_text(html))
+            elif slug == "sources":
+                failures.extend(sources_atlas_failures_for_text(html))
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible trend reading map")
 

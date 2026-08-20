@@ -128,6 +128,10 @@ const legend = BREAKS.map((b, i) => ({
 <section id="sources" class="page">
   <ChapterIntro slug="sources">
   <p class="lede">{data.explains}</p>
+  <aside data-sources-method-boundary aria-labelledby="sources-method-boundary-title">
+    <strong id="sources-method-boundary-title">先讀方法界線</strong>
+    <p>CBPF 描述條件機率，不識別污染來源；尖峰風速不等於來源距離。</p>
+  </aside>
   </ChapterIntro>
 
   {/*
@@ -185,7 +189,7 @@ const legend = BREAKS.map((b, i) => ({
       nothing — so this is the only signal that the figure moved. */}
   <p id="cbpf-say" class="visually-hidden" role="status" aria-live="polite"></p>
 
-  <div class="picker-row">
+  <div class="picker-row" data-sources-picker>
     <label>
       測站
       <select id="cbpf-station">
