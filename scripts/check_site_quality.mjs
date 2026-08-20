@@ -676,7 +676,7 @@ function sourcesClaimBoundaryProblems(text) {
   );
 }
 
-function sourcesAtlasProblems(state, width, height) {
+function sourcesAtlasProblems(state, width, height, { requireRestoration = false } = {}) {
   const problems = [];
   const visible = (part) => part?.visible && part?.rect?.width > 0 && part?.rect?.height > 0;
   const exact = (actual, expected, label) => {
@@ -734,9 +734,9 @@ function sourcesAtlasProblems(state, width, height) {
       if (actual?.title !== cell.title) problems.push(`Sources CBPF cell title changed at ${cell.key}`);
     }
   }
-  if (!state?.restoration) {
+  if (requireRestoration && !state?.restoration) {
     problems.push("Sources station restoration is missing");
-  } else if (JSON.stringify(state.restoration.before) !== JSON.stringify(state.restoration.after)) {
+  } else if (state?.restoration && JSON.stringify(state.restoration.before) !== JSON.stringify(state.restoration.after)) {
     problems.push("Sources station restoration changed selected station, focus, URL, scroll, or snapshot");
   }
   return problems;
@@ -2996,15 +2996,20 @@ async function lifecycleSelfTest() {
       },
     },
   };
-  if (sourcesAtlasProblems(completeSourcesAtlas, 375, 812).length) {
+  if (sourcesAtlasProblems(completeSourcesAtlas, 375, 812, { requireRestoration: true }).length) {
     throw new Error("the Sources conditional-atlas predicate rejects complete state");
   }
+  const ordinarySourcesAtlas = JSON.parse(JSON.stringify(completeSourcesAtlas));
+  delete ordinarySourcesAtlas.restoration;
+  if (sourcesAtlasProblems(ordinarySourcesAtlas, 375, 812, { requireRestoration: false }).length) {
+    throw new Error("the Sources conditional-atlas predicate requires restoration for an ordinary state");
+  }
   const missedSourcesAtlasProblems = [];
-  const expectSourcesAtlasProblem = (name, mutate, applied, expected) => {
+  const expectSourcesAtlasProblem = (name, mutate, applied, expected, options = {}) => {
     const state = JSON.parse(JSON.stringify(completeSourcesAtlas));
     mutate(state);
     if (!applied(state)) throw new Error(`Sources mutation ${name} did not apply`);
-    const problems = sourcesAtlasProblems(state, 375, 812);
+    const problems = sourcesAtlasProblems(state, 375, 812, options);
     if (!problems.some((problem) => problem.includes(expected))) missedSourcesAtlasProblems.push(name);
   };
   expectSourcesAtlasProblem("missing boundary", (state) => { state.boundary.count = 0; }, (state) => state.boundary.count === 0, "boundary inventory");
@@ -3029,9 +3034,9 @@ async function lifecycleSelfTest() {
   for (const key of ["selectedStation", "focus", "url", "scroll", "cells"]) {
     expectSourcesAtlasProblem(`restoration ${key} drift`, (state) => {
       state.restoration.after[key] = key === "scroll" ? [1, 0] : key === "cells" ? [] : "changed";
-    }, (state) => JSON.stringify(state.restoration.before[key]) !== JSON.stringify(state.restoration.after[key]), "station restoration changed");
+    }, (state) => JSON.stringify(state.restoration.before[key]) !== JSON.stringify(state.restoration.after[key]), "station restoration changed", { requireRestoration: true });
   }
-  expectSourcesAtlasProblem("missing restoration", (state) => { delete state.restoration; }, (state) => !("restoration" in state), "station restoration is missing");
+  expectSourcesAtlasProblem("missing restoration", (state) => { delete state.restoration; }, (state) => !("restoration" in state), "station restoration is missing", { requireRestoration: true });
   if (missedSourcesAtlasProblems.length) {
     throw new Error(`the Sources conditional-atlas predicate accepts ${missedSourcesAtlasProblems.join(", ")}`);
   }
@@ -7626,7 +7631,7 @@ async function main() {
     failures.push("/sources/ conditional atlas station transition never finished styling");
   } else {
     const transitioned = await evaluate(SOURCES_ATLAS_TRANSITION_PROBE);
-    for (const problem of sourcesAtlasProblems(transitioned, 1024, 900)) {
+    for (const problem of sourcesAtlasProblems(transitioned, 1024, 900, { requireRestoration: true })) {
       failures.push(`/sources/ station transition: ${problem}`);
     }
   }
