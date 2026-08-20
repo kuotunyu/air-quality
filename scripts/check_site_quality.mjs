@@ -236,6 +236,7 @@ const opt = (name, fallback) => {
 const DIST = opt("dist", join(process.cwd(), "web", "dist"));
 const PORT = Number(opt("port", "4399"));
 const SELF_TEST = args.includes("--self-test");
+const DETECTION_BROWSER_SELF_TEST = args.includes("--detection-browser-self-test");
 const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
 const CDP_TIMEOUT_MS =
   Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
@@ -700,23 +701,53 @@ const DETECTION_LIMIT_PAYLOAD = JSON.parse(
   readFileSync(join(process.cwd(), "web", "public", "data", "story", "detection-limit.json"), "utf8"),
 );
 
+const DETECTION_EVENT_CONTRACT = [
+  { event: "COVID-19 全國三級警戒", kind: "window" },
+  { event: "台中電廠 2、3 號機生煤許可爭議", kind: "window" },
+  { event: "2018 空氣污染防制法修正", kind: "trend_break" },
+];
+
 function detectionExpectedEventsFromPayload(payload) {
   if (!payload || !Array.isArray(payload.events)) {
     throw new Error("detection-limit payload has no events array");
   }
+  if (payload.events.length !== DETECTION_EVENT_CONTRACT.length) {
+    throw new Error(
+      `detection-limit event inventory is ${payload.events.length}, ` +
+        `expected ${DETECTION_EVENT_CONTRACT.length}`,
+    );
+  }
   const identities = new Set();
-  return payload.events.map((row, index) => {
+  for (const [index, row] of payload.events.entries()) {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       throw new Error(`detection-limit event ${index + 1} is not an object`);
     }
-    const has = (key) => Object.prototype.hasOwnProperty.call(row, key);
-    if (!has("event") || typeof row.event !== "string" || !row.event) {
+    if (
+      !Object.prototype.hasOwnProperty.call(row, "event") ||
+      typeof row.event !== "string" || !row.event
+    ) {
       throw new Error(`detection-limit event ${index + 1} has no exact identity`);
     }
     if (identities.has(row.event)) {
       throw new Error(`detection-limit event identity ${JSON.stringify(row.event)} is duplicated`);
     }
     identities.add(row.event);
+  }
+  return payload.events.map((row, index) => {
+    const contract = DETECTION_EVENT_CONTRACT[index];
+    if (row.event !== contract.event) {
+      throw new Error(
+        `detection-limit event ${index + 1} identity is ${JSON.stringify(row.event)}, ` +
+          `expected ${JSON.stringify(contract.event)}`,
+      );
+    }
+    if (row.kind !== contract.kind) {
+      throw new Error(
+        `detection-limit event ${index + 1} kind is ${JSON.stringify(row.kind)}, ` +
+          `expected ${JSON.stringify(contract.kind)}`,
+      );
+    }
+    const has = (key) => Object.prototype.hasOwnProperty.call(row, key);
     for (const key of ["n_credible", "n_expected_by_chance"]) {
       if (!has(key) || typeof row[key] !== "number" || !Number.isFinite(row[key])) {
         throw new Error(`detection-limit event ${index + 1} ${key} is not a finite number`);
@@ -724,6 +755,7 @@ function detectionExpectedEventsFromPayload(payload) {
     }
     return {
       event: row.event,
+      kind: row.kind,
       observed: row.n_credible,
       expected: row.n_expected_by_chance,
     };
@@ -850,7 +882,28 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     const step = state?.readingSteps?.[index];
     if (!step) continue;
     if (step.key !== key) problems.push(`${scope}reading step ${index + 1} key changed`);
-    if (step.text !== text) problems.push(`${scope}reading step ${index + 1} text changed`);
+    if (step.accessibleText !== text) {
+      problems.push(`${scope}reading step ${index + 1} text changed`);
+    }
+    const geometry = ["top", "right", "bottom", "left", "width", "height"];
+    if (
+      !geometry.every((edge) => Number.isFinite(step[edge])) ||
+      !Number.isInteger(step.sourceIndex)
+    ) {
+      problems.push(`${scope}reading step ${index + 1} geometry is invalid`);
+    }
+    if (step.cssOrder !== 0) {
+      problems.push(`${scope}reading step ${index + 1} uses CSS order`);
+    }
+    const next = state?.readingSteps?.[index + 1];
+    if (next) {
+      const followsVisually =
+        step.top < next.top - 1 ||
+        (Math.abs(step.top - next.top) <= 1 && step.left < next.left);
+      if (!(step.sourceIndex < next.sourceIndex && followsVisually)) {
+        problems.push(`${scope}reading step ${index + 1} visual order changed`);
+      }
+    }
   }
 
   if (!Array.isArray(expectedEvents) || !Array.isArray(state?.eventRows)) {
@@ -863,7 +916,7 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     if (new Set(identities).size !== identities.length) {
       problems.push(`${scope}event identity is duplicated`);
     }
-    const trendBreak = expectedEvents.at(-1)?.event;
+    const trendBreak = expectedEvents.find((event) => event.kind === "trend_break")?.event;
     if (trendBreak && !identities.includes(trendBreak)) {
       problems.push(`${scope}trend-break event row is missing`);
     }
@@ -871,7 +924,10 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
       const row = state.eventRows[index];
       if (!row) continue;
       const keys = Object.keys(row).sort();
-      if (JSON.stringify(keys) !== JSON.stringify(["event", "expected", "observed", "text"])) {
+      if (
+        JSON.stringify(keys) !==
+        JSON.stringify(["accessibleText", "event", "expected", "observed", "visibleText"])
+      ) {
         problems.push(`${scope}event row ${index + 1} keys changed`);
       }
       if (typeof row.observed !== "number" || !Number.isFinite(row.observed)) {
@@ -890,9 +946,10 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
         problems.push(`${scope}event row ${index + 1} expected value changed`);
       }
       const pairsQuantities =
-        typeof row.text === "string" && row.text.includes(expected.event) &&
-        row.text.includes(`實際通過 ${expected.observed} 站`) &&
-        row.text.includes(`純靠機率的預期為 ${expected.expected} 站`);
+        typeof row.accessibleText === "string" &&
+        row.accessibleText.includes(expected.event) &&
+        row.accessibleText.includes(`實際通過 ${expected.observed} 站`) &&
+        row.accessibleText.includes(`純靠機率的預期為 ${expected.expected} 站`);
       if (!pairsQuantities) {
         problems.push(`${scope}event row ${index + 1} accessible text changed`);
       }
@@ -1199,16 +1256,29 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
       laterEvidence: inspect(laterEvidence),
     },
     readingSteps: [...(key?.querySelectorAll("[data-detection-reading-step]") ?? [])]
-      .map((step) => ({
-        key: step.getAttribute("data-detection-reading-step") ?? "",
-        text: compact(step.innerText),
-      })),
+      .map((step) => {
+        const geometry = inspect(step);
+        return {
+          key: step.getAttribute("data-detection-reading-step") ?? "",
+          visibleText: compact(step.innerText),
+          accessibleText: null,
+          top: geometry?.top ?? null,
+          right: geometry?.right ?? null,
+          bottom: geometry?.bottom ?? null,
+          left: geometry?.left ?? null,
+          width: geometry?.width ?? null,
+          height: geometry?.height ?? null,
+          sourceIndex: geometry?.sourceIndex ?? null,
+          cssOrder: geometry?.cssOrder ?? null,
+        };
+      }),
     eventRows: [...(comparison?.querySelectorAll("[data-detection-event]") ?? [])]
       .map((row) => ({
         event: row.getAttribute("data-detection-event") ?? "",
         observed: parseNumberAttribute(row, "data-detection-observed"),
         expected: parseNumberAttribute(row, "data-detection-expected"),
-        text: compact(row.innerText),
+        visibleText: compact(row.innerText),
+        accessibleText: null,
       })),
     boundaryText: compact(boundary?.innerText),
     pageText: compact(document.querySelector("main")?.innerText),
@@ -3098,20 +3168,52 @@ async function lifecycleSelfTest() {
     readingSteps: [
       {
         key: "placebo",
-        text: "先看灰線：沒有事件標記時，同一程序仍會算出的差額。",
+        visibleText: "先看灰線：沒有事件標記時，同一程序仍會算出的差額。",
+        accessibleText: "先看灰線：沒有事件標記時，同一程序仍會算出的差額。",
+        top: 145,
+        right: 355,
+        bottom: 175,
+        left: 40,
+        width: 315,
+        height: 30,
+        sourceIndex: 21,
+        cssOrder: 0,
       },
       {
         key: "event",
-        text: "再看橘點：事件窗口各測站的觀測－預測差額。",
+        visibleText: "再看橘點：事件窗口各測站的觀測－預測差額。",
+        accessibleText: "再看橘點：事件窗口各測站的觀測－預測差額。",
+        top: 180,
+        right: 355,
+        bottom: 210,
+        left: 40,
+        width: 315,
+        height: 30,
+        sourceIndex: 22,
+        cssOrder: 0,
       },
       {
         key: "threshold",
-        text: "最後看門檻：通過數是否高於純靠機率的預期。",
+        visibleText: "最後看門檻：通過數是否高於純靠機率的預期。",
+        accessibleText: "最後看門檻：通過數是否高於純靠機率的預期。",
+        top: 215,
+        right: 355,
+        bottom: 245,
+        left: 40,
+        width: 315,
+        height: 30,
+        sourceIndex: 23,
+        cssOrder: 0,
       },
     ],
     eventRows: EXPECTED_DETECTION_EVENTS.map((event) => ({
-      ...event,
-      text:
+      event: event.event,
+      observed: event.observed,
+      expected: event.expected,
+      visibleText:
+        `${event.event} 實際通過 ${event.observed} 站；` +
+        `純靠機率的預期為 ${event.expected} 站。`,
+      accessibleText:
         `${event.event} 實際通過 ${event.observed} 站；` +
         `純靠機率的預期為 ${event.expected} 站。`,
     })),
@@ -3124,36 +3226,61 @@ async function lifecycleSelfTest() {
     document: { clientWidth: 375, scrollWidth: 375 },
   };
   const invalidDetectionPayloads = [
-    ["boolean observed value", (payload) => {
+    ["boolean observed value", "n_credible is not a finite number", (payload) => {
       payload.events[0].n_credible = true;
     }],
-    ["numeric-string expected value", (payload) => {
+    ["numeric-string expected value", "n_expected_by_chance is not a finite number", (payload) => {
       payload.events[0].n_expected_by_chance = "3.3";
     }],
-    ["NaN observed value", (payload) => {
+    ["NaN observed value", "n_credible is not a finite number", (payload) => {
       payload.events[0].n_credible = Number.NaN;
     }],
-    ["missing observed key", (payload) => {
+    ["missing observed key", "n_credible is not a finite number", (payload) => {
       delete payload.events[0].n_credible;
     }],
-    ["duplicate event identity", (payload) => {
+    ["duplicate event identity", "is duplicated", (payload) => {
       payload.events[1].event = payload.events[0].event;
+    }],
+    ["missing event inventory", "event inventory is 2, expected 3", (payload) => {
+      payload.events.pop();
+    }],
+    ["extra event inventory", "event inventory is 4, expected 3", (payload) => {
+      payload.events.push({
+        ...structuredClone(payload.events[0]),
+        event: "額外事件",
+      });
+    }],
+    ["reordered event inventory", "event 1 identity", (payload) => {
+      [payload.events[0], payload.events[1]] = [payload.events[1], payload.events[0]];
+    }],
+    ["wrong event identity", "event 1 identity", (payload) => {
+      payload.events[0].event = "錯誤事件";
+    }],
+    ["wrong event kind", "event 3 kind", (payload) => {
+      payload.events[2].kind = "window";
     }],
   ];
   const acceptedInvalidDetectionPayloads = [];
-  for (const [name, mutate] of invalidDetectionPayloads) {
+  const misdiagnosedInvalidDetectionPayloads = [];
+  for (const [name, expectedError, mutate] of invalidDetectionPayloads) {
     const payload = structuredClone(DETECTION_LIMIT_PAYLOAD);
     mutate(payload);
     try {
       detectionExpectedEventsFromPayload(payload);
       acceptedInvalidDetectionPayloads.push(name);
-    } catch {
+    } catch (error) {
       // Expected: the public payload is the independent numerical authority.
+      if (!(error instanceof Error) || !error.message.includes(expectedError)) {
+        misdiagnosedInvalidDetectionPayloads.push(
+          `${name} -> ${expectedError} (received ${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
     }
   }
-  if (acceptedInvalidDetectionPayloads.length) {
+  if (acceptedInvalidDetectionPayloads.length || misdiagnosedInvalidDetectionPayloads.length) {
     throw new Error(
-      `the detection payload parser accepts ${acceptedInvalidDetectionPayloads.join(", ")}`,
+      `the detection payload parser accepts ${acceptedInvalidDetectionPayloads.join(", ")}; ` +
+        `misdiagnoses ${misdiagnosedInvalidDetectionPayloads.join(", ")}`,
     );
   }
   if (
@@ -3216,21 +3343,6 @@ async function lifecycleSelfTest() {
     ["zero-height region", "boundary has no rendered area", (state) => {
       state.regions.boundary.height = 0;
     }],
-    ["self horizontal overflow", "reading key clips its own content", (state) => {
-      state.regions.readingKey.selfOverflowX = 2;
-    }],
-    ["self vertical overflow", "comparison clips its own content", (state) => {
-      state.regions.comparison.selfOverflowY = 2;
-    }],
-    ["ancestor clipping", "boundary is clipped by an ancestor", (state) => {
-      state.regions.boundary.ancestorClipped = true;
-    }],
-    ["CSS clip", "reading key uses CSS clip", (state) => {
-      state.regions.readingKey.cssClip = true;
-    }],
-    ["CSS clip-path", "comparison uses CSS clip-path", (state) => {
-      state.regions.comparison.cssClipPath = true;
-    }],
     ["inert ancestor", "boundary is excluded from accessibility", (state) => {
       state.regions.boundary.inert = true;
       state.regions.boundary.accessible = false;
@@ -3250,8 +3362,8 @@ async function lifecycleSelfTest() {
       state.landmarks.key.top = 470;
     }],
     ["wrong step accessible text despite decorative copy", "reading step 1 text changed", (state) => {
-      state.pageText += state.readingSteps[0].text;
-      state.readingSteps[0].text = "先看裝飾圖示。";
+      state.pageText += state.readingSteps[0].visibleText;
+      state.readingSteps[0].accessibleText = "先看裝飾圖示。";
     }],
     ["missing event", "event row inventory is 2", (state) => {
       state.eventRows.splice(1, 1);
@@ -3264,7 +3376,8 @@ async function lifecycleSelfTest() {
         event: "額外事件",
         observed: 1,
         expected: 3.3,
-        text: "額外事件 實際通過 1 站；純靠機率的預期為 3.3 站。",
+        visibleText: "額外事件 實際通過 1 站；純靠機率的預期為 3.3 站。",
+        accessibleText: "額外事件 實際通過 1 站；純靠機率的預期為 3.3 站。",
       });
     }],
     ["reordered event", "event row 1 identity changed", (state) => {
@@ -3295,7 +3408,7 @@ async function lifecycleSelfTest() {
       state.eventRows[0].observed = Number.NaN;
     }],
     ["event accessible text omits expected quantity", "event row 1 accessible text changed", (state) => {
-      state.eventRows[0].text = `${state.eventRows[0].event} 實際通過 1 站。`;
+      state.eventRows[0].accessibleText = `${state.eventRows[0].event} 實際通過 1 站。`;
     }],
     ["trend-break event omitted because only two plots exist", "trend-break event row is missing", (state) => {
       state.eventRows.pop();
@@ -3338,10 +3451,6 @@ async function lifecycleSelfTest() {
       state.mode = "print";
       state.regions.boundary.display = "none";
     }],
-    ["clipped zoom region", "zoom comparison is clipped by an ancestor", (state) => {
-      state.mode = "zoom";
-      state.regions.comparison.ancestorClipped = true;
-    }],
     ["reordered zoom region", "zoom boundary no longer follows comparison", (state) => {
       state.mode = "zoom";
       state.landmarks.boundary.sourceIndex = 45;
@@ -3349,6 +3458,9 @@ async function lifecycleSelfTest() {
     }],
     ["visual order manufactured with CSS order", "reading key uses CSS order", (state) => {
       state.landmarks.key.cssOrder = 2;
+    }],
+    ["reading step visual order manufactured with CSS order", "reading step 1 uses CSS order", (state) => {
+      state.readingSteps[0].cssOrder = 2;
     }],
   ];
   const missedDetectionMutations = [];
@@ -4453,6 +4565,55 @@ async function main() {
     return problems;
   };
 
+  const accessibilityTextsForSelectors = async (selectors) => {
+    const documentResult = await send("DOM.getDocument", { depth: 0, pierce: true });
+    const documentNodeId = documentResult.result?.root?.nodeId;
+    if (!documentNodeId) return selectors.map(() => []);
+    const backendNodeGroups = [];
+    for (const selector of selectors) {
+      const queryResult = await send("DOM.querySelectorAll", {
+        nodeId: documentNodeId,
+        selector,
+      });
+      const backendNodeIds = [];
+      for (const nodeId of queryResult.result?.nodeIds ?? []) {
+        const described = await send("DOM.describeNode", { nodeId });
+        backendNodeIds.push(described.result?.node?.backendNodeId ?? null);
+      }
+      backendNodeGroups.push(backendNodeIds);
+    }
+    const tree = await send("Accessibility.getFullAXTree", {});
+    const nodes = tree.result?.nodes ?? [];
+    const byId = new Map(nodes.map((node) => [node.nodeId, node]));
+    const byBackendId = new Map(
+      nodes
+        .filter((node) => node.backendDOMNodeId)
+        .map((node) => [node.backendDOMNodeId, node]),
+    );
+    const compact = (value) => String(value ?? "").replace(/\s+/gu, " ").trim();
+    const accessibleText = (root) => {
+      if (!root) return null;
+      const directName = !root.ignored ? compact(root.name?.value) : "";
+      if (directName) return directName;
+      const staticText = [];
+      const visit = (node) => {
+        if (!node) return;
+        if (!node.ignored && node.role?.value === "StaticText" && node.name?.value) {
+          staticText.push(node.name.value);
+        }
+        for (const childId of node.childIds ?? []) visit(byId.get(childId));
+      };
+      visit(root);
+      return compact(staticText.join(""));
+    };
+    return backendNodeGroups.map((backendNodeIds) =>
+      backendNodeIds.map((backendNodeId) => {
+        if (!backendNodeId) return null;
+        return accessibleText(byBackendId.get(backendNodeId));
+      }),
+    );
+  };
+
   const accessibilityTextForSelector = async (selector) => {
     const documentResult = await send("DOM.getDocument", { depth: 0, pierce: true });
     const documentNodeId = documentResult.result?.root?.nodeId;
@@ -4480,8 +4641,154 @@ async function main() {
     return staticText.join("").trim();
   };
 
-  const detectionLimitationBriefSnapshot = async (mode) =>
-    evaluate(detectionLimitationBriefSnapshotExpression(mode));
+  const detectionLimitationBriefSnapshot = async (mode) => {
+    const state = await evaluate(detectionLimitationBriefSnapshotExpression(mode));
+    if (!state) return state;
+    const [readingStepTexts, eventRowTexts] = await accessibilityTextsForSelectors([
+      "[data-detection-reading-key] [data-detection-reading-step]",
+      "[data-detection-comparison] [data-detection-event]",
+    ]);
+    for (const [index, step] of state.readingSteps.entries()) {
+      step.accessibleText = readingStepTexts[index] ?? null;
+    }
+    for (const [index, row] of state.eventRows.entries()) {
+      row.accessibleText = eventRowTexts[index] ?? null;
+    }
+    return state;
+  };
+
+  const detectionBrowserMutationFailures = async (origin) => {
+    const failures = [];
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    const mutations = [
+      {
+        name: "self horizontal overflow",
+        expected: "reading key clips its own content",
+        script: `(() => {
+          const element = document.querySelector("[data-detection-reading-key]");
+          element.style.setProperty("width", "40px", "important");
+          element.style.setProperty("overflow-x", "hidden", "important");
+          element.style.setProperty("white-space", "nowrap", "important");
+        })()`,
+      },
+      {
+        name: "self vertical overflow",
+        expected: "comparison clips its own content",
+        script: `(() => {
+          const element = document.querySelector("[data-detection-comparison]");
+          element.style.setProperty("height", "10px", "important");
+          element.style.setProperty("overflow-y", "hidden", "important");
+        })()`,
+      },
+      {
+        name: "ancestor overflow clipping",
+        expected: "boundary is clipped by an ancestor",
+        script: `(() => {
+          const element = document.querySelector("[data-detection-inference-boundary]");
+          const wrapper = document.createElement("div");
+          wrapper.style.setProperty("height", "1px", "important");
+          wrapper.style.setProperty("overflow", "hidden", "important");
+          element.before(wrapper);
+          wrapper.append(element);
+        })()`,
+      },
+      {
+        name: "zoom ancestor overflow clipping",
+        mode: "zoom",
+        expected: "zoom comparison is clipped by an ancestor",
+        script: `(() => {
+          const root = document.documentElement;
+          const base = Number.parseFloat(getComputedStyle(root).fontSize);
+          root.style.setProperty("font-size", String(base * 2) + "px", "important");
+          const element = document.querySelector("[data-detection-comparison]");
+          const wrapper = document.createElement("div");
+          wrapper.style.setProperty("height", "1px", "important");
+          wrapper.style.setProperty("overflow", "hidden", "important");
+          element.before(wrapper);
+          wrapper.append(element);
+        })()`,
+      },
+      {
+        name: "CSS clip",
+        expected: "reading key uses CSS clip",
+        script: `(() => {
+          const element = document.querySelector("[data-detection-reading-key]");
+          element.style.setProperty("position", "absolute", "important");
+          element.style.setProperty("clip", "rect(0px, 1px, 1px, 0px)", "important");
+        })()`,
+      },
+      {
+        name: "CSS clip-path",
+        expected: "comparison uses CSS clip-path",
+        script: `document.querySelector("[data-detection-comparison]")
+          .style.setProperty("clip-path", "inset(50%)", "important")`,
+      },
+      {
+        name: "wrong reading-step ARIA label with unchanged visible copy",
+        expected: "reading step 1 text changed",
+        script: `document.querySelector('[data-detection-reading-step="placebo"]')
+          .setAttribute("aria-label", "先看裝飾圖示。")`,
+      },
+      {
+        name: "aria-hidden event copy with unchanged visible copy",
+        expected: "event row 1 accessible text changed",
+        script: `document.querySelectorAll("[data-detection-event]:first-child > *")
+          .forEach((element) => element.setAttribute("aria-hidden", "true"))`,
+      },
+      {
+        name: "reading-step CSS order",
+        expected: "reading step 1 uses CSS order",
+        script: `document.querySelector('[data-detection-reading-step="placebo"]')
+          .style.setProperty("order", "2", "important")`,
+      },
+    ];
+    const loadDetection = async (label) => {
+      await send("Page.navigate", { url: `${origin}/detection/` });
+      return settled(evaluate, 8000, `/detection/ ${label}`);
+    };
+    if (!(await loadDetection("browser mutation control"))) {
+      return ["browser mutation control never finished styling"];
+    }
+    const control = await detectionLimitationBriefSnapshot("normal");
+    const controlProblems = detectionLimitationBriefProblems(
+      control,
+      EXPECTED_DETECTION_EVENTS,
+      control?.viewport,
+    );
+    if (controlProblems.length) {
+      failures.push(`clean production snapshot rejected: ${controlProblems.join(", ")}`);
+    }
+    for (const mutation of mutations) {
+      if (!(await loadDetection(`browser mutation ${mutation.name}`))) {
+        failures.push(`${mutation.name} page never finished styling`);
+        continue;
+      }
+      await evaluate(mutation.script);
+      await settlePaint(evaluate);
+      const state = await detectionLimitationBriefSnapshot(mutation.mode ?? "normal");
+      const problems = detectionLimitationBriefProblems(
+        state,
+        EXPECTED_DETECTION_EVENTS,
+        state?.viewport,
+      );
+      if (!problems.some((problem) => problem.includes(mutation.expected))) {
+        failures.push(
+          `${mutation.name} did not reach ${JSON.stringify(mutation.expected)} ` +
+            `(received ${problems.join(", ") || "no problems"})`,
+        );
+      }
+    }
+    return failures;
+  };
 
   const chapterOpeningSnapshot = async (chartRoute) => evaluate(`(() => {
     const rendered = (element) => {
@@ -5872,6 +6179,19 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
+  console.log("site-quality stage: detection browser mutations");
+  const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
+  if (DETECTION_BROWSER_SELF_TEST) {
+    if (detectionMutationFailures.length) {
+      for (const problem of detectionMutationFailures) console.log(`  FAIL: ${problem}`);
+      return 1;
+    }
+    console.log("site quality detection browser mutation self-test passed");
+    return 0;
+  }
+  for (const problem of detectionMutationFailures) {
+    failures.push(`/detection/ browser mutation: ${problem}`);
+  }
   console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
     width: 1440,
