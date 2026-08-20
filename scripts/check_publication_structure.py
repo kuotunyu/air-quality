@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from urllib.parse import unquote, urlsplit
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "web" / "dist"
 REGISTRY = ROOT / "web" / "src" / "lib" / "chapters.ts"
+DETECTION_LIMIT = ROOT / "web" / "public" / "data" / "story" / "detection-limit.json"
 TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "typescript.js"
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
@@ -51,7 +53,7 @@ EXPECTED_ANALYTICAL_FIGURES = {
         ("3.2", "純地理分群會得到不同結論嗎？"),
     ),
     "sources": (("4.1", "高濃度空氣在什麼風向與風速條件下出現？"),),
-    "detection": (("5.1", "三個事件各自需要多大的效應才看得見？"),),
+    "detection": (("5.1", "事件估計值能否離開安慰劑散布？"),),
     "forecast": (
         ("6.1", "各預測期距的誤差如何變化？"),
         ("6.2", "模型相對兩條基準線何時失去優勢？"),
@@ -284,6 +286,7 @@ class Element:
     end_order: int | None = None
     text: list[str] = field(default_factory=list)
     children: list[Element] = field(default_factory=list)
+    content: list[str | Element] = field(default_factory=list)
 
     def is_inside(self, ancestor: Element) -> bool:
         parent = self.parent
@@ -296,10 +299,12 @@ class Element:
     def rendered_text(self, *, without_labels: bool = False) -> str:
         if without_labels and "chapter-intro-label" in self.classes:
             return ""
-        parts = list(self.text)
-        for child in self.children:
-            if child.visible and not (without_labels and "chapter-intro-label" in child.classes):
-                parts.append(child.rendered_text(without_labels=without_labels))
+        parts: list[str] = []
+        for item in self.content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif item.visible and not (without_labels and "chapter-intro-label" in item.classes):
+                parts.append(item.rendered_text(without_labels=without_labels))
         return " ".join("".join(parts).split())
 
 
@@ -411,6 +416,7 @@ class StructureParser(HTMLParser):
         self.elements.append(element)
         if parent is not None:
             parent.children.append(element)
+            parent.content.append(element)
         if self_closing:
             element.end_order = self._order
         else:
@@ -447,6 +453,7 @@ class StructureParser(HTMLParser):
         if not self._stack or not self._stack[-1].visible:
             return
         self._stack[-1].text.append(data)
+        self._stack[-1].content.append(data)
 
     def finish(self) -> None:
         if self._stack:
@@ -459,6 +466,250 @@ TREND_READING_MAP = (
     ("#trend-weather-adjustment", "排除天氣後，下降幅度剩多少？"),
     ("#trend-airzones", "各空品區是否同步改善？"),
 )
+
+DETECTION_EVENT_KEYS = frozenset(
+    {
+        "credible_stations",
+        "event",
+        "kind",
+        "median_effect",
+        "median_placebo_mean",
+        "median_placebo_sd",
+        "n_credible",
+        "n_expected_by_chance",
+        "n_stations",
+        "placebo_effects",
+        "station_effects",
+    }
+)
+DETECTION_READING_STEPS = (
+    ("placebo", "先看灰線", "沒有事件標記時，同一程序仍會算出的差額。"),
+    ("event", "再看橘點", "事件窗口各測站的觀測－預測差額。"),
+    ("threshold", "最後看門檻", "通過數是否高於純靠機率的預期。"),
+)
+DETECTION_BOUNDARY_CLAIMS = (
+    "「測不到」不等於「等於零」。",
+    "這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，",
+    "而待測的效應量是 0.5–1.6 μg/m³。",
+    "噪音底線高於訊號。",
+    "這批資料與這個方法，無法分辨這種大小的效應",
+    "不是「這些事件沒有影響」。",
+    "本分析沒有驗證機組的逐時操作或燃料狀態",
+    "介入沒有依事件標籤發生",
+    "介入發生但環境訊號太小",
+    "模型與測站配置無法辨識",
+    "這三種情況都與目前的非偵測相容。",
+)
+
+
+@dataclass(frozen=True)
+class DetectionExpectedEvent:
+    event: str
+    n_credible: int
+    n_expected_by_chance: int | float
+
+
+def _detection_expected_events_from_payload(payload: object) -> tuple[DetectionExpectedEvent, ...]:
+    if not isinstance(payload, dict) or set(payload) != {"events", "method", "spatial_check"}:
+        raise ValueError("detection payload top-level shape changed")
+    events = payload["events"]
+    if not isinstance(events, list) or not events:
+        raise ValueError("detection payload events must be a non-empty list")
+
+    expected_events: list[DetectionExpectedEvent] = []
+    identities: set[str] = set()
+    for index, raw_event in enumerate(events, start=1):
+        if not isinstance(raw_event, dict) or set(raw_event) != DETECTION_EVENT_KEYS:
+            raise ValueError(f"detection payload event {index} shape changed")
+        event = raw_event["event"]
+        observed = raw_event["n_credible"]
+        expected = raw_event["n_expected_by_chance"]
+        if not isinstance(event, str) or not event:
+            raise ValueError(f"detection payload event {index} identity is invalid")
+        if isinstance(observed, bool) or not isinstance(observed, int):
+            raise ValueError(f"detection payload event {index} observed count is invalid")
+        if (
+            isinstance(expected, bool)
+            or not isinstance(expected, (int, float))
+            or not math.isfinite(expected)
+        ):
+            raise ValueError(f"detection payload event {index} expected count is invalid")
+        if event in identities:
+            raise ValueError(f"detection payload repeats event identity: {event}")
+        identities.add(event)
+        expected_events.append(DetectionExpectedEvent(event, observed, expected))
+    return tuple(expected_events)
+
+
+def _reject_nonfinite_json_constant(value: str) -> object:
+    raise ValueError(f"detection payload contains invalid JSON number: {value}")
+
+
+def load_detection_expected_events() -> tuple[DetectionExpectedEvent, ...]:
+    """Load only the event identities and counts that the published page must expose."""
+    try:
+        with DETECTION_LIMIT.open(encoding="utf-8") as handle:
+            payload = json.load(handle, parse_constant=_reject_nonfinite_json_constant)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read detection payload: {exc}") from exc
+    return _detection_expected_events_from_payload(payload)
+
+
+def detection_limitation_brief_failures_for_text(
+    html: str,
+    expected_events: tuple[DetectionExpectedEvent, ...],
+) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    visible = [element for element in parser.elements if element.visible]
+
+    figure_titles = [
+        element
+        for element in visible
+        if "evidence-title" in element.classes and element.rendered_text()
+    ]
+    figure_title: Element | None = None
+    if (
+        len(figure_titles) != 1
+        or figure_titles[0].rendered_text() != "事件估計值能否離開安慰劑散布？"
+    ):
+        failures.append("detection Figure 5.1 title changed")
+    else:
+        figure_title = figure_titles[0]
+
+    reading_keys = [
+        element for element in visible if "data-detection-reading-key" in element.attributes
+    ]
+    reading_key: Element | None = None
+    if len(reading_keys) != 1:
+        failures.append(f"detection reading key inventory changed: {len(reading_keys)}")
+    else:
+        reading_key = reading_keys[0]
+        if reading_key.tag != "ol":
+            failures.append("detection reading key is not an ordered list")
+        steps = [
+            element for element in visible if element.tag == "li" and element.is_inside(reading_key)
+        ]
+        marked_steps = [
+            element
+            for element in visible
+            if "data-detection-reading-step" in element.attributes
+            and element.is_inside(reading_key)
+        ]
+        expected_step_names = [step[0] for step in DETECTION_READING_STEPS]
+        observed_step_names = [step.attributes.get("data-detection-reading-step") for step in steps]
+        if steps != marked_steps or observed_step_names != expected_step_names:
+            failures.append(f"detection reading-step inventory changed: {observed_step_names!r}")
+        else:
+            for step, (_name, heading, explanation) in zip(
+                steps, DETECTION_READING_STEPS, strict=True
+            ):
+                text = step.rendered_text()
+                if heading not in text or explanation not in text:
+                    failures.append("detection reading step text changed")
+
+    primary_plots = [element for element in visible if "data-primary-plot" in element.attributes]
+    primary_plot: Element | None = None
+    if len(primary_plots) != 1:
+        failures.append(f"detection primary plot inventory changed: {len(primary_plots)}")
+    else:
+        primary_plot = primary_plots[0]
+
+    caption: Element | None = None
+    if primary_plot is not None:
+        figures = [
+            ancestor
+            for ancestor in visible
+            if ancestor.tag == "figure" and primary_plot.is_inside(ancestor)
+        ]
+        captions = [
+            element
+            for element in visible
+            if element.tag == "figcaption" and any(element.is_inside(figure) for figure in figures)
+        ]
+        if len(captions) != 1:
+            failures.append(f"detection Figure 5.1 caption inventory changed: {len(captions)}")
+        else:
+            caption = captions[0]
+
+    comparisons = [
+        element for element in visible if "data-detection-comparison" in element.attributes
+    ]
+    comparison: Element | None = None
+    if len(comparisons) != 1:
+        failures.append(f"detection comparison inventory changed: {len(comparisons)}")
+    else:
+        comparison = comparisons[0]
+        if comparison.tag != "dl":
+            failures.append("detection comparison is not a description list")
+        entries = [
+            element
+            for element in visible
+            if "data-detection-event" in element.attributes and element.is_inside(comparison)
+        ]
+        observed_events = [entry.attributes.get("data-detection-event") for entry in entries]
+        expected_identities = [event.event for event in expected_events]
+        if observed_events != expected_identities:
+            failures.append(f"detection event inventory changed: {observed_events!r}")
+        else:
+            for entry, expected_event in zip(entries, expected_events, strict=True):
+                observed = str(expected_event.n_credible)
+                expected = str(expected_event.n_expected_by_chance)
+                if entry.attributes.get("data-detection-observed") != observed:
+                    failures.append("detection event observed value changed")
+                if entry.attributes.get("data-detection-expected") != expected:
+                    failures.append("detection event expected value changed")
+                text = entry.rendered_text()
+                required_text = (
+                    expected_event.event,
+                    f"實際通過 {observed} 站",
+                    f"純靠機率的預期為 {expected} 站",
+                )
+                if any(fragment not in text for fragment in required_text):
+                    failures.append("detection event accessible text changed")
+
+    boundaries = [
+        element for element in visible if "data-detection-inference-boundary" in element.attributes
+    ]
+    boundary: Element | None = None
+    if len(boundaries) != 1:
+        failures.append(f"detection inference-boundary inventory changed: {len(boundaries)}")
+    else:
+        boundary = boundaries[0]
+        if boundary.tag != "aside":
+            failures.append("detection inference boundary is not an <aside>")
+        boundary_text = boundary.rendered_text()
+        if any(claim not in boundary_text for claim in DETECTION_BOUNDARY_CLAIMS):
+            failures.append("detection inference boundary claim changed")
+
+    later_evidence = [
+        element for element in visible if "data-detection-results" in element.attributes
+    ]
+    if len(later_evidence) != 1:
+        failures.append(f"detection later evidence inventory changed: {len(later_evidence)}")
+    elif (
+        figure_title is not None
+        and reading_key is not None
+        and primary_plot is not None
+        and caption is not None
+        and comparison is not None
+        and boundary is not None
+    ):
+        opening = [
+            figure_title.start_order,
+            reading_key.start_order,
+            primary_plot.start_order,
+            caption.start_order,
+            comparison.start_order,
+            boundary.start_order,
+            later_evidence[0].start_order,
+        ]
+        if opening != sorted(opening):
+            failures.append("detection opening order changed")
+    return failures
 
 
 def trend_reading_map_failures_for_text(html: str) -> list[str]:
@@ -1218,6 +1469,190 @@ def _run_preflight() -> None:
                 f"{mutation_failures}"
             )
 
+    expected_detection_events = (
+        DetectionExpectedEvent("COVID-19 全國三級警戒", 1, 3.3),
+        DetectionExpectedEvent("台中電廠 2、3 號機生煤許可爭議", 1, 3.3),
+        DetectionExpectedEvent("2018 空氣污染防制法修正", 1, 3.3),
+    )
+    valid_detection_brief = """
+<main>
+<section class="evidence-figure"><header><p class="evidence-number">圖 5.1</p><p class="evidence-title">事件估計值能否離開安慰劑散布？</p></header>
+<figure>
+<ol data-detection-reading-key><li data-detection-reading-step="placebo">先看灰線：沒有事件標記時，同一程序仍會算出的差額。</li><li data-detection-reading-step="event">再看橘點：事件窗口各測站的觀測－預測差額。</li><li data-detection-reading-step="threshold">最後看門檻：通過數是否高於純靠機率的預期。</li></ol>
+<div data-primary-plot></div>
+<figcaption>Figure 5.1 caption</figcaption>
+</figure></section>
+<dl data-detection-comparison>
+<div data-detection-event="COVID-19 全國三級警戒" data-detection-observed="1" data-detection-expected="3.3">COVID-19 全國三級警戒：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
+<div data-detection-event="台中電廠 2、3 號機生煤許可爭議" data-detection-observed="1" data-detection-expected="3.3">台中電廠 2、3 號機生煤許可爭議：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
+<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
+</dl>
+<aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>
+<table data-detection-results><tr><td>Later evidence</td></tr></table>
+</main>
+"""
+    valid_detection_failures = detection_limitation_brief_failures_for_text(
+        valid_detection_brief, expected_detection_events
+    )
+    if valid_detection_failures:
+        raise RuntimeError(
+            "detection limitation brief preflight rejected the valid control: "
+            f"{valid_detection_failures}"
+        )
+    detection_mutations = {
+        "missing reading key": (
+            "detection reading key inventory changed",
+            valid_detection_brief.replace(" data-detection-reading-key", "", 1),
+        ),
+        "duplicate reading key": (
+            "detection reading key inventory changed",
+            valid_detection_brief.replace(
+                "</ol>\n<div data-primary-plot>",
+                "</ol><ol data-detection-reading-key></ol>\n<div data-primary-plot>",
+                1,
+            ),
+        ),
+        "missing reading step": (
+            "detection reading-step inventory changed",
+            valid_detection_brief.replace(' data-detection-reading-step="threshold"', "", 1),
+        ),
+        "replaced reading step text": (
+            "detection reading step text changed",
+            valid_detection_brief.replace("先看灰線", "先看別的", 1),
+        ),
+        "reordered reading steps": (
+            "detection reading-step inventory changed",
+            valid_detection_brief.replace(
+                '<li data-detection-reading-step="event">再看橘點：事件窗口各測站的觀測－預測差額。</li><li data-detection-reading-step="threshold">最後看門檻：通過數是否高於純靠機率的預期。</li>',
+                '<li data-detection-reading-step="threshold">最後看門檻：通過數是否高於純靠機率的預期。</li><li data-detection-reading-step="event">再看橘點：事件窗口各測站的觀測－預測差額。</li>',
+                1,
+            ),
+        ),
+        "reading key after primary plot": (
+            "detection opening order changed",
+            valid_detection_brief.replace(
+                '<ol data-detection-reading-key><li data-detection-reading-step="placebo">先看灰線：沒有事件標記時，同一程序仍會算出的差額。</li><li data-detection-reading-step="event">再看橘點：事件窗口各測站的觀測－預測差額。</li><li data-detection-reading-step="threshold">最後看門檻：通過數是否高於純靠機率的預期。</li></ol>\n<div data-primary-plot></div>',
+                '<div data-primary-plot></div>\n<ol data-detection-reading-key><li data-detection-reading-step="placebo">先看灰線：沒有事件標記時，同一程序仍會算出的差額。</li><li data-detection-reading-step="event">再看橘點：事件窗口各測站的觀測－預測差額。</li><li data-detection-reading-step="threshold">最後看門檻：通過數是否高於純靠機率的預期。</li></ol>',
+                1,
+            ),
+        ),
+        "missing comparison": (
+            "detection comparison inventory changed",
+            valid_detection_brief.replace(" data-detection-comparison", "", 1),
+        ),
+        "missing event": (
+            "detection event inventory changed",
+            valid_detection_brief.replace(
+                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>\n',
+                "",
+                1,
+            ),
+        ),
+        "duplicate event": (
+            "detection event inventory changed",
+            valid_detection_brief.replace(
+                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
+                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div><div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
+                1,
+            ),
+        ),
+        "extra event": (
+            "detection event inventory changed",
+            valid_detection_brief.replace(
+                "</dl>",
+                '<div data-detection-event="extra" data-detection-observed="1" data-detection-expected="3.3">extra：實際通過 1 站；純靠機率的預期為 3.3 站。</div></dl>',
+                1,
+            ),
+        ),
+        "reordered events": (
+            "detection event inventory changed",
+            valid_detection_brief.replace(
+                '<div data-detection-event="台中電廠 2、3 號機生煤許可爭議" data-detection-observed="1" data-detection-expected="3.3">台中電廠 2、3 號機生煤許可爭議：實際通過 1 站；純靠機率的預期為 3.3 站。</div>\n<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
+                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>\n<div data-detection-event="台中電廠 2、3 號機生煤許可爭議" data-detection-observed="1" data-detection-expected="3.3">台中電廠 2、3 號機生煤許可爭議：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
+                1,
+            ),
+        ),
+        "changed exact event identity": (
+            "detection event inventory changed",
+            valid_detection_brief.replace("COVID-19 全國三級警戒", "COVID-19 三級警戒", 1),
+        ),
+        "changed observed": (
+            "detection event observed value changed",
+            valid_detection_brief.replace(
+                'data-detection-observed="1"', 'data-detection-observed="2"', 1
+            ),
+        ),
+        "changed expected": (
+            "detection event expected value changed",
+            valid_detection_brief.replace(
+                'data-detection-expected="3.3"', 'data-detection-expected="4"', 1
+            ),
+        ),
+        "event value elsewhere": (
+            "detection event expected value changed",
+            valid_detection_brief.replace(
+                'data-detection-expected="3.3"',
+                'data-detection-expected=""',
+                1,
+            ).replace(
+                "<table data-detection-results>", "<p>3.3</p><table data-detection-results>", 1
+            ),
+        ),
+        "missing boundary": (
+            "detection inference-boundary inventory changed",
+            valid_detection_brief.replace(" data-detection-inference-boundary", "", 1),
+        ),
+        "duplicate boundary": (
+            "detection inference-boundary inventory changed",
+            valid_detection_brief.replace(
+                "</aside>", "</aside><aside data-detection-inference-boundary>Copy</aside>", 1
+            ),
+        ),
+        "hidden boundary": (
+            "detection inference-boundary inventory changed",
+            valid_detection_brief.replace(
+                "data-detection-inference-boundary>",
+                "data-detection-inference-boundary hidden>",
+                1,
+            ),
+        ),
+        "weakened inference claim": (
+            "detection inference boundary claim changed",
+            valid_detection_brief.replace("噪音底線高於訊號。", "噪音底線接近訊號。", 1),
+        ),
+        "inference claim outside boundary": (
+            "detection inference boundary claim changed",
+            valid_detection_brief.replace("噪音底線高於訊號。", "", 1).replace(
+                "<table data-detection-results>",
+                "<p>噪音底線高於訊號。</p><table data-detection-results>",
+                1,
+            ),
+        ),
+        "boundary after later evidence": (
+            "detection opening order changed",
+            valid_detection_brief.replace(
+                "<aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>\n<table data-detection-results><tr><td>Later evidence</td></tr></table>",
+                "<table data-detection-results><tr><td>Later evidence</td></tr></table><aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>",
+                1,
+            ),
+        ),
+        "stale Figure 5.1 title": (
+            "detection Figure 5.1 title changed",
+            valid_detection_brief.replace("事件估計值能否離開安慰劑散布？", "舊標題", 1),
+        ),
+    }
+    for name, (expected_failure, html) in detection_mutations.items():
+        if html == valid_detection_brief:
+            raise RuntimeError(f"detection limitation brief preflight did not apply {name}")
+        mutation_failures = detection_limitation_brief_failures_for_text(
+            html, expected_detection_events
+        )
+        if not any(failure.startswith(expected_failure) for failure in mutation_failures):
+            raise RuntimeError(
+                "detection limitation brief preflight did not reject "
+                f"{name} for the expected reason: {mutation_failures}"
+            )
+
     def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
         title_id = f"evidence-{number.replace('.', '-')}-title"
         return (
@@ -1787,6 +2222,15 @@ def main(argv: list[str]) -> int:
             )
             if slug == "trend":
                 failures.extend(trend_reading_map_failures_for_text(html))
+            elif slug == "detection":
+                try:
+                    expected_events = load_detection_expected_events()
+                except ValueError as exc:
+                    failures.append(f"detection payload is invalid: {exc}")
+                else:
+                    failures.extend(
+                        detection_limitation_brief_failures_for_text(html, expected_events)
+                    )
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible trend reading map")
 
