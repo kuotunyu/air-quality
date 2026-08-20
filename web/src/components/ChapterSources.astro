@@ -208,7 +208,7 @@ const legend = BREAKS.map((b, i) => ({
         }
       </select>
     </label>
-    <span id="cbpf-wind-peak-class" class="badge">{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>
+    <span id="cbpf-wind-peak-class" class="badge" data-wind-peak-class={start.wind_peak_class}>{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>
   </div>
 
   {/*
@@ -603,6 +603,46 @@ const legend = BREAKS.map((b, i) => ({
     gap: 0.9rem;
     flex-wrap: wrap;
     margin: 0;
+  }
+  @media (max-width: 25rem) {
+    :global(body #sources > .chapter-intro) {
+      margin-bottom: var(--space-1);
+    }
+    :global(body #sources [data-sources-method-boundary]) {
+      margin-block: var(--space-1) 0;
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence]) {
+      margin-block-start: var(--space-1);
+      padding-block-start: var(--space-1);
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence] > figure) {
+      margin-block-start: var(--space-1);
+    }
+  }
+  @media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+    :global(body #sources) {
+      padding-block-start: 0;
+    }
+    :global(body #sources > .chapter-intro) {
+      margin-bottom: 0;
+    }
+    :global(body #sources > .chapter-intro > .eyebrow),
+    :global(body #sources > .chapter-intro h1) {
+      margin-bottom: 0;
+    }
+    :global(body #sources [data-sources-method-boundary]) {
+      margin-block: 0;
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence]) {
+      margin-block-start: 0;
+      padding-block-start: 0;
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence] > figure) {
+      margin-block-start: 0;
+    }
+    :global(body #sources [data-primary-evidence] .chart.polar) {
+      padding-block-start: 0;
+    }
   }
   .picker-row label {
     display: flex;
