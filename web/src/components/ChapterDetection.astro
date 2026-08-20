@@ -193,6 +193,12 @@ function strip(e: (typeof events)[number]) {
 
 const shortName = (name: string) =>
   name.replace("COVID-19 ", "").replace("2、3 號機生煤許可爭議", "生煤許可").replace("2018 ", "");
+
+const estimandLabel = (kind: string) => {
+  if (kind === "window") return "窗口事件：觀測－預測差額";
+  if (kind === "trend_break") return "趨勢斷點：斜率差";
+  throw new Error(`Unknown detection event kind: ${kind}`);
+};
 ---
 
 <section id="detection" class="page">
@@ -367,10 +373,11 @@ const shortName = (name: string) =>
       events.map((e) => (
         <div
           data-detection-event={e.event}
+          data-detection-kind={e.kind}
           data-detection-observed={e.n_credible}
           data-detection-expected={e.n_expected_by_chance}
         >
-          <dt>{e.event}</dt>
+          <dt>{e.event} · {estimandLabel(e.kind)}</dt>
           <dd>
             實際通過 {e.n_credible} 站；純靠機率的預期為 {e.n_expected_by_chance} 站。
           </dd>
@@ -382,10 +389,12 @@ const shortName = (name: string) =>
   <aside class="detection-inference-boundary" data-detection-inference-boundary>
     <p>
       <strong>「測不到」不等於「等於零」。</strong>
+      每個事件的實際通過數都低於各自純靠機率的預期。
       這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，
       而待測的效應量是 0.5–1.6 μg/m³。<strong>噪音底線高於訊號。</strong>
       真正的結論是：<strong>這批資料與這個方法，無法分辨這種大小的效應</strong>——
       不是「這些事件沒有影響」。
+      非偵測不是「事件沒有發生」或「介入無效」的證明。
     </p>
     <p>
       <strong>台中電廠這一筆需要補充說明。</strong>
@@ -395,7 +404,7 @@ const shortName = (name: string) =>
     </p>
   </aside>
 
-  <p>
+  <p data-detection-method-evidence>
     這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」——
     測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
   </p>

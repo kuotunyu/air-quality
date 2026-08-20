@@ -707,6 +707,16 @@ const DETECTION_EVENT_CONTRACT = [
   { event: "2018 空氣污染防制法修正", kind: "trend_break" },
 ];
 
+function detectionEventKindLabel(kind) {
+  if (kind === "window") return "窗口事件：觀測－預測差額";
+  if (kind === "trend_break") return "趨勢斷點：斜率差";
+  return null;
+}
+
+function detectionTextIdentity(value) {
+  return String(value ?? "").replace(/\s+/gu, "");
+}
+
 function detectionExpectedEventsFromPayload(payload) {
   if (!payload || !Array.isArray(payload.events)) {
     throw new Error("detection-limit payload has no events array");
@@ -748,10 +758,26 @@ function detectionExpectedEventsFromPayload(payload) {
       );
     }
     const has = (key) => Object.prototype.hasOwnProperty.call(row, key);
-    for (const key of ["n_credible", "n_expected_by_chance"]) {
-      if (!has(key) || typeof row[key] !== "number" || !Number.isFinite(row[key])) {
-        throw new Error(`detection-limit event ${index + 1} ${key} is not a finite number`);
-      }
+    if (
+      !has("n_credible") || typeof row.n_credible !== "number" ||
+      !Number.isFinite(row.n_credible) || !Number.isInteger(row.n_credible) || row.n_credible < 0
+    ) {
+      throw new Error(
+        `detection-limit event ${index + 1} n_credible is not a nonnegative integer`,
+      );
+    }
+    if (
+      !has("n_expected_by_chance") || typeof row.n_expected_by_chance !== "number" ||
+      !Number.isFinite(row.n_expected_by_chance) || row.n_expected_by_chance < 0
+    ) {
+      throw new Error(
+        `detection-limit event ${index + 1} n_expected_by_chance is not nonnegative`,
+      );
+    }
+    if (row.n_credible >= row.n_expected_by_chance) {
+      throw new Error(
+        `detection-limit event ${index + 1} no longer supports the below-chance claim`,
+      );
     }
     return {
       event: row.event,
@@ -814,6 +840,7 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     if (region.inert || !region.accessible) {
       problems.push(`${scope}${label} is excluded from accessibility`);
     }
+    if (region.detailsAncestor) problems.push(`${scope}${label} is user-collapsible`);
   }
 
   const landmarkLabels = {
@@ -823,7 +850,7 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     caption: "caption",
     comparison: "comparison",
     boundary: "boundary",
-    laterEvidence: "later evidence",
+    methodEvidence: "method evidence",
   };
   for (const [key, label] of Object.entries(landmarkLabels)) {
     const landmark = state?.landmarks?.[key];
@@ -834,7 +861,7 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     const geometry = ["top", "right", "bottom", "left", "width", "height"];
     if (
       !geometry.every((edge) => Number.isFinite(landmark[edge])) ||
-      !Number.isInteger(landmark.sourceIndex)
+      !Number.isInteger(landmark.sourceIndex) || landmark.sourceIndex < 0
     ) {
       problems.push(`${scope}${label} landmark geometry is invalid`);
     }
@@ -842,6 +869,27 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
   }
 
   const landmarks = state?.landmarks ?? {};
+  const openingKeys = [
+    "title",
+    "key",
+    "primaryPlot",
+    "caption",
+    "comparison",
+    "boundary",
+    "methodEvidence",
+  ];
+  const openingParts = openingKeys.map((key) => landmarks[key]);
+  if (openingParts.every(Boolean)) {
+    const sourceOrdered = openingParts.every(
+      (part, index) => index === 0 || openingParts[index - 1].sourceIndex < part.sourceIndex,
+    );
+    const visuallyOrdered = openingParts.every(
+      (part, index) => index === 0 || openingParts[index - 1].top < part.top,
+    );
+    if (!sourceOrdered || !visuallyOrdered) {
+      problems.push(`${scope}opening order changed`);
+    }
+  }
   if (
     landmarks.key && landmarks.primaryPlot &&
     !(
@@ -861,13 +909,13 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     problems.push(`${scope}boundary no longer follows comparison`);
   }
   if (
-    landmarks.boundary && landmarks.laterEvidence &&
+    landmarks.boundary && landmarks.methodEvidence &&
     !(
-      landmarks.boundary.sourceIndex < landmarks.laterEvidence.sourceIndex &&
-      landmarks.boundary.top < landmarks.laterEvidence.top
+      landmarks.boundary.sourceIndex < landmarks.methodEvidence.sourceIndex &&
+      landmarks.boundary.top < landmarks.methodEvidence.top
     )
   ) {
-    problems.push(`${scope}boundary no longer precedes later evidence`);
+    problems.push(`${scope}boundary no longer precedes method evidence`);
   }
 
   const expectedSteps = [
@@ -888,7 +936,7 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
     const geometry = ["top", "right", "bottom", "left", "width", "height"];
     if (
       !geometry.every((edge) => Number.isFinite(step[edge])) ||
-      !Number.isInteger(step.sourceIndex)
+      !Number.isInteger(step.sourceIndex) || step.sourceIndex < 0
     ) {
       problems.push(`${scope}reading step ${index + 1} geometry is invalid`);
     }
@@ -909,6 +957,18 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
   if (!Array.isArray(expectedEvents) || !Array.isArray(state?.eventRows)) {
     problems.push(`${scope}event rows are missing`);
   } else {
+    if (state?.counts?.semanticRows !== expectedEvents.length) {
+      problems.push(
+        `${scope}semantic row inventory is ${String(state?.counts?.semanticRows)}, ` +
+          `expected ${expectedEvents.length}`,
+      );
+    }
+    if (state?.counts?.eventHooks !== expectedEvents.length) {
+      problems.push(
+        `${scope}event hook inventory is ${String(state?.counts?.eventHooks)}, ` +
+          `expected ${expectedEvents.length}`,
+      );
+    }
     if (state.eventRows.length !== expectedEvents.length) {
       problems.push(`${scope}event row inventory is ${state.eventRows.length}, expected ${expectedEvents.length}`);
     }
@@ -926,18 +986,37 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
       const keys = Object.keys(row).sort();
       if (
         JSON.stringify(keys) !==
-        JSON.stringify(["accessibleText", "event", "expected", "observed", "visibleText"])
+        JSON.stringify([
+          "accessibleText",
+          "directChildTags",
+          "event",
+          "expected",
+          "hooked",
+          "inspection",
+          "kind",
+          "observed",
+          "rowTag",
+          "visibleText",
+        ])
       ) {
         problems.push(`${scope}event row ${index + 1} keys changed`);
       }
-      if (typeof row.observed !== "number" || !Number.isFinite(row.observed)) {
-        problems.push(`${scope}event row ${index + 1} observed value is not a finite number`);
+      if (
+        typeof row.observed !== "number" || !Number.isFinite(row.observed) ||
+        !Number.isInteger(row.observed) || row.observed < 0
+      ) {
+        problems.push(`${scope}event row ${index + 1} observed value is not a nonnegative integer`);
       }
-      if (typeof row.expected !== "number" || !Number.isFinite(row.expected)) {
-        problems.push(`${scope}event row ${index + 1} expected value is not a finite number`);
+      if (
+        typeof row.expected !== "number" || !Number.isFinite(row.expected) || row.expected < 0
+      ) {
+        problems.push(`${scope}event row ${index + 1} expected value is not nonnegative`);
       }
       if (row.event !== expected.event) {
         problems.push(`${scope}event row ${index + 1} identity changed`);
+      }
+      if (row.kind !== expected.kind) {
+        problems.push(`${scope}event row ${index + 1} kind changed`);
       }
       if (row.observed !== expected.observed) {
         problems.push(`${scope}event row ${index + 1} observed value changed`);
@@ -945,22 +1024,77 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
       if (row.expected !== expected.expected) {
         problems.push(`${scope}event row ${index + 1} expected value changed`);
       }
-      const pairsQuantities =
-        typeof row.accessibleText === "string" &&
-        row.accessibleText.includes(expected.event) &&
-        row.accessibleText.includes(`實際通過 ${expected.observed} 站`) &&
-        row.accessibleText.includes(`純靠機率的預期為 ${expected.expected} 站`);
-      if (!pairsQuantities) {
+      if (
+        row.rowTag !== "DIV" || !row.hooked ||
+        JSON.stringify(row.directChildTags) !== JSON.stringify(["DT", "DD"])
+      ) {
+        problems.push(`${scope}event row ${index + 1} description structure changed`);
+      }
+      const kindLabel = detectionEventKindLabel(expected.kind);
+      const exactText =
+        `${expected.event} · ${kindLabel}` +
+        `實際通過 ${expected.observed} 站；純靠機率的預期為 ${expected.expected} 站。`;
+      if (detectionTextIdentity(row.visibleText) !== detectionTextIdentity(exactText)) {
+        problems.push(`${scope}event row ${index + 1} visible text changed`);
+      }
+      if (detectionTextIdentity(row.accessibleText) !== detectionTextIdentity(exactText)) {
         problems.push(`${scope}event row ${index + 1} accessible text changed`);
+      }
+      const inspection = row.inspection;
+      const geometry = ["top", "right", "bottom", "left", "width", "height"];
+      if (
+        !inspection || !geometry.every((edge) => Number.isFinite(inspection[edge])) ||
+        !Number.isInteger(inspection.sourceIndex) || inspection.sourceIndex < 0
+      ) {
+        problems.push(`${scope}event row ${index + 1} geometry is invalid`);
+      } else {
+        if (inspection.hidden) problems.push(`${scope}event row ${index + 1} is hidden`);
+        if (inspection.ariaHidden) problems.push(`${scope}event row ${index + 1} is aria-hidden`);
+        if (inspection.display === "none") {
+          problems.push(`${scope}event row ${index + 1} display is none`);
+        }
+        if (["hidden", "collapse"].includes(inspection.visibility)) {
+          problems.push(`${scope}event row ${index + 1} visibility is hidden`);
+        }
+        if (!inspection.rendered || inspection.width <= 0 || inspection.height <= 0) {
+          problems.push(`${scope}event row ${index + 1} has no rendered area`);
+        }
+        if (!Number.isFinite(inspection.opacity) || inspection.opacity <= 0) {
+          problems.push(`${scope}event row ${index + 1} opacity is zero`);
+        }
+        if (inspection.selfOverflowX > 1 || inspection.selfOverflowY > 1) {
+          problems.push(`${scope}event row ${index + 1} clips its own content`);
+        }
+        if (inspection.ancestorClipped) {
+          problems.push(`${scope}event row ${index + 1} is clipped by an ancestor`);
+        }
+        if (inspection.cssClip) problems.push(`${scope}event row ${index + 1} uses CSS clip`);
+        if (inspection.cssClipPath) {
+          problems.push(`${scope}event row ${index + 1} uses CSS clip-path`);
+        }
+        if (inspection.inert || !inspection.accessible) {
+          problems.push(`${scope}event row ${index + 1} is excluded from accessibility`);
+        }
+        if (
+          Number.isFinite(viewport?.width) &&
+          (inspection.right <= 0 || inspection.left >= viewport.width)
+        ) {
+          problems.push(`${scope}event row ${index + 1} is horizontally off-canvas`);
+        }
+        if (inspection.cssOrder !== 0) {
+          problems.push(`${scope}event row ${index + 1} uses CSS order`);
+        }
       }
     }
   }
 
   const requiredBoundaryClaims = [
     "「測不到」不等於「等於零」",
+    "每個事件的實際通過數都低於各自純靠機率的預期",
     "噪音底線高於訊號",
     "這批資料與這個方法，無法分辨這種大小的效應",
     "不是「這些事件沒有影響」",
+    "非偵測不是「事件沒有發生」或「介入無效」的證明",
     "沒有驗證機組的逐時操作或燃料狀態",
   ];
   for (const claim of requiredBoundaryClaims) {
@@ -1152,6 +1286,7 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
     let hidden = false;
     let ariaHidden = false;
     let inert = false;
+    let detailsAncestor = false;
     let cssClip = false;
     let cssClipPath = false;
     let visibleLeft = rect.left;
@@ -1169,6 +1304,7 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
       hidden ||= node.hasAttribute("hidden");
       ariaHidden ||= node.getAttribute("aria-hidden") === "true";
       inert ||= node.hasAttribute("inert");
+      detailsAncestor ||= node instanceof HTMLDetailsElement;
       cssClip ||= style.clip !== "auto";
       cssClipPath ||= style.clipPath !== "none";
       if (node !== element) {
@@ -1211,6 +1347,7 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
         visibleBottom - visibleTop < rect.height - 1,
       cssClip,
       cssClipPath,
+      detailsAncestor,
       collapsed: element instanceof HTMLDetailsElement && !element.open,
       tagName: element.tagName,
     };
@@ -1232,7 +1369,8 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
   const title = primaryEvidence?.querySelector(".evidence-title") ?? null;
   const primaryPlot = primaryEvidence?.querySelector("[data-primary-plot]") ?? null;
   const caption = primaryEvidence?.querySelector("figcaption") ?? null;
-  const laterEvidence = boundary?.nextElementSibling ?? null;
+  const methodEvidence = document.querySelector("[data-detection-method-evidence]");
+  const semanticRows = [...(comparison?.children ?? [])];
   return {
     mode,
     theme: document.documentElement.dataset.theme ?? "light",
@@ -1240,6 +1378,9 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
       readingKey: keys.length,
       comparison: comparisons.length,
       boundary: boundaries.length,
+      semanticRows: semanticRows.length,
+      eventHooks:
+        comparison?.querySelectorAll("[data-detection-event]").length ?? 0,
     },
     regions: {
       readingKey: inspect(key),
@@ -1253,7 +1394,7 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
       caption: inspect(caption),
       comparison: inspect(comparison),
       boundary: inspect(boundary),
-      laterEvidence: inspect(laterEvidence),
+      methodEvidence: inspect(methodEvidence),
     },
     readingSteps: [...(key?.querySelectorAll("[data-detection-reading-step]") ?? [])]
       .map((step) => {
@@ -1272,14 +1413,18 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
           cssOrder: geometry?.cssOrder ?? null,
         };
       }),
-    eventRows: [...(comparison?.querySelectorAll("[data-detection-event]") ?? [])]
-      .map((row) => ({
-        event: row.getAttribute("data-detection-event") ?? "",
-        observed: parseNumberAttribute(row, "data-detection-observed"),
-        expected: parseNumberAttribute(row, "data-detection-expected"),
-        visibleText: compact(row.innerText),
-        accessibleText: null,
-      })),
+    eventRows: semanticRows.map((row) => ({
+      event: row.getAttribute("data-detection-event") ?? "",
+      kind: row.getAttribute("data-detection-kind") ?? "",
+      observed: parseNumberAttribute(row, "data-detection-observed"),
+      expected: parseNumberAttribute(row, "data-detection-expected"),
+      hooked: row.hasAttribute("data-detection-event"),
+      rowTag: row.tagName,
+      directChildTags: [...row.children].map((child) => child.tagName),
+      visibleText: compact(row.innerText),
+      accessibleText: null,
+      inspection: inspect(row),
+    })),
     boundaryText: compact(boundary?.innerText),
     pageText: compact(document.querySelector("main")?.innerText),
     viewport: { width: innerWidth, height: innerHeight },
@@ -3150,6 +3295,7 @@ async function lifecycleSelfTest() {
     ancestorClipped: false,
     cssClip: false,
     cssClipPath: false,
+    detailsAncestor: false,
     ...extra,
   });
   const title = detectionPart(90, 125, 10);
@@ -3158,13 +3304,27 @@ async function lifecycleSelfTest() {
   const caption = detectionPart(475, 545, 40);
   const comparison = detectionPart(560, 650, 50);
   const boundary = detectionPart(665, 770, 60, { collapsed: false, tagName: "ASIDE" });
-  const laterEvidence = detectionPart(790, 850, 70);
+  const methodEvidence = detectionPart(790, 850, 70);
   const completeDetectionBrief = {
     mode: "normal",
     theme: "light",
-    counts: { readingKey: 1, comparison: 1, boundary: 1 },
+    counts: {
+      readingKey: 1,
+      comparison: 1,
+      boundary: 1,
+      semanticRows: 3,
+      eventHooks: 3,
+    },
     regions: { readingKey: key, comparison, boundary },
-    landmarks: { title, key, primaryPlot, caption, comparison, boundary, laterEvidence },
+    landmarks: {
+      title,
+      key,
+      primaryPlot,
+      caption,
+      comparison,
+      boundary,
+      methodEvidence,
+    },
     readingSteps: [
       {
         key: "placebo",
@@ -3206,36 +3366,44 @@ async function lifecycleSelfTest() {
         cssOrder: 0,
       },
     ],
-    eventRows: EXPECTED_DETECTION_EVENTS.map((event) => ({
-      event: event.event,
-      observed: event.observed,
-      expected: event.expected,
-      visibleText:
-        `${event.event} 實際通過 ${event.observed} 站；` +
-        `純靠機率的預期為 ${event.expected} 站。`,
-      accessibleText:
-        `${event.event} 實際通過 ${event.observed} 站；` +
-        `純靠機率的預期為 ${event.expected} 站。`,
-    })),
+    eventRows: EXPECTED_DETECTION_EVENTS.map((event, index) => {
+      const exactText =
+        `${event.event} · ${detectionEventKindLabel(event.kind)}` +
+        `實際通過 ${event.observed} 站；純靠機率的預期為 ${event.expected} 站。`;
+      return {
+        event: event.event,
+        kind: event.kind,
+        observed: event.observed,
+        expected: event.expected,
+        hooked: true,
+        rowTag: "DIV",
+        directChildTags: ["DT", "DD"],
+        visibleText: exactText,
+        accessibleText: exactText,
+        inspection: detectionPart(570 + index * 25, 590 + index * 25, 51 + index),
+      };
+    }),
     boundaryText:
-      "「測不到」不等於「等於零」。噪音底線高於訊號。" +
+      "「測不到」不等於「等於零」。" +
+      "每個事件的實際通過數都低於各自純靠機率的預期。噪音底線高於訊號。" +
       "這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。" +
+      "非偵測不是「事件沒有發生」或「介入無效」的證明。" +
       "本分析沒有驗證機組的逐時操作或燃料狀態。",
     pageText: "",
     viewport: { width: 375, height: 812 },
     document: { clientWidth: 375, scrollWidth: 375 },
   };
   const invalidDetectionPayloads = [
-    ["boolean observed value", "n_credible is not a finite number", (payload) => {
+    ["boolean observed value", "n_credible is not a nonnegative integer", (payload) => {
       payload.events[0].n_credible = true;
     }],
-    ["numeric-string expected value", "n_expected_by_chance is not a finite number", (payload) => {
+    ["numeric-string expected value", "n_expected_by_chance is not nonnegative", (payload) => {
       payload.events[0].n_expected_by_chance = "3.3";
     }],
-    ["NaN observed value", "n_credible is not a finite number", (payload) => {
+    ["NaN observed value", "n_credible is not a nonnegative integer", (payload) => {
       payload.events[0].n_credible = Number.NaN;
     }],
-    ["missing observed key", "n_credible is not a finite number", (payload) => {
+    ["missing observed key", "n_credible is not a nonnegative integer", (payload) => {
       delete payload.events[0].n_credible;
     }],
     ["duplicate event identity", "is duplicated", (payload) => {
@@ -3259,6 +3427,18 @@ async function lifecycleSelfTest() {
     ["wrong event kind", "event 3 kind", (payload) => {
       payload.events[2].kind = "window";
     }],
+    ["negative observed value", "n_credible is not a nonnegative integer", (payload) => {
+      payload.events[0].n_credible = -1;
+    }],
+    ["fractional observed value", "n_credible is not a nonnegative integer", (payload) => {
+      payload.events[0].n_credible = 1.5;
+    }],
+    ["negative expected value", "n_expected_by_chance is not nonnegative", (payload) => {
+      payload.events[0].n_expected_by_chance = -0.1;
+    }],
+    ["below-chance relationship no longer holds", "no longer supports the below-chance claim", (payload) => {
+      payload.events[0].n_credible = 4;
+    }],
   ];
   const acceptedInvalidDetectionPayloads = [];
   const misdiagnosedInvalidDetectionPayloads = [];
@@ -3277,9 +3457,10 @@ async function lifecycleSelfTest() {
       }
     }
   }
+  const detectionPreflightMisses = [];
   if (acceptedInvalidDetectionPayloads.length || misdiagnosedInvalidDetectionPayloads.length) {
-    throw new Error(
-      `the detection payload parser accepts ${acceptedInvalidDetectionPayloads.join(", ")}; ` +
+    detectionPreflightMisses.push(
+      `payload parser accepts ${acceptedInvalidDetectionPayloads.join(", ")}; ` +
         `misdiagnoses ${misdiagnosedInvalidDetectionPayloads.join(", ")}`,
     );
   }
@@ -3372,13 +3553,13 @@ async function lifecycleSelfTest() {
       state.eventRows.push(structuredClone(state.eventRows[0]));
     }],
     ["extra event", "event row inventory is 4", (state) => {
-      state.eventRows.push({
-        event: "額外事件",
-        observed: 1,
-        expected: 3.3,
-        visibleText: "額外事件 實際通過 1 站；純靠機率的預期為 3.3 站。",
-        accessibleText: "額外事件 實際通過 1 站；純靠機率的預期為 3.3 站。",
-      });
+      const row = structuredClone(state.eventRows[0]);
+      row.event = "額外事件";
+      row.visibleText = "額外事件 · 窗口事件：觀測－預測差額實際通過 1 站；純靠機率的預期為 3.3 站。";
+      row.accessibleText = row.visibleText;
+      state.eventRows.push(row);
+      state.counts.semanticRows = 4;
+      state.counts.eventHooks = 4;
     }],
     ["reordered event", "event row 1 identity changed", (state) => {
       [state.eventRows[0], state.eventRows[1]] = [state.eventRows[1], state.eventRows[0]];
@@ -3392,10 +3573,55 @@ async function lifecycleSelfTest() {
     ["wrong chance expectation", "event row 1 expected value changed", (state) => {
       state.eventRows[0].expected = 3.4;
     }],
-    ["boolean observed substitution", "event row 1 observed value is not a finite number", (state) => {
+    ["wrong rendered event kind", "event row 1 kind changed", (state) => {
+      state.eventRows[0].kind = "trend_break";
+    }],
+    ["unhooked extra semantic row", "semantic row inventory is 4", (state) => {
+      state.eventRows.push({
+        event: "",
+        kind: "",
+        observed: null,
+        expected: null,
+        visibleText: "額外說明 實際通過 9 站。",
+        accessibleText: "額外說明 實際通過 9 站。",
+        hooked: false,
+        rowTag: "DIV",
+        directChildTags: ["DT", "DD"],
+        inspection: detectionPart(620, 650, 59),
+      });
+      state.counts.semanticRows = 4;
+    }],
+    ["malformed direct description pair", "event row 1 description structure changed", (state) => {
+      state.eventRows[0].directChildTags = ["DT", "P"];
+    }],
+    ["conflicting visible event quantity", "event row 1 visible text changed", (state) => {
+      state.eventRows[0].visibleText += "實際通過 9 站。";
+    }],
+    ["conflicting accessible event quantity", "event row 1 accessible text changed", (state) => {
+      state.eventRows[0].accessibleText += "實際通過 9 站。";
+    }],
+    ["zero-opacity event row", "event row 1 opacity is zero", (state) => {
+      state.eventRows[0].inspection = detectionPart(570, 595, 51, { opacity: 0 });
+    }],
+    ["hidden event row", "event row 1 is hidden", (state) => {
+      state.eventRows[0].inspection = detectionPart(570, 595, 51, {
+        hidden: true,
+        accessible: false,
+      });
+    }],
+    ["off-canvas event row", "event row 1 is horizontally off-canvas", (state) => {
+      state.eventRows[0].inspection = detectionPart(570, 595, 51, {
+        left: 400,
+        right: 500,
+      });
+    }],
+    ["clipped event row", "event row 1 is clipped by an ancestor", (state) => {
+      state.eventRows[0].inspection = detectionPart(570, 595, 51, { ancestorClipped: true });
+    }],
+    ["boolean observed substitution", "event row 1 observed value is not a nonnegative integer", (state) => {
       state.eventRows[0].observed = true;
     }],
-    ["numeric-string expected substitution", "event row 1 expected value is not a finite number", (state) => {
+    ["numeric-string expected substitution", "event row 1 expected value is not nonnegative", (state) => {
       state.eventRows[0].expected = "3.3";
     }],
     ["event row missing exact key", "event row 1 keys changed", (state) => {
@@ -3404,7 +3630,7 @@ async function lifecycleSelfTest() {
     ["event row has extra key", "event row 1 keys changed", (state) => {
       state.eventRows[0].unexpected = 3.3;
     }],
-    ["event row NaN substitution", "event row 1 observed value is not a finite number", (state) => {
+    ["event row NaN substitution", "event row 1 observed value is not a nonnegative integer", (state) => {
       state.eventRows[0].observed = Number.NaN;
     }],
     ["event accessible text omits expected quantity", "event row 1 accessible text changed", (state) => {
@@ -3416,6 +3642,18 @@ async function lifecycleSelfTest() {
     ["missing required boundary claim", "boundary is missing required claim", (state) => {
       state.boundaryText = state.boundaryText.replace("噪音底線高於訊號。", "");
     }],
+    ["missing below-chance boundary claim", "boundary is missing required claim", (state) => {
+      state.boundaryText = state.boundaryText.replace(
+        "每個事件的實際通過數都低於各自純靠機率的預期。",
+        "",
+      );
+    }],
+    ["missing event-occurrence boundary claim", "boundary is missing required claim", (state) => {
+      state.boundaryText = state.boundaryText.replace(
+        "非偵測不是「事件沒有發生」或「介入無效」的證明。",
+        "",
+      );
+    }],
     ["weakened required boundary claim", "boundary is missing required claim", (state) => {
       state.boundaryText = state.boundaryText.replace("無法分辨", "不容易分辨");
     }],
@@ -3423,13 +3661,49 @@ async function lifecycleSelfTest() {
       state.boundaryText = state.boundaryText.replace("沒有驗證機組的逐時操作或燃料狀態", "");
       state.pageText += "沒有驗證機組的逐時操作或燃料狀態";
     }],
+    ["below-chance phrase outside boundary", "boundary is missing required claim", (state) => {
+      const claim = "每個事件的實際通過數都低於各自純靠機率的預期。";
+      state.boundaryText = state.boundaryText.replace(claim, "");
+      state.pageText += claim;
+    }],
+    ["event-occurrence phrase outside boundary", "boundary is missing required claim", (state) => {
+      const claim = "非偵測不是「事件沒有發生」或「介入無效」的證明。";
+      state.boundaryText = state.boundaryText.replace(claim, "");
+      state.pageText += claim;
+    }],
     ["boundary before comparison", "boundary no longer follows comparison", (state) => {
       state.landmarks.boundary.sourceIndex = 45;
       state.landmarks.boundary.top = 540;
     }],
-    ["boundary after later evidence", "boundary no longer precedes later evidence", (state) => {
+    ["boundary after method evidence", "boundary no longer precedes method evidence", (state) => {
       state.landmarks.boundary.sourceIndex = 75;
       state.landmarks.boundary.top = 860;
+    }],
+    ["opening pair after independent method evidence", "opening order changed", (state) => {
+      state.landmarks.comparison.sourceIndex = 75;
+      state.landmarks.comparison.top = 865;
+      state.landmarks.boundary.sourceIndex = 80;
+      state.landmarks.boundary.top = 940;
+    }],
+    ["title after reading key", "opening order changed", (state) => {
+      state.landmarks.title.sourceIndex = 25;
+      state.landmarks.title.top = 275;
+    }],
+    ["caption before primary plot", "opening order changed", (state) => {
+      state.landmarks.caption.sourceIndex = 25;
+      state.landmarks.caption.top = 275;
+    }],
+    ["negative source index", "title landmark geometry is invalid", (state) => {
+      state.landmarks.title.sourceIndex = -1;
+    }],
+    ["reading key in disclosure", "reading key is user-collapsible", (state) => {
+      state.regions.readingKey.detailsAncestor = true;
+    }],
+    ["comparison in disclosure", "comparison is user-collapsible", (state) => {
+      state.regions.comparison.detailsAncestor = true;
+    }],
+    ["boundary in disclosure", "boundary is user-collapsible", (state) => {
+      state.regions.boundary.detailsAncestor = true;
     }],
     ["boundary collapsed disclosure", "boundary became a collapsed disclosure", (state) => {
       state.regions.boundary.collapsed = true;
@@ -3477,9 +3751,12 @@ async function lifecycleSelfTest() {
     }
   }
   if (missedDetectionMutations.length) {
-    throw new Error(
-      `the detection limitation-brief predicate accepts ${missedDetectionMutations.join(", ")}`,
+    detectionPreflightMisses.push(
+      `limitation-brief predicate accepts ${missedDetectionMutations.join(", ")}`,
     );
+  }
+  if (detectionPreflightMisses.length) {
+    throw new Error(`the detection preflight misses ${detectionPreflightMisses.join("; ")}`);
   }
   console.log("site quality detection limitation brief self-test passed");
 
@@ -4646,7 +4923,7 @@ async function main() {
     if (!state) return state;
     const [readingStepTexts, eventRowTexts] = await accessibilityTextsForSelectors([
       "[data-detection-reading-key] [data-detection-reading-step]",
-      "[data-detection-comparison] [data-detection-event]",
+      "[data-detection-comparison] > *",
     ]);
     for (const [index, step] of state.readingSteps.entries()) {
       step.accessibleText = readingStepTexts[index] ?? null;
@@ -4750,6 +5027,116 @@ async function main() {
         script: `document.querySelector('[data-detection-reading-step="placebo"]')
           .style.setProperty("order", "2", "important")`,
       },
+      {
+        name: "wrong rendered event kind",
+        expected: "event row 1 kind changed",
+        script: `document.querySelector("[data-detection-event]")
+          .setAttribute("data-detection-kind", "trend_break")`,
+      },
+      {
+        name: "unhooked extra semantic row",
+        expected: "semantic row inventory is 4",
+        script: `(() => {
+          const row = document.createElement("div");
+          row.innerHTML = "<dt>額外說明</dt><dd>實際通過 9 站。</dd>";
+          document.querySelector("[data-detection-comparison]").append(row);
+        })()`,
+      },
+      {
+        name: "malformed direct description pair",
+        expected: "event row 1 description structure changed",
+        script: `(() => {
+          const row = document.querySelector("[data-detection-event]");
+          const dd = row.querySelector(":scope > dd");
+          const replacement = document.createElement("p");
+          replacement.textContent = dd.textContent;
+          dd.replaceWith(replacement);
+        })()`,
+      },
+      {
+        name: "conflicting event copy",
+        expected: "event row 1 visible text changed",
+        script: `document.querySelector("[data-detection-event] > dd")
+          .append(document.createTextNode("實際通過 9 站。"))`,
+      },
+      {
+        name: "zero-opacity event row",
+        expected: "event row 1 opacity is zero",
+        script: `document.querySelector("[data-detection-event]")
+          .style.setProperty("opacity", "0", "important")`,
+      },
+      {
+        name: "hidden event row",
+        expected: "event row 1 is hidden",
+        script: `document.querySelector("[data-detection-event]").hidden = true`,
+      },
+      {
+        name: "off-canvas event row",
+        expected: "event row 1 is horizontally off-canvas",
+        script: `document.querySelector("[data-detection-event]")
+          .style.setProperty("transform", "translateX(200vw)", "important")`,
+      },
+      {
+        name: "clipped event row",
+        expected: "event row 1 is clipped by an ancestor",
+        script: `(() => {
+          const row = document.querySelector("[data-detection-event]");
+          const comparison = document.querySelector("[data-detection-comparison]");
+          comparison.style.setProperty("height", String(row.getBoundingClientRect().height / 2) + "px", "important");
+          comparison.style.setProperty("overflow", "hidden", "important");
+        })()`,
+      },
+      {
+        name: "opening pair after method evidence",
+        expected: "opening order changed",
+        script: `(() => {
+          const comparison = document.querySelector("[data-detection-comparison]");
+          const boundary = document.querySelector("[data-detection-inference-boundary]");
+          const method = document.querySelector("[data-detection-method-evidence]");
+          method.after(comparison, boundary);
+        })()`,
+      },
+      ...[
+        "每個事件的實際通過數都低於各自純靠機率的預期。",
+        "非偵測不是「事件沒有發生」或「介入無效」的證明。",
+      ].map((claim) => ({
+        name: `boundary-local claim ${claim}`,
+        expected: "boundary is missing required claim",
+        script: `(() => {
+          const boundary = document.querySelector("[data-detection-inference-boundary]");
+          boundary.innerHTML = boundary.innerHTML.replace(${JSON.stringify(claim)}, "");
+          const elsewhere = document.createElement("p");
+          elsewhere.textContent = ${JSON.stringify(claim)};
+          document.querySelector("[data-detection-method-evidence]").after(elsewhere);
+        })()`,
+      })),
+      ...[
+        ["reading key", "[data-detection-reading-key]"],
+        ["comparison", "[data-detection-comparison]"],
+        ["boundary", "[data-detection-inference-boundary]"],
+      ].flatMap(([label, selector]) => [
+        {
+          name: `open disclosure around ${label}`,
+          expected: `${label} is user-collapsible`,
+          script: `(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            const details = document.createElement("details");
+            details.open = true;
+            element.before(details);
+            details.append(element);
+          })()`,
+        },
+        {
+          name: `closed disclosure around ${label}`,
+          expected: `${label} is user-collapsible`,
+          script: `(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            const details = document.createElement("details");
+            element.before(details);
+            details.append(element);
+          })()`,
+        },
+      ]),
     ];
     const loadDetection = async (label) => {
       await send("Page.navigate", { url: `${origin}/detection/` });

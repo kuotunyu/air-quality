@@ -15,8 +15,10 @@ import math
 import pathlib
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -495,13 +497,24 @@ DETECTION_READING_STEPS = (
     ("event", "再看橘點", "事件窗口各測站的觀測－預測差額。"),
     ("threshold", "最後看門檻", "通過數是否高於純靠機率的預期。"),
 )
+DETECTION_EVENT_CONTRACT = (
+    ("COVID-19 全國三級警戒", "window"),
+    ("台中電廠 2、3 號機生煤許可爭議", "window"),
+    ("2018 空氣污染防制法修正", "trend_break"),
+)
+DETECTION_KIND_LABELS = {
+    "window": "窗口事件：觀測－預測差額",
+    "trend_break": "趨勢斷點：斜率差",
+}
 DETECTION_BOUNDARY_CLAIMS = (
     "「測不到」不等於「等於零」。",
+    "每個事件的實際通過數都低於各自純靠機率的預期。",
     "這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，",
     "而待測的效應量是 0.5–1.6 μg/m³。",
     "噪音底線高於訊號。",
     "這批資料與這個方法，無法分辨這種大小的效應",
     "不是「這些事件沒有影響」。",
+    "非偵測不是「事件沒有發生」或「介入無效」的證明。",
     "本分析沒有驗證機組的逐時操作或燃料狀態",
     "介入沒有依事件標籤發生",
     "介入發生但環境訊號太小",
@@ -513,39 +526,65 @@ DETECTION_BOUNDARY_CLAIMS = (
 @dataclass(frozen=True)
 class DetectionExpectedEvent:
     event: str
+    kind: str
     n_credible: int
     n_expected_by_chance: int | float
+
+
+def _is_inside_disclosure(element: Element) -> bool:
+    current: Element | None = element
+    while current is not None:
+        if current.tag == "details":
+            return True
+        current = current.parent
+    return False
 
 
 def _detection_expected_events_from_payload(payload: object) -> tuple[DetectionExpectedEvent, ...]:
     if not isinstance(payload, dict) or set(payload) != {"events", "method", "spatial_check"}:
         raise ValueError("detection payload top-level shape changed")
     events = payload["events"]
-    if not isinstance(events, list) or not events:
-        raise ValueError("detection payload events must be a non-empty list")
+    if not isinstance(events, list) or len(events) != len(DETECTION_EVENT_CONTRACT):
+        count = len(events) if isinstance(events, list) else "not a list"
+        raise ValueError(
+            "detection payload event inventory changed: "
+            f"found {count}, expected {len(DETECTION_EVENT_CONTRACT)}"
+        )
 
     expected_events: list[DetectionExpectedEvent] = []
     identities: set[str] = set()
-    for index, raw_event in enumerate(events, start=1):
+    for index, (raw_event, (expected_identity, expected_kind)) in enumerate(
+        zip(events, DETECTION_EVENT_CONTRACT, strict=True), start=1
+    ):
         if not isinstance(raw_event, dict) or set(raw_event) != DETECTION_EVENT_KEYS:
             raise ValueError(f"detection payload event {index} shape changed")
         event = raw_event["event"]
+        kind = raw_event["kind"]
         observed = raw_event["n_credible"]
         expected = raw_event["n_expected_by_chance"]
         if not isinstance(event, str) or not event:
             raise ValueError(f"detection payload event {index} identity is invalid")
-        if isinstance(observed, bool) or not isinstance(observed, int):
+        if event != expected_identity:
+            raise ValueError(f"detection payload event identity/order changed at position {index}")
+        if kind != expected_kind:
+            raise ValueError(f"detection payload event kind changed at position {index}")
+        if isinstance(observed, bool) or not isinstance(observed, int) or observed < 0:
             raise ValueError(f"detection payload event {index} observed count is invalid")
         if (
             isinstance(expected, bool)
             or not isinstance(expected, (int, float))
             or not math.isfinite(expected)
+            or expected < 0
         ):
             raise ValueError(f"detection payload event {index} expected count is invalid")
         if event in identities:
             raise ValueError(f"detection payload repeats event identity: {event}")
+        if observed >= expected:
+            raise ValueError(
+                f"detection payload event {index} no longer supports the below-chance claim"
+            )
         identities.add(event)
-        expected_events.append(DetectionExpectedEvent(event, observed, expected))
+        expected_events.append(DetectionExpectedEvent(event, kind, observed, expected))
     return tuple(expected_events)
 
 
@@ -595,6 +634,8 @@ def detection_limitation_brief_failures_for_text(
         reading_key = reading_keys[0]
         if reading_key.tag != "ol":
             failures.append("detection reading key is not an ordered list")
+        if _is_inside_disclosure(reading_key):
+            failures.append("detection reading key is user-collapsible")
         steps = [
             element
             for element in elements
@@ -656,30 +697,53 @@ def detection_limitation_brief_failures_for_text(
         comparison = comparisons[0]
         if comparison.tag != "dl":
             failures.append("detection comparison is not a description list")
-        entries = [
+        if _is_inside_disclosure(comparison):
+            failures.append("detection comparison is user-collapsible")
+        semantic_rows = comparison.children
+        hooked_rows = [
             element
             for element in elements
             if "data-detection-event" in element.attributes and element.is_inside(comparison)
         ]
-        observed_events = [entry.attributes.get("data-detection-event") for entry in entries]
+        rows_are_hooks = len(semantic_rows) == len(hooked_rows) and all(
+            row is hooked for row, hooked in zip(semantic_rows, hooked_rows, strict=True)
+        )
+        if len(semantic_rows) != len(expected_events) or not rows_are_hooks:
+            failures.append(
+                "detection semantic-row inventory changed: "
+                f"{len(semantic_rows)} rows, {len(hooked_rows)} hooks"
+            )
+        observed_events = [entry.attributes.get("data-detection-event") for entry in semantic_rows]
         expected_identities = [event.event for event in expected_events]
-        if observed_events != expected_identities or any(not entry.visible for entry in entries):
+        if observed_events != expected_identities or any(
+            not entry.visible for entry in semantic_rows
+        ):
             failures.append(f"detection event inventory changed: {observed_events!r}")
         else:
-            for entry, expected_event in zip(entries, expected_events, strict=True):
+            for entry, expected_event in zip(semantic_rows, expected_events, strict=True):
                 observed = str(expected_event.n_credible)
                 expected = str(expected_event.n_expected_by_chance)
+                kind_label = DETECTION_KIND_LABELS[expected_event.kind]
+                if entry.attributes.get("data-detection-kind") != expected_event.kind:
+                    failures.append("detection event kind changed")
                 if entry.attributes.get("data-detection-observed") != observed:
                     failures.append("detection event observed value changed")
                 if entry.attributes.get("data-detection-expected") != expected:
                     failures.append("detection event expected value changed")
-                text = entry.rendered_text()
-                required_text = (
-                    expected_event.event,
-                    f"實際通過 {observed} 站",
-                    f"純靠機率的預期為 {expected} 站",
-                )
-                if any(fragment not in text for fragment in required_text):
+                if entry.tag != "div" or [child.tag for child in entry.children] != ["dt", "dd"]:
+                    failures.append("detection event description structure changed")
+                    continue
+                term, description = entry.children
+                expected_term = f"{expected_event.event} · {kind_label}"
+                expected_description = f"實際通過 {observed} 站；純靠機率的預期為 {expected} 站。"
+                if (
+                    not term.visible
+                    or not description.visible
+                    or term.rendered_text() != expected_term
+                    or description.rendered_text() != expected_description
+                    or "".join(entry.rendered_text().split())
+                    != "".join(f"{expected_term}{expected_description}".split())
+                ):
                     failures.append("detection event accessible text changed")
 
     boundaries = [
@@ -692,6 +756,8 @@ def detection_limitation_brief_failures_for_text(
         boundary = boundaries[0]
         if boundary.tag != "aside":
             failures.append("detection inference boundary is not an <aside>")
+        if _is_inside_disclosure(boundary):
+            failures.append("detection inference boundary is user-collapsible")
         boundary_text = boundary.rendered_text()
         if any(claim not in boundary_text for claim in DETECTION_BOUNDARY_CLAIMS):
             failures.append("detection inference boundary claim changed")
@@ -705,13 +771,17 @@ def detection_limitation_brief_failures_for_text(
         ):
             failures.append("detection comparison and inference boundary are not adjacent")
 
-    later_evidence = [
-        element for element in elements if "data-detection-results" in element.attributes
+    method_evidence = [
+        element for element in elements if "data-detection-method-evidence" in element.attributes
     ]
-    if len(later_evidence) != 1 or not later_evidence[0].visible:
-        failures.append(f"detection later evidence inventory changed: {len(later_evidence)}")
+    results = [element for element in elements if "data-detection-results" in element.attributes]
+    if len(method_evidence) != 1 or not method_evidence[0].visible:
+        failures.append(f"detection method-evidence inventory changed: {len(method_evidence)}")
+    if len(results) != 1 or not results[0].visible:
+        failures.append(f"detection later evidence inventory changed: {len(results)}")
     elif (
-        figure_title is not None
+        len(method_evidence) == 1
+        and figure_title is not None
         and reading_key is not None
         and primary_plot is not None
         and caption is not None
@@ -725,9 +795,12 @@ def detection_limitation_brief_failures_for_text(
             caption.start_order,
             comparison.start_order,
             boundary.start_order,
-            later_evidence[0].start_order,
+            method_evidence[0].start_order,
+            results[0].start_order,
         ]
-        if opening != sorted(opening):
+        if any(not isinstance(position, int) or position < 0 for position in opening):
+            failures.append("detection opening source index is invalid")
+        elif opening != sorted(opening) or len(set(opening)) != len(opening):
             failures.append("detection opening order changed")
     return failures
 
@@ -1489,12 +1562,83 @@ def _run_preflight() -> None:
                 f"{mutation_failures}"
             )
 
+    detection_preflight_misses: list[str] = []
+    valid_detection_payload = json.loads(DETECTION_LIMIT.read_text(encoding="utf-8"))
+    invalid_payload_mutations: dict[str, tuple[str, Callable[[Any], object]]] = {
+        "missing event inventory": (
+            "event inventory changed",
+            lambda payload: payload["events"].pop(),
+        ),
+        "extra event inventory": (
+            "event inventory changed",
+            lambda payload: payload["events"].append({**payload["events"][0], "event": "額外事件"}),
+        ),
+        "reordered event inventory": (
+            "event identity/order changed",
+            lambda payload: payload["events"].reverse(),
+        ),
+        "wrong event identity": (
+            "event identity/order changed",
+            lambda payload: payload["events"][0].__setitem__("event", "錯誤事件"),
+        ),
+        "wrong event kind": (
+            "event kind changed",
+            lambda payload: payload["events"][2].__setitem__("kind", "window"),
+        ),
+        "negative observed count": (
+            "observed count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_credible", -1),
+        ),
+        "negative expected count": (
+            "expected count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_expected_by_chance", -0.1),
+        ),
+        "below-chance relationship no longer holds": (
+            "no longer supports the below-chance claim",
+            lambda payload: payload["events"][0].__setitem__("n_credible", 4),
+        ),
+    }
+    for name, (expected_error, mutate) in invalid_payload_mutations.items():
+        payload = json.loads(json.dumps(valid_detection_payload))
+        mutate(payload)
+        try:
+            _detection_expected_events_from_payload(payload)
+        except ValueError as exc:
+            if expected_error not in str(exc):
+                detection_preflight_misses.append(f"payload {name} misdiagnosed as {exc!s}")
+        else:
+            detection_preflight_misses.append(f"payload {name} accepted")
+
     expected_detection_events = (
-        DetectionExpectedEvent("COVID-19 全國三級警戒", 1, 3.3),
-        DetectionExpectedEvent("台中電廠 2、3 號機生煤許可爭議", 1, 3.3),
-        DetectionExpectedEvent("2018 空氣污染防制法修正", 1, 3.3),
+        DetectionExpectedEvent("COVID-19 全國三級警戒", "window", 1, 3.3),
+        DetectionExpectedEvent("台中電廠 2、3 號機生煤許可爭議", "window", 1, 3.3),
+        DetectionExpectedEvent("2018 空氣污染防制法修正", "trend_break", 1, 3.3),
     )
-    valid_detection_brief = """
+    kind_contract = (
+        ("window", "窗口事件：觀測－預測差額"),
+        ("window", "窗口事件：觀測－預測差額"),
+        ("trend_break", "趨勢斷點：斜率差"),
+    )
+
+    def detection_event_row(
+        event: DetectionExpectedEvent,
+        kind: str,
+        kind_label: str,
+    ) -> str:
+        return (
+            f'<div data-detection-event="{event.event}" data-detection-kind="{kind}" '
+            f'data-detection-observed="{event.n_credible}" '
+            f'data-detection-expected="{event.n_expected_by_chance}">'
+            f"<dt>{event.event} · {kind_label}</dt>"
+            f"<dd>實際通過 {event.n_credible} 站；"
+            f"純靠機率的預期為 {event.n_expected_by_chance} 站。</dd></div>"
+        )
+
+    event_rows = [
+        detection_event_row(event, kind, label)
+        for event, (kind, label) in zip(expected_detection_events, kind_contract, strict=True)
+    ]
+    valid_detection_brief = f"""
 <main>
 <section class="evidence-figure"><header><p class="evidence-number">圖 5.1</p><p class="evidence-title">事件估計值能否離開安慰劑散布？</p></header>
 <figure>
@@ -1503,12 +1647,10 @@ def _run_preflight() -> None:
 <figcaption>Figure 5.1 caption</figcaption>
 </figure></section>
 <dl data-detection-comparison>
-<div data-detection-event="COVID-19 全國三級警戒" data-detection-observed="1" data-detection-expected="3.3">COVID-19 全國三級警戒：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
-<div data-detection-event="台中電廠 2、3 號機生煤許可爭議" data-detection-observed="1" data-detection-expected="3.3">台中電廠 2、3 號機生煤許可爭議：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
-<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
+{chr(10).join(event_rows)}
 </dl>
-<aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>
-<p data-detection-method>First method evidence</p>
+<aside data-detection-inference-boundary>「測不到」不等於「等於零」。每個事件的實際通過數都低於各自純靠機率的預期。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。非偵測不是「事件沒有發生」或「介入無效」的證明。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>
+<p data-detection-method-evidence>First method evidence</p>
 <table data-detection-results><tr><td>Later evidence</td></tr></table>
 </main>
 """
@@ -1527,6 +1669,25 @@ def _run_preflight() -> None:
         boundary = html[start:end]
         without_boundary = html[:start] + html[end:]
         return without_boundary.replace(marker, f"{marker}{boundary}", 1)
+
+    def move_opening_pair_after(html: str, marker: str) -> str:
+        start = html.index("<dl data-detection-comparison>")
+        end = html.index("</aside>", start) + len("</aside>")
+        pair = html[start:end]
+        without_pair = html[:start] + html[end:]
+        return without_pair.replace(marker, f"{marker}{pair}", 1)
+
+    def wrap_detection_region(
+        html: str,
+        start_marker: str,
+        end_marker: str,
+        *,
+        opened: bool,
+    ) -> str:
+        start = html.index(start_marker)
+        end = html.index(end_marker, start) + len(end_marker)
+        details = "<details open>" if opened else "<details>"
+        return html[:start] + details + html[start:end] + "</details>" + html[end:]
 
     detection_mutations = {
         "visible plus hidden Figure 5.1 title": (
@@ -1579,33 +1740,28 @@ def _run_preflight() -> None:
         ),
         "missing event": (
             "detection event inventory changed",
-            valid_detection_brief.replace(
-                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>\n',
-                "",
-                1,
-            ),
+            valid_detection_brief.replace(f"{event_rows[2]}\n", "", 1),
         ),
         "duplicate event": (
             "detection event inventory changed",
-            valid_detection_brief.replace(
-                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
-                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div><div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
-                1,
-            ),
+            valid_detection_brief.replace(event_rows[2], event_rows[2] * 2, 1),
         ),
         "extra event": (
             "detection event inventory changed",
             valid_detection_brief.replace(
                 "</dl>",
-                '<div data-detection-event="extra" data-detection-observed="1" data-detection-expected="3.3">extra：實際通過 1 站；純靠機率的預期為 3.3 站。</div></dl>',
+                '<div data-detection-event="extra" data-detection-kind="window" '
+                'data-detection-observed="1" data-detection-expected="3.3">'
+                "<dt>extra · 窗口事件：觀測－預測差額</dt><dd>實際通過 1 站；"
+                "純靠機率的預期為 3.3 站。</dd></div></dl>",
                 1,
             ),
         ),
         "reordered events": (
             "detection event inventory changed",
             valid_detection_brief.replace(
-                '<div data-detection-event="台中電廠 2、3 號機生煤許可爭議" data-detection-observed="1" data-detection-expected="3.3">台中電廠 2、3 號機生煤許可爭議：實際通過 1 站；純靠機率的預期為 3.3 站。</div>\n<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
-                '<div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>\n<div data-detection-event="台中電廠 2、3 號機生煤許可爭議" data-detection-observed="1" data-detection-expected="3.3">台中電廠 2、3 號機生煤許可爭議：實際通過 1 站；純靠機率的預期為 3.3 站。</div>',
+                f"{event_rows[1]}\n{event_rows[2]}",
+                f"{event_rows[2]}\n{event_rows[1]}",
                 1,
             ),
         ),
@@ -1633,15 +1789,44 @@ def _run_preflight() -> None:
                 'data-detection-expected="3.3"', 'data-detection-expected="4"', 1
             ),
         ),
+        "wrong rendered event kind": (
+            "detection event kind changed",
+            valid_detection_brief.replace(
+                'data-detection-kind="trend_break"', 'data-detection-kind="window"', 1
+            ),
+        ),
+        "unhooked extra semantic row": (
+            "detection semantic-row inventory changed",
+            valid_detection_brief.replace(
+                "</dl>",
+                "<div><dt>額外說明</dt><dd>實際通過 9 站。</dd></div></dl>",
+                1,
+            ),
+        ),
+        "malformed direct description pair": (
+            "detection event description structure changed",
+            valid_detection_brief.replace("<dd>實際通過 1 站", "<p>實際通過 1 站", 1).replace(
+                "站。</dd></div>", "站。</p></div>", 1
+            ),
+        ),
+        "conflicting event copy": (
+            "detection event accessible text changed",
+            valid_detection_brief.replace(
+                "純靠機率的預期為 3.3 站。</dd>",
+                "純靠機率的預期為 3.3 站。實際通過 9 站。</dd>",
+                1,
+            ),
+        ),
         "event value elsewhere": (
             "detection event accessible text changed",
             valid_detection_brief.replace(
-                "COVID-19 全國三級警戒：實際通過 1 站；純靠機率的預期為 3.3 站。",
-                "COVID-19 全國三級警戒：實際通過 1 站。",
+                "純靠機率的預期為 3.3 站。</dd>",
+                "</dd>",
                 1,
             ).replace(
-                "<p data-detection-method>First method evidence</p>",
-                "<p>純靠機率的預期為 3.3 站。</p><p data-detection-method>First method evidence</p>",
+                "<p data-detection-method-evidence>First method evidence</p>",
+                "<p>純靠機率的預期為 3.3 站。</p>"
+                "<p data-detection-method-evidence>First method evidence</p>",
                 1,
             ),
         ),
@@ -1675,6 +1860,38 @@ def _run_preflight() -> None:
             "detection inference boundary claim changed",
             valid_detection_brief.replace("噪音底線高於訊號。", "噪音底線接近訊號。", 1),
         ),
+        "missing below-chance inference claim": (
+            "detection inference boundary claim changed",
+            valid_detection_brief.replace("每個事件的實際通過數都低於各自純靠機率的預期。", "", 1),
+        ),
+        "missing event-occurrence inference claim": (
+            "detection inference boundary claim changed",
+            valid_detection_brief.replace(
+                "非偵測不是「事件沒有發生」或「介入無效」的證明。", "", 1
+            ),
+        ),
+        "below-chance inference claim outside boundary": (
+            "detection inference boundary claim changed",
+            valid_detection_brief.replace(
+                "每個事件的實際通過數都低於各自純靠機率的預期。", "", 1
+            ).replace(
+                "<p data-detection-method-evidence>",
+                "<p>每個事件的實際通過數都低於各自純靠機率的預期。</p>"
+                "<p data-detection-method-evidence>",
+                1,
+            ),
+        ),
+        "event-occurrence inference claim outside boundary": (
+            "detection inference boundary claim changed",
+            valid_detection_brief.replace(
+                "非偵測不是「事件沒有發生」或「介入無效」的證明。", "", 1
+            ).replace(
+                "<p data-detection-method-evidence>",
+                "<p>非偵測不是「事件沒有發生」或「介入無效」的證明。</p>"
+                "<p data-detection-method-evidence>",
+                1,
+            ),
+        ),
         "inference claim outside boundary": (
             "detection inference boundary claim changed",
             valid_detection_brief.replace("噪音底線高於訊號。", "", 1).replace(
@@ -1694,7 +1911,68 @@ def _run_preflight() -> None:
             "detection comparison and inference boundary are not adjacent",
             move_boundary_after(
                 valid_detection_brief,
-                "<p data-detection-method>First method evidence</p>",
+                "<p data-detection-method-evidence>First method evidence</p>",
+            ),
+        ),
+        "comparison and boundary after method evidence": (
+            "detection opening order changed",
+            move_opening_pair_after(
+                valid_detection_brief,
+                "<p data-detection-method-evidence>First method evidence</p>",
+            ),
+        ),
+        "open disclosure around reading key": (
+            "detection reading key is user-collapsible",
+            wrap_detection_region(
+                valid_detection_brief,
+                "<ol data-detection-reading-key>",
+                "</ol>",
+                opened=True,
+            ),
+        ),
+        "closed disclosure around reading key": (
+            "detection reading key is user-collapsible",
+            wrap_detection_region(
+                valid_detection_brief,
+                "<ol data-detection-reading-key>",
+                "</ol>",
+                opened=False,
+            ),
+        ),
+        "open disclosure around comparison": (
+            "detection comparison is user-collapsible",
+            wrap_detection_region(
+                valid_detection_brief,
+                "<dl data-detection-comparison>",
+                "</dl>",
+                opened=True,
+            ),
+        ),
+        "closed disclosure around comparison": (
+            "detection comparison is user-collapsible",
+            wrap_detection_region(
+                valid_detection_brief,
+                "<dl data-detection-comparison>",
+                "</dl>",
+                opened=False,
+            ),
+        ),
+        "open disclosure around boundary": (
+            "detection inference boundary is user-collapsible",
+            wrap_detection_region(
+                valid_detection_brief,
+                "<aside data-detection-inference-boundary>",
+                "</aside>",
+                opened=True,
+            ),
+        ),
+        "closed disclosure around boundary": (
+            "detection inference boundary is user-collapsible",
+            wrap_detection_region(
+                valid_detection_brief,
+                "<aside data-detection-inference-boundary>",
+                "</aside>",
+                opened=False,
             ),
         ),
         "stale Figure 5.1 title": (
@@ -1709,10 +1987,13 @@ def _run_preflight() -> None:
             html, expected_detection_events
         )
         if not any(failure.startswith(expected_failure) for failure in mutation_failures):
-            raise RuntimeError(
-                "detection limitation brief preflight did not reject "
-                f"{name} for the expected reason: {mutation_failures}"
+            detection_preflight_misses.append(
+                f"markup {name} -> {expected_failure} (received {mutation_failures})"
             )
+    if detection_preflight_misses:
+        raise RuntimeError(
+            "detection limitation brief preflight misses: " + "; ".join(detection_preflight_misses)
+        )
 
     def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
         title_id = f"evidence-{number.replace('.', '-')}-title"
