@@ -1102,6 +1102,22 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
       problems.push(`${scope}boundary is missing required claim ${JSON.stringify(claim)}`);
     }
   }
+  const boundaryLocalClaims = [
+    "每個事件的實際通過數都低於各自純靠機率的預期。",
+    "非偵測不是「事件沒有發生」或「介入無效」的證明。",
+  ];
+  const occurrenceCount = (text, claim) => String(text ?? "").split(claim).length - 1;
+  for (const claim of boundaryLocalClaims) {
+    if (
+      occurrenceCount(state?.boundaryText, claim) !== 1 ||
+      occurrenceCount(state?.pageText, claim) !== 1
+    ) {
+      problems.push(`${scope}boundary-local inference locality changed ${JSON.stringify(claim)}`);
+    }
+  }
+  if (String(state?.pageText ?? "").includes("三個事件的實際通過數都低於機率預期。")) {
+    problems.push(`${scope}boundary-local inference is duplicated outside the boundary`);
+  }
   if (state?.regions?.boundary?.collapsed || state?.regions?.boundary?.tagName === "DETAILS") {
     problems.push(`${scope}boundary became a collapsed disclosure`);
   }
@@ -3305,6 +3321,12 @@ async function lifecycleSelfTest() {
   const comparison = detectionPart(560, 650, 50);
   const boundary = detectionPart(665, 770, 60, { collapsed: false, tagName: "ASIDE" });
   const methodEvidence = detectionPart(790, 850, 70);
+  const detectionBoundaryText =
+    "「測不到」不等於「等於零」。" +
+    "每個事件的實際通過數都低於各自純靠機率的預期。噪音底線高於訊號。" +
+    "這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。" +
+    "非偵測不是「事件沒有發生」或「介入無效」的證明。" +
+    "本分析沒有驗證機組的逐時操作或燃料狀態。";
   const completeDetectionBrief = {
     mode: "normal",
     theme: "light",
@@ -3383,13 +3405,8 @@ async function lifecycleSelfTest() {
         inspection: detectionPart(570 + index * 25, 590 + index * 25, 51 + index),
       };
     }),
-    boundaryText:
-      "「測不到」不等於「等於零」。" +
-      "每個事件的實際通過數都低於各自純靠機率的預期。噪音底線高於訊號。" +
-      "這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。" +
-      "非偵測不是「事件沒有發生」或「介入無效」的證明。" +
-      "本分析沒有驗證機組的逐時操作或燃料狀態。",
-    pageText: "",
+    boundaryText: detectionBoundaryText,
+    pageText: detectionBoundaryText,
     viewport: { width: 375, height: 812 },
     document: { clientWidth: 375, scrollWidth: 375 },
   };
@@ -3670,6 +3687,9 @@ async function lifecycleSelfTest() {
       const claim = "非偵測不是「事件沒有發生」或「介入無效」的證明。";
       state.boundaryText = state.boundaryText.replace(claim, "");
       state.pageText += claim;
+    }],
+    ["legacy below-chance conclusion outside boundary", "boundary-local inference is duplicated", (state) => {
+      state.pageText += "三個事件的實際通過數都低於機率預期。";
     }],
     ["boundary before comparison", "boundary no longer follows comparison", (state) => {
       state.landmarks.boundary.sourceIndex = 45;
@@ -5110,6 +5130,15 @@ async function main() {
           document.querySelector("[data-detection-method-evidence]").after(elsewhere);
         })()`,
       })),
+      {
+        name: "legacy below-chance conclusion outside boundary",
+        expected: "boundary-local inference is duplicated",
+        script: `(() => {
+          const duplicate = document.createElement("p");
+          duplicate.textContent = "三個事件的實際通過數都低於機率預期。";
+          document.querySelector("[data-detection-method-evidence]").after(duplicate);
+        })()`,
+      },
       ...[
         ["reading key", "[data-detection-reading-key]"],
         ["comparison", "[data-detection-comparison]"],

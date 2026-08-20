@@ -15,10 +15,12 @@ import math
 import pathlib
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
+from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -506,15 +508,20 @@ DETECTION_KIND_LABELS = {
     "window": "窗口事件：觀測－預測差額",
     "trend_break": "趨勢斷點：斜率差",
 }
+DETECTION_BOUNDARY_LOCAL_CLAIMS = (
+    "每個事件的實際通過數都低於各自純靠機率的預期。",
+    "非偵測不是「事件沒有發生」或「介入無效」的證明。",
+)
+DETECTION_LEGACY_BELOW_CHANCE_CLAIM = "三個事件的實際通過數都低於機率預期。"
 DETECTION_BOUNDARY_CLAIMS = (
     "「測不到」不等於「等於零」。",
-    "每個事件的實際通過數都低於各自純靠機率的預期。",
+    DETECTION_BOUNDARY_LOCAL_CLAIMS[0],
     "這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，",
     "而待測的效應量是 0.5–1.6 μg/m³。",
     "噪音底線高於訊號。",
     "這批資料與這個方法，無法分辨這種大小的效應",
     "不是「這些事件沒有影響」。",
-    "非偵測不是「事件沒有發生」或「介入無效」的證明。",
+    DETECTION_BOUNDARY_LOCAL_CLAIMS[1],
     "本分析沒有驗證機組的逐時操作或燃料狀態",
     "介入沒有依事件標籤發生",
     "介入發生但環境訊號太小",
@@ -761,6 +768,14 @@ def detection_limitation_brief_failures_for_text(
         boundary_text = boundary.rendered_text()
         if any(claim not in boundary_text for claim in DETECTION_BOUNDARY_CLAIMS):
             failures.append("detection inference boundary claim changed")
+        scope_text = boundary.parent.rendered_text() if boundary.parent is not None else ""
+        if any(
+            boundary_text.count(claim) != 1 or scope_text.count(claim) != 1
+            for claim in DETECTION_BOUNDARY_LOCAL_CLAIMS
+        ):
+            failures.append("detection boundary-local inference locality changed")
+        if DETECTION_LEGACY_BELOW_CHANCE_CLAIM in scope_text:
+            failures.append("detection boundary-local inference is duplicated")
 
     if comparison is not None and boundary is not None:
         parent = comparison.parent
@@ -1589,15 +1604,59 @@ def _run_preflight() -> None:
             "observed count is invalid",
             lambda payload: payload["events"][0].__setitem__("n_credible", -1),
         ),
+        "fractional observed count": (
+            "observed count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_credible", 1.5),
+        ),
+        "observed NaN": (
+            "observed count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_credible", float("nan")),
+        ),
+        "observed positive infinity": (
+            "observed count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_credible", float("inf")),
+        ),
+        "observed negative infinity": (
+            "observed count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_credible", float("-inf")),
+        ),
         "negative expected count": (
             "expected count is invalid",
             lambda payload: payload["events"][0].__setitem__("n_expected_by_chance", -0.1),
+        ),
+        "expected NaN": (
+            "expected count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_expected_by_chance", float("nan")),
+        ),
+        "expected positive infinity": (
+            "expected count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_expected_by_chance", float("inf")),
+        ),
+        "expected negative infinity": (
+            "expected count is invalid",
+            lambda payload: payload["events"][0].__setitem__("n_expected_by_chance", float("-inf")),
         ),
         "below-chance relationship no longer holds": (
             "no longer supports the below-chance claim",
             lambda payload: payload["events"][0].__setitem__("n_credible", 4),
         ),
     }
+    required_numeric_mutations = {
+        "fractional observed count",
+        "observed NaN",
+        "observed positive infinity",
+        "observed negative infinity",
+        "expected NaN",
+        "expected positive infinity",
+        "expected negative infinity",
+    }
+    missing_numeric_mutations = required_numeric_mutations - invalid_payload_mutations.keys()
+    if missing_numeric_mutations:
+        detection_preflight_misses.append(
+            "payload numeric mutation coverage missing: "
+            + ", ".join(sorted(missing_numeric_mutations))
+        )
+    numeric_rejection_counts = dict.fromkeys(required_numeric_mutations, 0)
     for name, (expected_error, mutate) in invalid_payload_mutations.items():
         payload = json.loads(json.dumps(valid_detection_payload))
         mutate(payload)
@@ -1606,8 +1665,55 @@ def _run_preflight() -> None:
         except ValueError as exc:
             if expected_error not in str(exc):
                 detection_preflight_misses.append(f"payload {name} misdiagnosed as {exc!s}")
+            elif name in numeric_rejection_counts:
+                numeric_rejection_counts[name] += 1
         else:
             detection_preflight_misses.append(f"payload {name} accepted")
+    if any(count != 1 for count in numeric_rejection_counts.values()):
+        detection_preflight_misses.append(
+            "payload numeric mutation branch counts changed: "
+            + ", ".join(
+                f"{name}={count}" for name, count in sorted(numeric_rejection_counts.items())
+            )
+        )
+
+    raw_nonfinite_rejection_counts = dict.fromkeys(("NaN", "Infinity", "-Infinity"), 0)
+    raw_payload = DETECTION_LIMIT.read_text(encoding="utf-8")
+    raw_marker = '"n_credible":1'
+    if raw_marker not in raw_payload:
+        detection_preflight_misses.append("raw JSON non-finite loader marker changed")
+    else:
+        with tempfile.TemporaryDirectory(prefix="twair-detection-preflight-") as directory:
+            raw_path = pathlib.Path(directory) / "detection-limit.json"
+            for constant in raw_nonfinite_rejection_counts:
+                raw_path.write_text(
+                    raw_payload.replace(raw_marker, f'"n_credible":{constant}', 1),
+                    encoding="utf-8",
+                )
+                with patch.object(sys.modules[__name__], "DETECTION_LIMIT", raw_path):
+                    try:
+                        load_detection_expected_events()
+                    except ValueError as exc:
+                        expected_error = (
+                            f"detection payload contains invalid JSON number: {constant}"
+                        )
+                        if str(exc) == expected_error:
+                            raw_nonfinite_rejection_counts[constant] += 1
+                        else:
+                            detection_preflight_misses.append(
+                                f"raw JSON {constant} misdiagnosed as {exc!s}"
+                            )
+                    else:
+                        detection_preflight_misses.append(
+                            f"raw JSON non-finite constant {constant} accepted"
+                        )
+    if any(count != 1 for count in raw_nonfinite_rejection_counts.values()):
+        detection_preflight_misses.append(
+            "raw JSON non-finite loader branch counts changed: "
+            + ", ".join(
+                f"{constant}={count}" for constant, count in raw_nonfinite_rejection_counts.items()
+            )
+        )
 
     expected_detection_events = (
         DetectionExpectedEvent("COVID-19 全國三級警戒", "window", 1, 3.3),
@@ -1889,6 +1995,14 @@ def _run_preflight() -> None:
                 "<p data-detection-method-evidence>",
                 "<p>非偵測不是「事件沒有發生」或「介入無效」的證明。</p>"
                 "<p data-detection-method-evidence>",
+                1,
+            ),
+        ),
+        "legacy below-chance conclusion outside boundary": (
+            "detection boundary-local inference is duplicated",
+            valid_detection_brief.replace(
+                "<p data-detection-method-evidence>",
+                "<p>三個事件的實際通過數都低於機率預期。</p><p data-detection-method-evidence>",
                 1,
             ),
         ),
