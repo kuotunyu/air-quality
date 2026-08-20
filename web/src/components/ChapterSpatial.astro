@@ -516,6 +516,57 @@ const readingMap = [
     scroll-margin-top: 5rem;
   }
 
+  @media (max-width: 35rem) {
+    #space > :global(.chapter-intro.has-reading-map) {
+      margin-bottom: 0;
+    }
+
+    #space > :global(.chapter-intro.has-reading-map [data-chapter-reading-map]) {
+      padding-block-start: 0;
+    }
+
+    #space > :global(.chapter-intro.has-reading-map .chapter-reading-label) {
+      display: none;
+    }
+
+    #space > :global(.chapter-intro.has-reading-map [data-chapter-reading-link]) {
+      font-size: var(--text-xs);
+      line-height: 1.35;
+    }
+
+    #space-distance {
+      margin-block: 0;
+    }
+
+    #space-distance + :global(.evidence-figure[data-primary-evidence]) {
+      margin-block-start: 0;
+      padding-block-start: 0;
+    }
+
+    #space-distance + :global(.evidence-figure[data-primary-evidence] > figure) {
+      margin-block-start: 0;
+    }
+  }
+
+  @media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+    #space > :global(.chapter-intro.has-reading-map) {
+      grid-template-columns: minmax(0, 1.7fr) minmax(14rem, 0.55fr);
+    }
+
+    #space-distance {
+      margin-block: 0;
+    }
+
+    #space-distance + :global(.evidence-figure[data-primary-evidence]) {
+      margin-block-start: 0;
+      padding-block-start: 0;
+    }
+
+    #space-distance + :global(.evidence-figure[data-primary-evidence] > figure) {
+      margin-block-start: 0;
+    }
+  }
+
   /*
    * ONE grid for the whole figure, not one per row.
    *

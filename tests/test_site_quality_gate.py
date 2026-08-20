@@ -37,6 +37,7 @@ def test_the_site_quality_gate_self_tests_its_bounded_browser_protocol() -> None
         "site quality homepage mobile type self-test passed",
         "site quality chapter opening self-test passed",
         "site quality trend reading map self-test passed",
+        "site quality space field note self-test passed",
         "site quality trend print contract self-test passed",
         "site quality compact identity self-test passed",
         "site quality browser restart self-test passed",
