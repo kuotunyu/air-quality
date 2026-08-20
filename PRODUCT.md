@@ -498,6 +498,11 @@ brand
    三個普通錨點問題與第一張核心證據圖。連結在已審查的手機、平板與桌面寬度
    保持可見並可由鍵盤操作；它們不建立第二套章節 registry，也不修改任何圖表
    series、缺值斷線、caption 或資料工具。
+71. **第四章先界定方法，才讓讀者操作條件式風向圖譜。** `/sources/` 依 source order
+   呈現開場、方法界線、測站選擇器與圖 4.1；手機初始 viewport 已進入圖題與極座標
+   繪圖區。換站時，選擇器、風速型態標記、caption、
+   讀值與每個 CBPF cell 維持同一測站；無 JavaScript 仍是可自行辨識的靜態閱讀
+   路徑，紙本則保留方法界線、圖 4.1 caption、讀值與方法限制。
 
 
 ## Accessibility & Inclusion
