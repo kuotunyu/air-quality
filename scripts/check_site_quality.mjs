@@ -535,11 +535,13 @@ const TREND_READING_MAP_CONTRACT = Object.freeze({
   label: "trend",
   targetIds: Object.freeze(["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"]),
   firstQuestionMustFitPhoneViewport: true,
+  requiresFullEvidenceOrder: false,
 });
 const SPACE_READING_MAP_CONTRACT = Object.freeze({
   label: "space",
   targetIds: Object.freeze(["space-distance", "space-controls", "space-inference"]),
   firstQuestionMustFitPhoneViewport: true,
+  requiresFullEvidenceOrder: true,
 });
 
 function readingMapProblems(state, contract) {
@@ -615,6 +617,9 @@ function readingMapProblems(state, contract) {
     }
   }
   if (!state?.sourceOrdered) problems.push(`${label} reading map source order changed`);
+  if (contract.requiresFullEvidenceOrder && !state?.evidenceOrdered) {
+    problems.push(`${label} field-note evidence order changed`);
+  }
   if (!state?.primary?.visible || state.primary.width <= 0 || state.primary.height <= 0) {
     problems.push(`${label} primary evidence is not visible`);
   } else if (state.primary.clippedByAncestor) {
@@ -651,6 +656,9 @@ function readingMapPrintProblems(state, contract) {
     if (!visible) problems.push(`${contract.label} print target ${index + 1} is not visible`);
   }
   if (!state?.sourceOrdered) problems.push(`${contract.label} print source order changed`);
+  if (contract.requiresFullEvidenceOrder && !state?.evidenceOrdered) {
+    problems.push(`${contract.label} print evidence order changed`);
+  }
   return problems;
 }
 
@@ -2636,6 +2644,7 @@ async function lifecycleSelfTest() {
       stickyBottom: 64,
       anchorsMeasured: true,
       sourceOrdered: true,
+      evidenceOrdered: true,
       horizontalOverflow: 0,
     };
   };
@@ -2756,6 +2765,9 @@ async function lifecycleSelfTest() {
   expectSpaceFieldNoteProblem("reordered source", 375, (state) => {
     state.sourceOrdered = false;
   }, "source order changed");
+  expectSpaceFieldNoteProblem("reordered framed evidence", 375, (state) => {
+    state.evidenceOrdered = false;
+  }, "evidence order changed");
   expectSpaceFieldNoteProblem("hidden primary", 1440, (state) => {
     state.primary.visible = false;
   }, "primary evidence is not visible");
@@ -2779,6 +2791,7 @@ async function lifecycleSelfTest() {
     linksVisible: [true, true, true],
     targetsVisible: [true, true, true],
     sourceOrdered: true,
+    evidenceOrdered: true,
   };
   if (readingMapPrintProblems(completeTrendPrint, TREND_READING_MAP_CONTRACT).length) {
     throw new Error("trend print predicate rejected its complete control");
@@ -2818,6 +2831,19 @@ async function lifecycleSelfTest() {
     throw new Error(
       `the trend print predicate accepts ${missedTrendPrintProblems.join(", ")}`,
     );
+  }
+  const completeSpacePrint = {
+    ...completeTrendPrint,
+    linksVisible: [...completeTrendPrint.linksVisible],
+    targetsVisible: [...completeTrendPrint.targetsVisible],
+    evidenceOrdered: false,
+  };
+  const missedSpacePrintProblems = readingMapPrintProblems(
+    completeSpacePrint,
+    SPACE_READING_MAP_CONTRACT,
+  );
+  if (!missedSpacePrintProblems.some((problem) => problem.includes("evidence order changed"))) {
+    throw new Error("the space print predicate accepts reordered framed evidence");
   }
   console.log("site quality trend print contract self-test passed");
 
@@ -4080,6 +4106,8 @@ async function main() {
       const ids = ${JSON.stringify(targetIds)};
       const targets = ids.map((id) => document.getElementById(id));
       const links = [...document.querySelectorAll("[data-chapter-reading-link]")];
+      const figures = [...document.querySelectorAll(".evidence-figure")];
+      const tables = [...document.querySelectorAll("table")];
       const follows = (first, second) => Boolean(
         first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
       );
@@ -4098,6 +4126,10 @@ async function main() {
           follows(map, targets[0]) &&
           Boolean(primary && targets[0] && (primary.contains(targets[0]) || follows(targets[0], primary))) &&
           follows(primary, targets[1]) && follows(targets[1], targets[2]),
+        evidenceOrdered: figures.length === 2 && tables.length === 2 &&
+          follows(targets[0], figures[0]) && follows(figures[0], targets[1]) &&
+          follows(targets[1], figures[1]) && follows(figures[1], targets[2]) &&
+          follows(targets[2], tables[0]) && follows(targets[2], tables[1]),
         horizontalOverflow: document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
       };
@@ -4156,6 +4188,8 @@ async function main() {
     const primary = document.querySelector("[data-primary-evidence]");
     const targets = ${JSON.stringify(targetIds)}.map((id) => document.getElementById(id));
     const links = [...document.querySelectorAll("[data-chapter-reading-link]")];
+    const figures = [...document.querySelectorAll(".evidence-figure")];
+    const tables = [...document.querySelectorAll("table")];
     return {
       thesisVisible: rendered(thesis),
       mapVisible: rendered(map),
@@ -4165,6 +4199,10 @@ async function main() {
       sourceOrdered: follows(thesis, map) && follows(map, targets[0]) &&
         Boolean(primary && targets[0] && (primary.contains(targets[0]) || follows(targets[0], primary))) &&
         follows(primary, targets[1]) && follows(targets[1], targets[2]),
+      evidenceOrdered: figures.length === 2 && tables.length === 2 &&
+        follows(targets[0], figures[0]) && follows(figures[0], targets[1]) &&
+        follows(targets[1], figures[1]) && follows(figures[1], targets[2]) &&
+        follows(targets[2], tables[0]) && follows(targets[2], tables[1]),
     };
   })()`);
 

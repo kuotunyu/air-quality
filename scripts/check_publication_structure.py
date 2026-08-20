@@ -632,10 +632,21 @@ def space_field_note_failures_for_text(html: str) -> list[str]:
             failures.append("space primary evidence precedes its question")
         if primary[0].start_order >= targets[1].start_order:
             failures.append("space primary evidence no longer follows the first question")
+    if len(figures) == 2 and len(targets) == len(SPACE_READING_MAP) and targets_are_ordered:
+        if figures[1].start_order <= targets[1].start_order:
+            failures.append("space Figure 3.2 precedes its question")
+        if figures[1].start_order >= targets[2].start_order:
+            failures.append("space Figure 3.2 no longer precedes the third question")
 
     tables = [element for element in visible if element.tag == "table"]
     if len(tables) != 2:
         failures.append(f"space table inventory changed: {len(tables)}")
+    elif (
+        len(targets) == len(SPACE_READING_MAP)
+        and targets_are_ordered
+        and any(table.start_order <= targets[2].start_order for table in tables)
+    ):
+        failures.append("space table precedes its question")
 
     supporting: list[Element] = []
     headings = [
@@ -1417,6 +1428,9 @@ def _run_preflight() -> None:
         '<h2 id="space-inference" data-space-field-question>'
         "剩餘相依對推論與空白區預測有什麼代價？</h2>"
     )
+    space_second_figure = '<section class="evidence-figure"><figure>圖 3.2</figure></section>'
+    space_first_table = "<table><tbody><tr><td>推論</td></tr></tbody></table>"
+    space_second_table = "<table><tbody><tr><td>外推</td></tr></tbody></table>"
     space_mutations = {
         "missing map": (
             "expected exactly one visible space reading map",
@@ -1503,6 +1517,24 @@ def _run_preflight() -> None:
         "changed table inventory": (
             "space table inventory changed",
             valid_space_field_note.replace("<table>", "<div>", 1).replace("</table>", "</div>", 1),
+        ),
+        "Figure 3.2 before its question": (
+            "space Figure 3.2 precedes its question",
+            valid_space_field_note.replace(space_second_figure, "", 1).replace(
+                space_second_target, space_second_figure + "\n" + space_second_target, 1
+            ),
+        ),
+        "first table before its question": (
+            "space table precedes its question",
+            valid_space_field_note.replace(space_first_table, "", 1).replace(
+                space_third_target, space_first_table + "\n" + space_third_target, 1
+            ),
+        ),
+        "second table before its question": (
+            "space table precedes its question",
+            valid_space_field_note.replace(space_second_table, "", 1).replace(
+                space_third_target, space_second_table + "\n" + space_third_target, 1
+            ),
         ),
         "supporting heading promoted to h2": (
             "space supporting heading hierarchy changed",
