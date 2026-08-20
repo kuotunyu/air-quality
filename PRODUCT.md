@@ -501,9 +501,9 @@ brand
 71. **第五章以證據與讀法開場，詮釋邊界留在證據之後。** `/detection/` 依 source
    order 呈現章節識別、lede、圖 5.1 問題、「先看灰線 → 再看橘點 → 最後看門檻」
    的有序 reading key、主圖與相連 caption，接著是一個由
-   `detection-limit.json` 綁定的三事件連續比較帶（包含分段趨勢事件），而不是
-   cards 或 KPI。不可收合的 inference boundary 在後續證據之前保持可見。
-   這個 editorial contract 不改寫科學 payload、共用刻度、marks 或圖說；共用品質閘門
+   `detection-limit.json` 綁定的三事件語意比較區；事件的身分、順序、類型與實際／機率
+   預期值都由 payload 決定。不可收合的 inference boundary 在後續證據之前保持可見。
+   本里程碑的科學 payload blob 未變；共用品質閘門
    在 responsive 視埠、無 JavaScript、列印與加大文字狀態均要求同一順序、可見性、
    accessibility 與無整頁橫向溢出。
 
