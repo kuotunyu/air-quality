@@ -503,7 +503,7 @@ brand
    的有序 reading key、主圖與相連 caption，接著是一個由
    `detection-limit.json` 綁定的三事件語意比較區；事件的身分、順序、類型與實際／機率
    預期值都由 payload 決定。不可收合的 inference boundary 在後續證據之前保持可見。
-   本里程碑的科學 payload blob 未變；共用品質閘門
+   共用品質閘門
    在 responsive 視埠、無 JavaScript、列印與加大文字狀態均要求同一順序、可見性、
    accessibility 與無整頁橫向溢出。
 
