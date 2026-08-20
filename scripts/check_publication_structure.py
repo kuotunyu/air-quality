@@ -387,8 +387,16 @@ class StructureParser(HTMLParser):
         self_closing: bool,
     ) -> None:
         lowered = tag.lower()
+        normalized_attribute_names = [name.lower() for name, _ in attrs]
+        attribute_names = set(normalized_attribute_names)
+        duplicate_attribute_names = sorted(
+            {name for name in attribute_names if normalized_attribute_names.count(name) > 1}
+        )
+        if duplicate_attribute_names:
+            self.errors.append(
+                f"duplicate HTML attribute names on <{lowered}>: {duplicate_attribute_names}"
+            )
         attributes = {name.lower(): value for name, value in attrs}
-        attribute_names = {name.lower() for name, _ in attrs}
         parent = self._stack[-1] if self._stack else None
         visible = (
             (parent is None or parent.visible)
@@ -564,16 +572,13 @@ def detection_limitation_brief_failures_for_text(
     parser.close()
     parser.finish()
     failures = list(parser.errors)
-    visible = [element for element in parser.elements if element.visible]
+    elements = parser.elements
 
-    figure_titles = [
-        element
-        for element in visible
-        if "evidence-title" in element.classes and element.rendered_text()
-    ]
+    figure_titles = [element for element in elements if "evidence-title" in element.classes]
     figure_title: Element | None = None
     if (
         len(figure_titles) != 1
+        or not figure_titles[0].visible
         or figure_titles[0].rendered_text() != "事件估計值能否離開安慰劑散布？"
     ):
         failures.append("detection Figure 5.1 title changed")
@@ -581,27 +586,33 @@ def detection_limitation_brief_failures_for_text(
         figure_title = figure_titles[0]
 
     reading_keys = [
-        element for element in visible if "data-detection-reading-key" in element.attributes
+        element for element in elements if "data-detection-reading-key" in element.attributes
     ]
     reading_key: Element | None = None
-    if len(reading_keys) != 1:
+    if len(reading_keys) != 1 or not reading_keys[0].visible:
         failures.append(f"detection reading key inventory changed: {len(reading_keys)}")
     else:
         reading_key = reading_keys[0]
         if reading_key.tag != "ol":
             failures.append("detection reading key is not an ordered list")
         steps = [
-            element for element in visible if element.tag == "li" and element.is_inside(reading_key)
+            element
+            for element in elements
+            if element.tag == "li" and element.is_inside(reading_key)
         ]
         marked_steps = [
             element
-            for element in visible
+            for element in elements
             if "data-detection-reading-step" in element.attributes
             and element.is_inside(reading_key)
         ]
         expected_step_names = [step[0] for step in DETECTION_READING_STEPS]
         observed_step_names = [step.attributes.get("data-detection-reading-step") for step in steps]
-        if steps != marked_steps or observed_step_names != expected_step_names:
+        if (
+            steps != marked_steps
+            or observed_step_names != expected_step_names
+            or any(not step.visible for step in steps)
+        ):
             failures.append(f"detection reading-step inventory changed: {observed_step_names!r}")
         else:
             for step, (_name, heading, explanation) in zip(
@@ -611,9 +622,9 @@ def detection_limitation_brief_failures_for_text(
                 if heading not in text or explanation not in text:
                     failures.append("detection reading step text changed")
 
-    primary_plots = [element for element in visible if "data-primary-plot" in element.attributes]
+    primary_plots = [element for element in elements if "data-primary-plot" in element.attributes]
     primary_plot: Element | None = None
-    if len(primary_plots) != 1:
+    if len(primary_plots) != 1 or not primary_plots[0].visible:
         failures.append(f"detection primary plot inventory changed: {len(primary_plots)}")
     else:
         primary_plot = primary_plots[0]
@@ -622,24 +633,24 @@ def detection_limitation_brief_failures_for_text(
     if primary_plot is not None:
         figures = [
             ancestor
-            for ancestor in visible
+            for ancestor in elements
             if ancestor.tag == "figure" and primary_plot.is_inside(ancestor)
         ]
         captions = [
             element
-            for element in visible
+            for element in elements
             if element.tag == "figcaption" and any(element.is_inside(figure) for figure in figures)
         ]
-        if len(captions) != 1:
+        if len(captions) != 1 or not captions[0].visible:
             failures.append(f"detection Figure 5.1 caption inventory changed: {len(captions)}")
         else:
             caption = captions[0]
 
     comparisons = [
-        element for element in visible if "data-detection-comparison" in element.attributes
+        element for element in elements if "data-detection-comparison" in element.attributes
     ]
     comparison: Element | None = None
-    if len(comparisons) != 1:
+    if len(comparisons) != 1 or not comparisons[0].visible:
         failures.append(f"detection comparison inventory changed: {len(comparisons)}")
     else:
         comparison = comparisons[0]
@@ -647,12 +658,12 @@ def detection_limitation_brief_failures_for_text(
             failures.append("detection comparison is not a description list")
         entries = [
             element
-            for element in visible
+            for element in elements
             if "data-detection-event" in element.attributes and element.is_inside(comparison)
         ]
         observed_events = [entry.attributes.get("data-detection-event") for entry in entries]
         expected_identities = [event.event for event in expected_events]
-        if observed_events != expected_identities:
+        if observed_events != expected_identities or any(not entry.visible for entry in entries):
             failures.append(f"detection event inventory changed: {observed_events!r}")
         else:
             for entry, expected_event in zip(entries, expected_events, strict=True):
@@ -672,10 +683,10 @@ def detection_limitation_brief_failures_for_text(
                     failures.append("detection event accessible text changed")
 
     boundaries = [
-        element for element in visible if "data-detection-inference-boundary" in element.attributes
+        element for element in elements if "data-detection-inference-boundary" in element.attributes
     ]
     boundary: Element | None = None
-    if len(boundaries) != 1:
+    if len(boundaries) != 1 or not boundaries[0].visible:
         failures.append(f"detection inference-boundary inventory changed: {len(boundaries)}")
     else:
         boundary = boundaries[0]
@@ -685,10 +696,19 @@ def detection_limitation_brief_failures_for_text(
         if any(claim not in boundary_text for claim in DETECTION_BOUNDARY_CLAIMS):
             failures.append("detection inference boundary claim changed")
 
+    if comparison is not None and boundary is not None:
+        parent = comparison.parent
+        if (
+            parent is None
+            or boundary.parent is not parent
+            or parent.children.index(boundary) != parent.children.index(comparison) + 1
+        ):
+            failures.append("detection comparison and inference boundary are not adjacent")
+
     later_evidence = [
-        element for element in visible if "data-detection-results" in element.attributes
+        element for element in elements if "data-detection-results" in element.attributes
     ]
-    if len(later_evidence) != 1:
+    if len(later_evidence) != 1 or not later_evidence[0].visible:
         failures.append(f"detection later evidence inventory changed: {len(later_evidence)}")
     elif (
         figure_title is not None
@@ -1488,6 +1508,7 @@ def _run_preflight() -> None:
 <div data-detection-event="2018 空氣污染防制法修正" data-detection-observed="1" data-detection-expected="3.3">2018 空氣污染防制法修正：實際通過 1 站；純靠機率的預期為 3.3 站。</div>
 </dl>
 <aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>
+<p data-detection-method>First method evidence</p>
 <table data-detection-results><tr><td>Later evidence</td></tr></table>
 </main>
 """
@@ -1499,7 +1520,23 @@ def _run_preflight() -> None:
             "detection limitation brief preflight rejected the valid control: "
             f"{valid_detection_failures}"
         )
+
+    def move_boundary_after(html: str, marker: str) -> str:
+        start = html.index("<aside data-detection-inference-boundary>")
+        end = html.index("</aside>", start) + len("</aside>")
+        boundary = html[start:end]
+        without_boundary = html[:start] + html[end:]
+        return without_boundary.replace(marker, f"{marker}{boundary}", 1)
+
     detection_mutations = {
+        "visible plus hidden Figure 5.1 title": (
+            "detection Figure 5.1 title changed",
+            valid_detection_brief.replace(
+                "</p></header>",
+                '</p><p class="evidence-title" hidden>Copy</p></header>',
+                1,
+            ),
+        ),
         "missing reading key": (
             "detection reading key inventory changed",
             valid_detection_brief.replace(" data-detection-reading-key", "", 1),
@@ -1582,6 +1619,14 @@ def _run_preflight() -> None:
                 'data-detection-observed="1"', 'data-detection-observed="2"', 1
             ),
         ),
+        "conflicting duplicate observed attribute": (
+            "duplicate HTML attribute",
+            valid_detection_brief.replace(
+                'data-detection-observed="1"',
+                'data-detection-observed="2" data-detection-observed="1"',
+                1,
+            ),
+        ),
         "changed expected": (
             "detection event expected value changed",
             valid_detection_brief.replace(
@@ -1589,13 +1634,15 @@ def _run_preflight() -> None:
             ),
         ),
         "event value elsewhere": (
-            "detection event expected value changed",
+            "detection event accessible text changed",
             valid_detection_brief.replace(
-                'data-detection-expected="3.3"',
-                'data-detection-expected=""',
+                "COVID-19 全國三級警戒：實際通過 1 站；純靠機率的預期為 3.3 站。",
+                "COVID-19 全國三級警戒：實際通過 1 站。",
                 1,
             ).replace(
-                "<table data-detection-results>", "<p>3.3</p><table data-detection-results>", 1
+                "<p data-detection-method>First method evidence</p>",
+                "<p>純靠機率的預期為 3.3 站。</p><p data-detection-method>First method evidence</p>",
+                1,
             ),
         ),
         "missing boundary": (
@@ -1616,6 +1663,14 @@ def _run_preflight() -> None:
                 1,
             ),
         ),
+        "visible plus hidden boundary": (
+            "detection inference-boundary inventory changed",
+            valid_detection_brief.replace(
+                "</aside>",
+                "</aside><aside data-detection-inference-boundary hidden>Copy</aside>",
+                1,
+            ),
+        ),
         "weakened inference claim": (
             "detection inference boundary claim changed",
             valid_detection_brief.replace("噪音底線高於訊號。", "噪音底線接近訊號。", 1),
@@ -1630,10 +1685,16 @@ def _run_preflight() -> None:
         ),
         "boundary after later evidence": (
             "detection opening order changed",
-            valid_detection_brief.replace(
-                "<aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>\n<table data-detection-results><tr><td>Later evidence</td></tr></table>",
-                "<table data-detection-results><tr><td>Later evidence</td></tr></table><aside data-detection-inference-boundary>「測不到」不等於「等於零」。這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。本分析<strong>沒有驗證機組的逐時操作或燃料狀態</strong>，因此無法區分「介入沒有依事件標籤發生」、「介入發生但環境訊號太小」，或「模型與測站配置無法辨識」。這三種情況都與目前的非偵測相容。</aside>",
-                1,
+            move_boundary_after(
+                valid_detection_brief,
+                "<table data-detection-results><tr><td>Later evidence</td></tr></table>",
+            ),
+        ),
+        "boundary after method evidence": (
+            "detection comparison and inference boundary are not adjacent",
+            move_boundary_after(
+                valid_detection_brief,
+                "<p data-detection-method>First method evidence</p>",
             ),
         ),
         "stale Figure 5.1 title": (
