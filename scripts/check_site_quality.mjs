@@ -676,7 +676,53 @@ function sourcesClaimBoundaryProblems(text) {
   );
 }
 
-function sourcesAtlasProblems(state, width, height, { requireRestoration = false } = {}) {
+const SOURCES_METHOD_BOUNDARY_CLAIMS = [
+  "CBPF 描述條件機率，不識別污染來源",
+  "尖峰風速不等於來源距離",
+];
+
+function sourcesRestorationSnapshotProblems(snapshot, width, height, label) {
+  const problems = [];
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return [`Sources station restoration ${label} snapshot is invalid`];
+  }
+  for (const key of ["atlas", "focus", "url", "scroll"]) {
+    if (!Object.hasOwn(snapshot, key)) {
+      problems.push(`Sources station restoration snapshot is missing ${key} in ${label}`);
+    }
+  }
+  if (snapshot.atlas && typeof snapshot.atlas === "object" && !Array.isArray(snapshot.atlas)) {
+    for (const problem of sourcesAtlasProblems(snapshot.atlas, width, height)) {
+      problems.push(`Sources station restoration ${label} atlas: ${problem}`);
+    }
+  } else if (Object.hasOwn(snapshot, "atlas")) {
+    problems.push(`Sources station restoration ${label} atlas is invalid`);
+  }
+  if (
+    Object.hasOwn(snapshot, "focus") &&
+    (!snapshot.focus || typeof snapshot.focus !== "object" || Array.isArray(snapshot.focus) ||
+      !["tag", "id", "name"].every((key) => typeof snapshot.focus[key] === "string"))
+  ) {
+    problems.push(`Sources station restoration ${label} focus is invalid`);
+  }
+  if (Object.hasOwn(snapshot, "url") &&
+      (typeof snapshot.url !== "string" || !snapshot.url)) {
+    problems.push(`Sources station restoration ${label} URL is invalid`);
+  }
+  if (Object.hasOwn(snapshot, "scroll") &&
+      (!Array.isArray(snapshot.scroll) || snapshot.scroll.length !== 2 ||
+        !snapshot.scroll.every(Number.isFinite))) {
+    problems.push(`Sources station restoration ${label} scroll is invalid`);
+  }
+  return problems;
+}
+
+function sourcesAtlasProblems(
+  state,
+  width,
+  height,
+  { allowPickerHidden = false, noScript = false, requireRestoration = false } = {},
+) {
   const problems = [];
   const visible = (part) => part?.visible && part?.rect?.width > 0 && part?.rect?.height > 0;
   const exact = (actual, expected, label) => {
@@ -687,9 +733,34 @@ function sourcesAtlasProblems(state, width, height, { requireRestoration = false
   if (state?.boundary?.ariaHidden === "true") problems.push("Sources method boundary is aria-hidden");
   if (state?.boundary?.opacity === 0) problems.push("Sources method boundary is transparent");
   if (state?.boundary?.clipped) problems.push("Sources method boundary is clipped");
+  for (const claim of SOURCES_METHOD_BOUNDARY_CLAIMS) {
+    if (!state?.boundary?.text?.includes(claim)) {
+      problems.push(`Sources method boundary claim changed: missing ${JSON.stringify(claim)}`);
+    }
+  }
   if (state?.picker?.count !== 1) problems.push("Sources picker inventory changed");
-  if (!state?.allowPickerHidden && !visible(state?.picker)) {
+  if (noScript && visible(state?.picker)) {
+    problems.push("Sources no-JavaScript picker remains visible");
+  } else if (!noScript && !allowPickerHidden && !visible(state?.picker)) {
     problems.push("Sources picker is not visible");
+  }
+  if (noScript) {
+    if (state?.fallback?.count !== 1) {
+      problems.push("Sources no-JavaScript fallback inventory changed");
+    }
+    if (!visible(state?.fallback)) {
+      problems.push("Sources no-JavaScript fallback is not visible");
+    }
+    exact(
+      state?.fallback?.station,
+      state?.expected?.initialStation,
+      "no-JavaScript fallback station identity",
+    );
+    exact(
+      state?.fallback?.classification,
+      state?.expected?.badge?.text,
+      "no-JavaScript fallback classification",
+    );
   }
   if (state?.primary?.count !== 1) problems.push("Sources primary figure inventory changed");
   if (!visible(state?.primary)) problems.push("Sources primary figure is not visible");
@@ -722,6 +793,9 @@ function sourcesAtlasProblems(state, width, height, { requireRestoration = false
   exact(state?.captionStation, expected.station, "caption station");
   for (const key of ["threshold", "peak", "peakSpeed", "resultant", "calm"]) {
     exact(state?.readouts?.[key], expected.readouts[key], `${key} readout`);
+    if (state?.readoutVisibility?.[key] !== true) {
+      problems.push(`Sources ${key} readout is not visible`);
+    }
   }
   if (state?.cells?.length !== expected.cells.length) {
     problems.push("Sources CBPF cell inventory changed");
@@ -734,10 +808,28 @@ function sourcesAtlasProblems(state, width, height, { requireRestoration = false
       if (actual?.title !== cell.title) problems.push(`Sources CBPF cell title changed at ${cell.key}`);
     }
   }
-  if (requireRestoration && !state?.restoration) {
-    problems.push("Sources station restoration is missing");
-  } else if (state?.restoration && JSON.stringify(state.restoration.before) !== JSON.stringify(state.restoration.after)) {
-    problems.push("Sources station restoration changed selected station, focus, URL, scroll, or snapshot");
+  if (requireRestoration) {
+    if (!state?.restoration) {
+      problems.push("Sources station restoration is missing");
+    } else {
+      problems.push(...sourcesRestorationSnapshotProblems(
+        state.restoration.before,
+        width,
+        height,
+        "before",
+      ));
+      problems.push(...sourcesRestorationSnapshotProblems(
+        state.restoration.after,
+        width,
+        height,
+        "after",
+      ));
+      if (JSON.stringify(state.restoration.before) !== JSON.stringify(state.restoration.after)) {
+        problems.push(
+          "Sources station restoration changed selected station, focus, URL, scroll, or snapshot",
+        );
+      }
+    }
   }
   return problems;
 }
@@ -851,6 +943,38 @@ const HISTORICAL_STATION_DISCLOSURE_PROBE = `(() => {
   return result;
 })()`;
 
+function sourcesElementIsClipped(element, rectFor, styleFor) {
+  if (!element) return false;
+  const clipsWithCss = (style) => Boolean(
+    style &&
+    ((style.clip && style.clip !== "auto") ||
+      (style.clipPath && style.clipPath !== "none") ||
+      (style.webkitClipPath && style.webkitClipPath !== "none")),
+  );
+  const clipsOwnOverflow = (node, style) => Boolean(
+    style &&
+    ((["hidden", "clip"].includes(style.overflowX) &&
+      node.scrollWidth > node.clientWidth + 0.1) ||
+      (["hidden", "clip"].includes(style.overflowY) &&
+        node.scrollHeight > node.clientHeight + 0.1)),
+  );
+  const box = rectFor(element);
+  const ownStyle = styleFor(element);
+  if (clipsWithCss(ownStyle) || clipsOwnOverflow(element, ownStyle)) return true;
+  for (let parent = element.parentElement; box && parent; parent = parent.parentElement) {
+    const style = styleFor(parent);
+    if (clipsWithCss(style)) return true;
+    if (["hidden", "clip"].includes(style?.overflowX) ||
+        ["hidden", "clip"].includes(style?.overflowY)) {
+      const parentBox = rectFor(parent);
+      if (parentBox &&
+          (box.left < parentBox.left - 0.1 || box.right > parentBox.right + 0.1 ||
+            box.top < parentBox.top - 0.1 || box.bottom > parentBox.bottom + 0.1)) return true;
+    }
+  }
+  return false;
+}
+
 const SOURCES_ATLAS_STATE_PROBE = `(() => {
   const rect = (element) => {
     const box = element?.getBoundingClientRect();
@@ -861,17 +985,11 @@ const SOURCES_ATLAS_STATE_PROBE = `(() => {
     const box = rect(element);
     return Boolean(style && box && style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0);
   };
-  const clipped = (element) => {
-    const box = rect(element);
-    for (let parent = element?.parentElement; box && parent; parent = parent.parentElement) {
-      const style = getComputedStyle(parent);
-      if (["hidden", "clip"].includes(style.overflowX) || ["hidden", "clip"].includes(style.overflowY)) {
-        const parentBox = rect(parent);
-        if (parentBox && (box.left < parentBox.left - 0.1 || box.right > parentBox.right + 0.1 || box.top < parentBox.top - 0.1 || box.bottom > parentBox.bottom + 0.1)) return true;
-      }
-    }
-    return false;
-  };
+  const clipped = (element) => (${sourcesElementIsClipped.toString()})(
+    element,
+    rect,
+    (node) => getComputedStyle(node),
+  );
   const node = document.querySelector("#cbpf-data");
   const select = document.querySelector("#cbpf-station");
   let data = null;
@@ -913,14 +1031,30 @@ const SOURCES_ATLAS_STATE_PROBE = `(() => {
   const selectedStation = select?.value ?? "";
   const boundary = document.querySelector("[data-sources-method-boundary]");
   const picker = document.querySelector("[data-sources-picker]");
+  const fallbacks = [...document.querySelectorAll("[data-sources-nojs-fallback]")];
+  const fallback = fallbacks.find(visible) ?? fallbacks[0] ?? null;
   const primary = document.querySelector("[data-primary-evidence]");
   const title = primary?.querySelector(".evidence-title") ?? null;
   const plot = primary?.querySelector("[data-primary-plot]") ?? null;
   const sourceOrder = [...document.querySelectorAll("main *")];
   const badge = document.querySelector("#cbpf-wind-peak-class");
+  const readoutElements = {
+    threshold: document.querySelector("#cbpf-threshold"),
+    peak: document.querySelector("#cbpf-peak"),
+    peakSpeed: document.querySelector("#cbpf-peak-speed"),
+    resultant: document.querySelector("#cbpf-resultant"),
+    calm: document.querySelector("#cbpf-calm"),
+  };
   return {
-    boundary: boundary ? { count: document.querySelectorAll("[data-sources-method-boundary]").length, visible: visible(boundary), ariaHidden: boundary.getAttribute("aria-hidden"), opacity: Number(getComputedStyle(boundary).opacity), clipped: clipped(boundary), rect: rect(boundary) } : { count: 0 },
+    boundary: boundary ? { count: document.querySelectorAll("[data-sources-method-boundary]").length, visible: visible(boundary), ariaHidden: boundary.getAttribute("aria-hidden"), opacity: Number(getComputedStyle(boundary).opacity), clipped: clipped(boundary), text: boundary.textContent?.replace(/\\s+/g, " ").trim() ?? "", rect: rect(boundary) } : { count: 0 },
     picker: picker ? { count: document.querySelectorAll("[data-sources-picker]").length, visible: visible(picker), rect: rect(picker) } : { count: 0 },
+    fallback: fallback ? {
+      count: fallbacks.length,
+      visible: visible(fallback),
+      station: fallback.querySelector("[data-sources-nojs-station]")?.textContent?.trim() ?? "",
+      classification: fallback.querySelector("[data-sources-nojs-classification]")?.textContent?.trim() ?? "",
+      rect: rect(fallback),
+    } : { count: 0 },
     primary: { count: document.querySelectorAll("[data-primary-evidence]").length, visible: visible(primary), rect: rect(primary), title: { visible: visible(title), rect: rect(title) }, plot: { visible: visible(plot), rect: rect(plot) } },
     sourceIndexes: { lede: sourceOrder.indexOf(document.querySelector("#sources .lede")), boundary: sourceOrder.indexOf(boundary), picker: sourceOrder.indexOf(picker), primary: sourceOrder.indexOf(primary) },
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -928,7 +1062,12 @@ const SOURCES_ATLAS_STATE_PROBE = `(() => {
     initialStation,
     badge: { text: badge?.textContent?.trim() ?? "", windPeakClass: badge?.getAttribute("data-wind-peak-class") ?? "" },
     captionStation: document.querySelector("#cbpf-where")?.textContent?.trim() ?? "",
-    readouts: Object.fromEntries([["threshold", "#cbpf-threshold"], ["peak", "#cbpf-peak"], ["peakSpeed", "#cbpf-peak-speed"], ["resultant", "#cbpf-resultant"], ["calm", "#cbpf-calm"]].map(([key, selector]) => [key, document.querySelector(selector)?.textContent?.trim() ?? ""])),
+    readouts: Object.fromEntries(Object.entries(readoutElements).map(
+      ([key, element]) => [key, element?.textContent?.trim() ?? ""],
+    )),
+    readoutVisibility: Object.fromEntries(Object.entries(readoutElements).map(
+      ([key, element]) => [key, visible(element)],
+    )),
     cells: [...document.querySelectorAll(".cell[data-key]")].map((cell) => ({ key: cell.getAttribute("data-key") ?? "", fill: cell.getAttribute("fill") ?? "", title: cell.querySelector("title")?.textContent?.replace(/\\s+/g, " ").trim() ?? "" })),
     expected: expectedFor(selectedStation),
   };
@@ -2951,13 +3090,66 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality compact identity self-test passed");
 
+  const sourcesClipNode = (overrides = {}, parentElement = null) => ({
+    parentElement,
+    clientWidth: 100,
+    clientHeight: 40,
+    scrollWidth: 100,
+    scrollHeight: 40,
+    box: { top: 20, right: 120, bottom: 60, left: 20, width: 100, height: 40 },
+    style: {
+      overflowX: "visible",
+      overflowY: "visible",
+      clip: "auto",
+      clipPath: "none",
+      webkitClipPath: "none",
+    },
+    ...overrides,
+  });
+  const sourcesRectFor = (element) => element?.box ?? null;
+  const sourcesStyleFor = (element) => element?.style ?? null;
+  const unclippedSourcesBoundary = sourcesClipNode();
+  if (sourcesElementIsClipped(unclippedSourcesBoundary, sourcesRectFor, sourcesStyleFor)) {
+    throw new Error("the Sources clipping extractor rejects its unclipped control");
+  }
+  const missedSourcesClipCases = [];
+  const expectSourcesClip = (name, element) => {
+    if (!sourcesElementIsClipped(element, sourcesRectFor, sourcesStyleFor)) {
+      missedSourcesClipCases.push(name);
+    }
+  };
+  expectSourcesClip("self vertical overflow", sourcesClipNode({
+    scrollHeight: 64,
+    style: { ...unclippedSourcesBoundary.style, overflowY: "hidden" },
+  }));
+  expectSourcesClip("legacy CSS clip", sourcesClipNode({
+    style: { ...unclippedSourcesBoundary.style, clip: "rect(0px, 80px, 40px, 0px)" },
+  }));
+  expectSourcesClip("CSS clip-path", sourcesClipNode({
+    style: { ...unclippedSourcesBoundary.style, clipPath: "inset(0 20px 0 0)" },
+  }));
+  if (missedSourcesClipCases.length) {
+    throw new Error(`the Sources clipping extractor accepts ${missedSourcesClipCases.join(", ")}`);
+  }
+
   const sourcesRect = { top: 120, right: 355, bottom: 180, left: 20, width: 335, height: 60 };
   const sourcesCells = [
     { key: "0-0", fill: "var(--c0)", title: "0° 北 · 0.5–1.5 m/s — 機率 0.1（4 小時）" },
     { key: "0-1", fill: "none", title: "0° 北 · 1.5–2.5 m/s — 時數不足（3 小時）" },
   ];
+  const sourcesInitialReadouts = {
+    threshold: "11.1",
+    peak: "0° 北",
+    peakSpeed: "風速 1.5 m/s",
+    resultant: "0.123",
+    calm: "3.0%",
+  };
   const completeSourcesAtlas = {
-    boundary: { count: 1, visible: true, ariaHidden: "false", opacity: 1, clipped: false, rect: sourcesRect },
+    boundary: {
+      count: 1, visible: true, ariaHidden: "false", opacity: 1, clipped: false,
+      text: "先讀方法界線 CBPF 描述條件機率，不識別污染來源；尖峰風速不等於來源距離。",
+      rect: sourcesRect,
+    },
     picker: { count: 1, visible: true, rect: { ...sourcesRect, top: 200, bottom: 244 } },
     primary: {
       count: 1, visible: true, rect: { ...sourcesRect, top: 280, bottom: 720, height: 440 },
@@ -2973,6 +3165,13 @@ async function lifecycleSelfTest() {
     readouts: {
       threshold: "12.3", peak: "90° 東", peakSpeed: "風速 2.5 m/s", resultant: "0.456", calm: "7.8%",
     },
+    readoutVisibility: {
+      threshold: true,
+      peak: true,
+      peakSpeed: true,
+      resultant: true,
+      calm: true,
+    },
     cells: sourcesCells,
     expected: {
       station: "乙站",
@@ -2983,18 +3182,27 @@ async function lifecycleSelfTest() {
       },
       cells: sourcesCells.map((cell) => ({ ...cell })),
     },
-    restoration: {
-      before: {
-        selectedStation: "甲站", focus: "body", url: "http://example.test/sources/", scroll: [0, 0],
-        badge: "低風速高值型", caption: "甲站", readouts: ["11.1", "0° 北", "風速 1.5 m/s", "0.123", "3.0%"],
-        cells: [{ ...sourcesCells[0] }, { ...sourcesCells[1] }],
-      },
-      after: {
-        selectedStation: "甲站", focus: "body", url: "http://example.test/sources/", scroll: [0, 0],
-        badge: "低風速高值型", caption: "甲站", readouts: ["11.1", "0° 北", "風速 1.5 m/s", "0.123", "3.0%"],
-        cells: [{ ...sourcesCells[0] }, { ...sourcesCells[1] }],
-      },
-    },
+  };
+  const restoredSourcesAtlas = JSON.parse(JSON.stringify(completeSourcesAtlas));
+  restoredSourcesAtlas.selectedStation = "甲站";
+  restoredSourcesAtlas.badge = { text: "低風速高值型", windPeakClass: "low_wind_peak" };
+  restoredSourcesAtlas.captionStation = "甲站";
+  restoredSourcesAtlas.readouts = { ...sourcesInitialReadouts };
+  restoredSourcesAtlas.expected.station = "甲站";
+  restoredSourcesAtlas.expected.badge = {
+    text: "低風速高值型",
+    windPeakClass: "low_wind_peak",
+  };
+  restoredSourcesAtlas.expected.readouts = { ...sourcesInitialReadouts };
+  const restoredRuntimeSnapshot = {
+    atlas: restoredSourcesAtlas,
+    focus: { tag: "BODY", id: "", name: "" },
+    url: "http://example.test/sources/",
+    scroll: [0, 0],
+  };
+  completeSourcesAtlas.restoration = {
+    before: restoredRuntimeSnapshot,
+    after: JSON.parse(JSON.stringify(restoredRuntimeSnapshot)),
   };
   if (sourcesAtlasProblems(completeSourcesAtlas, 375, 812, { requireRestoration: true }).length) {
     throw new Error("the Sources conditional-atlas predicate rejects complete state");
@@ -3004,7 +3212,52 @@ async function lifecycleSelfTest() {
   if (sourcesAtlasProblems(ordinarySourcesAtlas, 375, 812, { requireRestoration: false }).length) {
     throw new Error("the Sources conditional-atlas predicate requires restoration for an ordinary state");
   }
+  const completeNoScriptSourcesAtlas = JSON.parse(JSON.stringify(ordinarySourcesAtlas));
+  completeNoScriptSourcesAtlas.picker.visible = false;
+  completeNoScriptSourcesAtlas.selectedStation = "甲站";
+  completeNoScriptSourcesAtlas.initialStation = "甲站";
+  completeNoScriptSourcesAtlas.badge = {
+    text: "低風速高值型",
+    windPeakClass: "low_wind_peak",
+  };
+  completeNoScriptSourcesAtlas.captionStation = "甲站";
+  completeNoScriptSourcesAtlas.expected.station = "甲站";
+  completeNoScriptSourcesAtlas.expected.initialStation = "甲站";
+  completeNoScriptSourcesAtlas.expected.badge = {
+    text: "低風速高值型",
+    windPeakClass: "low_wind_peak",
+  };
+  completeNoScriptSourcesAtlas.fallback = {
+    count: 1,
+    visible: true,
+    station: "甲站",
+    classification: "低風速高值型",
+    rect: sourcesRect,
+  };
+  const completeNoScriptSourcesProblems = sourcesAtlasProblems(
+    completeNoScriptSourcesAtlas,
+    375,
+    800,
+    {
+      noScript: true,
+    },
+  );
+  if (completeNoScriptSourcesProblems.length) {
+    throw new Error(
+      `the Sources conditional-atlas predicate rejects complete no-JavaScript state: ${completeNoScriptSourcesProblems.join(", ")}`,
+    );
+  }
   const missedSourcesAtlasProblems = [];
+  const ordinaryWithRestorationMetadata = JSON.parse(JSON.stringify(ordinarySourcesAtlas));
+  ordinaryWithRestorationMetadata.restoration = {
+    before: { atlas: {}, focus: null, url: "before", scroll: [0, 0] },
+    after: { atlas: {}, focus: null, url: "after", scroll: [0, 0] },
+  };
+  if (sourcesAtlasProblems(ordinaryWithRestorationMetadata, 375, 812).some(
+    (problem) => problem.includes("restoration"),
+  )) {
+    missedSourcesAtlasProblems.push("ordinary-state restoration metadata");
+  }
   const expectSourcesAtlasProblem = (name, mutate, applied, expected, options = {}) => {
     const state = JSON.parse(JSON.stringify(completeSourcesAtlas));
     mutate(state);
@@ -3019,6 +3272,16 @@ async function lifecycleSelfTest() {
   expectSourcesAtlasProblem("transparent boundary", (state) => { state.boundary.opacity = 0; }, (state) => state.boundary.opacity === 0, "transparent");
   expectSourcesAtlasProblem("zero area boundary", (state) => { state.boundary.rect.width = 0; }, (state) => state.boundary.rect.width === 0, "boundary is not visible");
   expectSourcesAtlasProblem("clipped boundary", (state) => { state.boundary.clipped = true; }, (state) => state.boundary.clipped, "clipped");
+  expectSourcesAtlasProblem("missing conditional-probability claim", (state) => {
+    state.boundary.text = "先讀方法界線 尖峰風速不等於來源距離。";
+  }, (state) => !state.boundary.text.includes("CBPF 描述條件機率，不識別污染來源"), "boundary claim");
+  expectSourcesAtlasProblem("replaced source-attribution claim", (state) => {
+    state.boundary.text = state.boundary.text.replace("不識別污染來源", "識別污染來源");
+  }, (state) => state.boundary.text.includes("識別污染來源"), "boundary claim");
+  expectSourcesAtlasProblem("relocated approved claims", (state) => {
+    state.mainText = state.boundary.text;
+    state.boundary.text = "先讀方法界線 先確認方法可回答的問題。";
+  }, (state) => state.mainText.includes("尖峰風速不等於來源距離") && !state.boundary.text.includes("尖峰風速不等於來源距離"), "boundary claim");
   expectSourcesAtlasProblem("source order drift", (state) => { state.sourceIndexes.picker = 2; }, (state) => state.sourceIndexes.picker === 2, "source order changed");
   expectSourcesAtlasProblem("phone title below viewport", (state) => { state.primary.title.rect.top = 812; }, (state) => state.primary.title.rect.top === 812, "title enters below");
   expectSourcesAtlasProblem("phone plot below viewport", (state) => { state.primary.plot.rect.top = 812; }, (state) => state.primary.plot.rect.top === 812, "plot enters below");
@@ -3027,14 +3290,56 @@ async function lifecycleSelfTest() {
   expectSourcesAtlasProblem("badge text drift", (state) => { state.badge.text = "低風速高值型"; }, (state) => state.badge.text === "低風速高值型", "badge text");
   expectSourcesAtlasProblem("badge class drift", (state) => { state.badge.windPeakClass = "low_wind_peak"; }, (state) => state.badge.windPeakClass === "low_wind_peak", "class");
   for (const key of ["threshold", "peak", "peakSpeed", "resultant", "calm"]) {
-    expectSourcesAtlasProblem(`initial ${key} copied`, (state) => { state.readouts[key] = completeSourcesAtlas.restoration.before.readouts[["threshold", "peak", "peakSpeed", "resultant", "calm"].indexOf(key)]; }, (state) => state.readouts[key] !== state.expected.readouts[key], `${key} readout`);
+    expectSourcesAtlasProblem(`initial ${key} copied`, (state) => { state.readouts[key] = sourcesInitialReadouts[key]; }, (state) => state.readouts[key] !== state.expected.readouts[key], `${key} readout`);
+  }
+  for (const key of ["threshold", "peak", "peakSpeed", "resultant", "calm"]) {
+    expectSourcesAtlasProblem(`hidden ${key} readout`, (state) => {
+      state.readoutVisibility[key] = false;
+    }, (state) => !state.readoutVisibility[key], `${key} readout is not visible`);
   }
   expectSourcesAtlasProblem("stale cell fill", (state) => { state.cells[0].fill = "var(--c6)"; }, (state) => state.cells[0].fill === "var(--c6)", "cell fill");
   expectSourcesAtlasProblem("stale cell title", (state) => { state.cells[0].title = "stale"; }, (state) => state.cells[0].title === "stale", "cell title");
-  for (const key of ["selectedStation", "focus", "url", "scroll", "cells"]) {
+  const expectNoScriptSourcesProblem = (name, mutate, applied, expected) => {
+    const state = JSON.parse(JSON.stringify(completeNoScriptSourcesAtlas));
+    mutate(state);
+    if (!applied(state)) throw new Error(`Sources no-JavaScript mutation ${name} did not apply`);
+    const problems = sourcesAtlasProblems(state, 375, 800, {
+      noScript: true,
+    });
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedSourcesAtlasProblems.push(`no-JavaScript ${name}`);
+    }
+  };
+  expectNoScriptSourcesProblem("visible picker", (state) => {
+    state.picker.visible = true;
+  }, (state) => state.picker.visible, "picker remains visible");
+  expectNoScriptSourcesProblem("missing fallback", (state) => {
+    delete state.fallback;
+  }, (state) => !("fallback" in state), "fallback inventory");
+  expectNoScriptSourcesProblem("duplicate fallback", (state) => {
+    state.fallback.count = 2;
+  }, (state) => state.fallback.count === 2, "fallback inventory");
+  expectNoScriptSourcesProblem("hidden fallback", (state) => {
+    state.fallback.visible = false;
+  }, (state) => !state.fallback.visible, "fallback is not visible");
+  expectNoScriptSourcesProblem("wrong fallback station", (state) => {
+    state.fallback.station = "乙站";
+  }, (state) => state.fallback.station === "乙站", "fallback station identity");
+  expectNoScriptSourcesProblem("wrong fallback classification", (state) => {
+    state.fallback.classification = "中風速高值型";
+  }, (state) => state.fallback.classification === "中風速高值型", "fallback classification");
+  for (const key of ["atlas", "focus", "url", "scroll"]) {
     expectSourcesAtlasProblem(`restoration ${key} drift`, (state) => {
-      state.restoration.after[key] = key === "scroll" ? [1, 0] : key === "cells" ? [] : "changed";
+      if (key === "atlas") state.restoration.after.atlas.selectedStation = "changed";
+      else if (key === "focus") state.restoration.after.focus.tag = "BUTTON";
+      else state.restoration.after[key] = key === "scroll" ? [1, 0] : "changed";
     }, (state) => JSON.stringify(state.restoration.before[key]) !== JSON.stringify(state.restoration.after[key]), "station restoration changed", { requireRestoration: true });
+  }
+  for (const key of ["atlas", "focus", "url", "scroll"]) {
+    expectSourcesAtlasProblem(`restoration missing ${key}`, (state) => {
+      delete state.restoration.before[key];
+      delete state.restoration.after[key];
+    }, (state) => !(key in state.restoration.before) && !(key in state.restoration.after), `restoration snapshot is missing ${key}`, { requireRestoration: true });
   }
   expectSourcesAtlasProblem("missing restoration", (state) => { delete state.restoration; }, (state) => !("restoration" in state), "station restoration is missing", { requireRestoration: true });
   if (missedSourcesAtlasProblems.length) {
@@ -5897,9 +6202,9 @@ async function main() {
         failures.push(`${route}: no-JavaScript ${problem}`);
       }
       const atlas = noScript?.sourcesAtlas
-        ? { ...noScript.sourcesAtlas, allowPickerHidden: true, skipPhoneEntry: true }
+        ? { ...noScript.sourcesAtlas, skipPhoneEntry: true }
         : null;
-      for (const problem of sourcesAtlasProblems(atlas, 375, 800)) {
+      for (const problem of sourcesAtlasProblems(atlas, 375, 800, { noScript: true })) {
         failures.push(`${route}: no-JavaScript ${problem}`);
       }
     }
@@ -6221,11 +6526,13 @@ async function main() {
         atlas: ${SOURCES_ATLAS_STATE_PROBE},
         caption: visible(document.querySelector("#cbpf-caption")),
         caveat: visible(document.querySelector("#sources .caveat")),
-        readouts: ["#cbpf-threshold", "#cbpf-peak", "#cbpf-resultant", "#cbpf-calm"].every((selector) => visible(document.querySelector(selector))),
+        readouts: ["#cbpf-threshold", "#cbpf-peak", "#cbpf-peak-speed", "#cbpf-resultant", "#cbpf-calm"].every((selector) => visible(document.querySelector(selector))),
       };
     })()`);
-    const atlas = printed?.atlas ? { ...printed.atlas, allowPickerHidden: true } : null;
-    for (const problem of sourcesAtlasProblems(atlas, 1024, 900)) {
+    const atlas = printed?.atlas ?? null;
+    for (const problem of sourcesAtlasProblems(atlas, 1024, 900, {
+      allowPickerHidden: true,
+    })) {
       failures.push(`/sources/ print: ${problem}`);
     }
     if (!printed?.caption || !printed?.caveat || !printed?.readouts) {

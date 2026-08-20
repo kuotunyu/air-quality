@@ -816,6 +816,13 @@ def sources_atlas_failures_for_text(html: str) -> list[str]:
     boundary = boundaries[0]
     if not boundary.is_inside(intro):
         failures.append("sources method boundary left the chapter intro")
+    boundary_text = boundary.rendered_text()
+    for claim in (
+        "CBPF 描述條件機率，不識別污染來源",
+        "尖峰風速不等於來源距離",
+    ):
+        if claim not in boundary_text:
+            failures.append(f"sources method boundary claim changed: missing {claim!r}")
 
     ledes = [
         element for element in visible if "lede" in element.classes and element.is_inside(intro)
@@ -1315,6 +1322,9 @@ def _run_preflight() -> None:
         "duplicate boundary": "sources method-boundary inventory changed",
         "hidden boundary": "sources method-boundary inventory changed",
         "aria-hidden boundary": "sources method-boundary inventory changed",
+        "missing conditional-probability claim": "sources method boundary claim changed",
+        "replaced source-attribution claim": "sources method boundary claim changed",
+        "relocated approved claims": "sources method boundary claim changed",
         "boundary outside intro": "sources method boundary left the chapter intro",
         "picker before boundary": "sources opening source order changed",
         "figure before boundary": "sources opening source order changed",
@@ -1346,6 +1356,19 @@ def _run_preflight() -> None:
         "aria-hidden boundary": valid_sources_atlas.replace(
             "<aside data-sources-method-boundary>",
             '<aside data-sources-method-boundary aria-hidden="true">',
+            1,
+        ),
+        "missing conditional-probability claim": valid_sources_atlas.replace(
+            "CBPF 描述條件機率，不識別污染來源；", "", 1
+        ),
+        "replaced source-attribution claim": valid_sources_atlas.replace(
+            "不識別污染來源", "識別污染來源", 1
+        ),
+        "relocated approved claims": valid_sources_atlas.replace(
+            boundary + "\n</header>",
+            "<aside data-sources-method-boundary><strong>先讀方法界線</strong>"
+            "\n<p>先確認方法可回答的問題。</p></aside>\n</header>\n"
+            "<p>CBPF 描述條件機率，不識別污染來源；尖峰風速不等於來源距離。</p>",
             1,
         ),
         "boundary outside intro": valid_sources_atlas.replace(

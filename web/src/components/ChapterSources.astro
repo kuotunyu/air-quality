@@ -178,8 +178,8 @@ const legend = BREAKS.map((b, i) => ({
     </style>
   </noscript>
 
-  <p class="note cbpf-nojs">
-    這張圖的測站選單需要 JavaScript。目前顯示的是<strong>{initial}</strong>（{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}）。
+  <p class="note cbpf-nojs" data-sources-nojs-fallback>
+    這張圖的測站選單需要 JavaScript。目前顯示的是<strong data-sources-nojs-station>{initial}</strong>（<span data-sources-nojs-classification>{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>）。
     每個測站的 CBPF 與下方所有數字都可以從
     <code>twair analyze m7</code> 重算。
   </p>
