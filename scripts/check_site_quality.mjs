@@ -696,6 +696,241 @@ function detectionClaimBoundaryProblems(text) {
   );
 }
 
+const DETECTION_LIMIT_PAYLOAD = JSON.parse(
+  readFileSync(join(process.cwd(), "web", "public", "data", "story", "detection-limit.json"), "utf8"),
+);
+
+function detectionExpectedEventsFromPayload(payload) {
+  if (!payload || !Array.isArray(payload.events)) {
+    throw new Error("detection-limit payload has no events array");
+  }
+  const identities = new Set();
+  return payload.events.map((row, index) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new Error(`detection-limit event ${index + 1} is not an object`);
+    }
+    const has = (key) => Object.prototype.hasOwnProperty.call(row, key);
+    if (!has("event") || typeof row.event !== "string" || !row.event) {
+      throw new Error(`detection-limit event ${index + 1} has no exact identity`);
+    }
+    if (identities.has(row.event)) {
+      throw new Error(`detection-limit event identity ${JSON.stringify(row.event)} is duplicated`);
+    }
+    identities.add(row.event);
+    for (const key of ["n_credible", "n_expected_by_chance"]) {
+      if (!has(key) || typeof row[key] !== "number" || !Number.isFinite(row[key])) {
+        throw new Error(`detection-limit event ${index + 1} ${key} is not a finite number`);
+      }
+    }
+    return {
+      event: row.event,
+      observed: row.n_credible,
+      expected: row.n_expected_by_chance,
+    };
+  });
+}
+
+const EXPECTED_DETECTION_EVENTS = detectionExpectedEventsFromPayload(DETECTION_LIMIT_PAYLOAD);
+
+function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
+  const problems = [];
+  const modeLabels = {
+    normal: "",
+    "no-js": "no-JavaScript ",
+    print: "print ",
+    zoom: "zoom ",
+  };
+  const mode = state?.mode;
+  if (!Object.prototype.hasOwnProperty.call(modeLabels, mode)) {
+    return ["detection limitation-brief mode is invalid"];
+  }
+  const scope = modeLabels[mode];
+  const regionLabels = {
+    readingKey: "reading key",
+    comparison: "comparison",
+    boundary: "boundary",
+  };
+  for (const [key, label] of Object.entries(regionLabels)) {
+    const count = state?.counts?.[key];
+    if (count !== 1) {
+      problems.push(`${scope}${label} count is ${String(count)}, expected 1`);
+    }
+    const region = state?.regions?.[key];
+    if (!region) continue;
+    if (region.hidden) problems.push(`${scope}${label} is hidden`);
+    if (region.ariaHidden) problems.push(`${scope}${label} is aria-hidden`);
+    if (region.display === "none") problems.push(`${scope}${label} display is none`);
+    if (["hidden", "collapse"].includes(region.visibility)) {
+      problems.push(`${scope}${label} visibility is hidden`);
+    }
+    if (!region.rendered) problems.push(`${scope}${label} is not rendered`);
+    if (!Number.isFinite(region.opacity) || region.opacity <= 0) {
+      problems.push(`${scope}${label} opacity is zero`);
+    }
+    if (
+      !Number.isFinite(region.width) || !Number.isFinite(region.height) ||
+      region.width <= 0 || region.height <= 0
+    ) {
+      problems.push(`${scope}${label} has no rendered area`);
+    }
+    if (region.selfOverflowX > 1 || region.selfOverflowY > 1) {
+      problems.push(`${scope}${label} clips its own content`);
+    }
+    if (region.ancestorClipped) problems.push(`${scope}${label} is clipped by an ancestor`);
+    if (region.cssClip) problems.push(`${scope}${label} uses CSS clip`);
+    if (region.cssClipPath) problems.push(`${scope}${label} uses CSS clip-path`);
+    if (region.inert || !region.accessible) {
+      problems.push(`${scope}${label} is excluded from accessibility`);
+    }
+  }
+
+  const landmarkLabels = {
+    title: "title",
+    key: "reading key",
+    primaryPlot: "primary plot",
+    caption: "caption",
+    comparison: "comparison",
+    boundary: "boundary",
+    laterEvidence: "later evidence",
+  };
+  for (const [key, label] of Object.entries(landmarkLabels)) {
+    const landmark = state?.landmarks?.[key];
+    if (!landmark) {
+      problems.push(`${scope}${label} landmark is missing`);
+      continue;
+    }
+    const geometry = ["top", "right", "bottom", "left", "width", "height"];
+    if (
+      !geometry.every((edge) => Number.isFinite(landmark[edge])) ||
+      !Number.isInteger(landmark.sourceIndex)
+    ) {
+      problems.push(`${scope}${label} landmark geometry is invalid`);
+    }
+    if (landmark.cssOrder !== 0) problems.push(`${scope}${label} uses CSS order`);
+  }
+
+  const landmarks = state?.landmarks ?? {};
+  if (
+    landmarks.key && landmarks.primaryPlot &&
+    !(
+      landmarks.key.sourceIndex < landmarks.primaryPlot.sourceIndex &&
+      landmarks.key.top < landmarks.primaryPlot.top
+    )
+  ) {
+    problems.push(`${scope}reading key no longer precedes primary plot`);
+  }
+  if (
+    landmarks.comparison && landmarks.boundary &&
+    !(
+      landmarks.comparison.sourceIndex < landmarks.boundary.sourceIndex &&
+      landmarks.comparison.top < landmarks.boundary.top
+    )
+  ) {
+    problems.push(`${scope}boundary no longer follows comparison`);
+  }
+  if (
+    landmarks.boundary && landmarks.laterEvidence &&
+    !(
+      landmarks.boundary.sourceIndex < landmarks.laterEvidence.sourceIndex &&
+      landmarks.boundary.top < landmarks.laterEvidence.top
+    )
+  ) {
+    problems.push(`${scope}boundary no longer precedes later evidence`);
+  }
+
+  const expectedSteps = [
+    ["placebo", "先看灰線：沒有事件標記時，同一程序仍會算出的差額。"],
+    ["event", "再看橘點：事件窗口各測站的觀測－預測差額。"],
+    ["threshold", "最後看門檻：通過數是否高於純靠機率的預期。"],
+  ];
+  if (state?.readingSteps?.length !== expectedSteps.length) {
+    problems.push(`${scope}reading step inventory changed`);
+  }
+  for (const [index, [key, text]] of expectedSteps.entries()) {
+    const step = state?.readingSteps?.[index];
+    if (!step) continue;
+    if (step.key !== key) problems.push(`${scope}reading step ${index + 1} key changed`);
+    if (step.text !== text) problems.push(`${scope}reading step ${index + 1} text changed`);
+  }
+
+  if (!Array.isArray(expectedEvents) || !Array.isArray(state?.eventRows)) {
+    problems.push(`${scope}event rows are missing`);
+  } else {
+    if (state.eventRows.length !== expectedEvents.length) {
+      problems.push(`${scope}event row inventory is ${state.eventRows.length}, expected ${expectedEvents.length}`);
+    }
+    const identities = state.eventRows.map((row) => row?.event);
+    if (new Set(identities).size !== identities.length) {
+      problems.push(`${scope}event identity is duplicated`);
+    }
+    const trendBreak = expectedEvents.at(-1)?.event;
+    if (trendBreak && !identities.includes(trendBreak)) {
+      problems.push(`${scope}trend-break event row is missing`);
+    }
+    for (const [index, expected] of expectedEvents.entries()) {
+      const row = state.eventRows[index];
+      if (!row) continue;
+      const keys = Object.keys(row).sort();
+      if (JSON.stringify(keys) !== JSON.stringify(["event", "expected", "observed", "text"])) {
+        problems.push(`${scope}event row ${index + 1} keys changed`);
+      }
+      if (typeof row.observed !== "number" || !Number.isFinite(row.observed)) {
+        problems.push(`${scope}event row ${index + 1} observed value is not a finite number`);
+      }
+      if (typeof row.expected !== "number" || !Number.isFinite(row.expected)) {
+        problems.push(`${scope}event row ${index + 1} expected value is not a finite number`);
+      }
+      if (row.event !== expected.event) {
+        problems.push(`${scope}event row ${index + 1} identity changed`);
+      }
+      if (row.observed !== expected.observed) {
+        problems.push(`${scope}event row ${index + 1} observed value changed`);
+      }
+      if (row.expected !== expected.expected) {
+        problems.push(`${scope}event row ${index + 1} expected value changed`);
+      }
+      const pairsQuantities =
+        typeof row.text === "string" && row.text.includes(expected.event) &&
+        row.text.includes(`實際通過 ${expected.observed} 站`) &&
+        row.text.includes(`純靠機率的預期為 ${expected.expected} 站`);
+      if (!pairsQuantities) {
+        problems.push(`${scope}event row ${index + 1} accessible text changed`);
+      }
+    }
+  }
+
+  const requiredBoundaryClaims = [
+    "「測不到」不等於「等於零」",
+    "噪音底線高於訊號",
+    "這批資料與這個方法，無法分辨這種大小的效應",
+    "不是「這些事件沒有影響」",
+    "沒有驗證機組的逐時操作或燃料狀態",
+  ];
+  for (const claim of requiredBoundaryClaims) {
+    if (!state?.boundaryText?.includes(claim)) {
+      problems.push(`${scope}boundary is missing required claim ${JSON.stringify(claim)}`);
+    }
+  }
+  if (state?.regions?.boundary?.collapsed || state?.regions?.boundary?.tagName === "DETAILS") {
+    problems.push(`${scope}boundary became a collapsed disclosure`);
+  }
+
+  if (
+    viewport?.width === 375 && viewport?.height === 812 &&
+    (!Number.isFinite(landmarks.primaryPlot?.top) || landmarks.primaryPlot.top >= viewport.height)
+  ) {
+    problems.push(`${scope}primary plot does not enter the first viewport`);
+  }
+  if (
+    !Number.isFinite(state?.document?.clientWidth) ||
+    !Number.isFinite(state?.document?.scrollWidth) ||
+    state.document.scrollWidth > state.document.clientWidth
+  ) {
+    problems.push(`${scope}document scrolls sideways`);
+  }
+  return problems;
+}
+
 const HISTORICAL_STATION_ROUTES = new Set(["/", "/space/", "/data/"]);
 
 function historicalStationCopyProblems(route, text) {
@@ -844,6 +1079,146 @@ function detectionEstimateTableProblems(table) {
   }
   return problems;
 }
+
+const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
+  const mode = ${JSON.stringify(mode)};
+  const compact = (value) => String(value ?? "").replace(/\\s+/g, " ").trim();
+  const allElements = [...document.querySelectorAll("main *")];
+  const sourceIndex = (element) => element ? allElements.indexOf(element) : -1;
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
+  const inspect = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const ownStyle = getComputedStyle(element);
+    let rendered = rect.width > 0 && rect.height > 0;
+    let opacity = 1;
+    let hidden = false;
+    let ariaHidden = false;
+    let inert = false;
+    let cssClip = false;
+    let cssClipPath = false;
+    let visibleLeft = rect.left;
+    let visibleRight = rect.right;
+    let visibleTop = rect.top;
+    let visibleBottom = rect.bottom;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const nodeOpacity = Number(style.opacity);
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        style.visibility === "collapse" || !Number.isFinite(nodeOpacity) || nodeOpacity <= 0
+      ) rendered = false;
+      if (Number.isFinite(nodeOpacity)) opacity *= nodeOpacity;
+      hidden ||= node.hasAttribute("hidden");
+      ariaHidden ||= node.getAttribute("aria-hidden") === "true";
+      inert ||= node.hasAttribute("inert");
+      cssClip ||= style.clip !== "auto";
+      cssClipPath ||= style.clipPath !== "none";
+      if (node !== element) {
+        const bounds = node.getBoundingClientRect();
+        if (clippingOverflow.has(style.overflowX)) {
+          visibleLeft = Math.max(visibleLeft, bounds.left);
+          visibleRight = Math.min(visibleRight, bounds.right);
+        }
+        if (clippingOverflow.has(style.overflowY)) {
+          visibleTop = Math.max(visibleTop, bounds.top);
+          visibleBottom = Math.min(visibleBottom, bounds.bottom);
+        }
+      }
+    }
+    const selfOverflowX = clippingOverflow.has(ownStyle.overflowX)
+      ? Math.max(0, element.scrollWidth - element.clientWidth) : 0;
+    const selfOverflowY = clippingOverflow.has(ownStyle.overflowY)
+      ? Math.max(0, element.scrollHeight - element.clientHeight) : 0;
+    return {
+      display: ownStyle.display,
+      visibility: ownStyle.visibility,
+      rendered,
+      hidden,
+      ariaHidden,
+      inert,
+      accessible: rendered && !hidden && !ariaHidden && !inert,
+      opacity,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      sourceIndex: sourceIndex(element),
+      cssOrder: Number(ownStyle.order) || 0,
+      selfOverflowX,
+      selfOverflowY,
+      ancestorClipped:
+        visibleRight - visibleLeft < rect.width - 1 ||
+        visibleBottom - visibleTop < rect.height - 1,
+      cssClip,
+      cssClipPath,
+      collapsed: element instanceof HTMLDetailsElement && !element.open,
+      tagName: element.tagName,
+    };
+  };
+  const parseNumberAttribute = (element, name) => {
+    const raw = element?.getAttribute(name);
+    if (raw === null || raw === undefined) return null;
+    if (!/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$/u.test(raw)) return raw;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : raw;
+  };
+  const keys = [...document.querySelectorAll("[data-detection-reading-key]")];
+  const comparisons = [...document.querySelectorAll("[data-detection-comparison]")];
+  const boundaries = [...document.querySelectorAll("[data-detection-inference-boundary]")];
+  const key = keys[0] ?? null;
+  const comparison = comparisons[0] ?? null;
+  const boundary = boundaries[0] ?? null;
+  const primaryEvidence = document.querySelector("[data-primary-evidence]");
+  const title = primaryEvidence?.querySelector(".evidence-title") ?? null;
+  const primaryPlot = primaryEvidence?.querySelector("[data-primary-plot]") ?? null;
+  const caption = primaryEvidence?.querySelector("figcaption") ?? null;
+  const laterEvidence = boundary?.nextElementSibling ?? null;
+  return {
+    mode,
+    theme: document.documentElement.dataset.theme ?? "light",
+    counts: {
+      readingKey: keys.length,
+      comparison: comparisons.length,
+      boundary: boundaries.length,
+    },
+    regions: {
+      readingKey: inspect(key),
+      comparison: inspect(comparison),
+      boundary: inspect(boundary),
+    },
+    landmarks: {
+      title: inspect(title),
+      key: inspect(key),
+      primaryPlot: inspect(primaryPlot),
+      caption: inspect(caption),
+      comparison: inspect(comparison),
+      boundary: inspect(boundary),
+      laterEvidence: inspect(laterEvidence),
+    },
+    readingSteps: [...(key?.querySelectorAll("[data-detection-reading-step]") ?? [])]
+      .map((step) => ({
+        key: step.getAttribute("data-detection-reading-step") ?? "",
+        text: compact(step.innerText),
+      })),
+    eventRows: [...(comparison?.querySelectorAll("[data-detection-event]") ?? [])]
+      .map((row) => ({
+        event: row.getAttribute("data-detection-event") ?? "",
+        observed: parseNumberAttribute(row, "data-detection-observed"),
+        expected: parseNumberAttribute(row, "data-detection-expected"),
+        text: compact(row.innerText),
+      })),
+    boundaryText: compact(boundary?.innerText),
+    pageText: compact(document.querySelector("main")?.innerText),
+    viewport: { width: innerWidth, height: innerHeight },
+    document: {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    },
+  };
+})()`;
 
 function textZoomRouteMatrixProblems() {
   return TEXT_ZOOM_ROUTES.includes("/detection/")
@@ -2683,6 +3058,319 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality trend print contract self-test passed");
 
+  const detectionPart = (top, bottom, sourceIndex, extra = {}) => ({
+    display: "block",
+    visibility: "visible",
+    rendered: true,
+    hidden: false,
+    ariaHidden: false,
+    inert: false,
+    accessible: true,
+    opacity: 1,
+    top,
+    right: 355,
+    bottom,
+    left: 20,
+    width: 335,
+    height: bottom - top,
+    sourceIndex,
+    cssOrder: 0,
+    selfOverflowX: 0,
+    selfOverflowY: 0,
+    ancestorClipped: false,
+    cssClip: false,
+    cssClipPath: false,
+    ...extra,
+  });
+  const title = detectionPart(90, 125, 10);
+  const key = detectionPart(135, 265, 20);
+  const primaryPlot = detectionPart(285, 465, 30);
+  const caption = detectionPart(475, 545, 40);
+  const comparison = detectionPart(560, 650, 50);
+  const boundary = detectionPart(665, 770, 60, { collapsed: false, tagName: "ASIDE" });
+  const laterEvidence = detectionPart(790, 850, 70);
+  const completeDetectionBrief = {
+    mode: "normal",
+    theme: "light",
+    counts: { readingKey: 1, comparison: 1, boundary: 1 },
+    regions: { readingKey: key, comparison, boundary },
+    landmarks: { title, key, primaryPlot, caption, comparison, boundary, laterEvidence },
+    readingSteps: [
+      {
+        key: "placebo",
+        text: "先看灰線：沒有事件標記時，同一程序仍會算出的差額。",
+      },
+      {
+        key: "event",
+        text: "再看橘點：事件窗口各測站的觀測－預測差額。",
+      },
+      {
+        key: "threshold",
+        text: "最後看門檻：通過數是否高於純靠機率的預期。",
+      },
+    ],
+    eventRows: EXPECTED_DETECTION_EVENTS.map((event) => ({
+      ...event,
+      text:
+        `${event.event} 實際通過 ${event.observed} 站；` +
+        `純靠機率的預期為 ${event.expected} 站。`,
+    })),
+    boundaryText:
+      "「測不到」不等於「等於零」。噪音底線高於訊號。" +
+      "這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。" +
+      "本分析沒有驗證機組的逐時操作或燃料狀態。",
+    pageText: "",
+    viewport: { width: 375, height: 812 },
+    document: { clientWidth: 375, scrollWidth: 375 },
+  };
+  const invalidDetectionPayloads = [
+    ["boolean observed value", (payload) => {
+      payload.events[0].n_credible = true;
+    }],
+    ["numeric-string expected value", (payload) => {
+      payload.events[0].n_expected_by_chance = "3.3";
+    }],
+    ["NaN observed value", (payload) => {
+      payload.events[0].n_credible = Number.NaN;
+    }],
+    ["missing observed key", (payload) => {
+      delete payload.events[0].n_credible;
+    }],
+    ["duplicate event identity", (payload) => {
+      payload.events[1].event = payload.events[0].event;
+    }],
+  ];
+  const acceptedInvalidDetectionPayloads = [];
+  for (const [name, mutate] of invalidDetectionPayloads) {
+    const payload = structuredClone(DETECTION_LIMIT_PAYLOAD);
+    mutate(payload);
+    try {
+      detectionExpectedEventsFromPayload(payload);
+      acceptedInvalidDetectionPayloads.push(name);
+    } catch {
+      // Expected: the public payload is the independent numerical authority.
+    }
+  }
+  if (acceptedInvalidDetectionPayloads.length) {
+    throw new Error(
+      `the detection payload parser accepts ${acceptedInvalidDetectionPayloads.join(", ")}`,
+    );
+  }
+  if (
+    detectionLimitationBriefProblems(
+      completeDetectionBrief,
+      EXPECTED_DETECTION_EVENTS,
+      completeDetectionBrief.viewport,
+    ).length
+  ) {
+    throw new Error("the detection limitation-brief predicate rejects its complete control");
+  }
+  const detectionMutations = [
+    ["missing reading key", "reading key count is 0", (state) => {
+      state.counts.readingKey = 0;
+      state.regions.readingKey = null;
+    }],
+    ["duplicate reading key", "reading key count is 2", (state) => {
+      state.counts.readingKey = 2;
+    }],
+    ["missing comparison", "comparison count is 0", (state) => {
+      state.counts.comparison = 0;
+      state.regions.comparison = null;
+    }],
+    ["duplicate comparison", "comparison count is 2", (state) => {
+      state.counts.comparison = 2;
+    }],
+    ["missing boundary", "boundary count is 0", (state) => {
+      state.counts.boundary = 0;
+      state.regions.boundary = null;
+    }],
+    ["duplicate boundary", "boundary count is 2", (state) => {
+      state.counts.boundary = 2;
+    }],
+    ["hidden region", "reading key is hidden", (state) => {
+      state.regions.readingKey.hidden = true;
+      state.regions.readingKey.accessible = false;
+    }],
+    ["aria-hidden region", "comparison is aria-hidden", (state) => {
+      state.regions.comparison.ariaHidden = true;
+      state.regions.comparison.accessible = false;
+    }],
+    ["display-none region", "boundary display is none", (state) => {
+      state.regions.boundary.display = "none";
+      state.regions.boundary.accessible = false;
+    }],
+    ["visibility-hidden region", "comparison visibility is hidden", (state) => {
+      state.regions.comparison.visibility = "hidden";
+      state.regions.comparison.accessible = false;
+    }],
+    ["non-rendered ancestor", "boundary is not rendered", (state) => {
+      state.regions.boundary.rendered = false;
+      state.regions.boundary.accessible = false;
+    }],
+    ["zero-opacity region", "reading key opacity is zero", (state) => {
+      state.regions.readingKey.opacity = 0;
+    }],
+    ["zero-width region", "comparison has no rendered area", (state) => {
+      state.regions.comparison.width = 0;
+    }],
+    ["zero-height region", "boundary has no rendered area", (state) => {
+      state.regions.boundary.height = 0;
+    }],
+    ["self horizontal overflow", "reading key clips its own content", (state) => {
+      state.regions.readingKey.selfOverflowX = 2;
+    }],
+    ["self vertical overflow", "comparison clips its own content", (state) => {
+      state.regions.comparison.selfOverflowY = 2;
+    }],
+    ["ancestor clipping", "boundary is clipped by an ancestor", (state) => {
+      state.regions.boundary.ancestorClipped = true;
+    }],
+    ["CSS clip", "reading key uses CSS clip", (state) => {
+      state.regions.readingKey.cssClip = true;
+    }],
+    ["CSS clip-path", "comparison uses CSS clip-path", (state) => {
+      state.regions.comparison.cssClipPath = true;
+    }],
+    ["inert ancestor", "boundary is excluded from accessibility", (state) => {
+      state.regions.boundary.inert = true;
+      state.regions.boundary.accessible = false;
+    }],
+    ["missing reading step", "reading step inventory changed", (state) => {
+      state.readingSteps.splice(1, 1);
+    }],
+    ["replaced reading step", "reading step 2 key changed", (state) => {
+      state.readingSteps[1].key = "result";
+    }],
+    ["reordered reading step", "reading step 1 key changed", (state) => {
+      [state.readingSteps[0], state.readingSteps[1]] =
+        [state.readingSteps[1], state.readingSteps[0]];
+    }],
+    ["key relocated after primary plot", "reading key no longer precedes primary plot", (state) => {
+      state.landmarks.key.sourceIndex = 35;
+      state.landmarks.key.top = 470;
+    }],
+    ["wrong step accessible text despite decorative copy", "reading step 1 text changed", (state) => {
+      state.pageText += state.readingSteps[0].text;
+      state.readingSteps[0].text = "先看裝飾圖示。";
+    }],
+    ["missing event", "event row inventory is 2", (state) => {
+      state.eventRows.splice(1, 1);
+    }],
+    ["duplicate event", "event identity is duplicated", (state) => {
+      state.eventRows.push(structuredClone(state.eventRows[0]));
+    }],
+    ["extra event", "event row inventory is 4", (state) => {
+      state.eventRows.push({
+        event: "額外事件",
+        observed: 1,
+        expected: 3.3,
+        text: "額外事件 實際通過 1 站；純靠機率的預期為 3.3 站。",
+      });
+    }],
+    ["reordered event", "event row 1 identity changed", (state) => {
+      [state.eventRows[0], state.eventRows[1]] = [state.eventRows[1], state.eventRows[0]];
+    }],
+    ["wrong exact event identity", "event row 1 identity changed", (state) => {
+      state.eventRows[0].event += " ";
+    }],
+    ["wrong observed passes", "event row 1 observed value changed", (state) => {
+      state.eventRows[0].observed = 2;
+    }],
+    ["wrong chance expectation", "event row 1 expected value changed", (state) => {
+      state.eventRows[0].expected = 3.4;
+    }],
+    ["boolean observed substitution", "event row 1 observed value is not a finite number", (state) => {
+      state.eventRows[0].observed = true;
+    }],
+    ["numeric-string expected substitution", "event row 1 expected value is not a finite number", (state) => {
+      state.eventRows[0].expected = "3.3";
+    }],
+    ["event row missing exact key", "event row 1 keys changed", (state) => {
+      delete state.eventRows[0].expected;
+    }],
+    ["event row has extra key", "event row 1 keys changed", (state) => {
+      state.eventRows[0].unexpected = 3.3;
+    }],
+    ["event row NaN substitution", "event row 1 observed value is not a finite number", (state) => {
+      state.eventRows[0].observed = Number.NaN;
+    }],
+    ["event accessible text omits expected quantity", "event row 1 accessible text changed", (state) => {
+      state.eventRows[0].text = `${state.eventRows[0].event} 實際通過 1 站。`;
+    }],
+    ["trend-break event omitted because only two plots exist", "trend-break event row is missing", (state) => {
+      state.eventRows.pop();
+    }],
+    ["missing required boundary claim", "boundary is missing required claim", (state) => {
+      state.boundaryText = state.boundaryText.replace("噪音底線高於訊號。", "");
+    }],
+    ["weakened required boundary claim", "boundary is missing required claim", (state) => {
+      state.boundaryText = state.boundaryText.replace("無法分辨", "不容易分辨");
+    }],
+    ["approved phrase outside boundary", "boundary is missing required claim", (state) => {
+      state.boundaryText = state.boundaryText.replace("沒有驗證機組的逐時操作或燃料狀態", "");
+      state.pageText += "沒有驗證機組的逐時操作或燃料狀態";
+    }],
+    ["boundary before comparison", "boundary no longer follows comparison", (state) => {
+      state.landmarks.boundary.sourceIndex = 45;
+      state.landmarks.boundary.top = 540;
+    }],
+    ["boundary after later evidence", "boundary no longer precedes later evidence", (state) => {
+      state.landmarks.boundary.sourceIndex = 75;
+      state.landmarks.boundary.top = 860;
+    }],
+    ["boundary collapsed disclosure", "boundary became a collapsed disclosure", (state) => {
+      state.regions.boundary.collapsed = true;
+      state.regions.boundary.tagName = "DETAILS";
+    }],
+    ["375x812 plot at viewport boundary", "primary plot does not enter the first viewport", (state) => {
+      state.landmarks.primaryPlot.top = 812;
+      state.landmarks.primaryPlot.bottom = 992;
+    }],
+    ["horizontal page overflow", "document scrolls sideways", (state) => {
+      state.document.scrollWidth = 377;
+    }],
+    ["missing no-JavaScript region", "no-JavaScript reading key count is 0", (state) => {
+      state.mode = "no-js";
+      state.counts.readingKey = 0;
+      state.regions.readingKey = null;
+    }],
+    ["hidden print region", "print boundary display is none", (state) => {
+      state.mode = "print";
+      state.regions.boundary.display = "none";
+    }],
+    ["clipped zoom region", "zoom comparison is clipped by an ancestor", (state) => {
+      state.mode = "zoom";
+      state.regions.comparison.ancestorClipped = true;
+    }],
+    ["reordered zoom region", "zoom boundary no longer follows comparison", (state) => {
+      state.mode = "zoom";
+      state.landmarks.boundary.sourceIndex = 45;
+      state.landmarks.boundary.top = 540;
+    }],
+    ["visual order manufactured with CSS order", "reading key uses CSS order", (state) => {
+      state.landmarks.key.cssOrder = 2;
+    }],
+  ];
+  const missedDetectionMutations = [];
+  for (const [name, expectedProblem, mutate] of detectionMutations) {
+    const state = structuredClone(completeDetectionBrief);
+    mutate(state);
+    const problems = detectionLimitationBriefProblems(
+      state,
+      EXPECTED_DETECTION_EVENTS,
+      state.viewport,
+    );
+    if (!problems.some((problem) => problem.includes(expectedProblem))) {
+      missedDetectionMutations.push(`${name} -> ${expectedProblem}`);
+    }
+  }
+  if (missedDetectionMutations.length) {
+    throw new Error(
+      `the detection limitation-brief predicate accepts ${missedDetectionMutations.join(", ")}`,
+    );
+  }
+  console.log("site quality detection limitation brief self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -3791,6 +4479,9 @@ async function main() {
     visit(identityNode);
     return staticText.join("").trim();
   };
+
+  const detectionLimitationBriefSnapshot = async (mode) =>
+    evaluate(detectionLimitationBriefSnapshotExpression(mode));
 
   const chapterOpeningSnapshot = async (chartRoute) => evaluate(`(() => {
     const rendered = (element) => {
@@ -5609,6 +6300,14 @@ async function main() {
       for (const problem of detectionEstimateTableProblems(noScript?.detectionEstimateTable)) {
         failures.push(`${route}: no-JavaScript ${problem}`);
       }
+      const detectionState = await detectionLimitationBriefSnapshot("no-js");
+      for (const problem of detectionLimitationBriefProblems(
+        detectionState,
+        EXPECTED_DETECTION_EVENTS,
+        detectionState?.viewport,
+      )) {
+        failures.push(`${route}: ${problem}`);
+      }
     }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
@@ -5798,6 +6497,32 @@ async function main() {
       for (const problem of chapterOpeningProblems(snapshot.state)) {
         failures.push(`${route} @${width}x${height} light: ${problem}`);
       }
+      if (route === "/detection/") {
+        const detectionState = await detectionLimitationBriefSnapshot("normal");
+        if ((width === 375 && height === 812) || (width === 1280 && height === 720)) {
+          console.log(
+            "site-quality detection opening " +
+              JSON.stringify({
+                width,
+                height,
+                plotTop: detectionState?.landmarks?.primaryPlot?.top ?? null,
+                plotBottom: detectionState?.landmarks?.primaryPlot?.bottom ?? null,
+                keyTop: detectionState?.landmarks?.key?.top ?? null,
+                keyBottom: detectionState?.landmarks?.key?.bottom ?? null,
+                horizontalOverflow:
+                  (detectionState?.document?.scrollWidth ?? 0) -
+                  (detectionState?.document?.clientWidth ?? 0),
+              }),
+          );
+        }
+        for (const problem of detectionLimitationBriefProblems(
+          detectionState,
+          EXPECTED_DETECTION_EVENTS,
+          detectionState?.viewport,
+        )) {
+          failures.push(`${route} @${width}x${height} light opening: ${problem}`);
+        }
+      }
     }
   }
   for (const width of [1599, 1600]) {
@@ -5906,6 +6631,19 @@ async function main() {
       failures.push(`/trend/ print: ${problem}`);
     }
   }
+  await send("Page.navigate", { url: `${origin}/detection/` });
+  if (!(await settled(evaluate, 8000, "/detection/ print limitation brief"))) {
+    failures.push("detection print page never finished styling");
+  } else {
+    const detectionState = await detectionLimitationBriefSnapshot("print");
+    for (const problem of detectionLimitationBriefProblems(
+      detectionState,
+      EXPECTED_DETECTION_EVENTS,
+      detectionState?.viewport,
+    )) {
+      failures.push(`/detection/ print: ${problem}`);
+    }
+  }
 
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
@@ -5961,6 +6699,14 @@ async function main() {
           }
           const estimateTable = await evaluate(DETECTION_ESTIMATE_TABLE_PROBE);
           for (const problem of detectionEstimateTableProblems(estimateTable)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+          const detectionState = await detectionLimitationBriefSnapshot("normal");
+          for (const problem of detectionLimitationBriefProblems(
+            detectionState,
+            EXPECTED_DETECTION_EVENTS,
+            detectionState?.viewport,
+          )) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
@@ -7339,6 +8085,14 @@ async function main() {
       }
       const estimateTable = await evaluate(DETECTION_ESTIMATE_TABLE_PROBE);
       for (const problem of detectionEstimateTableProblems(estimateTable)) {
+        failures.push(`${state}: ${problem}`);
+      }
+      const detectionState = await detectionLimitationBriefSnapshot("zoom");
+      for (const problem of detectionLimitationBriefProblems(
+        detectionState,
+        EXPECTED_DETECTION_EVENTS,
+        detectionState?.viewport,
+      )) {
         failures.push(`${state}: ${problem}`);
       }
     }
