@@ -498,6 +498,14 @@ brand
    三個普通錨點問題與第一張核心證據圖。連結在已審查的手機、平板與桌面寬度
    保持可見並可由鍵盤操作；它們不建立第二套章節 registry，也不修改任何圖表
    series、缺值斷線、caption 或資料工具。
+71. **第五章以證據與讀法開場，詮釋邊界留在證據之後。** `/detection/` 依 source
+   order 呈現章節識別、lede、圖 5.1 問題、「先看灰線 → 再看橘點 → 最後看門檻」
+   的有序 reading key、主圖與相連 caption，接著是一個由
+   `detection-limit.json` 綁定的三事件連續比較帶（包含分段趨勢事件），而不是
+   cards 或 KPI。不可收合的 inference boundary 在後續證據之前保持可見。
+   這個 editorial contract 不改寫科學 payload、共用刻度、marks 或圖說；共用品質閘門
+   在 responsive 視埠、無 JavaScript、列印與加大文字狀態均要求同一順序、可見性、
+   accessibility 與無整頁橫向溢出。
 
 
 ## Accessibility & Inclusion
