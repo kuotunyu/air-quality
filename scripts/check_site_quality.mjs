@@ -519,7 +519,7 @@ function chapterOpeningProblems(state) {
         problems.push("chapter primary plot has invalid visible-data geometry");
       } else if (viewport.width === 1280 && viewport.height === 720) {
         if (state.primaryPlot.top >= viewport.height * 55 / 100) {
-          problems.push(`chapter primary plot starts at or below 55vh (${state.primaryPlot.top}px)`);
+          problems.push("chapter primary plot starts at or below 55vh");
         }
         if (state.primaryPlot.dataAreaVisible < 180) {
           problems.push("chapter less than 180px of plot data is visible");
@@ -734,7 +734,9 @@ function sourcesAtlasProblems(state, width, height) {
       if (actual?.title !== cell.title) problems.push(`Sources CBPF cell title changed at ${cell.key}`);
     }
   }
-  if (state?.restoration && JSON.stringify(state.restoration.before) !== JSON.stringify(state.restoration.after)) {
+  if (!state?.restoration) {
+    problems.push("Sources station restoration is missing");
+  } else if (JSON.stringify(state.restoration.before) !== JSON.stringify(state.restoration.after)) {
     problems.push("Sources station restoration changed selected station, focus, URL, scroll, or snapshot");
   }
   return problems;
@@ -3029,6 +3031,7 @@ async function lifecycleSelfTest() {
       state.restoration.after[key] = key === "scroll" ? [1, 0] : key === "cells" ? [] : "changed";
     }, (state) => JSON.stringify(state.restoration.before[key]) !== JSON.stringify(state.restoration.after[key]), "station restoration changed");
   }
+  expectSourcesAtlasProblem("missing restoration", (state) => { delete state.restoration; }, (state) => !("restoration" in state), "station restoration is missing");
   if (missedSourcesAtlasProblems.length) {
     throw new Error(`the Sources conditional-atlas predicate accepts ${missedSourcesAtlasProblems.join(", ")}`);
   }
