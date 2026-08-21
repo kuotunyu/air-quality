@@ -989,6 +989,173 @@ def methods_case_index_failures_for_text(html: str) -> list[str]:
     return failures
 
 
+DATA_LAYER_ROWS = (
+    (
+        "L0",
+        "L0 站-月",
+        "閱讀者 · 快速查值與網站圖表",
+        ("每個測項一個 JSON", "網站直接讀這一層"),
+    ),
+    (
+        "L1",
+        "L1 站-日",
+        "分析者 · 逐日查詢與桌面分析",
+        ("每個測項一個 Parquet", "DuckDB-WASM 或桌面工具使用"),
+    ),
+    (
+        "L2",
+        "L2 站-時",
+        "重現者 · 逐時稽核與管線重建",
+        ("完整逐時觀測", "不發布", "twair ingest", "twair build"),
+    ),
+)
+
+
+def data_provenance_register_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    elements = parser.elements
+
+    all_registers = [
+        element for element in elements if "data-data-layer-register" in element.attributes
+    ]
+    registers = [element for element in all_registers if element.visible]
+    if len(registers) != 1 or registers != all_registers:
+        failures.append(f"data provenance register inventory changed: {len(registers)}")
+        register = None
+    else:
+        register = registers[0]
+        if register.tag != "dl":
+            failures.append("data provenance register semantics changed")
+        if _is_inside_disclosure(register):
+            failures.append("data provenance register is user-collapsible")
+
+    all_terms = [element for element in elements if "data-data-layer" in element.attributes]
+    terms = [element for element in all_terms if element.visible]
+    all_descriptions = [
+        element for element in elements if "data-data-layer-description" in element.attributes
+    ]
+    descriptions = [element for element in all_descriptions if element.visible]
+    if len(terms) != len(DATA_LAYER_ROWS) or terms != all_terms:
+        failures.append(f"data layer term inventory changed: {len(terms)}")
+    if len(descriptions) != len(DATA_LAYER_ROWS) or descriptions != all_descriptions:
+        failures.append(f"data layer description inventory changed: {len(descriptions)}")
+
+    observed_levels = [term.attributes.get("data-data-layer") for term in terms]
+    if observed_levels != [row[0] for row in DATA_LAYER_ROWS]:
+        failures.append(f"data layer order changed: {observed_levels!r}")
+    if register is not None:
+        direct_children = [child for child in register.children if child.visible]
+        expected_children = [
+            item for pair in zip(terms, descriptions, strict=False) for item in pair
+        ]
+        if direct_children != expected_children or len(direct_children) != 6:
+            failures.append("data layer term-description pairing changed")
+
+    for index, (level, term_text, use_text, description_fragments) in enumerate(DATA_LAYER_ROWS):
+        if index >= len(terms) or index >= len(descriptions):
+            continue
+        term = terms[index]
+        description = descriptions[index]
+        term_children = [child for child in term.children if child.visible]
+        if (
+            term.tag != "dt"
+            or register is None
+            or term.parent is not register
+            or term.attributes.get("data-data-layer") != level
+            or [child.tag for child in term_children] != ["span", "span"]
+            or "data-data-layer-term" not in term_children[0].attributes
+            or term_children[0].rendered_text() != term_text
+            or "data-data-layer-use" not in term_children[1].attributes
+            or term_children[1].rendered_text() != use_text
+        ):
+            failures.append(f"data layer {level} term or use label changed")
+        if (
+            description.tag != "dd"
+            or register is None
+            or description.parent is not register
+            or description.attributes.get("data-data-layer-description") != level
+            or _is_inside_disclosure(description)
+        ):
+            failures.append(f"data layer {level} description structure changed")
+        description_text = description.rendered_text()
+        if any(fragment not in description_text for fragment in description_fragments):
+            failures.append(f"data layer {level} description changed")
+        if level == "L2" and any(
+            "download" in element.attributes and element.is_inside(description)
+            for element in elements
+        ):
+            failures.append("data layer L2 became downloadable")
+
+    tables = [
+        element
+        for element in elements
+        if element.visible and element.tag == "table" and "dense" in element.classes
+    ]
+    if len(tables) != 1:
+        failures.append(f"data download table inventory changed: {len(tables)}")
+        table = None
+    else:
+        table = tables[0]
+        if register is not None and register.start_order >= table.start_order:
+            failures.append("data provenance register no longer precedes the download table")
+
+    table_rows = [
+        element
+        for element in elements
+        if element.visible
+        and element.tag == "tr"
+        and table is not None
+        and element.is_inside(table)
+    ]
+    table_bodies = [
+        element
+        for element in elements
+        if element.visible
+        and element.tag == "tbody"
+        and table is not None
+        and element.is_inside(table)
+    ]
+    body_rows = [row for row in table_rows if any(row.is_inside(body) for body in table_bodies)]
+    if len(body_rows) != 21:
+        failures.append(f"data download row inventory changed: {len(body_rows)}")
+    downloads = [
+        element
+        for element in elements
+        if element.visible and element.tag == "a" and "download" in element.attributes
+    ]
+    if len(downloads) != 42 or any(
+        table is None or not link.is_inside(table) for link in downloads
+    ):
+        failures.append(f"data download link inventory changed: {len(downloads)}")
+
+    page_text = " ".join(
+        element.rendered_text()
+        for element in elements
+        if element.parent is None and element.visible
+    )
+    for label, fragment in (
+        ("licensing", "授權與再散布"),
+        ("L2 boundary", "L2 不發布，理由不是檔案太大"),
+        ("missing-value caveat", "關於缺值"),
+        ("hourly PM2.5 caveat", "逐時 PM2.5 的官方但書"),
+    ):
+        if fragment not in page_text:
+            failures.append(f"data {label} statement changed")
+    disagreements = [
+        element
+        for element in elements
+        if element.visible and "data-publication-disagreement" in element.attributes
+    ]
+    if len(disagreements) != 1 or disagreements[0].tag != "details":
+        failures.append("data publication-disagreement evidence changed")
+
+    return failures
+
+
 FORECAST_PAYLOAD_KEYS = frozenset(
     {
         "period",
@@ -4148,6 +4315,139 @@ def _run_preflight() -> None:
                 f"{expected_failure}: {mutation_failures}"
             )
 
+    data_download_rows = "".join(
+        f"<tr><td>測項 {index:02d}</td><td>1982–2025</td>"
+        f'<td><a href="/data/l0/{index:02d}.json" download>JSON</a></td>'
+        f'<td><a href="/data/l1/{index:02d}.parquet" download>Parquet</a></td></tr>'
+        for index in range(1, 22)
+    )
+    valid_data_register = f"""
+<p class="lede">所有數字都可以獨立重算。</p>
+<dl class="layers" data-data-layer-register>
+<dt data-data-layer="L0"><span data-data-layer-term>L0 站-月</span><span data-data-layer-use>閱讀者 · 快速查值與網站圖表</span></dt>
+<dd data-data-layer-description="L0">每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
+<dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span><span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>
+<dd data-data-layer-description="L1">每個測項一個 Parquet，共 54.6 MB。供 DuckDB-WASM 或桌面工具使用。</dd>
+<dt data-data-layer="L2"><span data-data-layer-term>L2 站-時</span><span data-data-layer-use>重現者 · 逐時稽核與管線重建</span></dt>
+<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加 <code>twair build</code> 即可獨立重建。</dd>
+</dl>
+<h2>下載</h2>
+<table class="dense"><caption>三層資料的 L0 與 L1，逐測項。</caption><tbody>{data_download_rows}</tbody></table>
+<h2>授權與再散布</h2>
+<p><strong>L2 不發布，理由不是檔案太大。</strong></p>
+<p><strong>關於缺值。</strong>這個專案不補值。</p>
+<details data-publication-disagreement><summary>官方值不一致</summary><p>這是未解的來源歧異。</p></details>
+<p><strong>逐時 PM2.5 的官方但書。</strong>小時值僅供預警參考。</p>
+"""
+    valid_data_failures = data_provenance_register_failures_for_text(valid_data_register)
+    if valid_data_failures:
+        raise RuntimeError(
+            f"data provenance register preflight rejected the valid control: {valid_data_failures}"
+        )
+    data_l0_pair = (
+        '<dt data-data-layer="L0"><span data-data-layer-term>L0 站-月</span>'
+        "<span data-data-layer-use>閱讀者 · 快速查值與網站圖表</span></dt>\n"
+        '<dd data-data-layer-description="L0">每個測項一個 JSON，含月均值與該月的有效天數。'
+        "網站直接讀這一層。</dd>"
+    )
+    data_l1_pair = (
+        '<dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span>'
+        "<span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>\n"
+        '<dd data-data-layer-description="L1">每個測項一個 Parquet，共 54.6 MB。'
+        "供 DuckDB-WASM 或桌面工具使用。</dd>"
+    )
+    data_table = (
+        '<table class="dense"><caption>三層資料的 L0 與 L1，逐測項。</caption>'
+        f"<tbody>{data_download_rows}</tbody></table>"
+    )
+    data_mutations = {
+        "missing level hook": (
+            "data layer term inventory changed",
+            valid_data_register.replace(' data-data-layer="L0"', "", 1),
+        ),
+        "extra unhooked pair": (
+            "data layer term-description pairing changed",
+            valid_data_register.replace("</dl>", "<dt>額外層</dt><dd>額外說明</dd></dl>", 1),
+        ),
+        "duplicate level": (
+            "data layer order changed",
+            valid_data_register.replace('data-data-layer="L2"', 'data-data-layer="L1"', 1),
+        ),
+        "reordered levels": (
+            "data layer order changed",
+            valid_data_register.replace(
+                data_l0_pair + "\n" + data_l1_pair, data_l1_pair + "\n" + data_l0_pair, 1
+            ),
+        ),
+        "renamed use label": (
+            "data layer L0 term or use label changed",
+            valid_data_register.replace("閱讀者 · 快速查值與網站圖表", "其他用途", 1),
+        ),
+        "hidden use label": (
+            "data layer L0 term or use label changed",
+            valid_data_register.replace(
+                "<span data-data-layer-use>", "<span hidden data-data-layer-use>", 1
+            ),
+        ),
+        "hidden register": (
+            "data provenance register inventory changed",
+            valid_data_register.replace('<dl class="layers"', '<dl hidden class="layers"', 1),
+        ),
+        "collapsible register": (
+            "data provenance register is user-collapsible",
+            valid_data_register.replace(
+                '<dl class="layers"', '<details open><dl class="layers"', 1
+            ).replace("</dl>", "</dl></details>", 1),
+        ),
+        "mismatched description": (
+            "data layer L1 description structure changed",
+            valid_data_register.replace(
+                'data-data-layer-description="L1"', 'data-data-layer-description="L0"', 1
+            ),
+        ),
+        "changed description": (
+            "data layer L0 description changed",
+            valid_data_register.replace("網站直接讀這一層", "改用其他層", 1),
+        ),
+        "table before register": (
+            "data provenance register no longer precedes the download table",
+            valid_data_register.replace(data_table, "", 1).replace(
+                '<dl class="layers"', data_table + '\n<dl class="layers"', 1
+            ),
+        ),
+        "lost download": (
+            "data download link inventory changed",
+            valid_data_register.replace(" download>JSON</a>", ">JSON</a>", 1),
+        ),
+        "extra table row": (
+            "data download row inventory changed",
+            valid_data_register.replace("</tbody>", "<tr><td>額外</td></tr></tbody>", 1),
+        ),
+        "L2 became downloadable": (
+            "data layer L2 became downloadable",
+            valid_data_register.replace(
+                "<strong>不發布</strong>", '<a href="/l2" download><strong>不發布</strong></a>', 1
+            ),
+        ),
+        "lost L2 boundary": (
+            "data L2 boundary statement changed",
+            valid_data_register.replace("L2 不發布，理由不是檔案太大。", "L2 不發布。", 1),
+        ),
+        "lost disagreement": (
+            "data publication-disagreement evidence changed",
+            valid_data_register.replace(" data-publication-disagreement", "", 1),
+        ),
+    }
+    for name, (expected_failure, html) in data_mutations.items():
+        if html == valid_data_register:
+            raise RuntimeError(f"data provenance register preflight did not apply {name}")
+        mutation_failures = data_provenance_register_failures_for_text(html)
+        if not any(failure.startswith(expected_failure) for failure in mutation_failures):
+            raise RuntimeError(
+                f"data provenance register preflight did not reject {name} for "
+                f"{expected_failure}: {mutation_failures}"
+            )
+
     valid_forecast_brief = """
 <p class="lede">這一章量的是往前看能走多遠還算有用。</p>
 <section data-primary-evidence><p id="evidence-6-1-title" class="evidence-title">各預測期距的誤差如何變化？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
@@ -5331,6 +5631,8 @@ def main(argv: list[str]) -> int:
                     )
             elif slug == "methods":
                 failures.extend(methods_case_index_failures_for_text(html))
+            elif slug == "data":
+                failures.extend(data_provenance_register_failures_for_text(html))
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible reading map")
             if slug == "stations":

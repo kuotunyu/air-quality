@@ -78,15 +78,24 @@ const zhDate = (value: string) => {
   <div class="primary-register" data-primary-evidence>
     <h2>三層資料</h2>
 
-    <dl class="layers">
-      <dt>L0 站-月</dt>
-      <dd>每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
+    <dl class="layers" data-data-layer-register>
+      <dt data-data-layer="L0">
+        <span data-data-layer-term>L0 站-月</span>
+        <span class="layer-use" data-data-layer-use>閱讀者 · 快速查值與網站圖表</span>
+      </dt>
+      <dd data-data-layer-description="L0">每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
 
-      <dt>L1 站-日</dt>
-      <dd>每個測項一個 Parquet，共 {mb(layerBytes.l1)}。供 DuckDB-WASM 或桌面工具使用。</dd>
+      <dt data-data-layer="L1">
+        <span data-data-layer-term>L1 站-日</span>
+        <span class="layer-use" data-data-layer-use>分析者 · 逐日查詢與桌面分析</span>
+      </dt>
+      <dd data-data-layer-description="L1">每個測項一個 Parquet，共 {mb(layerBytes.l1)}。供 DuckDB-WASM 或桌面工具使用。</dd>
 
-      <dt>L2 站-時</dt>
-      <dd>
+      <dt data-data-layer="L2">
+        <span data-data-layer-term>L2 站-時</span>
+        <span class="layer-use" data-data-layer-use>重現者 · 逐時稽核與管線重建</span>
+      </dt>
+      <dd data-data-layer-description="L2">
         {hourlyObservationsShort}筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
         只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加{" "}
         <code>twair build</code> 即可獨立重建。
@@ -254,6 +263,18 @@ const zhDate = (value: string) => {
   white-space: nowrap;
   padding: var(--space-3) 0;
   border-top: 1px solid var(--line-soft);
+}
+.layers dt > span {
+  display: block;
+}
+.layer-use {
+  margin-block-start: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 450;
+  line-height: 1.35;
+  white-space: normal;
+  text-wrap: pretty;
 }
 .layers dd {
   margin: 0;
