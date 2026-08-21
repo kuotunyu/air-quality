@@ -41,6 +41,7 @@ const horizons = forecast.horizons as {
 }[];
 
 const reading = forecast.reading as { claim: string; detail: string }[];
+const READING_KEYS = ["r2-skill", "two-baselines", "split-instability", "shared-feature-bug"] as const;
 const baselines = forecast.baselines as {
   name: string;
   label: string;
@@ -333,6 +334,34 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     </Fragment>
   </EvidenceFigure>
 
+  <nav
+    class="forecast-decision-sheet"
+    aria-labelledby="forecast-decision-title"
+    data-forecast-decision-sheet
+  >
+    <h2 id="forecast-decision-title">三步決定這個預測還值不值得用</h2>
+    <ol>
+      <li data-forecast-decision="error">
+        <a href="#evidence-6-1-title">
+          <strong>誤差</strong>
+          <p>先看圖 6.1：模型、persistence 與 climatology 的 RMSE 隨期距如何變化。</p>
+        </a>
+      </li>
+      <li data-forecast-decision="skill">
+        <a href="#evidence-6-2-title">
+          <strong>基準優勢</strong>
+          <p>再看圖 6.2：同一批預測相對 persistence 與 climatology 還剩多少優勢。</p>
+        </a>
+      </li>
+      <li data-forecast-decision="cost">
+        <a href="#forecast-cost">
+          <strong>計算代價</strong>
+          <p>最後看成本表與圖 6.3：額外計算是否換得可用的準確度。</p>
+        </a>
+      </li>
+    </ol>
+  </nav>
+
   <p>
     上一章量的是<strong>回頭看</strong>能分辨多小的效應。兩章問的是同一種問題：
     這個方法在什麼地方停止提供資訊？
@@ -487,29 +516,29 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     </Fragment>
   </EvidenceFigure>
 
-  <div class="grid grid-2">
+  <div class="forecast-band" data-forecast-reading-band>
     {
-      reading.map((r) => (
-        <div class="card">
+      reading.map((r, index) => (
+        <section data-forecast-reading={READING_KEYS[index]}>
           <h2>{r.claim}</h2>
           <p class="small">{r.detail}</p>
-        </div>
+        </section>
       ))
     }
   </div>
 
   <h2>為何需要兩條基準線</h2>
 
-  <div class="grid grid-2">
+  <div class="forecast-band" data-forecast-baseline-band>
     {
       baselines.map((b) => (
-        <div class="card">
+        <section data-forecast-baseline={b.name}>
           <h2>
             {b.name} <span class="dim">{b.label}</span>
           </h2>
           <p class="small">{b.what}</p>
           <p class="small dim">{b.why}</p>
-        </div>
+        </section>
       ))
     }
   </div>
@@ -577,7 +606,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     沒有任何一個可疑地接近 1。
   </p>
 
-  <h2>被跳過的那個模型</h2>
+  <h2 id="forecast-cost">被跳過的那個模型</h2>
 
   <p class="lede">
     SARIMA 常被以「太麻煩、不實用」為由略過。問題從來不是這個結論，
@@ -782,6 +811,79 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 </section>
 
 <style>
+  .forecast-decision-sheet,
+  .forecast-band {
+    container-type: inline-size;
+    margin: var(--space-3) 0;
+    border-block: 1px solid var(--line);
+  }
+  .forecast-decision-sheet > h2 {
+    margin: 0;
+    padding: var(--space-2) 0;
+    border-block-end: 1px solid var(--line);
+  }
+  .forecast-decision-sheet ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .forecast-decision-sheet li + li,
+  .forecast-band > section + section {
+    border-block-start: 1px solid var(--line);
+  }
+  .forecast-decision-sheet a,
+  .forecast-band > section {
+    display: grid;
+    grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.3fr);
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+  }
+  .forecast-decision-sheet a {
+    color: inherit;
+    text-decoration-color: transparent;
+  }
+  .forecast-decision-sheet a:hover,
+  .forecast-decision-sheet a:focus-visible {
+    text-decoration-color: currentColor;
+  }
+  .forecast-decision-sheet p,
+  .forecast-band p {
+    margin: 0;
+  }
+  .forecast-band h2 {
+    margin: 0;
+  }
+  .forecast-band > section {
+    align-items: start;
+  }
+  [data-forecast-baseline] {
+    grid-template-areas:
+      "heading what"
+      "heading why";
+  }
+  [data-forecast-baseline] h2 {
+    grid-area: heading;
+  }
+  [data-forecast-baseline] p:first-of-type {
+    grid-area: what;
+  }
+  [data-forecast-baseline] p:last-of-type {
+    grid-area: why;
+  }
+  @container (max-width: 42rem) {
+    .forecast-decision-sheet a,
+    .forecast-band > section {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-1);
+    }
+    [data-forecast-baseline] {
+      grid-template-areas:
+        "heading"
+        "what"
+        "why";
+    }
+  }
+
   /*
    * A split's own value. It was `.plot-pt.faint` — 5px at 50% opacity, the
    * faintest ink in a figure whose caveat it carries. Now it is the series'

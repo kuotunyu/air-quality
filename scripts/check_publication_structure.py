@@ -28,6 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "web" / "dist"
 REGISTRY = ROOT / "web" / "src" / "lib" / "chapters.ts"
 DETECTION_LIMIT = ROOT / "web" / "public" / "data" / "story" / "detection-limit.json"
+FORECAST_STORY = ROOT / "web" / "public" / "data" / "story" / "forecast.json"
 HEALTH_STORY = ROOT / "web" / "public" / "data" / "story" / "health.json"
 TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "typescript.js"
 EXPECTED_CHAPTERS = 10
@@ -832,6 +833,353 @@ def load_detection_expected_events() -> tuple[DetectionExpectedEvent, ...]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"could not read detection payload: {exc}") from exc
     return _detection_expected_events_from_payload(payload)
+
+
+FORECAST_PAYLOAD_KEYS = frozenset(
+    {
+        "period",
+        "target",
+        "validation",
+        "skill_formula",
+        "baselines",
+        "reading",
+        "leakage_note",
+        "horizons",
+    }
+)
+FORECAST_BASELINE_KEYS = frozenset({"name", "label", "what", "why"})
+FORECAST_READING_KEYS = frozenset({"claim", "detail"})
+FORECAST_HORIZON_KEYS = frozenset(
+    {
+        "horizon",
+        "n",
+        "stations",
+        "splits",
+        "model_r2",
+        "skill_persistence",
+        "skill_persistence_worst",
+        "skill_climatology",
+        "skill_climatology_worst",
+        "splits_not_beating_persistence",
+        "model_rmse",
+        "persistence_rmse",
+        "climatology_rmse",
+        "per_split",
+    }
+)
+FORECAST_SPLIT_KEYS = frozenset({"split", "skill_persistence", "skill_climatology", "model_r2"})
+FORECAST_HORIZONS = (1, 6, 24, 48)
+FORECAST_READING_IDENTITIES = (
+    "r2-skill",
+    "two-baselines",
+    "split-instability",
+    "shared-feature-bug",
+)
+FORECAST_DECISION_ROWS = (
+    (
+        "error",
+        "誤差",
+        "先看圖 6.1：模型、persistence 與 climatology 的 RMSE 隨期距如何變化。",
+        "#evidence-6-1-title",
+    ),
+    (
+        "skill",
+        "基準優勢",
+        "再看圖 6.2：同一批預測相對 persistence 與 climatology 還剩多少優勢。",
+        "#evidence-6-2-title",
+    ),
+    (
+        "cost",
+        "計算代價",
+        "最後看成本表與圖 6.3：額外計算是否換得可用的準確度。",
+        "#forecast-cost",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class ForecastExpectedEvidence:
+    horizons: tuple[int, ...]
+    readings: tuple[tuple[str, str], ...]
+    baselines: tuple[tuple[str, str, str, str], ...]
+
+
+def _finite_forecast_number(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _forecast_expected_evidence_from_payload(payload: object) -> ForecastExpectedEvidence:
+    if not isinstance(payload, dict) or set(payload) != FORECAST_PAYLOAD_KEYS:
+        raise ValueError("forecast payload top-level shape changed")
+    period = payload["period"]
+    if (
+        not isinstance(period, list)
+        or len(period) != 2
+        or any(isinstance(year, bool) or not isinstance(year, int) for year in period)
+        or period != sorted(period)
+    ):
+        raise ValueError("forecast payload period changed")
+    for key in ("target", "validation", "skill_formula", "leakage_note"):
+        if not isinstance(payload[key], str) or not payload[key].strip():
+            raise ValueError(f"forecast payload {key} changed")
+
+    baselines = payload["baselines"]
+    if not isinstance(baselines, list) or len(baselines) != 2:
+        raise ValueError("forecast payload baseline inventory changed")
+    expected_baseline_names = ("persistence", "climatology")
+    baseline_evidence: list[tuple[str, str, str, str]] = []
+    for index, (row, expected_name) in enumerate(
+        zip(baselines, expected_baseline_names, strict=True), start=1
+    ):
+        if not isinstance(row, dict) or set(row) != FORECAST_BASELINE_KEYS:
+            raise ValueError(f"forecast payload baseline {index} shape changed")
+        values = tuple(row[key] for key in ("name", "label", "what", "why"))
+        if any(not isinstance(value, str) or not value.strip() for value in values):
+            raise ValueError(f"forecast payload baseline {index} text changed")
+        if row["name"] != expected_name:
+            raise ValueError("forecast payload baseline identity or order changed")
+        baseline_evidence.append(cast(tuple[str, str, str, str], values))
+
+    readings = payload["reading"]
+    if not isinstance(readings, list) or len(readings) != len(FORECAST_READING_IDENTITIES):
+        raise ValueError("forecast payload reading inventory changed")
+    reading_evidence: list[tuple[str, str]] = []
+    for index, row in enumerate(readings, start=1):
+        if not isinstance(row, dict) or set(row) != FORECAST_READING_KEYS:
+            raise ValueError(f"forecast payload reading {index} shape changed")
+        claim = row["claim"]
+        detail = row["detail"]
+        if (
+            not isinstance(claim, str)
+            or not claim.strip()
+            or not isinstance(detail, str)
+            or not detail.strip()
+        ):
+            raise ValueError(f"forecast payload reading {index} text changed")
+        reading_evidence.append((claim, detail))
+
+    horizons = payload["horizons"]
+    if not isinstance(horizons, list) or len(horizons) != len(FORECAST_HORIZONS):
+        raise ValueError("forecast payload horizon inventory changed")
+    observed_horizons: list[int] = []
+    numeric_keys = (
+        "model_r2",
+        "skill_persistence",
+        "skill_persistence_worst",
+        "skill_climatology",
+        "skill_climatology_worst",
+        "model_rmse",
+        "persistence_rmse",
+        "climatology_rmse",
+    )
+    for index, row in enumerate(horizons, start=1):
+        if not isinstance(row, dict) or set(row) != FORECAST_HORIZON_KEYS:
+            raise ValueError(f"forecast payload horizon {index} shape changed")
+        for key in ("horizon", "n", "stations", "splits", "splits_not_beating_persistence"):
+            value = row[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"forecast payload horizon {index} {key} is invalid")
+        if any(not _finite_forecast_number(row[key]) for key in numeric_keys):
+            raise ValueError(f"forecast payload horizon {index} metric is invalid")
+        per_split = row["per_split"]
+        if not isinstance(per_split, list) or len(per_split) != row["splits"]:
+            raise ValueError(f"forecast payload horizon {index} split inventory changed")
+        split_names: list[str] = []
+        for split_index, split in enumerate(per_split, start=1):
+            if not isinstance(split, dict) or set(split) != FORECAST_SPLIT_KEYS:
+                raise ValueError(
+                    f"forecast payload horizon {index} split {split_index} shape changed"
+                )
+            name = split["split"]
+            if not isinstance(name, str) or not name.strip() or name in split_names:
+                raise ValueError(f"forecast payload horizon {index} split identity changed")
+            split_names.append(name)
+            if any(
+                not _finite_forecast_number(split[key])
+                for key in ("skill_persistence", "skill_climatology", "model_r2")
+            ):
+                raise ValueError(f"forecast payload horizon {index} split metric is invalid")
+        observed_horizons.append(row["horizon"])
+    if tuple(observed_horizons) != FORECAST_HORIZONS:
+        raise ValueError("forecast payload horizon identity or order changed")
+
+    return ForecastExpectedEvidence(
+        horizons=tuple(observed_horizons),
+        readings=tuple(reading_evidence),
+        baselines=tuple(baseline_evidence),
+    )
+
+
+def load_forecast_expected_evidence() -> ForecastExpectedEvidence:
+    try:
+        with FORECAST_STORY.open(encoding="utf-8") as handle:
+            payload = json.load(handle, parse_constant=_reject_nonfinite_json_constant)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read forecast payload: {exc}") from exc
+    return _forecast_expected_evidence_from_payload(payload)
+
+
+def _forecast_text_identity(value: str) -> str:
+    return "".join(value.split())
+
+
+def _forecast_direct_rows(region: Element, attribute: str) -> list[Element]:
+    return [child for child in region.children if attribute in child.attributes]
+
+
+def forecast_horizon_decision_failures_for_text(
+    html: str,
+    expected: ForecastExpectedEvidence,
+) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    elements = parser.elements
+
+    def visible_region(attribute: str, label: str) -> Element | None:
+        matches = [element for element in elements if attribute in element.attributes]
+        if len(matches) != 1 or not matches[0].visible:
+            failures.append(f"forecast {label} inventory changed: {len(matches)}")
+            return None
+        region = matches[0]
+        if _is_inside_disclosure(region):
+            failures.append(f"forecast {label} is user-collapsible")
+        return region
+
+    sheet = visible_region("data-forecast-decision-sheet", "decision sheet")
+    reading_band = visible_region("data-forecast-reading-band", "reading band")
+    baseline_band = visible_region("data-forecast-baseline-band", "baseline band")
+
+    if sheet is not None:
+        children = [child for child in sheet.children if child.visible]
+        if (
+            sheet.tag != "nav"
+            or sheet.attributes.get("aria-labelledby") != "forecast-decision-title"
+            or [child.tag for child in children] != ["h2", "ol"]
+            or children[0].attributes.get("id") != "forecast-decision-title"
+            or children[0].rendered_text() != "三步決定這個預測還值不值得用"
+        ):
+            failures.append("forecast decision sheet semantics changed")
+        ordered_list = children[1] if len(children) == 2 and children[1].tag == "ol" else None
+        rows = (
+            _forecast_direct_rows(ordered_list, "data-forecast-decision")
+            if ordered_list is not None
+            else []
+        )
+        all_rows = [
+            element for element in elements if "data-forecast-decision" in element.attributes
+        ]
+        if (
+            len(rows) != len(FORECAST_DECISION_ROWS)
+            or rows != all_rows
+            or any(row.tag != "li" or not row.visible for row in rows)
+        ):
+            failures.append(f"forecast decision row inventory changed: {len(rows)}")
+        observed_keys = [row.attributes.get("data-forecast-decision") for row in rows]
+        if observed_keys != [row[0] for row in FORECAST_DECISION_ROWS]:
+            failures.append(f"forecast decision row order changed: {observed_keys!r}")
+        for row, (_key, label, explanation, destination) in zip(
+            rows, FORECAST_DECISION_ROWS, strict=False
+        ):
+            links = [child for child in row.children if child.visible]
+            if len(links) != 1 or links[0].tag != "a":
+                failures.append("forecast decision row structure changed")
+                continue
+            link = links[0]
+            link_children = [child for child in link.children if child.visible]
+            if [child.tag for child in link_children] != ["strong", "p"]:
+                failures.append("forecast decision row structure changed")
+                continue
+            if link.attributes.get("href") != destination:
+                failures.append("forecast decision destination changed")
+            if link_children[0].rendered_text() != label:
+                failures.append("forecast decision row text changed")
+            if link_children[1].rendered_text() != explanation:
+                failures.append("forecast decision row text changed")
+
+    if reading_band is not None:
+        rows = _forecast_direct_rows(reading_band, "data-forecast-reading")
+        all_rows = [
+            element for element in elements if "data-forecast-reading" in element.attributes
+        ]
+        if (
+            len(rows) != len(expected.readings)
+            or rows != all_rows
+            or any(row.tag != "section" or not row.visible for row in rows)
+        ):
+            failures.append(f"forecast reading row inventory changed: {len(rows)}")
+        observed_keys = [row.attributes.get("data-forecast-reading") for row in rows]
+        if observed_keys != list(FORECAST_READING_IDENTITIES):
+            failures.append(f"forecast reading row order changed: {observed_keys!r}")
+        for row, (claim, detail) in zip(rows, expected.readings, strict=False):
+            children = [child for child in row.children if child.visible]
+            if [child.tag for child in children] != ["h2", "p"]:
+                failures.append("forecast reading row structure changed")
+                continue
+            if children[0].rendered_text() != claim or children[1].rendered_text() != detail:
+                failures.append("forecast reading row text changed")
+
+    if baseline_band is not None:
+        rows = _forecast_direct_rows(baseline_band, "data-forecast-baseline")
+        all_rows = [
+            element for element in elements if "data-forecast-baseline" in element.attributes
+        ]
+        if (
+            len(rows) != len(expected.baselines)
+            or rows != all_rows
+            or any(row.tag != "section" or not row.visible for row in rows)
+        ):
+            failures.append(f"forecast baseline row inventory changed: {len(rows)}")
+        observed_keys = [row.attributes.get("data-forecast-baseline") for row in rows]
+        if observed_keys != [row[0] for row in expected.baselines]:
+            failures.append(f"forecast baseline row order changed: {observed_keys!r}")
+        for row, (name, label, what, why) in zip(rows, expected.baselines, strict=False):
+            children = [child for child in row.children if child.visible]
+            if [child.tag for child in children] != ["h2", "p", "p"]:
+                failures.append("forecast baseline row structure changed")
+                continue
+            if _forecast_text_identity(children[0].rendered_text()) != _forecast_text_identity(
+                name + label
+            ):
+                failures.append("forecast baseline row text changed")
+            if children[1].rendered_text() != what or children[2].rendered_text() != why:
+                failures.append("forecast baseline row text changed")
+
+    def visible_id(identifier: str, label: str) -> Element | None:
+        matches = [
+            element
+            for element in elements
+            if element.attributes.get("id") == identifier and element.visible
+        ]
+        if len(matches) != 1:
+            failures.append(f"forecast {label} anchor inventory changed: {len(matches)}")
+            return None
+        return matches[0]
+
+    figure_1 = visible_id("evidence-6-1-title", "Figure 6.1")
+    figure_2 = visible_id("evidence-6-2-title", "Figure 6.2")
+    cost = visible_id("forecast-cost", "cost")
+    if figure_1 is not None and sheet is not None and figure_1.start_order >= sheet.start_order:
+        failures.append("forecast decision sheet no longer follows Figure 6.1")
+    if sheet is not None and figure_2 is not None and sheet.start_order >= figure_2.start_order:
+        failures.append("forecast decision sheet no longer precedes Figure 6.2")
+    if (
+        figure_2 is not None
+        and reading_band is not None
+        and baseline_band is not None
+        and cost is not None
+        and not (
+            figure_2.start_order
+            < reading_band.start_order
+            < baseline_band.start_order
+            < cost.start_order
+        )
+    ):
+        failures.append("forecast evidence bands changed source order")
+
+    return failures
 
 
 HEALTH_PAYLOAD_KEYS = frozenset(
@@ -3493,6 +3841,264 @@ def _run_preflight() -> None:
             "detection limitation brief preflight misses: " + "; ".join(detection_preflight_misses)
         )
 
+    valid_forecast_brief = """
+<p class="lede">這一章量的是往前看能走多遠還算有用。</p>
+<section data-primary-evidence><p id="evidence-6-1-title" class="evidence-title">各預測期距的誤差如何變化？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
+<nav aria-labelledby="forecast-decision-title" data-forecast-decision-sheet>
+<h2 id="forecast-decision-title">三步決定這個預測還值不值得用</h2>
+<ol>
+<li data-forecast-decision="error"><a href="#evidence-6-1-title"><strong>誤差</strong><p>先看圖 6.1：模型、persistence 與 climatology 的 RMSE 隨期距如何變化。</p></a></li>
+<li data-forecast-decision="skill"><a href="#evidence-6-2-title"><strong>基準優勢</strong><p>再看圖 6.2：同一批預測相對 persistence 與 climatology 還剩多少優勢。</p></a></li>
+<li data-forecast-decision="cost"><a href="#forecast-cost"><strong>計算代價</strong><p>最後看成本表與圖 6.3：額外計算是否換得可用的準確度。</p></a></li>
+</ol>
+</nav>
+<section><p id="evidence-6-2-title" class="evidence-title">模型相對兩條基準線何時失去優勢？</p></section>
+<div data-forecast-reading-band>
+<section data-forecast-reading="r2-skill"><h2>R² 與 skill</h2><p>第一段讀法。</p></section>
+<section data-forecast-reading="two-baselines"><h2>兩條基準線</h2><p>第二段讀法。</p></section>
+<section data-forecast-reading="split-instability"><h2>分割不穩定</h2><p>第三段讀法。</p></section>
+<section data-forecast-reading="shared-feature-bug"><h2>共用特徵管線</h2><p>第四段讀法。</p></section>
+</div>
+<div data-forecast-baseline-band>
+<section data-forecast-baseline="persistence"><h2>persistence <span>「跟現在一樣」</span></h2><p>直接使用此刻濃度。</p><p>這是要超越的門檻。</p></section>
+<section data-forecast-baseline="climatology"><h2>climatology <span>「這站這時候的平均」</span></h2><p>使用同測站同月份同小時平均。</p><p>它不看今天發生什麼事。</p></section>
+</div>
+<h2 id="forecast-cost">被跳過的那個模型</h2>
+<p>以及它買到了什麼。</p>
+"""
+    valid_forecast_expected = ForecastExpectedEvidence(
+        horizons=FORECAST_HORIZONS,
+        readings=(
+            ("R² 與 skill", "第一段讀法。"),
+            ("兩條基準線", "第二段讀法。"),
+            ("分割不穩定", "第三段讀法。"),
+            ("共用特徵管線", "第四段讀法。"),
+        ),
+        baselines=(
+            (
+                "persistence",
+                "「跟現在一樣」",
+                "直接使用此刻濃度。",
+                "這是要超越的門檻。",
+            ),
+            (
+                "climatology",
+                "「這站這時候的平均」",
+                "使用同測站同月份同小時平均。",
+                "它不看今天發生什麼事。",
+            ),
+        ),
+    )
+    valid_forecast_failures = forecast_horizon_decision_failures_for_text(
+        valid_forecast_brief, valid_forecast_expected
+    )
+    if valid_forecast_failures:
+        raise RuntimeError(
+            "forecast decision-sheet preflight rejected the valid control: "
+            f"{valid_forecast_failures}"
+        )
+
+    forecast_markup_mutations = {
+        "missing decision row": (
+            "forecast decision row inventory changed",
+            valid_forecast_brief.replace(
+                '<li data-forecast-decision="skill"><a href="#evidence-6-2-title"><strong>基準優勢</strong><p>再看圖 6.2：同一批預測相對 persistence 與 climatology 還剩多少優勢。</p></a></li>\n',
+                "",
+                1,
+            ),
+        ),
+        "wrong decision destination": (
+            "forecast decision destination changed",
+            valid_forecast_brief.replace("#forecast-cost", "#evidence-6-3-title", 1),
+        ),
+        "hidden decision sheet": (
+            "forecast decision sheet inventory changed",
+            valid_forecast_brief.replace(
+                "<nav aria-labelledby=", "<nav hidden aria-labelledby=", 1
+            ),
+        ),
+        "decision loses semantic label": (
+            "forecast decision row structure changed",
+            valid_forecast_brief.replace("<strong>誤差</strong>", "<span>誤差</span>", 1),
+        ),
+        "decision before Figure 6.1": (
+            "forecast decision sheet no longer follows Figure 6.1",
+            valid_forecast_brief.replace(' id="evidence-6-1-title"', "", 1).replace(
+                "</nav>\n",
+                '</nav>\n<span id="evidence-6-1-title">各預測期距的誤差如何變化？</span>\n',
+                1,
+            ),
+        ),
+        "missing reading body": (
+            "forecast reading row structure changed",
+            valid_forecast_brief.replace("<p>第一段讀法。</p>", "", 1),
+        ),
+        "reordered reading rows": (
+            "forecast reading row order changed",
+            valid_forecast_brief.replace(
+                'data-forecast-reading="r2-skill"', 'data-forecast-reading="temporary"', 1
+            )
+            .replace('data-forecast-reading="two-baselines"', 'data-forecast-reading="r2-skill"', 1)
+            .replace(
+                'data-forecast-reading="temporary"', 'data-forecast-reading="two-baselines"', 1
+            ),
+        ),
+        "changed baseline text": (
+            "forecast baseline row text changed",
+            valid_forecast_brief.replace("這是要超越的門檻。", "這是可忽略的門檻。", 1),
+        ),
+        "baseline inside disclosure": (
+            "forecast baseline band is user-collapsible",
+            valid_forecast_brief.replace(
+                "<div data-forecast-baseline-band>",
+                "<details open><div data-forecast-baseline-band>",
+                1,
+            ).replace(
+                '</div>\n<h2 id="forecast-cost">', '</div></details>\n<h2 id="forecast-cost">', 1
+            ),
+        ),
+    }
+    for name, (expected_failure, html) in forecast_markup_mutations.items():
+        if html == valid_forecast_brief:
+            raise RuntimeError(f"forecast decision-sheet preflight did not apply {name}")
+        mutation_failures = forecast_horizon_decision_failures_for_text(
+            html, valid_forecast_expected
+        )
+        if not any(failure.startswith(expected_failure) for failure in mutation_failures):
+            raise RuntimeError(
+                f"forecast decision-sheet preflight did not reject {name} for "
+                f"{expected_failure}: {mutation_failures}"
+            )
+
+    valid_forecast_payload: dict[str, object] = {
+        "period": [2024, 2025],
+        "target": "PM2.5",
+        "validation": "rolling-origin",
+        "skill_formula": "skill formula",
+        "baselines": [
+            {
+                "name": name,
+                "label": label,
+                "what": what,
+                "why": why,
+            }
+            for name, label, what, why in valid_forecast_expected.baselines
+        ],
+        "reading": [
+            {"claim": claim, "detail": detail} for claim, detail in valid_forecast_expected.readings
+        ],
+        "leakage_note": "lag safety",
+        "horizons": [
+            {
+                "horizon": horizon,
+                "n": 100,
+                "stations": 2,
+                "splits": 2,
+                "model_r2": 0.5,
+                "skill_persistence": 0.2,
+                "skill_persistence_worst": 0.1,
+                "skill_climatology": 0.3,
+                "skill_climatology_worst": 0.1,
+                "splits_not_beating_persistence": 0,
+                "model_rmse": 5.0,
+                "persistence_rmse": 6.0,
+                "climatology_rmse": 7.0,
+                "per_split": [
+                    {
+                        "split": f"rolling_{split}",
+                        "skill_persistence": 0.2,
+                        "skill_climatology": 0.3,
+                        "model_r2": 0.5,
+                    }
+                    for split in (1, 2)
+                ],
+            }
+            for horizon in FORECAST_HORIZONS
+        ],
+    }
+    forecast_payload_control = _forecast_expected_evidence_from_payload(valid_forecast_payload)
+    if forecast_payload_control != valid_forecast_expected:
+        raise RuntimeError(
+            f"forecast payload preflight returned {forecast_payload_control!r}, "
+            f"expected {valid_forecast_expected!r}"
+        )
+
+    def changed_forecast_payload(**changes: object) -> dict[str, object]:
+        payload = copy.deepcopy(valid_forecast_payload)
+        payload.update(changes)
+        if payload == valid_forecast_payload:
+            raise RuntimeError("forecast payload preflight mutation did not change the control")
+        return payload
+
+    reordered_horizons = copy.deepcopy(
+        cast(list[dict[str, object]], valid_forecast_payload["horizons"])
+    )
+    reordered_horizons[0], reordered_horizons[1] = reordered_horizons[1], reordered_horizons[0]
+    boolean_metric_horizons = copy.deepcopy(
+        cast(list[dict[str, object]], valid_forecast_payload["horizons"])
+    )
+    boolean_metric_horizons[0]["model_r2"] = True
+    invalid_split_horizons = copy.deepcopy(
+        cast(list[dict[str, object]], valid_forecast_payload["horizons"])
+    )
+    cast(list[dict[str, object]], invalid_split_horizons[0]["per_split"])[0][
+        "skill_persistence"
+    ] = math.nan
+    forecast_payload_mutations = {
+        "top-level shape": (
+            "forecast payload top-level shape changed",
+            changed_forecast_payload(extra="not reviewed"),
+        ),
+        "baseline identity": (
+            "forecast payload baseline identity or order changed",
+            changed_forecast_payload(
+                baselines=[
+                    {
+                        "name": "climatology" if index == 0 else "persistence",
+                        "label": label,
+                        "what": what,
+                        "why": why,
+                    }
+                    for index, (_name, label, what, why) in enumerate(
+                        valid_forecast_expected.baselines
+                    )
+                ]
+            ),
+        ),
+        "reading count": (
+            "forecast payload reading inventory changed",
+            changed_forecast_payload(
+                reading=[
+                    {"claim": claim, "detail": detail}
+                    for claim, detail in valid_forecast_expected.readings[:-1]
+                ]
+            ),
+        ),
+        "horizon order": (
+            "forecast payload horizon identity or order changed",
+            changed_forecast_payload(horizons=reordered_horizons),
+        ),
+        "boolean metric": (
+            "forecast payload horizon 1 metric is invalid",
+            changed_forecast_payload(horizons=boolean_metric_horizons),
+        ),
+        "non-finite split metric": (
+            "forecast payload horizon 1 split metric is invalid",
+            changed_forecast_payload(horizons=invalid_split_horizons),
+        ),
+    }
+    for name, (expected_message, payload) in forecast_payload_mutations.items():
+        try:
+            _forecast_expected_evidence_from_payload(payload)
+        except ValueError as exc:
+            if expected_message not in str(exc):
+                raise RuntimeError(
+                    f"forecast payload preflight rejected {name} for {exc!s}, "
+                    f"expected {expected_message}"
+                ) from exc
+        else:
+            raise RuntimeError(f"forecast payload preflight accepted {name}")
+
     valid_health_brief = """
 <header><p class="lede">健康負擔的三項選擇。</p></header>
 <ol aria-label="本章三項假設" data-health-assumption-ledger>
@@ -4397,6 +5003,15 @@ def main(argv: list[str]) -> int:
                 else:
                     failures.extend(
                         detection_limitation_brief_failures_for_text(html, expected_events)
+                    )
+            elif slug == "forecast":
+                try:
+                    expected_forecast = load_forecast_expected_evidence()
+                except ValueError as exc:
+                    failures.append(f"forecast payload is invalid: {exc}")
+                else:
+                    failures.extend(
+                        forecast_horizon_decision_failures_for_text(html, expected_forecast)
                     )
             elif slug == "health":
                 try:
