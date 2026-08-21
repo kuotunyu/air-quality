@@ -156,6 +156,21 @@ const langOf = (s: string | null | undefined) =>
   </p>
   </ChapterIntro>
 
+  <ol class="health-ledger" aria-label="本章三項假設" data-health-assumption-ledger>
+    <li data-health-assumption="counterfactual">
+      <strong>比較基準</strong>
+      <p>圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。</p>
+    </li>
+    <li data-health-assumption="response">
+      <strong>暴露反應函數</strong>
+      <p>本章只採用一條具可追溯來源的函數；適用範圍與外推界線在後文公開。</p>
+    </li>
+    <li data-health-assumption="population">
+      <strong>暴露人口</strong>
+      <p>本專案沒有人口與個人暴露資料，因此不報死亡人數，也不把測站中位數稱為誰的暴露。</p>
+    </li>
+  </ol>
+
   <EvidenceFigure number="7.1" title="比較基準如何改變可歸因比例？" primary>
     <div class="chart">
       {/*
@@ -269,9 +284,9 @@ const langOf = (s: string | null | undefined) =>
 
   <h2>四種反事實濃度下的可歸因比例</h2>
 
-  <div class="grid grid-2">
-    <div class="card">
-      <h2>下降幅度對假設穩健</h2>
+  <div class="health-band" data-health-reading-band>
+    <section data-health-reading="robust">
+      <h2>下降幅度對比較基準穩健</h2>
       <p class="small">
         {headline.first_year} 年是 {n(headline.first_range[0] * 100, 1)}–{
           n(headline.first_range[1] * 100, 1)
@@ -280,16 +295,16 @@ const langOf = (s: string | null | undefined) =>
         }%。<strong>無論選哪個基準，都下降了大約一半到三分之二。</strong>
         這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。
       </p>
-    </div>
-    <div class="card">
-      <h2>當前水準對假設不穩健</h2>
+    </section>
+    <section data-health-reading="sensitive">
+      <h2>當前水準對比較基準敏感</h2>
       <p class="small">
         {headline.last_year} 年的答案是 {n(headline.last_range[0] * 100, 1)}% 還是
         {" "}{n(headline.last_range[1] * 100, 1)}%，
         <strong>差了將近一倍</strong>，而唯一的差別是把 2.4 還是 5.9 μg/m³
         當作比較基準——這兩個數字是<strong>同一份 published TMREL 區間的兩端</strong>。
       </p>
-    </div>
+    </section>
   </div>
 
   <h2>假設佔估計值的比重隨濃度下降而上升</h2>
@@ -299,7 +314,7 @@ const langOf = (s: string | null | undefined) =>
     但它佔估計值的<strong>比例</strong>幾乎翻了三倍。
   </p>
 
-  <EvidenceFigure number="7.2" title="不同暴露反應函數會把結果推動多少？">
+  <EvidenceFigure number="7.2" title="比較基準造成的落差佔估計值多少？">
     <div class="chart">
       <div
         class="plot"
@@ -473,19 +488,75 @@ const langOf = (s: string | null | undefined) =>
 
   <h2>兩項刻意不做的推論</h2>
 
-  <div class="grid grid-2">
-    <div class="card">
+  <div class="health-band health-inference-band" data-health-inference-boundaries>
+    <section data-health-inference="deaths">
       <h2>不報死亡人數</h2>
       <p class="small">{notReported.deaths}</p>
-    </div>
-    <div class="card">
+    </section>
+    <section data-health-inference="exposure">
       <h2>不宣稱這是誰的暴露</h2>
       <p class="small">{notReported.exposure}</p>
-    </div>
+    </section>
   </div>
 </section>
 
 <style>
+  .health-ledger,
+  .health-band {
+    container-type: inline-size;
+    margin: var(--space-4) 0;
+    border-block: 1px solid var(--line);
+  }
+  .health-ledger {
+    list-style: none;
+    padding: 0;
+  }
+  .health-ledger li {
+    display: grid;
+    grid-template-columns: minmax(9rem, 0.72fr) minmax(0, 1.28fr);
+    gap: var(--space-3);
+    align-items: start;
+    padding: var(--space-3) 0;
+  }
+  .health-ledger li + li {
+    border-top: 1px solid var(--line);
+  }
+  .health-ledger strong {
+    color: var(--text);
+  }
+  .health-ledger p,
+  .health-band p {
+    margin: 0;
+  }
+  .health-band {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .health-band > section {
+    padding: var(--space-3) 0;
+  }
+  .health-band > section + section {
+    padding-inline-start: var(--space-4);
+    border-inline-start: 1px solid var(--line);
+  }
+  .health-band h2 {
+    margin-top: 0;
+  }
+  @container (max-width: 42rem) {
+    .health-ledger li,
+    .health-band {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .health-ledger li {
+      gap: var(--space-1);
+    }
+    .health-band > section + section {
+      padding-inline-start: 0;
+      border-inline-start: 0;
+      border-block-start: 1px solid var(--line);
+    }
+  }
+
   /* The exposure–response function, set as the definition it is. Two columns
      while the label fits beside its value; one below that, where a 12-character
      Chinese label and a citation cannot share a line. */

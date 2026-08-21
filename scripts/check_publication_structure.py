@@ -9,6 +9,7 @@ the Astro source that produced it.
 
 from __future__ import annotations
 
+import copy
 import itertools
 import json
 import math
@@ -27,6 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT = ROOT / "web" / "dist"
 REGISTRY = ROOT / "web" / "src" / "lib" / "chapters.ts"
 DETECTION_LIMIT = ROOT / "web" / "public" / "data" / "story" / "detection-limit.json"
+HEALTH_STORY = ROOT / "web" / "public" / "data" / "story" / "health.json"
 TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "typescript.js"
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
@@ -65,7 +67,7 @@ EXPECTED_ANALYTICAL_FIGURES = {
     ),
     "health": (
         ("7.1", "比較基準如何改變可歸因比例？"),
-        ("7.2", "不同暴露反應函數會把結果推動多少？"),
+        ("7.2", "比較基準造成的落差佔估計值多少？"),
     ),
     "methods": (
         ("8.1", "月平均隱藏了多少逐時變異？"),
@@ -701,6 +703,7 @@ def station_dossier_failures_for_text(html: str) -> list[str]:
         failures.append("station chapter unexpectedly contains a reading map")
     return failures
 
+
 DETECTION_EVENT_KEYS = frozenset(
     {
         "credible_stations",
@@ -829,6 +832,301 @@ def load_detection_expected_events() -> tuple[DetectionExpectedEvent, ...]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"could not read detection payload: {exc}") from exc
     return _detection_expected_events_from_payload(payload)
+
+
+HEALTH_PAYLOAD_KEYS = frozenset(
+    {
+        "panel",
+        "formula",
+        "functions",
+        "series",
+        "years",
+        "mean_median",
+        "spread_share",
+        "headline",
+        "extrapolation",
+        "not_reported",
+    }
+)
+HEALTH_FUNCTION_KEYS = frozenset(
+    {
+        "name",
+        "rr_per_10",
+        "rr_per_10_low",
+        "rr_per_10_high",
+        "outcome",
+        "source",
+        "source_url",
+        "caveat",
+    }
+)
+HEALTH_SERIES_KEYS = frozenset({"name", "label", "value", "why", "years", "paf"})
+HEALTH_ASSUMPTION_ROWS = (
+    (
+        "counterfactual",
+        "比較基準",
+        "圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。",
+    ),
+    (
+        "response",
+        "暴露反應函數",
+        "本章只採用一條具可追溯來源的函數；適用範圍與外推界線在後文公開。",
+    ),
+    (
+        "population",
+        "暴露人口",
+        "本專案沒有人口與個人暴露資料，因此不報死亡人數，也不把測站中位數稱為誰的暴露。",
+    ),
+)
+HEALTH_READING_ROWS = (
+    ("robust", "下降幅度對比較基準穩健"),
+    ("sensitive", "當前水準對比較基準敏感"),
+)
+HEALTH_INFERENCE_ROWS = (
+    ("deaths", "不報死亡人數"),
+    ("exposure", "不宣稱這是誰的暴露"),
+)
+HEALTH_FIGURE_TITLES = (
+    "比較基準如何改變可歸因比例？",
+    "比較基準造成的落差佔估計值多少？",
+)
+
+
+@dataclass(frozen=True)
+class HealthExpectedEvidence:
+    series_count: int
+    function_count: int
+    years_count: int
+    spread_count: int
+    deaths: str
+    exposure: str
+
+
+def _finite_health_number(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvidence:
+    if not isinstance(payload, dict) or set(payload) != HEALTH_PAYLOAD_KEYS:
+        raise ValueError("health payload top-level shape changed")
+
+    functions = payload["functions"]
+    if not isinstance(functions, list) or len(functions) != 1:
+        count = len(functions) if isinstance(functions, list) else "not a list"
+        raise ValueError(f"health payload response-function inventory changed: {count}")
+    function = functions[0]
+    if not isinstance(function, dict) or set(function) != HEALTH_FUNCTION_KEYS:
+        raise ValueError("health payload response-function shape changed")
+    for key in ("name", "outcome", "source", "source_url", "caveat"):
+        if not isinstance(function[key], str) or not function[key].strip():
+            raise ValueError(f"health payload response-function {key} changed")
+    for key in ("rr_per_10", "rr_per_10_low", "rr_per_10_high"):
+        if not _finite_health_number(function[key]):
+            raise ValueError(f"health payload response-function {key} is invalid")
+
+    years = payload["years"]
+    if (
+        not isinstance(years, list)
+        or not years
+        or any(isinstance(year, bool) or not isinstance(year, int) for year in years)
+        or years != sorted(set(years))
+    ):
+        raise ValueError("health payload year inventory changed")
+    spread = payload["spread_share"]
+    if not isinstance(spread, list) or len(spread) != len(years):
+        raise ValueError("health payload years/spread inventory changed")
+    if any(not _finite_health_number(value) for value in spread):
+        raise ValueError("health payload spread value is invalid")
+
+    series = payload["series"]
+    if not isinstance(series, list) or len(series) != 4:
+        count = len(series) if isinstance(series, list) else "not a list"
+        raise ValueError(f"health payload counterfactual-series inventory changed: {count}")
+    identities: set[str] = set()
+    for index, row in enumerate(series, start=1):
+        if not isinstance(row, dict) or set(row) != HEALTH_SERIES_KEYS:
+            raise ValueError(f"health payload counterfactual series {index} shape changed")
+        for key in ("name", "label", "why"):
+            if not isinstance(row[key], str) or not row[key].strip():
+                raise ValueError(f"health payload counterfactual series {index} {key} changed")
+        if row["name"] in identities:
+            raise ValueError("health payload counterfactual series identity is duplicated")
+        identities.add(row["name"])
+        if not _finite_health_number(row["value"]):
+            raise ValueError(f"health payload counterfactual series {index} value is invalid")
+        if row["years"] != years:
+            raise ValueError(f"health payload counterfactual series {index} years changed")
+        paf = row["paf"]
+        if (
+            not isinstance(paf, list)
+            or len(paf) != len(years)
+            or any(not _finite_health_number(value) for value in paf)
+        ):
+            raise ValueError(f"health payload counterfactual series {index} values changed")
+
+    not_reported = payload["not_reported"]
+    if not isinstance(not_reported, dict) or set(not_reported) != {"deaths", "exposure"}:
+        raise ValueError("health payload no-inference boundary changed")
+    deaths = not_reported["deaths"]
+    exposure = not_reported["exposure"]
+    if (
+        not isinstance(deaths, str)
+        or not deaths.strip()
+        or not isinstance(exposure, str)
+        or not exposure.strip()
+    ):
+        raise ValueError("health payload no-inference boundary changed")
+
+    return HealthExpectedEvidence(
+        series_count=len(series),
+        function_count=len(functions),
+        years_count=len(years),
+        spread_count=len(spread),
+        deaths=deaths,
+        exposure=exposure,
+    )
+
+
+def load_health_expected_evidence() -> HealthExpectedEvidence:
+    try:
+        with HEALTH_STORY.open(encoding="utf-8") as handle:
+            payload = json.load(handle, parse_constant=_reject_nonfinite_json_constant)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read health payload: {exc}") from exc
+    return _health_expected_evidence_from_payload(payload)
+
+
+def _health_text_identity(value: str) -> str:
+    return "".join(value.split())
+
+
+def _health_direct_rows(region: Element, attribute: str) -> list[Element]:
+    return [child for child in region.children if attribute in child.attributes]
+
+
+def health_assumption_ledger_failures_for_text(
+    html: str,
+    expected: HealthExpectedEvidence,
+) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    elements = parser.elements
+
+    def visible_region(attribute: str, label: str) -> Element | None:
+        matches = [element for element in elements if attribute in element.attributes]
+        if len(matches) != 1 or not matches[0].visible:
+            failures.append(f"health {label} inventory changed: {len(matches)}")
+            return None
+        region = matches[0]
+        if _is_inside_disclosure(region):
+            verb = "are" if label == "inference boundaries" else "is"
+            failures.append(f"health {label} {verb} user-collapsible")
+        return region
+
+    ledger = visible_region("data-health-assumption-ledger", "assumption ledger")
+    reading_band = visible_region("data-health-reading-band", "reading band")
+    boundaries = visible_region("data-health-inference-boundaries", "inference boundaries")
+    primary = visible_region("data-primary-evidence", "primary evidence")
+
+    if ledger is not None:
+        if ledger.tag != "ol" or ledger.attributes.get("aria-label") != "本章三項假設":
+            failures.append("health assumption ledger semantics changed")
+        rows = _health_direct_rows(ledger, "data-health-assumption")
+        all_marked_rows = [
+            element for element in elements if "data-health-assumption" in element.attributes
+        ]
+        if (
+            len(rows) != len(HEALTH_ASSUMPTION_ROWS)
+            or rows != all_marked_rows
+            or any(row.tag != "li" or not row.visible for row in rows)
+        ):
+            failures.append(f"health assumption row inventory changed: {len(rows)}")
+        observed_keys = [row.attributes.get("data-health-assumption") for row in rows]
+        expected_keys = [row[0] for row in HEALTH_ASSUMPTION_ROWS]
+        if observed_keys != expected_keys:
+            failures.append(f"health assumption row order changed: {observed_keys!r}")
+        for row, (_key, label, explanation) in zip(rows, HEALTH_ASSUMPTION_ROWS, strict=False):
+            if _health_text_identity(row.rendered_text()) != _health_text_identity(
+                label + explanation
+            ):
+                failures.append("health assumption row text changed")
+
+    if reading_band is not None:
+        rows = _health_direct_rows(reading_band, "data-health-reading")
+        all_marked_rows = [
+            element for element in elements if "data-health-reading" in element.attributes
+        ]
+        if (
+            len(rows) != len(HEALTH_READING_ROWS)
+            or rows != all_marked_rows
+            or any(not row.visible for row in rows)
+        ):
+            failures.append(f"health reading row inventory changed: {len(rows)}")
+        observed_keys = [row.attributes.get("data-health-reading") for row in rows]
+        expected_keys = [row[0] for row in HEALTH_READING_ROWS]
+        if observed_keys != expected_keys:
+            failures.append(f"health reading row order changed: {observed_keys!r}")
+        for row, (_key, heading) in zip(rows, HEALTH_READING_ROWS, strict=False):
+            headings = [child for child in row.children if child.tag == "h2" and child.visible]
+            if len(headings) != 1 or headings[0].rendered_text() != heading:
+                failures.append("health reading row text changed")
+
+    if boundaries is not None:
+        rows = _health_direct_rows(boundaries, "data-health-inference")
+        all_marked_rows = [
+            element for element in elements if "data-health-inference" in element.attributes
+        ]
+        if (
+            len(rows) != len(HEALTH_INFERENCE_ROWS)
+            or rows != all_marked_rows
+            or any(not row.visible for row in rows)
+        ):
+            failures.append(f"health inference row inventory changed: {len(rows)}")
+        observed_keys = [row.attributes.get("data-health-inference") for row in rows]
+        expected_keys = [row[0] for row in HEALTH_INFERENCE_ROWS]
+        if observed_keys != expected_keys:
+            failures.append(f"health inference row order changed: {observed_keys!r}")
+        boundary_texts = (expected.deaths, expected.exposure)
+        for row, (_key, heading), body in zip(
+            rows, HEALTH_INFERENCE_ROWS, boundary_texts, strict=False
+        ):
+            if _health_text_identity(row.rendered_text()) != _health_text_identity(heading + body):
+                failures.append("health inference row text changed")
+
+    figure_titles = [
+        element for element in elements if "evidence-title" in element.classes and element.visible
+    ]
+    observed_titles = [element.rendered_text() for element in figure_titles]
+    if len(figure_titles) != 2 or observed_titles != list(HEALTH_FIGURE_TITLES):
+        failures.append("health Figure 7.2 title changed")
+
+    ledes = [element for element in elements if "lede" in element.classes and element.visible]
+    if (
+        len(ledes) != 1
+        or ledger is None
+        or primary is None
+        or reading_band is None
+        or boundaries is None
+        or len(figure_titles) != 2
+        or ledes[0].end_order is None
+        or primary.end_order is None
+        or reading_band.end_order is None
+        or not (
+            ledes[0].end_order < ledger.start_order < primary.start_order
+            and primary.end_order < reading_band.start_order
+            and reading_band.end_order < figure_titles[1].start_order < boundaries.start_order
+        )
+    ):
+        failures.append("health opening order changed")
+
+    if expected.series_count != 4 or expected.function_count != 1:
+        failures.append("health payload no longer supports the assumption ledger")
+    if expected.years_count != expected.spread_count or expected.years_count <= 0:
+        failures.append("health payload no longer supports Figure 7.2")
+    return failures
 
 
 def detection_limitation_brief_failures_for_text(
@@ -3121,6 +3419,296 @@ def _run_preflight() -> None:
             "detection limitation brief preflight misses: " + "; ".join(detection_preflight_misses)
         )
 
+    valid_health_brief = """
+<header><p class="lede">健康負擔的三項選擇。</p></header>
+<ol aria-label="本章三項假設" data-health-assumption-ledger>
+<li data-health-assumption="counterfactual"><strong>比較基準</strong><p>圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。</p></li>
+<li data-health-assumption="response"><strong>暴露反應函數</strong><p>本章只採用一條具可追溯來源的函數；適用範圍與外推界線在後文公開。</p></li>
+<li data-health-assumption="population"><strong>暴露人口</strong><p>本專案沒有人口與個人暴露資料，因此不報死亡人數，也不把測站中位數稱為誰的暴露。</p></li>
+</ol>
+<section data-primary-evidence><p class="evidence-title">比較基準如何改變可歸因比例？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
+<div data-health-reading-band>
+<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>範圍與結論</p></section>
+<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>端點與說明</p></section>
+</div>
+<section><p class="evidence-title">比較基準造成的落差佔估計值多少？</p></section>
+<div data-health-inference-boundaries>
+<section data-health-inference="deaths"><h2>不報死亡人數</h2><p>沒有死亡人數。</p></section>
+<section data-health-inference="exposure"><h2>不宣稱這是誰的暴露</h2><p>測站平均不是人口加權暴露。</p></section>
+</div>
+"""
+    valid_health_expected = HealthExpectedEvidence(
+        series_count=4,
+        function_count=1,
+        years_count=2,
+        spread_count=2,
+        deaths="沒有死亡人數。",
+        exposure="測站平均不是人口加權暴露。",
+    )
+    valid_health_failures = health_assumption_ledger_failures_for_text(
+        valid_health_brief, valid_health_expected
+    )
+    if valid_health_failures:
+        raise RuntimeError(
+            f"health assumption-ledger preflight rejected the valid control: "
+            f"{valid_health_failures}"
+        )
+
+    def wrap_health_region(html: str, start: str, end: str, *, opened: bool) -> str:
+        start_index = html.index(start)
+        end_index = html.index(end, start_index) + len(end)
+        return (
+            html[:start_index]
+            + f"<details{' open' if opened else ''}>"
+            + html[start_index:end_index]
+            + "</details>"
+            + html[end_index:]
+        )
+
+    def move_health_region_after(html: str, start: str, end: str, destination: str) -> str:
+        start_index = html.index(start)
+        end_index = html.index(end, start_index) + len(end)
+        region = html[start_index:end_index]
+        without = html[:start_index] + html[end_index:]
+        return without.replace(destination, destination + region, 1)
+
+    health_mutations = {
+        "missing ledger row": (
+            "health assumption row inventory changed",
+            valid_health_brief.replace(
+                '<li data-health-assumption="response"><strong>暴露反應函數</strong><p>本章只採用一條具可追溯來源的函數；適用範圍與外推界線在後文公開。</p></li>\n',
+                "",
+                1,
+            ),
+        ),
+        "extra ledger row": (
+            "health assumption row inventory changed",
+            valid_health_brief.replace(
+                "</ol>", '<li data-health-assumption="extra">Extra</li></ol>', 1
+            ),
+        ),
+        "duplicate ledger key": (
+            "health assumption row order changed",
+            valid_health_brief.replace(
+                'data-health-assumption="response"', 'data-health-assumption="counterfactual"', 1
+            ),
+        ),
+        "reordered ledger rows": (
+            "health assumption row order changed",
+            valid_health_brief.replace(
+                '<li data-health-assumption="counterfactual"',
+                '<li data-health-assumption="temporary"',
+                1,
+            )
+            .replace(
+                '<li data-health-assumption="response"',
+                '<li data-health-assumption="counterfactual"',
+                1,
+            )
+            .replace(
+                '<li data-health-assumption="temporary"',
+                '<li data-health-assumption="response"',
+                1,
+            ),
+        ),
+        "wrong ledger text": (
+            "health assumption row text changed",
+            valid_health_brief.replace("圖 7.1 與圖 7.2 量化", "圖 7.1 與圖 7.2 猜測", 1),
+        ),
+        "hidden ledger": (
+            "health assumption ledger inventory changed",
+            valid_health_brief.replace(
+                "data-health-assumption-ledger>", "data-health-assumption-ledger hidden>", 1
+            ),
+        ),
+        "aria-hidden reading band": (
+            "health reading band inventory changed",
+            valid_health_brief.replace(
+                "data-health-reading-band>", 'data-health-reading-band aria-hidden="true">', 1
+            ),
+        ),
+        "ledger after Figure 7.1": (
+            "health opening order changed",
+            move_health_region_after(
+                valid_health_brief,
+                '<ol aria-label="本章三項假設" data-health-assumption-ledger>',
+                "</ol>",
+                '<section data-primary-evidence><p class="evidence-title">比較基準如何改變可歸因比例？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>',
+            ),
+        ),
+        "open disclosure around ledger": (
+            "health assumption ledger is user-collapsible",
+            wrap_health_region(
+                valid_health_brief,
+                '<ol aria-label="本章三項假設" data-health-assumption-ledger>',
+                "</ol>",
+                opened=True,
+            ),
+        ),
+        "closed disclosure around reading band": (
+            "health reading band is user-collapsible",
+            wrap_health_region(
+                valid_health_brief,
+                "<div data-health-reading-band>",
+                "</div>",
+                opened=False,
+            ),
+        ),
+        "open disclosure around inference boundaries": (
+            "health inference boundaries are user-collapsible",
+            wrap_health_region(
+                valid_health_brief,
+                "<div data-health-inference-boundaries>",
+                "</div>",
+                opened=True,
+            ),
+        ),
+        "missing reading row": (
+            "health reading row inventory changed",
+            valid_health_brief.replace(
+                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>範圍與結論</p></section>\n',
+                "",
+                1,
+            ),
+        ),
+        "reordered inference rows": (
+            "health inference row order changed",
+            valid_health_brief.replace(
+                'data-health-inference="deaths"', 'data-health-inference="temporary"', 1
+            )
+            .replace('data-health-inference="exposure"', 'data-health-inference="deaths"', 1)
+            .replace('data-health-inference="temporary"', 'data-health-inference="exposure"', 1),
+        ),
+        "stale Figure 7.2 title": (
+            "health Figure 7.2 title changed",
+            valid_health_brief.replace(
+                "比較基準造成的落差佔估計值多少？",
+                "不同暴露反應函數會把結果推動多少？",
+                1,
+            ),
+        ),
+    }
+    health_preflight_misses: list[str] = []
+    for name, (expected_failure, html) in health_mutations.items():
+        if html == valid_health_brief:
+            raise RuntimeError(f"health assumption-ledger preflight did not apply {name}")
+        mutation_failures = health_assumption_ledger_failures_for_text(html, valid_health_expected)
+        if not any(failure.startswith(expected_failure) for failure in mutation_failures):
+            health_preflight_misses.append(
+                f"{name} -> {expected_failure} (received {mutation_failures})"
+            )
+    if health_preflight_misses:
+        raise RuntimeError(
+            "health assumption-ledger preflight misses: " + "; ".join(health_preflight_misses)
+        )
+
+    valid_health_payload: dict[str, object] = {
+        "panel": {"start_year": 2024, "stations": 2, "station_years": 4, "why": "why"},
+        "formula": "formula",
+        "functions": [
+            {
+                "name": "one",
+                "rr_per_10": 1.08,
+                "rr_per_10_low": 1.06,
+                "rr_per_10_high": 1.09,
+                "outcome": "outcome",
+                "source": "source",
+                "source_url": "https://example.test/source",
+                "caveat": "caveat",
+            }
+        ],
+        "series": [
+            {
+                "name": f"series-{index}",
+                "label": f"label-{index}",
+                "value": float(index),
+                "why": "why",
+                "years": [2024, 2025],
+                "paf": [0.2, 0.1],
+            }
+            for index in range(4)
+        ],
+        "years": [2024, 2025],
+        "mean_median": [20.0, 10.0],
+        "spread_share": [0.2, 0.4],
+        "headline": {
+            "first_year": 2024,
+            "last_year": 2025,
+            "first_share": 0.2,
+            "last_share": 0.4,
+            "first_range": [0.1, 0.2],
+            "last_range": [0.05, 0.1],
+        },
+        "extrapolation": {"ceiling_ugm3": 30.0, "share_above": 0.2, "why": "why"},
+        "not_reported": {
+            "deaths": "沒有死亡人數。",
+            "exposure": "測站平均不是人口加權暴露。",
+        },
+    }
+    payload_control = _health_expected_evidence_from_payload(valid_health_payload)
+    if payload_control != valid_health_expected:
+        raise RuntimeError(
+            f"health payload preflight returned {payload_control!r}, "
+            f"expected {valid_health_expected!r}"
+        )
+
+    def changed_health_payload(**changes: object) -> dict[str, object]:
+        payload = copy.deepcopy(valid_health_payload)
+        payload.update(changes)
+        if payload == valid_health_payload:
+            raise RuntimeError("health payload preflight mutation did not change the control")
+        return payload
+
+    health_payload_mutations = {
+        "top-level shape": (
+            "health payload top-level shape changed",
+            changed_health_payload(extra="not reviewed"),
+        ),
+        "function count": (
+            "health payload response-function inventory changed",
+            changed_health_payload(functions=[]),
+        ),
+        "series count": (
+            "health payload counterfactual-series inventory changed",
+            changed_health_payload(
+                series=[
+                    {
+                        "name": f"series-{index}",
+                        "label": f"label-{index}",
+                        "value": float(index),
+                        "why": "why",
+                        "years": [2024, 2025],
+                        "paf": [0.2, 0.1],
+                    }
+                    for index in range(3)
+                ]
+            ),
+        ),
+        "empty deaths boundary": (
+            "health payload no-inference boundary changed",
+            changed_health_payload(not_reported={"deaths": "", "exposure": "present"}),
+        ),
+        "years and spread disagree": (
+            "health payload years/spread inventory changed",
+            changed_health_payload(spread_share=[0.2]),
+        ),
+        "non-finite spread": (
+            "health payload spread value is invalid",
+            changed_health_payload(spread_share=[0.2, math.nan]),
+        ),
+    }
+    for name, (expected_message, payload) in health_payload_mutations.items():
+        try:
+            _health_expected_evidence_from_payload(payload)
+        except ValueError as exc:
+            if expected_message not in str(exc):
+                raise RuntimeError(
+                    f"health payload preflight rejected {name} for {exc!s}, "
+                    f"expected {expected_message}"
+                ) from exc
+        else:
+            raise RuntimeError(f"health payload preflight accepted {name}")
+
     def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
         title_id = f"evidence-{number.replace('.', '-')}-title"
         return (
@@ -3702,6 +4290,15 @@ def main(argv: list[str]) -> int:
                 else:
                     failures.extend(
                         detection_limitation_brief_failures_for_text(html, expected_events)
+                    )
+            elif slug == "health":
+                try:
+                    expected_health = load_health_expected_evidence()
+                except ValueError as exc:
+                    failures.append(f"health payload is invalid: {exc}")
+                else:
+                    failures.extend(
+                        health_assumption_ledger_failures_for_text(html, expected_health)
                     )
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible reading map")
