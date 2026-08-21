@@ -86,6 +86,7 @@ const TEXT_ZOOM_ROUTES = [
   "/space/",
   "/sources/",
   "/detection/",
+  "/health/",
   "/methods/",
   "/explore/",
   "/data/",
@@ -237,6 +238,7 @@ const DIST = opt("dist", join(process.cwd(), "web", "dist"));
 const PORT = Number(opt("port", "4399"));
 const SELF_TEST = args.includes("--self-test");
 const DETECTION_BROWSER_SELF_TEST = args.includes("--detection-browser-self-test");
+const HEALTH_BROWSER_SELF_TEST = args.includes("--health-browser-self-test");
 const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
 const CDP_TIMEOUT_MS =
   Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
@@ -1510,6 +1512,356 @@ function detectionLimitationBriefProblems(state, expectedEvents, viewport) {
   return problems;
 }
 
+const HEALTH_STORY_PAYLOAD = JSON.parse(
+  readFileSync(join(process.cwd(), "web", "public", "data", "story", "health.json"), "utf8"),
+);
+const HEALTH_PAYLOAD_KEYS = [
+  "extrapolation",
+  "formula",
+  "functions",
+  "headline",
+  "mean_median",
+  "not_reported",
+  "panel",
+  "series",
+  "spread_share",
+  "years",
+];
+const HEALTH_FUNCTION_KEYS = [
+  "caveat",
+  "name",
+  "outcome",
+  "rr_per_10",
+  "rr_per_10_high",
+  "rr_per_10_low",
+  "source",
+  "source_url",
+];
+const HEALTH_SERIES_KEYS = ["label", "name", "paf", "value", "why", "years"];
+const HEALTH_ASSUMPTION_ROWS = [
+  [
+    "counterfactual",
+    "比較基準",
+    "圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。",
+  ],
+  [
+    "response",
+    "暴露反應函數",
+    "本章只採用一條具可追溯來源的函數；適用範圍與外推界線在後文公開。",
+  ],
+  [
+    "population",
+    "暴露人口",
+    "本專案沒有人口與個人暴露資料，因此不報死亡人數，也不把測站中位數稱為誰的暴露。",
+  ],
+];
+const HEALTH_READING_ROWS = [
+  ["robust", "下降幅度對比較基準穩健"],
+  ["sensitive", "當前水準對比較基準敏感"],
+];
+const HEALTH_INFERENCE_ROWS = [
+  ["deaths", "不報死亡人數"],
+  ["exposure", "不宣稱這是誰的暴露"],
+];
+const HEALTH_FIGURE_2_TITLE = "比較基準造成的落差佔估計值多少？";
+
+function healthTextIdentity(value) {
+  return String(value ?? "").replace(/\s+/gu, "");
+}
+
+function healthExactKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
+}
+
+function healthExpectedEvidenceFromPayload(payload) {
+  if (!healthExactKeys(payload, HEALTH_PAYLOAD_KEYS)) {
+    throw new Error("health payload top-level shape changed");
+  }
+  if (!Array.isArray(payload.functions) || payload.functions.length !== 1) {
+    throw new Error("health payload response-function inventory changed");
+  }
+  const response = payload.functions[0];
+  if (!healthExactKeys(response, HEALTH_FUNCTION_KEYS)) {
+    throw new Error("health payload response-function shape changed");
+  }
+  for (const key of ["name", "outcome", "source", "source_url", "caveat"]) {
+    if (typeof response[key] !== "string" || !response[key].trim()) {
+      throw new Error(`health payload response-function ${key} changed`);
+    }
+  }
+  for (const key of ["rr_per_10", "rr_per_10_low", "rr_per_10_high"]) {
+    if (typeof response[key] !== "number" || !Number.isFinite(response[key])) {
+      throw new Error(`health payload response-function ${key} is invalid`);
+    }
+  }
+  if (
+    !Array.isArray(payload.years) || !payload.years.length ||
+    payload.years.some((year) => !Number.isInteger(year)) ||
+    JSON.stringify(payload.years) !==
+      JSON.stringify([...new Set(payload.years)].sort((left, right) => left - right))
+  ) {
+    throw new Error("health payload year inventory changed");
+  }
+  if (
+    !Array.isArray(payload.spread_share) ||
+    payload.spread_share.length !== payload.years.length
+  ) {
+    throw new Error("health payload years/spread inventory changed");
+  }
+  if (payload.spread_share.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error("health payload spread value is invalid");
+  }
+  if (!Array.isArray(payload.series) || payload.series.length !== 4) {
+    throw new Error("health payload counterfactual-series inventory changed");
+  }
+  const identities = new Set();
+  for (const [index, row] of payload.series.entries()) {
+    if (!healthExactKeys(row, HEALTH_SERIES_KEYS)) {
+      throw new Error(`health payload counterfactual series ${index + 1} shape changed`);
+    }
+    for (const key of ["name", "label", "why"]) {
+      if (typeof row[key] !== "string" || !row[key].trim()) {
+        throw new Error(`health payload counterfactual series ${index + 1} ${key} changed`);
+      }
+    }
+    if (identities.has(row.name)) {
+      throw new Error("health payload counterfactual series identity is duplicated");
+    }
+    identities.add(row.name);
+    if (typeof row.value !== "number" || !Number.isFinite(row.value)) {
+      throw new Error(`health payload counterfactual series ${index + 1} value is invalid`);
+    }
+    if (JSON.stringify(row.years) !== JSON.stringify(payload.years)) {
+      throw new Error(`health payload counterfactual series ${index + 1} years changed`);
+    }
+    if (
+      !Array.isArray(row.paf) || row.paf.length !== payload.years.length ||
+      row.paf.some((value) => typeof value !== "number" || !Number.isFinite(value))
+    ) {
+      throw new Error(`health payload counterfactual series ${index + 1} values changed`);
+    }
+  }
+  if (!healthExactKeys(payload.not_reported, ["deaths", "exposure"])) {
+    throw new Error("health payload no-inference boundary changed");
+  }
+  if (
+    typeof payload.not_reported.deaths !== "string" || !payload.not_reported.deaths.trim() ||
+    typeof payload.not_reported.exposure !== "string" || !payload.not_reported.exposure.trim()
+  ) {
+    throw new Error("health payload no-inference boundary changed");
+  }
+  return Object.freeze({
+    seriesCount: payload.series.length,
+    functionCount: payload.functions.length,
+    yearsCount: payload.years.length,
+    spreadCount: payload.spread_share.length,
+    deaths: payload.not_reported.deaths,
+    exposure: payload.not_reported.exposure,
+  });
+}
+
+const EXPECTED_HEALTH_EVIDENCE = healthExpectedEvidenceFromPayload(HEALTH_STORY_PAYLOAD);
+
+function healthInspectionProblems(inspection, label, scope, viewport) {
+  const problems = [];
+  if (!inspection) return [`${scope}${label} inspection is missing`];
+  if (inspection.hidden) problems.push(`${scope}${label} is hidden`);
+  if (inspection.ariaHidden) problems.push(`${scope}${label} is aria-hidden`);
+  if (inspection.display === "none") problems.push(`${scope}${label} display is none`);
+  if (["hidden", "collapse"].includes(inspection.visibility)) {
+    problems.push(`${scope}${label} visibility is hidden`);
+  }
+  if (!inspection.rendered) problems.push(`${scope}${label} is not rendered`);
+  if (!Number.isFinite(inspection.opacity) || inspection.opacity <= 0) {
+    problems.push(`${scope}${label} opacity is zero`);
+  }
+  if (
+    !Number.isFinite(inspection.width) || !Number.isFinite(inspection.height) ||
+    inspection.width <= 0 || inspection.height <= 0
+  ) {
+    problems.push(`${scope}${label} has no rendered area`);
+  }
+  if (inspection.selfOverflowX > 1 || inspection.selfOverflowY > 1) {
+    problems.push(`${scope}${label} clips its own content`);
+  }
+  if (inspection.ancestorClipped) problems.push(`${scope}${label} is clipped by an ancestor`);
+  if (inspection.cssClip) problems.push(`${scope}${label} uses CSS clip`);
+  if (inspection.cssClipPath) problems.push(`${scope}${label} uses CSS clip-path`);
+  if (inspection.inert || !inspection.accessible) {
+    problems.push(`${scope}${label} is excluded from accessibility`);
+  }
+  if (inspection.detailsAncestor) problems.push(`${scope}${label} is user-collapsible`);
+  if (
+    Number.isFinite(viewport?.width) &&
+    (inspection.right <= 0 || inspection.left >= viewport.width)
+  ) {
+    problems.push(`${scope}${label} is horizontally off-canvas`);
+  }
+  if (inspection.cssOrder !== 0) problems.push(`${scope}${label} uses CSS order`);
+  return problems;
+}
+
+function healthAssumptionLedgerProblems(state, expected, viewport) {
+  const modeLabels = { normal: "", "no-js": "no-JavaScript ", print: "print ", zoom: "zoom " };
+  const mode = state?.mode;
+  if (!Object.prototype.hasOwnProperty.call(modeLabels, mode)) {
+    return ["health assumption-ledger mode is invalid"];
+  }
+  const scope = modeLabels[mode];
+  const problems = [];
+  const regions = [
+    ["ledger", "ledger"],
+    ["readingBand", "reading band"],
+    ["boundaries", "boundary"],
+  ];
+  for (const [key, label] of regions) {
+    if (state?.counts?.[key] !== 1) {
+      problems.push(`${scope}${label} count is ${String(state?.counts?.[key])}, expected 1`);
+    }
+    if (state?.regions?.[key]) {
+      problems.push(...healthInspectionProblems(state.regions[key], label, scope, viewport));
+    }
+  }
+
+  const landmarks = state?.landmarks ?? {};
+  const openingKeys = [
+    "lede",
+    "ledger",
+    "primaryTitle",
+    "primaryPlot",
+    "caption",
+    "readingBand",
+    "figure2Title",
+    "boundaries",
+  ];
+  const landmarkLabels = {
+    lede: "lede",
+    ledger: "ledger",
+    primaryTitle: "primary title",
+    primaryPlot: "primary plot",
+    caption: "caption",
+    readingBand: "reading band",
+    figure2Title: "Figure 7.2 title",
+    boundaries: "boundary",
+  };
+  for (const key of openingKeys) {
+    const landmark = landmarks[key];
+    const label = landmarkLabels[key];
+    if (!landmark) {
+      problems.push(`${scope}${label} landmark is missing`);
+      continue;
+    }
+    const geometry = ["top", "right", "bottom", "left", "width", "height"];
+    if (
+      !geometry.every((edge) => Number.isFinite(landmark[edge])) ||
+      !Number.isInteger(landmark.sourceIndex) || landmark.sourceIndex < 0
+    ) {
+      problems.push(`${scope}${label} landmark geometry is invalid`);
+    }
+    if (landmark.cssOrder !== 0) problems.push(`${scope}${label} uses CSS order`);
+  }
+  const openingParts = openingKeys.map((key) => landmarks[key]);
+  if (openingParts.every(Boolean)) {
+    const sourceOrdered = openingParts.every(
+      (part, index) => index === 0 || openingParts[index - 1].sourceIndex < part.sourceIndex,
+    );
+    const visuallyOrdered = openingParts.every(
+      (part, index) => index === 0 || openingParts[index - 1].top < part.top,
+    );
+    if (!sourceOrdered || !visuallyOrdered) problems.push(`${scope}opening order changed`);
+  }
+
+  const rowContracts = [
+    ["assumptionRows", "assumption", HEALTH_ASSUMPTION_ROWS],
+    ["readingRows", "reading", HEALTH_READING_ROWS],
+    ["inferenceRows", "inference", HEALTH_INFERENCE_ROWS],
+  ];
+  for (const [stateKey, label, contracts] of rowContracts) {
+    const rows = state?.[stateKey];
+    if (!Array.isArray(rows) || rows.length !== contracts.length) {
+      problems.push(`${scope}${label} row inventory changed`);
+      continue;
+    }
+    if (state?.counts?.[stateKey] !== contracts.length) {
+      problems.push(`${scope}${label} row hook inventory changed`);
+    }
+    for (const [index, contract] of contracts.entries()) {
+      const row = rows[index];
+      if (row?.key !== contract[0]) {
+        problems.push(`${scope}${label} row ${index + 1} key changed`);
+      }
+      if (label === "assumption") {
+        const expectedText = contract[1] + contract[2];
+        if (healthTextIdentity(row?.visibleText) !== healthTextIdentity(expectedText)) {
+          problems.push(`${scope}${label} row ${index + 1} visible text changed`);
+        }
+        if (healthTextIdentity(row?.accessibleText) !== healthTextIdentity(expectedText)) {
+          problems.push(`${scope}${label} row ${index + 1} accessible text changed`);
+        }
+      } else if (label === "reading") {
+        if (row?.heading !== contract[1]) {
+          problems.push(`${scope}${label} row ${index + 1} heading changed`);
+        }
+        if (healthTextIdentity(row?.accessibleHeading) !== healthTextIdentity(contract[1])) {
+          problems.push(`${scope}${label} row ${index + 1} accessible heading changed`);
+        }
+      } else {
+        const body = index === 0 ? expected?.deaths : expected?.exposure;
+        const expectedText = contract[1] + body;
+        if (healthTextIdentity(row?.visibleText) !== healthTextIdentity(expectedText)) {
+          problems.push(`${scope}${label} row ${index + 1} visible text changed`);
+        }
+        if (healthTextIdentity(row?.accessibleText) !== healthTextIdentity(expectedText)) {
+          problems.push(`${scope}${label} row ${index + 1} accessible text changed`);
+        }
+      }
+      problems.push(...healthInspectionProblems(row?.inspection, `${label} row ${index + 1}`, scope, viewport));
+    }
+  }
+
+  if (state?.figure2Title !== HEALTH_FIGURE_2_TITLE) {
+    problems.push(`${scope}Figure 7.2 title changed`);
+  }
+  if (expected?.seriesCount !== 4 || expected?.functionCount !== 1) {
+    problems.push(`${scope}payload no longer supports the assumption ledger`);
+  }
+  if (expected?.yearsCount !== expected?.spreadCount || expected?.yearsCount <= 0) {
+    problems.push(`${scope}payload no longer supports Figure 7.2`);
+  }
+  if (
+    viewport?.width === 375 && viewport?.height === 812 &&
+    (!Number.isFinite(landmarks.primaryTitle?.top) || landmarks.primaryTitle.top >= viewport.height)
+  ) {
+    problems.push(`${scope}primary evidence does not enter the first viewport`);
+  }
+  if (viewport?.width === 1280 && viewport?.height === 720) {
+    if (
+      !Number.isFinite(landmarks.primaryPlot?.top) ||
+      landmarks.primaryPlot.top >= viewport.height * 0.55
+    ) {
+      problems.push(
+        `${scope}primary plot starts at or below 55vh ` +
+          `(top=${String(landmarks.primaryPlot?.top)}, threshold=${viewport.height * 0.55})`,
+      );
+    }
+    const visiblePlotHeight =
+      Math.min(viewport.height, landmarks.primaryPlot?.bottom ?? 0) -
+      Math.max(0, landmarks.primaryPlot?.top ?? viewport.height);
+    if (!Number.isFinite(visiblePlotHeight) || visiblePlotHeight < 180) {
+      problems.push(`${scope}less than 180px of primary plot data is visible`);
+    }
+  }
+  if (
+    !Number.isFinite(state?.document?.clientWidth) ||
+    !Number.isFinite(state?.document?.scrollWidth) ||
+    state.document.scrollWidth > state.document.clientWidth
+  ) {
+    problems.push(`${scope}document scrolls sideways`);
+  }
+  return problems;
+}
+
 const HISTORICAL_STATION_ROUTES = new Set(["/", "/space/", "/data/"]);
 
 function historicalStationCopyProblems(route, text) {
@@ -1999,6 +2351,154 @@ const detectionLimitationBriefSnapshotExpression = (mode) => `(() => {
     })),
     boundaryText: compact(boundary?.innerText),
     pageText: compact(document.querySelector("main")?.innerText),
+    viewport: { width: innerWidth, height: innerHeight },
+    document: {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    },
+  };
+})()`;
+
+const healthAssumptionLedgerSnapshotExpression = (mode) => `(() => {
+  const mode = ${JSON.stringify(mode)};
+  const compact = (value) => String(value ?? "").replace(/\\s+/g, " ").trim();
+  const allElements = [...document.querySelectorAll("main *")];
+  const sourceIndex = (element) => element ? allElements.indexOf(element) : -1;
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
+  const inspect = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const ownStyle = getComputedStyle(element);
+    let rendered = rect.width > 0 && rect.height > 0;
+    let opacity = 1;
+    let hidden = false;
+    let ariaHidden = false;
+    let inert = false;
+    let detailsAncestor = false;
+    let cssClip = false;
+    let cssClipPath = false;
+    let visibleLeft = rect.left;
+    let visibleRight = rect.right;
+    let visibleTop = rect.top;
+    let visibleBottom = rect.bottom;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const nodeOpacity = Number(style.opacity);
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        style.visibility === "collapse" || !Number.isFinite(nodeOpacity) || nodeOpacity <= 0
+      ) rendered = false;
+      if (Number.isFinite(nodeOpacity)) opacity *= nodeOpacity;
+      hidden ||= node.hasAttribute("hidden");
+      ariaHidden ||= node.getAttribute("aria-hidden") === "true";
+      inert ||= node.hasAttribute("inert");
+      detailsAncestor ||= node instanceof HTMLDetailsElement;
+      cssClip ||= style.clip !== "auto";
+      cssClipPath ||= style.clipPath !== "none";
+      if (node !== element) {
+        const bounds = node.getBoundingClientRect();
+        if (clippingOverflow.has(style.overflowX)) {
+          visibleLeft = Math.max(visibleLeft, bounds.left);
+          visibleRight = Math.min(visibleRight, bounds.right);
+        }
+        if (clippingOverflow.has(style.overflowY)) {
+          visibleTop = Math.max(visibleTop, bounds.top);
+          visibleBottom = Math.min(visibleBottom, bounds.bottom);
+        }
+      }
+    }
+    const selfOverflowX = clippingOverflow.has(ownStyle.overflowX)
+      ? Math.max(0, element.scrollWidth - element.clientWidth) : 0;
+    const selfOverflowY = clippingOverflow.has(ownStyle.overflowY)
+      ? Math.max(0, element.scrollHeight - element.clientHeight) : 0;
+    return {
+      display: ownStyle.display,
+      visibility: ownStyle.visibility,
+      rendered,
+      hidden,
+      ariaHidden,
+      inert,
+      accessible: rendered && !hidden && !ariaHidden && !inert,
+      opacity,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      sourceIndex: sourceIndex(element),
+      cssOrder: Number(ownStyle.order) || 0,
+      selfOverflowX,
+      selfOverflowY,
+      ancestorClipped:
+        visibleRight - visibleLeft < rect.width - 1 ||
+        visibleBottom - visibleTop < rect.height - 1,
+      cssClip,
+      cssClipPath,
+      detailsAncestor,
+    };
+  };
+  const ledgers = [...document.querySelectorAll("[data-health-assumption-ledger]")];
+  const readingBands = [...document.querySelectorAll("[data-health-reading-band]")];
+  const boundaries = [...document.querySelectorAll("[data-health-inference-boundaries]")];
+  const ledger = ledgers[0] ?? null;
+  const readingBand = readingBands[0] ?? null;
+  const boundary = boundaries[0] ?? null;
+  const assumptionRows = [...(ledger?.children ?? [])];
+  const readingRows = [...(readingBand?.children ?? [])];
+  const inferenceRows = [...(boundary?.children ?? [])];
+  const primary = document.querySelector("[data-primary-evidence]");
+  const figures = [...document.querySelectorAll("main .evidence-figure")];
+  const primaryTitle = primary?.querySelector(".evidence-title") ?? null;
+  const primaryPlot = primary?.querySelector("[data-primary-plot]") ?? null;
+  const caption = primary?.querySelector("figcaption") ?? null;
+  const figure2Title = figures[1]?.querySelector(".evidence-title") ?? null;
+  const lede = document.querySelector("main .chapter-intro .lede");
+  return {
+    mode,
+    theme: document.documentElement.dataset.theme ?? "light",
+    counts: {
+      ledger: ledgers.length,
+      readingBand: readingBands.length,
+      boundaries: boundaries.length,
+      assumptionRows: assumptionRows.length,
+      readingRows: readingRows.length,
+      inferenceRows: inferenceRows.length,
+    },
+    regions: {
+      ledger: inspect(ledger),
+      readingBand: inspect(readingBand),
+      boundaries: inspect(boundary),
+    },
+    landmarks: {
+      lede: inspect(lede),
+      ledger: inspect(ledger),
+      primaryTitle: inspect(primaryTitle),
+      primaryPlot: inspect(primaryPlot),
+      caption: inspect(caption),
+      readingBand: inspect(readingBand),
+      figure2Title: inspect(figure2Title),
+      boundaries: inspect(boundary),
+    },
+    assumptionRows: assumptionRows.map((row) => ({
+      key: row.getAttribute("data-health-assumption") ?? "",
+      visibleText: compact(row.innerText),
+      accessibleText: null,
+      inspection: inspect(row),
+    })),
+    readingRows: readingRows.map((row) => ({
+      key: row.getAttribute("data-health-reading") ?? "",
+      heading: compact(row.querySelector(":scope > h2")?.innerText),
+      accessibleHeading: null,
+      inspection: inspect(row),
+    })),
+    inferenceRows: inferenceRows.map((row) => ({
+      key: row.getAttribute("data-health-inference") ?? "",
+      visibleText: compact(row.innerText),
+      accessibleText: null,
+      inspection: inspect(row),
+    })),
+    figure2Title: compact(figure2Title?.innerText),
     viewport: { width: innerWidth, height: innerHeight },
     document: {
       clientWidth: document.documentElement.clientWidth,
@@ -4731,6 +5231,308 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality detection limitation brief self-test passed");
 
+  const healthPart = (top, sourceIndex, extra = {}) => ({
+    display: "block",
+    visibility: "visible",
+    rendered: true,
+    hidden: false,
+    ariaHidden: false,
+    inert: false,
+    accessible: true,
+    opacity: 1,
+    top,
+    right: 700,
+    bottom: top + 40,
+    left: 100,
+    width: 600,
+    height: 40,
+    sourceIndex,
+    cssOrder: 0,
+    selfOverflowX: 0,
+    selfOverflowY: 0,
+    ancestorClipped: false,
+    cssClip: false,
+    cssClipPath: false,
+    detailsAncestor: false,
+    ...extra,
+  });
+  const healthAssumptionRows = [
+    [
+      "counterfactual",
+      "比較基準圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。",
+    ],
+    [
+      "response",
+      "暴露反應函數本章只採用一條具可追溯來源的函數；適用範圍與外推界線在後文公開。",
+    ],
+    [
+      "population",
+      "暴露人口本專案沒有人口與個人暴露資料，因此不報死亡人數，也不把測站中位數稱為誰的暴露。",
+    ],
+  ];
+  const healthExpected = {
+    seriesCount: 4,
+    functionCount: 1,
+    yearsCount: 2,
+    spreadCount: 2,
+    deaths: "死亡人數需要人口與基礎死亡率。",
+    exposure: "測站平均不是人口加權暴露。",
+  };
+  const invalidHealthPayloads = [
+    ["top-level shape", "top-level shape changed", (payload) => { payload.extra = true; }],
+    ["function count", "response-function inventory changed", (payload) => {
+      payload.functions = [];
+    }],
+    ["boolean response value", "rr_per_10 is invalid", (payload) => {
+      payload.functions[0].rr_per_10 = true;
+    }],
+    ["series count", "counterfactual-series inventory changed", (payload) => {
+      payload.series.pop();
+    }],
+    ["duplicate series identity", "series identity is duplicated", (payload) => {
+      payload.series[1].name = payload.series[0].name;
+    }],
+    ["empty deaths boundary", "no-inference boundary changed", (payload) => {
+      payload.not_reported.deaths = "";
+    }],
+    ["years/spread mismatch", "years/spread inventory changed", (payload) => {
+      payload.spread_share.pop();
+    }],
+    ["non-finite spread", "spread value is invalid", (payload) => {
+      payload.spread_share[0] = Number.NaN;
+    }],
+  ];
+  for (const [name, expectedError, mutate] of invalidHealthPayloads) {
+    const payload = structuredClone(HEALTH_STORY_PAYLOAD);
+    const before = JSON.stringify(payload);
+    mutate(payload);
+    if (JSON.stringify(payload) === before) {
+      throw new Error(`health payload mutation ${name} did not change the control`);
+    }
+    try {
+      healthExpectedEvidenceFromPayload(payload);
+    } catch (error) {
+      if (!String(error?.message ?? error).includes(expectedError)) {
+        throw new Error(
+          `health payload mutation ${name} raised ${String(error)}, expected ${expectedError}`,
+        );
+      }
+      continue;
+    }
+    throw new Error(`health payload parser accepts ${name}`);
+  }
+  const completeHealthLedger = {
+    mode: "normal",
+    counts: {
+      ledger: 1,
+      readingBand: 1,
+      boundaries: 1,
+      assumptionRows: 3,
+      readingRows: 2,
+      inferenceRows: 2,
+    },
+    regions: {
+      ledger: healthPart(180, 20),
+      readingBand: healthPart(520, 70),
+      boundaries: healthPart(760, 100),
+    },
+    landmarks: {
+      lede: healthPart(100, 10),
+      ledger: healthPart(180, 20),
+      primaryTitle: healthPart(280, 40),
+      primaryPlot: healthPart(340, 50),
+      caption: healthPart(460, 60),
+      readingBand: healthPart(520, 70),
+      figure2Title: healthPart(680, 90),
+      boundaries: healthPart(760, 100),
+    },
+    assumptionRows: healthAssumptionRows.map(([key, text], index) => ({
+      key,
+      visibleText: text,
+      accessibleText: text,
+      inspection: healthPart(190 + index * 30, 21 + index),
+    })),
+    readingRows: [
+      {
+        key: "robust",
+        heading: "下降幅度對比較基準穩健",
+        accessibleHeading: "下降幅度對比較基準穩健",
+        inspection: healthPart(530, 71),
+      },
+      {
+        key: "sensitive",
+        heading: "當前水準對比較基準敏感",
+        accessibleHeading: "當前水準對比較基準敏感",
+        inspection: healthPart(580, 72),
+      },
+    ],
+    inferenceRows: [
+      {
+        key: "deaths",
+        visibleText: "不報死亡人數死亡人數需要人口與基礎死亡率。",
+        accessibleText: "不報死亡人數死亡人數需要人口與基礎死亡率。",
+        inspection: healthPart(770, 101),
+      },
+      {
+        key: "exposure",
+        visibleText: "不宣稱這是誰的暴露測站平均不是人口加權暴露。",
+        accessibleText: "不宣稱這是誰的暴露測站平均不是人口加權暴露。",
+        inspection: healthPart(820, 102),
+      },
+    ],
+    figure2Title: "比較基準造成的落差佔估計值多少？",
+    viewport: { width: 375, height: 812 },
+    document: { clientWidth: 375, scrollWidth: 375 },
+  };
+  const healthPreflightMisses = [];
+  const controlHealthProblems = healthAssumptionLedgerProblems(
+    completeHealthLedger,
+    healthExpected,
+    completeHealthLedger.viewport,
+  );
+  if (controlHealthProblems.length) {
+    healthPreflightMisses.push(`complete control: ${controlHealthProblems.join(", ")}`);
+  }
+  const healthMutations = [
+    ["invalid mode", "mode is invalid", (state) => { state.mode = "unsupported"; }],
+    ["missing ledger", "ledger count is 0", (state) => {
+      state.counts.ledger = 0;
+      state.regions.ledger = null;
+    }],
+    ["extra reading band", "reading band count is 2", (state) => {
+      state.counts.readingBand = 2;
+    }],
+    ["hidden boundary", "boundary is hidden", (state) => {
+      state.regions.boundaries.hidden = true;
+    }],
+    ["aria-hidden ledger", "ledger is aria-hidden", (state) => {
+      state.regions.ledger.ariaHidden = true;
+    }],
+    ["inert reading band", "reading band is excluded from accessibility", (state) => {
+      state.regions.readingBand.inert = true;
+    }],
+    ["zero-opacity boundary", "boundary opacity is zero", (state) => {
+      state.regions.boundaries.opacity = 0;
+    }],
+    ["zero-area ledger", "ledger has no rendered area", (state) => {
+      state.regions.ledger.width = 0;
+    }],
+    ["self overflow", "reading band clips its own content", (state) => {
+      state.regions.readingBand.selfOverflowX = 4;
+    }],
+    ["ancestor clipping", "boundary is clipped by an ancestor", (state) => {
+      state.regions.boundaries.ancestorClipped = true;
+    }],
+    ["CSS clip", "ledger uses CSS clip", (state) => {
+      state.regions.ledger.cssClip = true;
+    }],
+    ["CSS clip-path", "reading band uses CSS clip-path", (state) => {
+      state.regions.readingBand.cssClipPath = true;
+    }],
+    ["off-canvas boundary", "boundary is horizontally off-canvas", (state) => {
+      state.regions.boundaries.left = 400;
+      state.regions.boundaries.right = 700;
+    }],
+    ["CSS order", "ledger uses CSS order", (state) => {
+      state.regions.ledger.cssOrder = 1;
+    }],
+    ["open disclosure", "ledger is user-collapsible", (state) => {
+      state.regions.ledger.detailsAncestor = true;
+    }],
+    ["missing assumption row", "assumption row inventory changed", (state) => {
+      state.assumptionRows.pop();
+      state.counts.assumptionRows = 2;
+    }],
+    ["wrong assumption key", "assumption row 1 key changed", (state) => {
+      state.assumptionRows[0].key = "response";
+    }],
+    ["wrong assumption text", "assumption row 1 visible text changed", (state) => {
+      state.assumptionRows[0].visibleText = "比較基準";
+    }],
+    ["wrong assumption AX text", "assumption row 1 accessible text changed", (state) => {
+      state.assumptionRows[0].accessibleText = "另一個名稱";
+    }],
+    ["hidden assumption row", "assumption row 1 is hidden", (state) => {
+      state.assumptionRows[0].inspection.hidden = true;
+    }],
+    ["reordered reading row", "reading row 1 key changed", (state) => {
+      state.readingRows.reverse();
+    }],
+    ["wrong reading heading", "reading row 1 heading changed", (state) => {
+      state.readingRows[0].heading = "假設穩健";
+    }],
+    ["wrong reading AX heading", "reading row 1 accessible heading changed", (state) => {
+      state.readingRows[0].accessibleHeading = "假設穩健";
+    }],
+    ["missing inference row", "inference row inventory changed", (state) => {
+      state.inferenceRows.pop();
+      state.counts.inferenceRows = 1;
+    }],
+    ["wrong inference key", "inference row 1 key changed", (state) => {
+      state.inferenceRows[0].key = "exposure";
+    }],
+    ["wrong inference text", "inference row 1 visible text changed", (state) => {
+      state.inferenceRows[0].visibleText = "不報死亡人數";
+    }],
+    ["wrong inference AX text", "inference row 1 accessible text changed", (state) => {
+      state.inferenceRows[0].accessibleText = "不報人數";
+    }],
+    ["stale Figure 7.2 title", "Figure 7.2 title changed", (state) => {
+      state.figure2Title = "不同暴露反應函數會把結果推動多少？";
+    }],
+    ["source order", "opening order changed", (state) => {
+      state.landmarks.ledger.sourceIndex = 45;
+    }],
+    ["visual order", "opening order changed", (state) => {
+      state.landmarks.ledger.top = 360;
+    }],
+    ["manufactured landmark order", "primary plot uses CSS order", (state) => {
+      state.landmarks.primaryPlot.cssOrder = 2;
+    }],
+    ["mobile primary title below viewport", "primary evidence does not enter the first viewport", (state) => {
+      state.landmarks.primaryTitle.top = 812;
+    }],
+    ["short-desktop plot below 55vh", "primary plot starts at or below 55vh", (state) => {
+      state.viewport = { width: 1280, height: 720 };
+      state.document = { clientWidth: 1280, scrollWidth: 1280 };
+      state.landmarks.primaryPlot.top = 397;
+      state.landmarks.primaryPlot.bottom = 596;
+    }],
+    ["page overflow", "document scrolls sideways", (state) => {
+      state.document.scrollWidth = 376;
+    }],
+    ["missing no-JavaScript ledger", "no-JavaScript ledger count is 0", (state) => {
+      state.mode = "no-js";
+      state.counts.ledger = 0;
+      state.regions.ledger = null;
+    }],
+    ["hidden print boundary", "print boundary display is none", (state) => {
+      state.mode = "print";
+      state.regions.boundaries.display = "none";
+    }],
+    ["zoom reading reorder", "zoom opening order changed", (state) => {
+      state.mode = "zoom";
+      state.landmarks.readingBand.top = 720;
+    }],
+  ];
+  for (const [name, expectedProblem, mutate] of healthMutations) {
+    const state = structuredClone(completeHealthLedger);
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before) {
+      healthPreflightMisses.push(`${name} mutation did not change the control`);
+      continue;
+    }
+    const problems = healthAssumptionLedgerProblems(state, healthExpected, state.viewport);
+    if (!problems.some((problem) => problem.includes(expectedProblem))) {
+      healthPreflightMisses.push(`${name} -> ${expectedProblem}`);
+    }
+  }
+  if (healthPreflightMisses.length) {
+    throw new Error(`the health preflight misses ${healthPreflightMisses.join("; ")}`);
+  }
+  console.log("site quality health assumption-ledger self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -6162,6 +6964,27 @@ async function main() {
     return state;
   };
 
+  const healthAssumptionLedgerSnapshot = async (mode) => {
+    const state = await evaluate(healthAssumptionLedgerSnapshotExpression(mode));
+    if (!state) return state;
+    const [assumptionTexts, readingHeadingTexts, inferenceTexts] =
+      await accessibilityTextsForSelectors([
+        "[data-health-assumption-ledger] > [data-health-assumption]",
+        "[data-health-reading-band] > [data-health-reading] > h2",
+        "[data-health-inference-boundaries] > [data-health-inference]",
+      ]);
+    for (const [index, row] of state.assumptionRows.entries()) {
+      row.accessibleText = assumptionTexts[index] ?? null;
+    }
+    for (const [index, row] of state.readingRows.entries()) {
+      row.accessibleHeading = readingHeadingTexts[index] ?? null;
+    }
+    for (const [index, row] of state.inferenceRows.entries()) {
+      row.accessibleText = inferenceTexts[index] ?? null;
+    }
+    return state;
+  };
+
   const detectionBrowserMutationFailures = async (origin) => {
     const failures = [];
     await send("Emulation.setDeviceMetricsOverride", {
@@ -6402,6 +7225,223 @@ async function main() {
       const problems = detectionLimitationBriefProblems(
         state,
         EXPECTED_DETECTION_EVENTS,
+        state?.viewport,
+      );
+      if (!problems.some((problem) => problem.includes(mutation.expected))) {
+        failures.push(
+          `${mutation.name} did not reach ${JSON.stringify(mutation.expected)} ` +
+            `(received ${problems.join(", ") || "no problems"})`,
+        );
+      }
+    }
+    return failures;
+  };
+
+  const healthBrowserMutationFailures = async (origin) => {
+    const failures = [];
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    const mutations = [
+      {
+        name: "hidden ledger",
+        expected: "ledger is hidden",
+        script: `document.querySelector("[data-health-assumption-ledger]").hidden = true`,
+      },
+      {
+        name: "aria-hidden reading band",
+        expected: "reading band is aria-hidden",
+        script: `document.querySelector("[data-health-reading-band]")
+          .setAttribute("aria-hidden", "true")`,
+      },
+      {
+        name: "inert boundary",
+        expected: "boundary is excluded from accessibility",
+        script: `document.querySelector("[data-health-inference-boundaries]")
+          .setAttribute("inert", "")`,
+      },
+      {
+        name: "zero-opacity boundary",
+        expected: "boundary opacity is zero",
+        script: `document.querySelector("[data-health-inference-boundaries]")
+          .style.setProperty("opacity", "0", "important")`,
+      },
+      {
+        name: "ledger self overflow",
+        expected: "ledger clips its own content",
+        script: `(() => {
+          const element = document.querySelector("[data-health-assumption-ledger]");
+          element.style.setProperty("width", "40px", "important");
+          element.style.setProperty("overflow-x", "hidden", "important");
+          element.style.setProperty("white-space", "nowrap", "important");
+        })()`,
+      },
+      {
+        name: "reading-band ancestor clipping",
+        expected: "reading band is clipped by an ancestor",
+        script: `(() => {
+          const element = document.querySelector("[data-health-reading-band]");
+          const wrapper = document.createElement("div");
+          wrapper.style.setProperty("height", "1px", "important");
+          wrapper.style.setProperty("overflow", "hidden", "important");
+          element.before(wrapper);
+          wrapper.append(element);
+        })()`,
+      },
+      {
+        name: "ledger CSS clip",
+        expected: "ledger uses CSS clip",
+        script: `(() => {
+          const element = document.querySelector("[data-health-assumption-ledger]");
+          element.style.setProperty("position", "absolute", "important");
+          element.style.setProperty("clip", "rect(0px, 1px, 1px, 0px)", "important");
+        })()`,
+      },
+      {
+        name: "boundary CSS clip-path",
+        expected: "boundary uses CSS clip-path",
+        script: `document.querySelector("[data-health-inference-boundaries]")
+          .style.setProperty("clip-path", "inset(50%)", "important")`,
+      },
+      {
+        name: "off-canvas boundary",
+        expected: "boundary is horizontally off-canvas",
+        script: `document.querySelector("[data-health-inference-boundaries]")
+          .style.setProperty("transform", "translateX(200vw)", "important")`,
+      },
+      {
+        name: "ledger CSS order",
+        expected: "ledger uses CSS order",
+        script: `document.querySelector("[data-health-assumption-ledger]")
+          .style.setProperty("order", "2", "important")`,
+      },
+      {
+        name: "extra unhooked assumption row",
+        expected: "assumption row inventory changed",
+        script: `(() => {
+          const row = document.createElement("li");
+          row.textContent = "未審閱的額外假設";
+          document.querySelector("[data-health-assumption-ledger]").append(row);
+        })()`,
+      },
+      {
+        name: "wrong assumption key",
+        expected: "assumption row 1 key changed",
+        script: `document.querySelector("[data-health-assumption]")
+          .setAttribute("data-health-assumption", "response")`,
+      },
+      {
+        name: "wrong assumption visible text",
+        expected: "assumption row 1 visible text changed",
+        script: `document.querySelector("[data-health-assumption] p").textContent = "只看一個數字。"`,
+      },
+      {
+        name: "wrong assumption AX text",
+        expected: "assumption row 1 accessible text changed",
+        script: `document.querySelector("[data-health-assumption]")
+          .setAttribute("aria-label", "另一個假設")`,
+      },
+      {
+        name: "reordered reading rows",
+        expected: "reading row 1 key changed",
+        script: `(() => {
+          const region = document.querySelector("[data-health-reading-band]");
+          region.prepend(region.lastElementChild);
+        })()`,
+      },
+      {
+        name: "wrong reading heading AX text",
+        expected: "reading row 1 accessible heading changed",
+        script: `document.querySelector("[data-health-reading] h2")
+          .setAttribute("aria-label", "假設穩健")`,
+      },
+      {
+        name: "wrong inference visible text",
+        expected: "inference row 1 visible text changed",
+        script: `document.querySelector("[data-health-inference] p").textContent = "死亡人數是零。"`,
+      },
+      {
+        name: "wrong inference AX text",
+        expected: "inference row 1 accessible text changed",
+        script: `document.querySelector("[data-health-inference]")
+          .setAttribute("aria-label", "死亡人數是零")`,
+      },
+      {
+        name: "stale Figure 7.2 title",
+        expected: "Figure 7.2 title changed",
+        script: `document.querySelector("#evidence-7-2-title").textContent =
+          "不同暴露反應函數會把結果推動多少？"`,
+      },
+      {
+        name: "ledger moved after primary evidence",
+        expected: "opening order changed",
+        script: `(() => {
+          const ledger = document.querySelector("[data-health-assumption-ledger]");
+          document.querySelector("[data-primary-evidence]").after(ledger);
+        })()`,
+      },
+      ...[
+        ["ledger", "[data-health-assumption-ledger]"],
+        ["reading band", "[data-health-reading-band]"],
+        ["boundary", "[data-health-inference-boundaries]"],
+      ].flatMap(([label, selector]) => [
+        {
+          name: `open disclosure around ${label}`,
+          expected: `${label} is user-collapsible`,
+          script: `(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            const details = document.createElement("details");
+            details.open = true;
+            element.before(details);
+            details.append(element);
+          })()`,
+        },
+        {
+          name: `closed disclosure around ${label}`,
+          expected: `${label} is user-collapsible`,
+          script: `(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            const details = document.createElement("details");
+            element.before(details);
+            details.append(element);
+          })()`,
+        },
+      ]),
+    ];
+    const loadHealth = async (label) => {
+      await send("Page.navigate", { url: `${origin}/health/` });
+      return settled(evaluate, 8000, `/health/ ${label}`);
+    };
+    if (!(await loadHealth("browser mutation control"))) {
+      return ["browser mutation control never finished styling"];
+    }
+    const control = await healthAssumptionLedgerSnapshot("normal");
+    const controlProblems = healthAssumptionLedgerProblems(
+      control,
+      EXPECTED_HEALTH_EVIDENCE,
+      control?.viewport,
+    );
+    if (controlProblems.length) {
+      failures.push(`clean production snapshot rejected: ${controlProblems.join(", ")}`);
+    }
+    for (const mutation of mutations) {
+      if (!(await loadHealth(`browser mutation ${mutation.name}`))) {
+        failures.push(`${mutation.name} page never finished styling`);
+        continue;
+      }
+      await evaluate(mutation.script);
+      await settlePaint(evaluate);
+      const state = await healthAssumptionLedgerSnapshot(mutation.mode ?? "normal");
+      const problems = healthAssumptionLedgerProblems(
+        state,
+        EXPECTED_HEALTH_EVIDENCE,
         state?.viewport,
       );
       if (!problems.some((problem) => problem.includes(mutation.expected))) {
@@ -8034,18 +9074,33 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
-  console.log("site-quality stage: detection browser mutations");
-  const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
-  if (DETECTION_BROWSER_SELF_TEST) {
-    if (detectionMutationFailures.length) {
-      for (const problem of detectionMutationFailures) console.log(`  FAIL: ${problem}`);
+  if (!HEALTH_BROWSER_SELF_TEST) {
+    console.log("site-quality stage: detection browser mutations");
+    const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
+    if (DETECTION_BROWSER_SELF_TEST) {
+      if (detectionMutationFailures.length) {
+        for (const problem of detectionMutationFailures) console.log(`  FAIL: ${problem}`);
+        return 1;
+      }
+      console.log("site quality detection browser mutation self-test passed");
+      return 0;
+    }
+    for (const problem of detectionMutationFailures) {
+      failures.push(`/detection/ browser mutation: ${problem}`);
+    }
+  }
+  console.log("site-quality stage: health browser mutations");
+  const healthMutationFailures = await healthBrowserMutationFailures(origin);
+  if (HEALTH_BROWSER_SELF_TEST) {
+    if (healthMutationFailures.length) {
+      for (const problem of healthMutationFailures) console.log(`  FAIL: ${problem}`);
       return 1;
     }
-    console.log("site quality detection browser mutation self-test passed");
+    console.log("site quality health browser mutation self-test passed");
     return 0;
   }
-  for (const problem of detectionMutationFailures) {
-    failures.push(`/detection/ browser mutation: ${problem}`);
+  for (const problem of healthMutationFailures) {
+    failures.push(`/health/ browser mutation: ${problem}`);
   }
   console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
@@ -8491,6 +9546,16 @@ async function main() {
         failures.push(`${route}: ${problem}`);
       }
     }
+    if (route === "/health/") {
+      const healthState = await healthAssumptionLedgerSnapshot("no-js");
+      for (const problem of healthAssumptionLedgerProblems(
+        healthState,
+        EXPECTED_HEALTH_EVIDENCE,
+        healthState?.viewport,
+      )) {
+        failures.push(`${route}: ${problem}`);
+      }
+    }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
         failures.push(`${route}: no-JavaScript ${problem}`);
@@ -8701,6 +9766,32 @@ async function main() {
           detectionState,
           EXPECTED_DETECTION_EVENTS,
           detectionState?.viewport,
+        )) {
+          failures.push(`${route} @${width}x${height} light opening: ${problem}`);
+        }
+      }
+      if (route === "/health/") {
+        const healthState = await healthAssumptionLedgerSnapshot("normal");
+        if ((width === 375 && height === 812) || (width === 1280 && height === 720)) {
+          console.log(
+            "site-quality health opening " +
+              JSON.stringify({
+                width,
+                height,
+                ledgerTop: healthState?.landmarks?.ledger?.top ?? null,
+                ledgerBottom: healthState?.landmarks?.ledger?.bottom ?? null,
+                primaryTitleTop: healthState?.landmarks?.primaryTitle?.top ?? null,
+                plotTop: healthState?.landmarks?.primaryPlot?.top ?? null,
+                horizontalOverflow:
+                  (healthState?.document?.scrollWidth ?? 0) -
+                  (healthState?.document?.clientWidth ?? 0),
+              }),
+          );
+        }
+        for (const problem of healthAssumptionLedgerProblems(
+          healthState,
+          EXPECTED_HEALTH_EVIDENCE,
+          healthState?.viewport,
         )) {
           failures.push(`${route} @${width}x${height} light opening: ${problem}`);
         }
@@ -8999,6 +10090,20 @@ async function main() {
     }
   }
 
+  await send("Page.navigate", { url: `${origin}/health/` });
+  if (!(await settled(evaluate, 8000, "/health/ print assumption ledger"))) {
+    failures.push("health print page never finished styling");
+  } else {
+    const healthState = await healthAssumptionLedgerSnapshot("print");
+    for (const problem of healthAssumptionLedgerProblems(
+      healthState,
+      EXPECTED_HEALTH_EVIDENCE,
+      healthState?.viewport,
+    )) {
+      failures.push(`/health/ print: ${problem}`);
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -9064,6 +10169,16 @@ async function main() {
             detectionState,
             EXPECTED_DETECTION_EVENTS,
             detectionState?.viewport,
+          )) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/health/") {
+          const healthState = await healthAssumptionLedgerSnapshot("normal");
+          for (const problem of healthAssumptionLedgerProblems(
+            healthState,
+            EXPECTED_HEALTH_EVIDENCE,
+            healthState?.viewport,
           )) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
@@ -10500,6 +11615,16 @@ async function main() {
         detectionState,
         EXPECTED_DETECTION_EVENTS,
         detectionState?.viewport,
+      )) {
+        failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (route === "/health/") {
+      const healthState = await healthAssumptionLedgerSnapshot("zoom");
+      for (const problem of healthAssumptionLedgerProblems(
+        healthState,
+        EXPECTED_HEALTH_EVIDENCE,
+        healthState?.viewport,
       )) {
         failures.push(`${state}: ${problem}`);
       }
