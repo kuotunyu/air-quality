@@ -531,76 +531,134 @@ function chapterOpeningProblems(state) {
   return problems;
 }
 
-function trendReadingMapProblems(state) {
+const TREND_READING_MAP_CONTRACT = Object.freeze({
+  label: "trend",
+  targetIds: Object.freeze(["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"]),
+  firstQuestionMustFitPhoneViewport: true,
+  requiresFullEvidenceOrder: false,
+});
+const SPACE_READING_MAP_CONTRACT = Object.freeze({
+  label: "space",
+  targetIds: Object.freeze(["space-distance", "space-controls", "space-inference"]),
+  firstQuestionMustFitPhoneViewport: true,
+  requiresFullEvidenceOrder: true,
+});
+
+function readingMapProblems(state, contract) {
   const problems = [];
+  const label = contract.label;
   if (![375, 768, 1024, 1440].includes(state?.viewportWidth)) {
-    return ["trend reading map viewport is not one of the reviewed widths"];
+    return [`${label} reading map viewport is not one of the reviewed widths`];
   }
   const map = state?.map;
   const thesis = state?.thesis;
-  if (
+  if (map?.ariaHidden) {
+    problems.push(`${label} reading map is aria-hidden`);
+  } else if (map?.opacityZero) {
+    problems.push(`${label} reading map has zero opacity`);
+  } else if (
     !map?.visible || map.width <= 0 || map.height <= 0 ||
     !Number.isFinite(map.left) || !Number.isFinite(map.right)
   ) {
-    problems.push("trend reading map is not visible");
+    problems.push(`${label} reading map is not visible`);
   } else if (map.clippedByAncestor) {
-    problems.push("trend reading map is clipped by an ancestor");
+    problems.push(`${label} reading map is clipped by an ancestor`);
   }
   if (!thesis?.visible || thesis.width <= 0 || thesis.height <= 0) {
-    problems.push("trend chapter thesis is not visible");
+    problems.push(`${label} chapter thesis is not visible`);
   } else if (state.viewportWidth < 1024 && map?.top < thesis.bottom - 1) {
-    problems.push("trend reading map no longer follows the thesis on narrow screens");
+    problems.push(`${label} reading map no longer follows the thesis on narrow screens`);
   } else if (
     state.viewportWidth >= 1024 &&
     (map?.left < thesis.right - 1 || map?.top >= thesis.bottom)
   ) {
-    problems.push("trend chapter desktop opening is not a two-column composition");
+    problems.push(`${label} chapter desktop opening is not a two-column composition`);
   }
-  if (state?.links?.length !== 3) problems.push("trend reading map link inventory changed");
-  if (state?.targets?.length !== 3) problems.push("trend reading map target inventory changed");
+  if (state?.links?.length !== contract.targetIds.length) {
+    problems.push(`${label} reading map link inventory changed`);
+  }
+  if (state?.targets?.length !== contract.targetIds.length) {
+    problems.push(`${label} reading map target inventory changed`);
+  }
+  if (
+    !Array.isArray(state?.targetIds) ||
+    state.targetIds.length !== contract.targetIds.length ||
+    state.targetIds.some((targetId, index) => targetId !== contract.targetIds[index])
+  ) {
+    problems.push(`${label} reading map target IDs changed`);
+  }
   for (const [index, link] of (state?.links ?? []).entries()) {
-    if (!link.visible || link.width < 44 || link.height < 44 || link.clippedByAncestor) {
-      problems.push(`trend reading map link ${index + 1} target is too small`);
+    if (link.ariaHidden) {
+      problems.push(`${label} reading map link ${index + 1} is aria-hidden`);
+    } else if (link.opacityZero) {
+      problems.push(`${label} reading map link ${index + 1} has zero opacity`);
+    } else if (!link.visible || link.width < 44 || link.height < 44 || link.clippedByAncestor) {
+      problems.push(`${label} reading map link ${index + 1} target is too small`);
     }
   }
   for (const [index, target] of (state?.targets ?? []).entries()) {
-    if (!target.visible || target.width <= 0 || target.height <= 0) {
-      problems.push(`trend reading map target ${index + 1} is not visible`);
+    if (target.ariaHidden) {
+      problems.push(`${label} reading map target ${index + 1} is aria-hidden`);
+    } else if (target.opacityZero) {
+      problems.push(`${label} reading map target ${index + 1} has zero opacity`);
+    } else if (!target.visible || target.width <= 0 || target.height <= 0) {
+      problems.push(`${label} reading map target ${index + 1} is not visible`);
     } else if (target.clippedByAncestor) {
-      problems.push(`trend reading map target ${index + 1} is clipped by an ancestor`);
+      problems.push(`${label} reading map target ${index + 1} is clipped by an ancestor`);
     }
     if (state?.anchorsMeasured) {
       if (!Number.isFinite(target.afterJumpTop)) {
-        problems.push(`trend reading map target ${index + 1} landing geometry is invalid`);
+        problems.push(`${label} reading map target ${index + 1} landing geometry is invalid`);
       } else if (target.afterJumpTop < state.stickyBottom - 1) {
-        problems.push(`trend reading map target ${index + 1} is obscured after jump`);
+        problems.push(`${label} reading map target ${index + 1} is obscured after jump`);
+      } else if (target.afterJumpTop >= state.viewportHeight) {
+        problems.push(`${label} reading map target ${index + 1} is outside the viewport after jump`);
       }
     }
   }
-  if (!state?.sourceOrdered) problems.push("trend reading map source order changed");
+  if (!state?.sourceOrdered) problems.push(`${label} reading map source order changed`);
+  if (contract.requiresFullEvidenceOrder && !state?.evidenceOrdered) {
+    problems.push(`${label} field-note evidence order changed`);
+  }
   if (!state?.primary?.visible || state.primary.width <= 0 || state.primary.height <= 0) {
-    problems.push("trend primary evidence is not visible");
+    problems.push(`${label} primary evidence is not visible`);
   } else if (state.primary.clippedByAncestor) {
-    problems.push("trend primary evidence is clipped by an ancestor");
+    problems.push(`${label} primary evidence is clipped by an ancestor`);
   }
   if (
+    contract.firstQuestionMustFitPhoneViewport &&
     state?.viewportWidth === 375 &&
     state?.targets?.[0]?.top > state.viewportHeight + 1
   ) {
-    problems.push("trend primary evidence question leaves the first phone viewport");
+    problems.push(`${label} primary evidence question leaves the first phone viewport`);
   }
   if (state?.horizontalOverflow > 1) {
-    problems.push("trend reading map causes horizontal overflow");
+    problems.push(`${label} reading map causes horizontal overflow`);
   }
   return problems;
 }
 
-function trendPrintProblems(state) {
+function readingMapPrintProblems(state, contract) {
   const problems = [];
-  if (!state?.thesisVisible) problems.push("trend print thesis is not visible");
-  if (!state?.mapVisible) problems.push("trend print reading map is not visible");
-  if (!state?.primaryVisible) problems.push("trend print primary evidence is not visible");
-  if (!state?.sourceOrdered) problems.push("trend print source order changed");
+  if (!state?.thesisVisible) problems.push(`${contract.label} print thesis is not visible`);
+  if (!state?.mapVisible) problems.push(`${contract.label} print reading map is not visible`);
+  if (!state?.primaryVisible) problems.push(`${contract.label} print primary evidence is not visible`);
+  if (state?.linksVisible?.length !== contract.targetIds.length) {
+    problems.push(`${contract.label} print link inventory changed`);
+  }
+  for (const [index, visible] of (state?.linksVisible ?? []).entries()) {
+    if (!visible) problems.push(`${contract.label} print link ${index + 1} is not visible`);
+  }
+  if (state?.targetsVisible?.length !== contract.targetIds.length) {
+    problems.push(`${contract.label} print target inventory changed`);
+  }
+  for (const [index, visible] of (state?.targetsVisible ?? []).entries()) {
+    if (!visible) problems.push(`${contract.label} print target ${index + 1} is not visible`);
+  }
+  if (!state?.sourceOrdered) problems.push(`${contract.label} print source order changed`);
+  if (contract.requiresFullEvidenceOrder && !state?.evidenceOrdered) {
+    problems.push(`${contract.label} print evidence order changed`);
+  }
   return problems;
 }
 
@@ -2717,17 +2775,18 @@ async function lifecycleSelfTest() {
     return {
       viewportWidth,
       viewportHeight: 812,
+      targetIds: [...TREND_READING_MAP_CONTRACT.targetIds],
       thesis,
-      map,
+      map: { ...map, ariaHidden: false, opacityZero: false },
       links: Array.from({ length: 3 }, (_value, index) => ({
-        visible: true, clippedByAncestor: false,
+        visible: true, ariaHidden: false, opacityZero: false, clippedByAncestor: false,
         top: map.top + index * 48,
         bottom: map.top + 48 + index * 48,
         width: 335,
         height: 48,
       })),
       targets: Array.from({ length: 3 }, (_value, index) => ({
-        visible: true, clippedByAncestor: false,
+        visible: true, ariaHidden: false, opacityZero: false, clippedByAncestor: false,
         top: 400 + index * 500,
         bottom: 448 + index * 500,
         width: 335,
@@ -2741,12 +2800,19 @@ async function lifecycleSelfTest() {
       stickyBottom: 64,
       anchorsMeasured: true,
       sourceOrdered: true,
+      evidenceOrdered: true,
       horizontalOverflow: 0,
     };
   };
+  if (
+    !Object.isFrozen(TREND_READING_MAP_CONTRACT.targetIds) ||
+    !Object.isFrozen(SPACE_READING_MAP_CONTRACT.targetIds)
+  ) {
+    throw new Error("reading-map target IDs are not immutable");
+  }
   for (const viewportWidth of [375, 768, 1024, 1440]) {
     const state = completeTrendReadingMapFor(viewportWidth);
-    if (trendReadingMapProblems(state).length) {
+    if (readingMapProblems(state, TREND_READING_MAP_CONTRACT).length) {
       throw new Error(`trend reading-map predicate rejected ${viewportWidth}px control`);
     }
   }
@@ -2754,7 +2820,7 @@ async function lifecycleSelfTest() {
   const expectTrendReadingMapProblem = (name, viewportWidth, mutate, expected) => {
     const state = completeTrendReadingMapFor(viewportWidth);
     mutate(state);
-    const problems = trendReadingMapProblems(state);
+    const problems = readingMapProblems(state, TREND_READING_MAP_CONTRACT);
     if (!problems.some((problem) => problem.includes(expected))) {
       missedTrendReadingMapProblems.push(name);
     }
@@ -2802,20 +2868,99 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality trend reading map self-test passed");
 
+  const completeSpaceFieldNoteFor = (viewportWidth) => ({
+    ...completeTrendReadingMapFor(viewportWidth),
+    targetIds: [...SPACE_READING_MAP_CONTRACT.targetIds],
+  });
+  for (const viewportWidth of [375, 768, 1024, 1440]) {
+    const state = completeSpaceFieldNoteFor(viewportWidth);
+    if (readingMapProblems(state, SPACE_READING_MAP_CONTRACT).length) {
+      throw new Error(`space field-note predicate rejected ${viewportWidth}px control`);
+    }
+  }
+  const missedSpaceFieldNoteProblems = [];
+  const expectSpaceFieldNoteProblem = (name, viewportWidth, mutate, expected) => {
+    const state = completeSpaceFieldNoteFor(viewportWidth);
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before) {
+      throw new Error(`space field-note mutation did not apply: ${name}`);
+    }
+    const problems = readingMapProblems(state, SPACE_READING_MAP_CONTRACT);
+    if (!problems.some((problem) => problem.includes(expected))) {
+      missedSpaceFieldNoteProblems.push(name);
+    }
+  };
+  expectSpaceFieldNoteProblem("hidden map", 375, (state) => {
+    state.map.visible = false;
+  }, "map is not visible");
+  expectSpaceFieldNoteProblem("aria-hidden map", 375, (state) => {
+    state.map.ariaHidden = true;
+  }, "map is aria-hidden");
+  expectSpaceFieldNoteProblem("opacity-zero map", 375, (state) => {
+    state.map.opacityZero = true;
+  }, "map has zero opacity");
+  expectSpaceFieldNoteProblem("clipped map", 1440, (state) => {
+    state.map.clippedByAncestor = true;
+  }, "map is clipped");
+  expectSpaceFieldNoteProblem("43px link", 375, (state) => {
+    state.links[1].height = 43;
+  }, "link 2 target is too small");
+  expectSpaceFieldNoteProblem("zero-area target", 375, (state) => {
+    state.targets[2].width = 0;
+  }, "target 3 is not visible");
+  expectSpaceFieldNoteProblem("obscured target", 375, (state) => {
+    state.targets[1].afterJumpTop = state.stickyBottom - 2;
+  }, "target 2 is obscured after jump");
+  expectSpaceFieldNoteProblem("target below jump viewport", 375, (state) => {
+    state.targets[1].afterJumpTop = state.viewportHeight + 1;
+  }, "target 2 is outside the viewport after jump");
+  expectSpaceFieldNoteProblem("same-length target ID drift", 375, (state) => {
+    state.targetIds[1] = "space-unreviewed";
+  }, "target IDs changed");
+  expectSpaceFieldNoteProblem("reordered source", 375, (state) => {
+    state.sourceOrdered = false;
+  }, "source order changed");
+  expectSpaceFieldNoteProblem("reordered framed evidence", 375, (state) => {
+    state.evidenceOrdered = false;
+  }, "evidence order changed");
+  expectSpaceFieldNoteProblem("hidden primary", 1440, (state) => {
+    state.primary.visible = false;
+  }, "primary evidence is not visible");
+  expectSpaceFieldNoteProblem("phone first question below viewport", 375, (state) => {
+    state.targets[0].top = 900;
+  }, "primary evidence question leaves the first phone viewport");
+  expectSpaceFieldNoteProblem("horizontal overflow", 375, (state) => {
+    state.horizontalOverflow = 2;
+  }, "causes horizontal overflow");
+  if (missedSpaceFieldNoteProblems.length) {
+    throw new Error(
+      `the space field-note predicate accepts ${missedSpaceFieldNoteProblems.join(", ")}`,
+    );
+  }
+  console.log("site quality space field note self-test passed");
+
   const completeTrendPrint = {
     thesisVisible: true,
     mapVisible: true,
     primaryVisible: true,
+    linksVisible: [true, true, true],
+    targetsVisible: [true, true, true],
     sourceOrdered: true,
+    evidenceOrdered: true,
   };
-  if (trendPrintProblems(completeTrendPrint).length) {
+  if (readingMapPrintProblems(completeTrendPrint, TREND_READING_MAP_CONTRACT).length) {
     throw new Error("trend print predicate rejected its complete control");
   }
   const missedTrendPrintProblems = [];
   const expectTrendPrintProblem = (name, mutate, expected) => {
-    const state = { ...completeTrendPrint };
+    const state = {
+      ...completeTrendPrint,
+      linksVisible: [...completeTrendPrint.linksVisible],
+      targetsVisible: [...completeTrendPrint.targetsVisible],
+    };
     mutate(state);
-    const problems = trendPrintProblems(state);
+    const problems = readingMapPrintProblems(state, TREND_READING_MAP_CONTRACT);
     if (!problems.some((problem) => problem.includes(expected))) {
       missedTrendPrintProblems.push(name);
     }
@@ -2829,6 +2974,12 @@ async function lifecycleSelfTest() {
   expectTrendPrintProblem("hidden primary evidence", (state) => {
     state.primaryVisible = false;
   }, "primary evidence is not visible");
+  expectTrendPrintProblem("hidden second question link", (state) => {
+    state.linksVisible[1] = false;
+  }, "link 2 is not visible");
+  expectTrendPrintProblem("hidden third question target", (state) => {
+    state.targetsVisible[2] = false;
+  }, "target 3 is not visible");
   expectTrendPrintProblem("reordered source", (state) => {
     state.sourceOrdered = false;
   }, "source order changed");
@@ -2836,6 +2987,19 @@ async function lifecycleSelfTest() {
     throw new Error(
       `the trend print predicate accepts ${missedTrendPrintProblems.join(", ")}`,
     );
+  }
+  const completeSpacePrint = {
+    ...completeTrendPrint,
+    linksVisible: [...completeTrendPrint.linksVisible],
+    targetsVisible: [...completeTrendPrint.targetsVisible],
+    evidenceOrdered: false,
+  };
+  const missedSpacePrintProblems = readingMapPrintProblems(
+    completeSpacePrint,
+    SPACE_READING_MAP_CONTRACT,
+  );
+  if (!missedSpacePrintProblems.some((problem) => problem.includes("evidence order changed"))) {
+    throw new Error("the space print predicate accepts reordered framed evidence");
   }
   console.log("site quality trend print contract self-test passed");
 
@@ -4244,6 +4408,7 @@ async function main() {
       for (let node = element; node; node = node.parentElement) {
         const style = getComputedStyle(node);
         if (
+          node.getAttribute("aria-hidden") === "true" ||
           style.display === "none" || style.visibility === "hidden" ||
           style.visibility === "collapse" || Number(style.opacity) === 0
         ) return false;
@@ -4336,7 +4501,7 @@ async function main() {
     };
   })()`);
 
-  const trendReadingMapSnapshot = async ({ measureAnchors }) => {
+  const readingMapSnapshot = async ({ targetIds, measureAnchors }) => {
     const state = await evaluate(`(() => {
       const rendered = (element) => {
         if (!element) return false;
@@ -4357,8 +4522,13 @@ async function main() {
         let visibleRight = rect.right;
         let visibleTop = rect.top;
         let visibleBottom = rect.bottom;
-        for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        let ariaHidden = false;
+        let opacityZero = false;
+        for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
           const style = getComputedStyle(ancestor);
+          if (ancestor.getAttribute("aria-hidden") === "true") ariaHidden = true;
+          if (Number(style.opacity) === 0) opacityZero = true;
+          if (ancestor === element) continue;
           const bounds = ancestor.getBoundingClientRect();
           if (["auto", "clip", "hidden", "scroll"].includes(style.overflowX)) {
             visibleLeft = Math.max(visibleLeft, bounds.left);
@@ -4370,7 +4540,8 @@ async function main() {
           }
         }
         return {
-          visible: rendered(element), top: rect.top, bottom: rect.bottom,
+          visible: rendered(element) && !ariaHidden, ariaHidden, opacityZero,
+          top: rect.top, bottom: rect.bottom,
           left: rect.left, right: rect.right, width: rect.width, height: rect.height,
           clippedByAncestor: visibleRight - visibleLeft < rect.width - 1 ||
             visibleBottom - visibleTop < rect.height - 1,
@@ -4378,9 +4549,11 @@ async function main() {
       };
       const map = document.querySelector("[data-chapter-reading-map]");
       const primary = document.querySelector("[data-primary-evidence]");
-      const ids = ["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"];
+      const ids = ${JSON.stringify(targetIds)};
       const targets = ids.map((id) => document.getElementById(id));
       const links = [...document.querySelectorAll("[data-chapter-reading-link]")];
+      const figures = [...document.querySelectorAll(".evidence-figure")];
+      const tables = [...document.querySelectorAll("table")];
       const follows = (first, second) => Boolean(
         first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
       );
@@ -4391,31 +4564,46 @@ async function main() {
         map: inspect(map),
         links: links.map(inspect),
         targets: targets.map(inspect),
+        targetIds: targets.map((target) => target?.id ?? null),
         primary: inspect(primary),
         stickyBottom: document.querySelector(".handle")?.getBoundingClientRect().bottom ?? 0,
         anchorsMeasured: ${JSON.stringify(measureAnchors)},
-        sourceOrdered: follows(map, primary) && follows(primary, targets[1]) &&
-          follows(targets[1], targets[2]),
+        sourceOrdered: follows(document.querySelector(".chapter-thesis"), map) &&
+          follows(map, targets[0]) &&
+          Boolean(primary && targets[0] && (primary.contains(targets[0]) || follows(targets[0], primary))) &&
+          follows(primary, targets[1]) && follows(targets[1], targets[2]),
+        evidenceOrdered: figures.length === 2 && tables.length === 2 &&
+          follows(targets[0], figures[0]) && follows(figures[0], targets[1]) &&
+          follows(targets[1], figures[1]) && follows(figures[1], targets[2]) &&
+          follows(targets[2], tables[0]) && follows(targets[2], tables[1]),
         horizontalOverflow: document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
       };
     })()`);
     if (!measureAnchors || !state) return state;
     const afterJumpTop = await evaluate(`(async () => {
-      const ids = ["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"];
+      const ids = ${JSON.stringify(targetIds)};
       const originalY = scrollY;
+      const originalUrl = location.href;
+      const root = document.documentElement;
+      const originalScrollBehavior = root.style.scrollBehavior;
       const tops = [];
-      for (const id of ids) {
-        const target = document.getElementById(id);
-        if (!target) { tops.push(null); continue; }
-        history.replaceState(null, "", "#" + id);
-        target.scrollIntoView({ block: "start" });
+      root.style.scrollBehavior = "auto";
+      try {
+        for (const id of ids) {
+          const target = document.getElementById(id);
+          if (!target) { tops.push(null); continue; }
+          history.replaceState(null, "", "#" + id);
+          target.scrollIntoView({ block: "start" });
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          tops.push(target.getBoundingClientRect().top);
+        }
+      } finally {
+        history.replaceState(null, "", originalUrl);
+        scrollTo(0, originalY);
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        tops.push(target.getBoundingClientRect().top);
+        root.style.scrollBehavior = originalScrollBehavior;
       }
-      history.replaceState(null, "", location.pathname + location.search);
-      scrollTo(0, originalY);
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       return tops;
     })()`);
     state.targets = state.targets.map((target, index) => ({
@@ -4425,7 +4613,7 @@ async function main() {
     return state;
   };
 
-  const trendPrintSnapshot = async () => evaluate(`(() => {
+  const readingMapPrintSnapshot = async (targetIds) => evaluate(`(() => {
     const rendered = (element) => {
       if (!element) return false;
       for (let node = element; node; node = node.parentElement) {
@@ -4444,11 +4632,23 @@ async function main() {
     const thesis = document.querySelector(".chapter-thesis");
     const map = document.querySelector("[data-chapter-reading-map]");
     const primary = document.querySelector("[data-primary-evidence]");
+    const targets = ${JSON.stringify(targetIds)}.map((id) => document.getElementById(id));
+    const links = [...document.querySelectorAll("[data-chapter-reading-link]")];
+    const figures = [...document.querySelectorAll(".evidence-figure")];
+    const tables = [...document.querySelectorAll("table")];
     return {
       thesisVisible: rendered(thesis),
       mapVisible: rendered(map),
       primaryVisible: rendered(primary),
-      sourceOrdered: follows(thesis, map) && follows(map, primary),
+      linksVisible: links.map(rendered),
+      targetsVisible: targets.map(rendered),
+      sourceOrdered: follows(thesis, map) && follows(map, targets[0]) &&
+        Boolean(primary && targets[0] && (primary.contains(targets[0]) || follows(targets[0], primary))) &&
+        follows(primary, targets[1]) && follows(targets[1], targets[2]),
+      evidenceOrdered: figures.length === 2 && tables.length === 2 &&
+        follows(targets[0], figures[0]) && follows(figures[0], targets[1]) &&
+        follows(targets[1], figures[1]) && follows(figures[1], targets[2]) &&
+        follows(targets[2], tables[0]) && follows(targets[2], tables[1]),
     };
   })()`);
 
@@ -6488,9 +6688,47 @@ async function main() {
         failures.push(`/trend/ @${width}x${height} ${theme}: reading map never finished styling`);
         continue;
       }
-      const state = await trendReadingMapSnapshot({ measureAnchors: true });
-      for (const problem of trendReadingMapProblems(state)) {
+      const state = await readingMapSnapshot({
+        targetIds: TREND_READING_MAP_CONTRACT.targetIds,
+        measureAnchors: true,
+      });
+      for (const problem of readingMapProblems(state, TREND_READING_MAP_CONTRACT)) {
         failures.push(`/trend/ @${width}x${height} ${theme}: ${problem}`);
+      }
+    }
+  }
+  console.log("site-quality stage: space field note");
+  for (const [width, height] of [
+    [375, 812],
+    [768, 1024],
+    [1024, 900],
+    [1440, 900],
+  ]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    for (const theme of ["light", "dark"]) {
+      await evaluate(`localStorage.setItem("twair-theme", ${JSON.stringify(theme)})`);
+      await send("Emulation.setEmulatedMedia", {
+        media: "",
+        features: [
+          { name: "prefers-color-scheme", value: theme === "light" ? "dark" : "light" },
+        ],
+      });
+      await send("Page.navigate", { url: `${origin}/space/` });
+      if (!(await settled(evaluate, 8000, `/space/ @${width}x${height} ${theme} field note`))) {
+        failures.push(`/space/ @${width}x${height} ${theme}: field note never finished styling`);
+        continue;
+      }
+      const state = await readingMapSnapshot({
+        targetIds: SPACE_READING_MAP_CONTRACT.targetIds,
+        measureAnchors: true,
+      });
+      for (const problem of readingMapProblems(state, SPACE_READING_MAP_CONTRACT)) {
+        failures.push(`/space/ @${width}x${height} ${theme}: ${problem}`);
       }
     }
   }
@@ -6514,9 +6752,35 @@ async function main() {
       failures.push(`/trend/ @${width}x${height} no-JavaScript light: reading map never styled`);
       continue;
     }
-    const state = await trendReadingMapSnapshot({ measureAnchors: false });
-    for (const problem of trendReadingMapProblems(state)) {
+    const state = await readingMapSnapshot({
+      targetIds: TREND_READING_MAP_CONTRACT.targetIds,
+      measureAnchors: false,
+    });
+    for (const problem of readingMapProblems(state, TREND_READING_MAP_CONTRACT)) {
       failures.push(`/trend/ @${width}x${height} no-JavaScript light: ${problem}`);
+    }
+  }
+  for (const [width, height] of [[375, 812], [1440, 900]]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 500,
+    });
+    if (
+      !(await navigateWithoutPageScripts(send, waitForEvent, `${origin}/space/`, () =>
+        settled(evaluate, 8000, `/space/ @${width}x${height} no-JavaScript field note`),
+      ))
+    ) {
+      failures.push(`/space/ @${width}x${height} no-JavaScript light: field note never styled`);
+      continue;
+    }
+    const state = await readingMapSnapshot({
+      targetIds: SPACE_READING_MAP_CONTRACT.targetIds,
+      measureAnchors: false,
+    });
+    for (const problem of readingMapProblems(state, SPACE_READING_MAP_CONTRACT)) {
+      failures.push(`/space/ @${width}x${height} no-JavaScript light: ${problem}`);
     }
   }
   await evaluate('localStorage.setItem("twair-theme", "dark")');
@@ -6603,8 +6867,8 @@ async function main() {
   if (!(await settled(evaluate, 8000, "/trend/ print reading contract"))) {
     failures.push("trend print page never finished styling");
   } else {
-    const state = await trendPrintSnapshot();
-    for (const problem of trendPrintProblems(state)) {
+    const state = await readingMapPrintSnapshot(TREND_READING_MAP_CONTRACT.targetIds);
+    for (const problem of readingMapPrintProblems(state, TREND_READING_MAP_CONTRACT)) {
       failures.push(`/trend/ print: ${problem}`);
     }
   }
@@ -6615,6 +6879,15 @@ async function main() {
     const state = await stationRegisterSnapshot();
     for (const problem of stationRegisterProblems(state, "print")) {
       failures.push(`station print: ${problem}`);
+    }
+  }
+  await send("Page.navigate", { url: `${origin}/space/` });
+  if (!(await settled(evaluate, 8000, "/space/ print field-note contract"))) {
+    failures.push("space print page never finished styling");
+  } else {
+    const state = await readingMapPrintSnapshot(SPACE_READING_MAP_CONTRACT.targetIds);
+    for (const problem of readingMapPrintProblems(state, SPACE_READING_MAP_CONTRACT)) {
+      failures.push(`/space/ print: ${problem}`);
     }
   }
 
@@ -8083,11 +8356,19 @@ async function main() {
         );
       }
     }
-    if (route === "/trend/") {
-      const readingMapZoomSnapshot = await trendReadingMapSnapshot({ measureAnchors: false });
-      for (const problem of trendReadingMapProblems(readingMapZoomSnapshot)) {
+    if (route === "/trend/" || route === "/space/") {
+      const contract = route === "/trend/"
+        ? TREND_READING_MAP_CONTRACT
+        : SPACE_READING_MAP_CONTRACT;
+      const readingMapZoomSnapshot = await readingMapSnapshot({
+        targetIds: contract.targetIds,
+        measureAnchors: false,
+      });
+      for (const problem of readingMapProblems(readingMapZoomSnapshot, contract)) {
         failures.push(`${state}: ${problem}`);
       }
+    }
+    if (route === "/trend/") {
       const trendZoomSnapshot = await trendGuideSnapshot();
       recordTrendGuideGeometry(
         trendZoomSnapshot,

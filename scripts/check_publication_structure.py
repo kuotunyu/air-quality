@@ -471,6 +471,17 @@ TREND_READING_MAP = (
     ("#trend-weather-adjustment", "排除天氣後，下降幅度剩多少？"),
     ("#trend-airzones", "各空品區是否同步改善？"),
 )
+SPACE_READING_MAP = (
+    ("#space-distance", "距離增加後，殘差相依如何改變？"),
+    ("#space-controls", "哪一種分層真正移除了大部分相依？"),
+    ("#space-inference", "剩餘相依對推論與空白區預測有什麼代價？"),
+)
+SPACE_SUPPORTING_HEADINGS = (
+    "官方分區比純地理多知道什麼？",
+    "相依散在整個場，不在少數熱點",
+    "把 t 統計量重新標價",
+    "測站之間的空白能不能誠實地補？",
+)
 
 STATION_STAT_KEYS = ("annual-mean", "who-annual", "who-days", "taiwan-days")
 STATION_COMPARISON_KEYS = ("conversion", "rank", "worst-day")
@@ -722,6 +733,159 @@ def trend_reading_map_failures_for_text(html: str) -> list[str]:
         failures.append(f"trend primary-evidence inventory changed: {len(primary)}")
     elif reading_map.end_order is None or reading_map.end_order >= primary[0].start_order:
         failures.append("trend primary evidence precedes the reading map")
+    return failures
+
+
+def space_field_note_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    visible = [element for element in parser.elements if element.visible]
+    maps = [element for element in visible if "data-chapter-reading-map" in element.attributes]
+    if len(maps) != 1:
+        return [
+            *failures,
+            f"expected exactly one visible space reading map, found {len(maps)}",
+        ]
+
+    reading_map = maps[0]
+    if reading_map.tag != "nav":
+        failures.append("space reading map is not a <nav>")
+    if reading_map.attributes.get("aria-label") != "本章閱讀地圖":
+        failures.append("space reading map accessible label changed")
+    links = [
+        element for element in visible if element.tag == "a" and element.is_inside(reading_map)
+    ]
+    marked_links = [
+        element
+        for element in visible
+        if "data-chapter-reading-link" in element.attributes and element.is_inside(reading_map)
+    ]
+    if marked_links != links:
+        failures.append("space reading-map link markers changed")
+    observed = [(link.attributes.get("href", ""), link.rendered_text()) for link in links]
+    if observed != list(SPACE_READING_MAP):
+        failures.append(f"space reading-map links changed: {observed!r}")
+
+    targets: list[Element] = []
+    for href, question in SPACE_READING_MAP:
+        target_id = href.removeprefix("#")
+        candidates = [
+            element
+            for element in parser.elements
+            if element.attributes.get("id") == target_id
+            and element.tag not in IGNORED_SUBTREES
+            and not any(
+                ancestor.tag in IGNORED_SUBTREES
+                for ancestor in parser.elements
+                if element.is_inside(ancestor)
+            )
+        ]
+        visible_candidates = [element for element in candidates if element.visible]
+        if len(candidates) != 1 or len(visible_candidates) != 1:
+            failures.append(
+                "space reading-map target inventory changed for "
+                f"{href}: {len(candidates)} total, {len(visible_candidates)} visible"
+            )
+            continue
+        target = visible_candidates[0]
+        targets.append(target)
+        if target.tag != "h2" or "data-space-field-question" not in target.attributes:
+            failures.append(f"space field-question heading hierarchy changed for {href}")
+        if target.rendered_text() != question:
+            failures.append(f"space field-question text changed for {href}")
+
+    marked_targets = [
+        element for element in visible if "data-space-field-question" in element.attributes
+    ]
+    if len(marked_targets) != len(SPACE_READING_MAP) or any(
+        target not in marked_targets for target in targets
+    ):
+        failures.append("space field-question heading inventory changed")
+    targets_are_ordered = False
+    if len(targets) == len(SPACE_READING_MAP):
+        starts = [target.start_order for target in targets]
+        targets_are_ordered = starts == sorted(starts)
+        if not targets_are_ordered:
+            failures.append("space reading-map target order changed")
+
+    intros = [
+        element
+        for element in visible
+        if element.tag == "header" and "chapter-intro" in element.classes
+    ]
+    theses = [element for element in visible if "chapter-thesis" in element.classes]
+    if (
+        len(intros) != 1
+        or len(theses) != 1
+        or reading_map.parent is not intros[0]
+        or theses[0].parent is not intros[0]
+        or theses[0].end_order is None
+        or reading_map.end_order is None
+        or theses[0].end_order >= reading_map.start_order
+        or len(targets) != len(SPACE_READING_MAP)
+        or reading_map.end_order >= targets[0].start_order
+    ):
+        failures.append("space reading map source order changed")
+
+    figures = [element for element in visible if "evidence-figure" in element.classes]
+    if len(figures) != 2:
+        failures.append(f"space evidence-figure inventory changed: {len(figures)}")
+    primary = [element for element in visible if "data-primary-evidence" in element.attributes]
+    if len(primary) != 1:
+        failures.append(f"space primary-evidence inventory changed: {len(primary)}")
+    elif len(figures) != 2 or primary[0] is not figures[0]:
+        failures.append("space primary evidence is not Figure 3.1")
+    elif len(targets) == len(SPACE_READING_MAP):
+        if primary[0].start_order <= targets[0].start_order:
+            failures.append("space primary evidence precedes its question")
+        if primary[0].start_order >= targets[1].start_order:
+            failures.append("space primary evidence no longer follows the first question")
+    if len(figures) == 2 and len(targets) == len(SPACE_READING_MAP) and targets_are_ordered:
+        if figures[1].start_order <= targets[1].start_order:
+            failures.append("space Figure 3.2 precedes its question")
+        if figures[1].start_order >= targets[2].start_order:
+            failures.append("space Figure 3.2 no longer precedes the third question")
+
+    tables = [element for element in visible if element.tag == "table"]
+    if len(tables) != 2:
+        failures.append(f"space table inventory changed: {len(tables)}")
+    elif (
+        len(targets) == len(SPACE_READING_MAP)
+        and targets_are_ordered
+        and any(table.start_order <= targets[2].start_order for table in tables)
+    ):
+        failures.append("space table precedes its question")
+
+    supporting: list[Element] = []
+    headings = [
+        element for element in visible if element.tag in {"h1", "h2", "h3", "h4", "h5", "h6"}
+    ]
+    for text in SPACE_SUPPORTING_HEADINGS:
+        candidates = [element for element in headings if element.rendered_text() == text]
+        if len(candidates) != 1 or candidates[0].tag != "h3":
+            failures.append(f"space supporting heading hierarchy changed for {text!r}")
+        if len(candidates) == 1:
+            supporting.append(candidates[0])
+    if len(supporting) == len(SPACE_SUPPORTING_HEADINGS):
+        starts = [heading.start_order for heading in supporting]
+        if starts != sorted(starts):
+            failures.append("space supporting heading order changed")
+        if (
+            len(targets) == len(SPACE_READING_MAP)
+            and targets_are_ordered
+            and not (
+                targets[1].start_order
+                < supporting[0].start_order
+                < supporting[1].start_order
+                < targets[2].start_order
+                < supporting[2].start_order
+                < supporting[3].start_order
+            )
+        ):
+            failures.append("space supporting heading grouping changed")
     return failures
 
 
@@ -1679,6 +1843,170 @@ def _run_preflight() -> None:
             ),
         ),
     }
+
+    valid_space_field_note = """
+<header class="chapter-intro"><h1>空間結構與官方分區</h1><div class="chapter-thesis">既有 thesis</div>
+<nav aria-label="本章閱讀地圖" data-chapter-reading-map><ol>
+<li><a data-chapter-reading-link href="#space-distance">距離增加後，殘差相依如何改變？</a></li>
+<li><a data-chapter-reading-link href="#space-controls">哪一種分層真正移除了大部分相依？</a></li>
+<li><a data-chapter-reading-link href="#space-inference">剩餘相依對推論與空白區預測有什麼代價？</a></li>
+</ol></nav></header>
+<h2 id="space-distance" data-space-field-question>距離增加後，殘差相依如何改變？</h2>
+<section class="evidence-figure" data-primary-evidence><figure>圖 3.1</figure></section>
+<h2 id="space-controls" data-space-field-question>哪一種分層真正移除了大部分相依？</h2>
+<section class="evidence-figure"><figure>圖 3.2</figure></section>
+<h3>官方分區比純地理多知道什麼？</h3>
+<h3>相依散在整個場，不在少數熱點</h3>
+<h2 id="space-inference" data-space-field-question>剩餘相依對推論與空白區預測有什麼代價？</h2>
+<h3>把 t 統計量重新標價</h3><table><tbody><tr><td>推論</td></tr></tbody></table>
+<h3>測站之間的空白能不能誠實地補？</h3><table><tbody><tr><td>外推</td></tr></tbody></table>
+"""
+    valid_space_failures = space_field_note_failures_for_text(valid_space_field_note)
+    if valid_space_failures:
+        raise RuntimeError(
+            f"space field-note preflight rejected the valid control: {valid_space_failures}"
+        )
+
+    space_map = valid_space_field_note[
+        valid_space_field_note.index(
+            '<nav aria-label="本章閱讀地圖"'
+        ) : valid_space_field_note.index("</nav>") + len("</nav>")
+    ]
+    space_second_link = (
+        '<li><a data-chapter-reading-link href="#space-controls">'
+        "哪一種分層真正移除了大部分相依？</a></li>"
+    )
+    space_third_link = (
+        '<li><a data-chapter-reading-link href="#space-inference">'
+        "剩餘相依對推論與空白區預測有什麼代價？</a></li>"
+    )
+    space_first_target = (
+        '<h2 id="space-distance" data-space-field-question>距離增加後，殘差相依如何改變？</h2>'
+    )
+    space_second_target = (
+        '<h2 id="space-controls" data-space-field-question>哪一種分層真正移除了大部分相依？</h2>'
+    )
+    space_third_target = (
+        '<h2 id="space-inference" data-space-field-question>'
+        "剩餘相依對推論與空白區預測有什麼代價？</h2>"
+    )
+    space_second_figure = '<section class="evidence-figure"><figure>圖 3.2</figure></section>'
+    space_first_table = "<table><tbody><tr><td>推論</td></tr></tbody></table>"
+    space_second_table = "<table><tbody><tr><td>外推</td></tr></tbody></table>"
+    space_mutations = {
+        "missing map": (
+            "expected exactly one visible space reading map",
+            valid_space_field_note.replace(space_map, "", 1),
+        ),
+        "duplicate map": (
+            "expected exactly one visible space reading map",
+            valid_space_field_note.replace(space_map, space_map + space_map, 1),
+        ),
+        "map outside intro after first target": (
+            "space reading map source order changed",
+            valid_space_field_note.replace(space_map, "", 1).replace(
+                space_first_target, space_first_target + space_map, 1
+            ),
+        ),
+        "missing link": (
+            "space reading-map links changed",
+            valid_space_field_note.replace(space_third_link, "", 1),
+        ),
+        "reordered links": (
+            "space reading-map links changed",
+            valid_space_field_note.replace(
+                space_second_link + "\n" + space_third_link,
+                space_third_link + "\n" + space_second_link,
+                1,
+            ),
+        ),
+        "wrong href": (
+            "space reading-map links changed",
+            valid_space_field_note.replace('href="#space-controls"', 'href="#space-distance"', 1),
+        ),
+        "duplicate target": (
+            "space reading-map target inventory changed",
+            valid_space_field_note.replace('id="space-inference"', 'id="space-controls"', 1),
+        ),
+        "hidden target": (
+            "space reading-map target inventory changed",
+            valid_space_field_note.replace(
+                '<h2 id="space-inference"', '<h2 hidden id="space-inference"', 1
+            ),
+        ),
+        "hidden duplicate target": (
+            "space reading-map target inventory changed",
+            valid_space_field_note.replace(
+                space_first_target,
+                space_first_target + '<h2 hidden id="space-distance">重複目標</h2>',
+                1,
+            ),
+        ),
+        "wrong target heading level": (
+            "space field-question heading hierarchy changed",
+            valid_space_field_note.replace(
+                space_second_target, space_second_target.replace("h2", "h3"), 1
+            ),
+        ),
+        "reordered targets": (
+            "space reading-map target order changed",
+            valid_space_field_note.replace(space_second_target, "__SPACE_SECOND_TARGET__", 1)
+            .replace(space_third_target, space_second_target, 1)
+            .replace("__SPACE_SECOND_TARGET__", space_third_target, 1),
+        ),
+        "primary before first target": (
+            "space primary evidence precedes its question",
+            valid_space_field_note.replace(
+                space_first_target + '\n<section class="evidence-figure" data-primary-evidence>'
+                "<figure>圖 3.1</figure></section>",
+                '<section class="evidence-figure" data-primary-evidence><figure>圖 3.1</figure>'
+                f"</section>\n{space_first_target}",
+                1,
+            ),
+        ),
+        "primary marker rebound away from Figure 3.1": (
+            "space primary evidence is not Figure 3.1",
+            valid_space_field_note.replace(
+                '<section class="evidence-figure" data-primary-evidence>',
+                '<p data-primary-evidence>假證據</p><section class="evidence-figure">',
+                1,
+            ),
+        ),
+        "changed figure inventory": (
+            "space evidence-figure inventory changed",
+            valid_space_field_note.replace('class="evidence-figure"', 'class="other-figure"', 1),
+        ),
+        "changed table inventory": (
+            "space table inventory changed",
+            valid_space_field_note.replace("<table>", "<div>", 1).replace("</table>", "</div>", 1),
+        ),
+        "Figure 3.2 before its question": (
+            "space Figure 3.2 precedes its question",
+            valid_space_field_note.replace(space_second_figure, "", 1).replace(
+                space_second_target, space_second_figure + "\n" + space_second_target, 1
+            ),
+        ),
+        "first table before its question": (
+            "space table precedes its question",
+            valid_space_field_note.replace(space_first_table, "", 1).replace(
+                space_third_target, space_first_table + "\n" + space_third_target, 1
+            ),
+        ),
+        "second table before its question": (
+            "space table precedes its question",
+            valid_space_field_note.replace(space_second_table, "", 1).replace(
+                space_third_target, space_second_table + "\n" + space_third_target, 1
+            ),
+        ),
+        "supporting heading promoted to h2": (
+            "space supporting heading hierarchy changed",
+            valid_space_field_note.replace(
+                "<h3>官方分區比純地理多知道什麼？</h3>",
+                "<h2>官方分區比純地理多知道什麼？</h2>",
+                1,
+            ),
+        ),
+    }
     for key in STATION_STAT_KEYS:
         station_mutations[f"missing {key} stat key"] = (
             "station primary-stat keys changed",
@@ -1704,6 +2032,20 @@ def _run_preflight() -> None:
                 f"station dossier preflight did not reject {name} for the expected reason: "
                 f"{mutation_failures}"
             )
+    for name, (expected_failure, html) in space_mutations.items():
+        if html == valid_space_field_note:
+            raise RuntimeError(f"space field-note preflight did not apply {name}")
+        mutation_failures = space_field_note_failures_for_text(html)
+        if not any(expected_failure in failure for failure in mutation_failures):
+            raise RuntimeError(
+                f"space field-note preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
+            )
+    reordered_failures = space_field_note_failures_for_text(space_mutations["reordered targets"][1])
+    if reordered_failures != ["space reading-map target order changed"]:
+        raise RuntimeError(
+            f"space field-note preflight did not isolate reordered targets: {reordered_failures}"
+        )
 
     def evidence_shell(number: str, title: str, body: str = "Chart") -> str:
         title_id = f"evidence-{number.replace('.', '-')}-title"
@@ -2274,8 +2616,10 @@ def main(argv: list[str]) -> int:
             )
             if slug == "trend":
                 failures.extend(trend_reading_map_failures_for_text(html))
+            elif slug == "space":
+                failures.extend(space_field_note_failures_for_text(html))
             elif visible_reading_map_count(html):
-                failures.append("chapter unexpectedly contains a visible trend reading map")
+                failures.append("chapter unexpectedly contains a visible reading map")
             if slug == "stations":
                 failures.extend(station_dossier_failures_for_text(html))
 
