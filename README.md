@@ -170,7 +170,7 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 | Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻） | ✅ 有界完成；HYSPLIT／1 km 場延後 |
 | Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 M8 關聯與 held-out predictive-value 診斷已交付；ERA5 2024–2025 robustness 已交付；微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付，一月 reference-station satellite-context predictive-value limit 已交付，微型感測器 2025 全年 readiness audit 已交付，Q4-supported cross-station agreement 亦已交付（29 個 fold 中只有 5 個可評分，其餘 18 個測試集為空、6 個訓練集為空，均標為 unscored 而非以零計；held-quarter 與 joint station-quarter 不可估計）；validated calibration 與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5 |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
-| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 收尾：L0／L1 HF Dataset 刻意留到最後，由 owner 決定上架或明確不發布；非本科讀者試讀因目前沒有合適參與者而延後，不阻擋工程收尾；PyPI 選配。網站 UI 改版在正常收尾與 HF 最終決定之後另案進行 |
+| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 發布收尾：正常工程與編輯式科學圖集 UI 已在通過審查的本地候選完成；GitHub Pages 尚待整合至 `master` 並推送。L0／L1 HF Dataset 仍留到最後由 owner 決定上架或明確不發布；非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |
 
 完整計畫見 [PLAN.md](PLAN.md)。磁碟上的實際狀態用 `uv run twair status` 看——
 這份表寫的是 release 邊界；那個指令量的是本機事實。原始 blueprint 與每項
