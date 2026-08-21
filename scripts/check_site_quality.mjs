@@ -1799,11 +1799,72 @@ const METHOD_CASE_ROWS = [
   ["06", "用 AIC/BIC 當作模型好壞的證據", "#method-case-06"],
   ["07", "用一句話處理掉所有缺漏值", "#method-case-07"],
 ];
-const DATA_LAYER_ROWS = [
-  ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", ["每個測項一個 JSON", "網站直接讀這一層"]],
-  ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", ["每個測項一個 Parquet", "DuckDB-WASM 或桌面工具使用"]],
-  ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", ["完整逐時觀測", "不發布", "twair ingest", "twair build"]],
-];
+function dataMegabytes(value) {
+  return `${(value / 1e6).toFixed(value >= 1e7 ? 1 : 2)} MB`;
+}
+
+function loadDataProvenanceContract() {
+  const root = join(process.cwd(), "web", "public", "data");
+  const index = JSON.parse(readFileSync(join(root, "l0", "index.json"), "utf8"));
+  const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+  const meta = JSON.parse(readFileSync(join(root, "meta.json"), "utf8"));
+  if (!Array.isArray(index?.pollutants) || !Array.isArray(manifest?.files)) {
+    throw new Error("data provenance source inventory is invalid");
+  }
+  if (!Number.isInteger(meta?.hourly_observations) || meta.hourly_observations <= 0) {
+    throw new Error("data provenance hourly observation count is invalid");
+  }
+  const manifestBytes = new Map();
+  for (const row of manifest.files) {
+    if (
+      !row || typeof row !== "object" || Array.isArray(row) ||
+      typeof row.file !== "string" || !row.file ||
+      !Number.isInteger(row.bytes) || row.bytes < 0 || manifestBytes.has(row.file)
+    ) {
+      throw new Error("data manifest file identity is invalid");
+    }
+    manifestBytes.set(row.file, row.bytes);
+  }
+  let l1Total = 0;
+  const downloads = index.pollutants.map((row) => {
+    if (
+      !row || typeof row !== "object" || Array.isArray(row) ||
+      typeof row.pollutant !== "string" || !row.pollutant ||
+      typeof row.name_zh !== "string" || !row.name_zh ||
+      typeof row.file !== "string" || !row.file.startsWith("l0/") ||
+      !row.file.endsWith(".json") || !Array.isArray(row.months) ||
+      row.months.length !== 2 || row.months.some((month) => typeof month !== "string" || !month) ||
+      !Number.isInteger(row.bytes) || row.bytes < 0 || manifestBytes.get(row.file) !== row.bytes
+    ) {
+      throw new Error("data index pollutant identity is invalid");
+    }
+    const stem = row.file.slice(3, -5);
+    const l1File = `l1/${stem}.parquet`;
+    const l1Bytes = manifestBytes.get(l1File);
+    if (!Number.isInteger(l1Bytes) || l1Bytes < 0) {
+      throw new Error(`data manifest is missing ${l1File}`);
+    }
+    l1Total += l1Bytes;
+    return Object.freeze({
+      name: `${row.name_zh} ${row.pollutant}`,
+      period: `${row.months[0]}–${row.months[1]}`,
+      l0Href: `/data/${row.file}`,
+      l0Size: dataMegabytes(row.bytes),
+      l1Href: `/data/${l1File}`,
+      l1Size: dataMegabytes(l1Bytes),
+    });
+  });
+  const layers = [
+    ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。"],
+    ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", `每個測項一個 Parquet，共 ${dataMegabytes(l1Total)}。供 DuckDB-WASM 或桌面工具使用。`],
+    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。`],
+  ].map((row) => Object.freeze(row));
+  return Object.freeze({ layers: Object.freeze(layers), downloads: Object.freeze(downloads) });
+}
+
+const DATA_PROVENANCE_CONTRACT = loadDataProvenanceContract();
+const DATA_LAYER_ROWS = DATA_PROVENANCE_CONTRACT.layers;
+const DATA_DOWNLOAD_ROWS = DATA_PROVENANCE_CONTRACT.downloads;
 
 function forecastExactKeys(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value) &&
@@ -2490,7 +2551,7 @@ function dataProvenanceRegisterProblems(state, viewport) {
   } else {
     for (const [index, contract] of DATA_LAYER_ROWS.entries()) {
       const row = state.layers[index];
-      const [level, term, useText, descriptionFragments] = contract;
+      const [level, term, useText, descriptionText] = contract;
       if (row?.level !== level) problems.push(`${scope}layer ${index + 1} identity changed`);
       if (healthTextIdentity(row?.term) !== healthTextIdentity(term)) {
         problems.push(`${scope}layer ${index + 1} term changed`);
@@ -2501,7 +2562,7 @@ function dataProvenanceRegisterProblems(state, viewport) {
       if (healthTextIdentity(row?.accessibleUse) !== healthTextIdentity(useText)) {
         problems.push(`${scope}layer ${index + 1} accessible use changed`);
       }
-      if (!descriptionFragments.every((fragment) => row?.descriptionText?.includes(fragment))) {
+      if (healthTextIdentity(row?.descriptionText) !== healthTextIdentity(descriptionText)) {
         problems.push(`${scope}layer ${index + 1} description changed`);
       }
       problems.push(
@@ -2560,6 +2621,53 @@ function dataProvenanceRegisterProblems(state, viewport) {
   }
   if (state?.counts?.downloads !== 42) {
     problems.push(`${scope}download link count is ${String(state?.counts?.downloads)}, expected 42`);
+  }
+  if (!Array.isArray(state?.downloadRows) || state.downloadRows.length !== DATA_DOWNLOAD_ROWS.length) {
+    problems.push(`${scope}download row evidence inventory changed`);
+  } else {
+    for (const [index, expected] of DATA_DOWNLOAD_ROWS.entries()) {
+      const row = state.downloadRows[index];
+      const observedIdentity = {
+        name: healthTextIdentity(row?.name),
+        period: healthTextIdentity(row?.period),
+        l0Href: row?.l0Href,
+        l0Size: healthTextIdentity(row?.l0Size),
+        l1Href: row?.l1Href,
+        l1Size: healthTextIdentity(row?.l1Size),
+      };
+      const expectedIdentity = {
+        name: healthTextIdentity(expected.name),
+        period: healthTextIdentity(expected.period),
+        l0Href: expected.l0Href,
+        l0Size: healthTextIdentity(expected.l0Size),
+        l1Href: expected.l1Href,
+        l1Size: healthTextIdentity(expected.l1Size),
+      };
+      if (JSON.stringify(observedIdentity) !== JSON.stringify(expectedIdentity)) {
+        problems.push(`${scope}download row ${index + 1} changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(
+          row?.rowInspection,
+          `download row ${index + 1}`,
+          scope,
+          {},
+        ),
+      );
+      for (const [linkIndex, label] of ["JSON", "Parquet"].entries()) {
+        problems.push(
+          ...healthInspectionProblems(
+            row?.downloadInspections?.[linkIndex],
+            `download row ${index + 1} link ${linkIndex + 1}`,
+            scope,
+            {},
+          ),
+        );
+        if (healthTextIdentity(row?.downloadAccessibleTexts?.[linkIndex]) !== label) {
+          problems.push(`${scope}download row ${index + 1} link ${linkIndex + 1} accessible name changed`);
+        }
+      }
+    }
   }
   if (state?.counts?.l2Downloads !== 0) {
     problems.push(`${scope}L2 unexpectedly has ${String(state?.counts?.l2Downloads)} download`);
@@ -3642,6 +3750,22 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
   const tables = [...document.querySelectorAll("main .table-wrap table")];
   const table = tables[0] ?? null;
   const tableWrapper = table?.closest(".table-wrap") ?? null;
+  const downloadRows = [...(table?.querySelectorAll("tbody > tr") ?? [])].map((row) => {
+    const cells = [...row.querySelectorAll(":scope > td")];
+    const l0Link = cells[2]?.querySelector("a[download]") ?? null;
+    const l1Link = cells[3]?.querySelector("a[download]") ?? null;
+    return {
+      name: compact(cells[0]?.innerText),
+      period: compact(cells[1]?.innerText),
+      l0Href: l0Link?.getAttribute("href") ?? null,
+      l0Size: compact(cells[2]?.querySelector(".size")?.innerText),
+      l1Href: l1Link?.getAttribute("href") ?? null,
+      l1Size: compact(cells[3]?.querySelector(".size")?.innerText),
+      rowInspection: inspect(row, tableWrapper),
+      downloadInspections: [inspect(l0Link, tableWrapper), inspect(l1Link, tableWrapper)],
+      downloadAccessibleTexts: [null, null],
+    };
+  });
   const boundaries = [...document.querySelectorAll("main .note")].filter((element) =>
     compact(element.innerText).includes("L2 不發布，理由不是檔案太大")
   );
@@ -3684,6 +3808,7 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
       };
     }),
     table: inspect(table, tableWrapper),
+    downloadRows,
     tableWrapper: tableWrapper ? {
       inspection: inspect(tableWrapper, null, true),
       clientWidth: tableWrapper.clientWidth,
@@ -7202,18 +7327,27 @@ async function lifecycleSelfTest() {
     mode: "normal",
     counts: { registers: 1, terms: 3, uses: 3, descriptions: 3, tables: 1, bodyRows: 21, downloads: 42, l2Downloads: 0, boundaries: 1 },
     register: dataPart(180, 20, { height: 270 }),
-    layers: DATA_LAYER_ROWS.map(([level, term, useText, descriptionFragments], index) => ({
+    layers: DATA_LAYER_ROWS.map(([level, term, useText, descriptionText], index) => ({
       level,
       term,
       useText,
       accessibleUse: useText,
-      descriptionText: descriptionFragments.join("，"),
+      descriptionText,
       termInspection: dataPart(240 + index * 70, 30 + index * 3),
       useInspection: dataPart(270 + index * 70, 31 + index * 3, { height: 24 }),
       descriptionInspection: dataPart(300 + index * 70, 32 + index * 3),
     })),
     table: dataPart(540, 100, { height: 900 }),
     tableWrapper: { inspection: dataPart(520, 99, { height: 940 }), clientWidth: 600, scrollWidth: 900, overflowX: "auto" },
+    downloadRows: DATA_DOWNLOAD_ROWS.map((row, index) => ({
+      ...row,
+      rowInspection: dataPart(560 + index * 40, 120 + index * 3),
+      downloadInspections: [
+        dataPart(560 + index * 40, 121 + index * 3),
+        dataPart(560 + index * 40, 122 + index * 3),
+      ],
+      downloadAccessibleTexts: ["JSON", "Parquet"],
+    })),
     l2BoundaryText: "L2 不發布，理由不是檔案太大。這個專案繞過這個矛盾而不是解決它。",
     l2Boundary: dataPart(1620, 110, { height: 140 }),
     landmarks: {
@@ -7241,6 +7375,7 @@ async function lifecycleSelfTest() {
     ["wrong use", "layer 1 use changed", (state) => { state.layers[0].useText = "另一種用途"; }],
     ["wrong use AX", "layer 1 accessible use changed", (state) => { state.layers[0].accessibleUse = "另一種用途"; }],
     ["changed description", "layer 1 description changed", (state) => { state.layers[0].descriptionText = "不同描述"; }],
+    ["extended contradictory description", "layer 1 description changed", (state) => { state.layers[0].descriptionText += "但內容規格已改變"; }],
     ["hidden use", "layer 1 use is hidden", (state) => { state.layers[0].useInspection.hidden = true; }],
     ["off-canvas use", "layer 1 use is horizontally off-canvas", (state) => { state.layers[0].useInspection.left = 1300; state.layers[0].useInspection.right = 1900; }],
     ["clipped use", "layer 1 use is clipped by an ancestor", (state) => { state.layers[0].useInspection.ancestorClipped = true; }],
@@ -7249,6 +7384,9 @@ async function lifecycleSelfTest() {
     ["missing table", "download table count is 0", (state) => { state.counts.tables = 0; state.table = null; }],
     ["lost table row", "download row count is 20", (state) => { state.counts.bodyRows = 20; }],
     ["lost download", "download link count is 41", (state) => { state.counts.downloads = 41; }],
+    ["changed download destination", "download row 1 changed", (state) => { state.downloadRows[0].l0Href = "/data/l0/wrong.json"; }],
+    ["reordered download rows", "download row 1 changed", (state) => { [state.downloadRows[0], state.downloadRows[1]] = [state.downloadRows[1], state.downloadRows[0]]; }],
+    ["hidden download", "download row 1 link 1 is hidden", (state) => { state.downloadRows[0].downloadInspections[0].hidden = true; }],
     ["L2 download", "L2 unexpectedly has 1 download", (state) => { state.counts.l2Downloads = 1; }],
     ["broken local scroller", "download table local scroller changed", (state) => { state.tableWrapper.overflowX = "visible"; }],
     ["missing L2 boundary", "L2 boundary count is 0", (state) => { state.counts.boundaries = 0; state.l2Boundary = null; }],
@@ -8774,9 +8912,15 @@ async function main() {
   const dataProvenanceRegisterSnapshot = async (mode) => {
     const state = await evaluate(dataProvenanceRegisterSnapshotExpression(mode));
     if (!state) return state;
-    const [useTexts] = await accessibilityTextsForSelectors(["[data-data-layer-use]"]);
+    const [useTexts, downloadTexts] = await accessibilityTextsForSelectors([
+      "[data-data-layer-use]",
+      ".table-wrap tbody a[download]",
+    ]);
     for (const [index, row] of state.layers.entries()) {
       row.accessibleUse = useTexts[index] ?? null;
+    }
+    for (const [index, row] of state.downloadRows.entries()) {
+      row.downloadAccessibleTexts = downloadTexts.slice(index * 2, index * 2 + 2);
     }
     return state;
   };
@@ -9733,16 +9877,22 @@ async function main() {
       { name: "off-canvas use", expected: "layer 1 use is horizontally off-canvas", script: `(() => { const e=document.querySelector('[data-data-layer="L0"] [data-data-layer-use]'); e.style.cssText="position:fixed;left:1400px;width:280px"; })()` },
       { name: "clipped use", expected: "layer 1 use is clipped by an ancestor", script: `(() => { const e=document.querySelector('[data-data-layer="L0"] [data-data-layer-use]'); const w=document.createElement("span"); w.style.cssText="display:block;height:5px;overflow:hidden"; e.before(w); w.append(e); })()` },
       { name: "description change", expected: "layer 1 description changed", script: `document.querySelector('[data-data-layer-description="L0"]').textContent="不同描述"` },
+      { name: "extended contradictory description", expected: "layer 1 description changed", script: `document.querySelector('[data-data-layer-description="L0"]').append("但內容規格已改變")` },
       { name: "disclosure around register", expected: "register is user-collapsible", script: `(() => { const e=document.querySelector("[data-data-layer-register]"); const d=document.createElement("details"); d.open=true; e.before(d); d.append(e); })()` },
       { name: "table relocation", expected: "provenance source order changed", script: `document.querySelector("[data-data-layer-register]").before(document.querySelector(".table-wrap"))` },
       { name: "lost download", expected: "download link count is 41", script: `document.querySelector(".table-wrap a[download]").remove()` },
+      { name: "changed download destination", expected: "download row 1 changed", script: `document.querySelector(".table-wrap a[download]").setAttribute("href", "/data/l0/wrong.json")` },
+      { name: "reordered download rows", expected: "download row 1 changed", script: `(() => { const rows=document.querySelectorAll(".table-wrap tbody > tr"); rows[1].after(rows[0]); })()` },
+      { name: "hidden download", expected: "download row 1 link 1 is hidden", script: `document.querySelector(".table-wrap a[download]").hidden=true` },
       { name: "added L2 download", expected: "L2 unexpectedly has 1 download", script: `(() => { const a=document.createElement("a"); a.download=""; a.href="#"; document.querySelector('[data-data-layer-description="L2"]').append(a); })()` },
       { name: "lost L2 boundary", expected: "L2 boundary count is 0", script: `(() => { [...document.querySelectorAll(".note")].find((e)=>e.innerText.includes("L2 不發布"))?.remove(); })()` },
     ];
     const requiredNames = [
       "missing level", "duplicate level", "reordered level", "wrong term", "wrong use",
       "inaccessible use", "hidden use", "off-canvas use", "clipped use", "description change",
+      "extended contradictory description",
       "disclosure around register", "table relocation", "lost download", "added L2 download",
+      "changed download destination", "reordered download rows", "hidden download",
       "lost L2 boundary",
     ];
     for (const name of requiredNames) {
