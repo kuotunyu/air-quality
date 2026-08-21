@@ -242,6 +242,7 @@ const DETECTION_BROWSER_SELF_TEST = args.includes("--detection-browser-self-test
 const HEALTH_BROWSER_SELF_TEST = args.includes("--health-browser-self-test");
 const FORECAST_BROWSER_SELF_TEST = args.includes("--forecast-browser-self-test");
 const METHODS_BROWSER_SELF_TEST = args.includes("--methods-browser-self-test");
+const DATA_BROWSER_SELF_TEST = args.includes("--data-browser-self-test");
 const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
 const CDP_TIMEOUT_MS =
   Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
@@ -1798,6 +1799,11 @@ const METHOD_CASE_ROWS = [
   ["06", "用 AIC/BIC 當作模型好壞的證據", "#method-case-06"],
   ["07", "用一句話處理掉所有缺漏值", "#method-case-07"],
 ];
+const DATA_LAYER_ROWS = [
+  ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", ["每個測項一個 JSON", "網站直接讀這一層"]],
+  ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", ["每個測項一個 Parquet", "DuckDB-WASM 或桌面工具使用"]],
+  ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", ["完整逐時觀測", "不發布", "twair ingest", "twair build"]],
+];
 
 function forecastExactKeys(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value) &&
@@ -2446,6 +2452,178 @@ function methodsCaseIndexProblems(state, viewport) {
     if (!Number.isFinite(landmarks.index?.top) || landmarks.index.top >= viewport.height) {
       problems.push(`${scope}case index does not enter the first viewport`);
     }
+  }
+  if (
+    !Number.isFinite(state?.document?.clientWidth) ||
+    !Number.isFinite(state?.document?.scrollWidth) ||
+    state.document.scrollWidth > state.document.clientWidth
+  ) {
+    problems.push(`${scope}document scrolls sideways`);
+  }
+  return problems;
+}
+
+function dataProvenanceRegisterProblems(state, viewport) {
+  const modeLabels = { normal: "", "no-js": "no-JavaScript ", print: "print ", zoom: "zoom " };
+  if (!Object.prototype.hasOwnProperty.call(modeLabels, state?.mode)) {
+    return ["data provenance register mode is invalid"];
+  }
+  const scope = modeLabels[state.mode];
+  const problems = [];
+  if (state?.counts?.registers !== 1) {
+    problems.push(`${scope}register count is ${String(state?.counts?.registers)}, expected 1`);
+  }
+  if (state?.register) {
+    problems.push(...healthInspectionProblems(state.register, "register", scope, viewport));
+  }
+  if (state?.counts?.terms !== DATA_LAYER_ROWS.length) {
+    problems.push(`${scope}layer term hook inventory changed`);
+  }
+  if (state?.counts?.uses !== DATA_LAYER_ROWS.length) {
+    problems.push(`${scope}layer use hook inventory changed`);
+  }
+  if (state?.counts?.descriptions !== DATA_LAYER_ROWS.length) {
+    problems.push(`${scope}layer description hook inventory changed`);
+  }
+  if (!Array.isArray(state?.layers) || state.layers.length !== DATA_LAYER_ROWS.length) {
+    problems.push(`${scope}layer inventory changed`);
+  } else {
+    for (const [index, contract] of DATA_LAYER_ROWS.entries()) {
+      const row = state.layers[index];
+      const [level, term, useText, descriptionFragments] = contract;
+      if (row?.level !== level) problems.push(`${scope}layer ${index + 1} identity changed`);
+      if (healthTextIdentity(row?.term) !== healthTextIdentity(term)) {
+        problems.push(`${scope}layer ${index + 1} term changed`);
+      }
+      if (healthTextIdentity(row?.useText) !== healthTextIdentity(useText)) {
+        problems.push(`${scope}layer ${index + 1} use changed`);
+      }
+      if (healthTextIdentity(row?.accessibleUse) !== healthTextIdentity(useText)) {
+        problems.push(`${scope}layer ${index + 1} accessible use changed`);
+      }
+      if (!descriptionFragments.every((fragment) => row?.descriptionText?.includes(fragment))) {
+        problems.push(`${scope}layer ${index + 1} description changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(
+          row?.termInspection,
+          `layer ${index + 1} term`,
+          scope,
+          viewport,
+        ),
+        ...healthInspectionProblems(
+          row?.useInspection,
+          `layer ${index + 1} use`,
+          scope,
+          viewport,
+        ),
+        ...healthInspectionProblems(
+          row?.descriptionInspection,
+          `layer ${index + 1} description`,
+          scope,
+          viewport,
+        ),
+      );
+    }
+    const visualRows = state.layers.map((row) => ({ inspection: row?.termInspection }));
+    if (!healthRowsAreVisuallyOrdered(visualRows)) {
+      problems.push(`${scope}layer visual order changed`);
+    }
+    for (const [index, row] of state.layers.entries()) {
+      if (
+        !Number.isFinite(row?.termInspection?.sourceIndex) ||
+        !Number.isFinite(row?.useInspection?.sourceIndex) ||
+        !Number.isFinite(row?.descriptionInspection?.sourceIndex) ||
+        row.termInspection.sourceIndex >= row.useInspection.sourceIndex ||
+        row.useInspection.sourceIndex >= row.descriptionInspection.sourceIndex
+      ) {
+        problems.push(`${scope}layer ${index + 1} definition pairing changed`);
+      }
+      if (
+        !Number.isFinite(row?.termInspection?.top) ||
+        !Number.isFinite(row?.useInspection?.top) ||
+        row.useInspection.top <= row.termInspection.top
+      ) {
+        problems.push(`${scope}layer ${index + 1} term/use visual order changed`);
+      }
+    }
+  }
+
+  if (state?.counts?.tables !== 1) {
+    problems.push(`${scope}download table count is ${String(state?.counts?.tables)}, expected 1`);
+  }
+  if (state?.table) {
+    problems.push(...healthInspectionProblems(state.table, "download table", scope, viewport));
+  }
+  if (state?.counts?.bodyRows !== 21) {
+    problems.push(`${scope}download row count is ${String(state?.counts?.bodyRows)}, expected 21`);
+  }
+  if (state?.counts?.downloads !== 42) {
+    problems.push(`${scope}download link count is ${String(state?.counts?.downloads)}, expected 42`);
+  }
+  if (state?.counts?.l2Downloads !== 0) {
+    problems.push(`${scope}L2 unexpectedly has ${String(state?.counts?.l2Downloads)} download`);
+  }
+  const tableWrapper = state?.tableWrapper;
+  if (tableWrapper?.inspection) {
+    problems.push(
+      ...healthInspectionProblems(
+        tableWrapper.inspection,
+        "download table wrapper",
+        scope,
+        viewport,
+      ),
+    );
+  }
+  if (
+    !tableWrapper ||
+    !Number.isFinite(tableWrapper.clientWidth) ||
+    !Number.isFinite(tableWrapper.scrollWidth) ||
+    tableWrapper.scrollWidth < tableWrapper.clientWidth ||
+    (tableWrapper.scrollWidth > tableWrapper.clientWidth &&
+      !["auto", "scroll"].includes(tableWrapper.overflowX))
+  ) {
+    problems.push(`${scope}download table local scroller changed`);
+  }
+
+  if (state?.counts?.boundaries !== 1) {
+    problems.push(`${scope}L2 boundary count is ${String(state?.counts?.boundaries)}, expected 1`);
+  }
+  if (state?.l2Boundary) {
+    problems.push(
+      ...healthInspectionProblems(state.l2Boundary, "L2 boundary", scope, viewport),
+    );
+  }
+  if (
+    !state?.l2BoundaryText?.includes("L2 不發布，理由不是檔案太大") ||
+    !state?.l2BoundaryText?.includes("繞過這個矛盾而不是解決它")
+  ) {
+    problems.push(`${scope}L2 boundary text changed`);
+  }
+
+  const landmarks = state?.landmarks ?? {};
+  const ordered = [
+    landmarks.lede,
+    landmarks.register,
+    landmarks.table,
+    landmarks.licensing,
+    landmarks.l2Boundary,
+  ];
+  if (ordered.some((part) => !part)) {
+    problems.push(`${scope}provenance source-order landmark is missing`);
+  } else if (
+    !ordered.every(
+      (part, index) => index === 0 || ordered[index - 1].sourceIndex < part.sourceIndex,
+    )
+  ) {
+    problems.push(`${scope}provenance source order changed`);
+  }
+  if (
+    ((viewport?.width === 375 && viewport?.height === 812) ||
+      (viewport?.width === 1280 && viewport?.height === 720)) &&
+    (!Number.isFinite(landmarks.register?.top) || landmarks.register.top >= viewport.height)
+  ) {
+    problems.push(`${scope}register does not enter the first viewport`);
   }
   if (
     !Number.isFinite(state?.document?.clientWidth) ||
@@ -3380,8 +3558,157 @@ const methodsCaseIndexSnapshotExpression = (mode) => `(() => {
   };
 })()`;
 
+const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
+  const mode = ${JSON.stringify(mode)};
+  const compact = (value) => String(value ?? "").replace(/\\s+/g, " ").trim();
+  const allElements = [...document.querySelectorAll("main *")];
+  const sourceIndex = (element) => element ? allElements.indexOf(element) : -1;
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
+  const inspect = (element, allowedClipAncestor = null, allowSelfOverflow = false) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const ownStyle = getComputedStyle(element);
+    let rendered = rect.width > 0 && rect.height > 0;
+    let opacity = 1;
+    let hidden = false;
+    let ariaHidden = false;
+    let inert = false;
+    let detailsAncestor = false;
+    let cssClip = false;
+    let cssClipPath = false;
+    let visibleLeft = rect.left;
+    let visibleRight = rect.right;
+    let visibleTop = rect.top;
+    let visibleBottom = rect.bottom;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const nodeOpacity = Number(style.opacity);
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        style.visibility === "collapse" || !Number.isFinite(nodeOpacity) || nodeOpacity <= 0
+      ) rendered = false;
+      if (Number.isFinite(nodeOpacity)) opacity *= nodeOpacity;
+      hidden ||= node.hasAttribute("hidden");
+      ariaHidden ||= node.getAttribute("aria-hidden") === "true";
+      inert ||= node.hasAttribute("inert");
+      detailsAncestor ||= node instanceof HTMLDetailsElement;
+      cssClip ||= style.clip !== "auto";
+      cssClipPath ||= style.clipPath !== "none";
+      if (node !== element) {
+        const bounds = node.getBoundingClientRect();
+        if (node !== allowedClipAncestor && clippingOverflow.has(style.overflowX)) {
+          visibleLeft = Math.max(visibleLeft, bounds.left);
+          visibleRight = Math.min(visibleRight, bounds.right);
+        }
+        if (node !== allowedClipAncestor && clippingOverflow.has(style.overflowY)) {
+          visibleTop = Math.max(visibleTop, bounds.top);
+          visibleBottom = Math.min(visibleBottom, bounds.bottom);
+        }
+      }
+    }
+    return {
+      display: ownStyle.display,
+      visibility: ownStyle.visibility,
+      rendered,
+      hidden,
+      ariaHidden,
+      inert,
+      accessible: rendered && !hidden && !ariaHidden && !inert,
+      opacity,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      sourceIndex: sourceIndex(element),
+      cssOrder: Number(ownStyle.order) || 0,
+      selfOverflowX: !allowSelfOverflow && clippingOverflow.has(ownStyle.overflowX)
+        ? Math.max(0, element.scrollWidth - element.clientWidth) : 0,
+      selfOverflowY: !allowSelfOverflow && clippingOverflow.has(ownStyle.overflowY)
+        ? Math.max(0, element.scrollHeight - element.clientHeight) : 0,
+      ancestorClipped:
+        visibleRight - visibleLeft < rect.width - 1 ||
+        visibleBottom - visibleTop < rect.height - 1,
+      cssClip,
+      cssClipPath,
+      detailsAncestor,
+    };
+  };
+  const registers = [...document.querySelectorAll("[data-data-layer-register]")];
+  const terms = [...document.querySelectorAll("[data-data-layer]")];
+  const uses = [...document.querySelectorAll("[data-data-layer-use]")];
+  const descriptions = [...document.querySelectorAll("[data-data-layer-description]")];
+  const tables = [...document.querySelectorAll("main .table-wrap table")];
+  const table = tables[0] ?? null;
+  const tableWrapper = table?.closest(".table-wrap") ?? null;
+  const boundaries = [...document.querySelectorAll("main .note")].filter((element) =>
+    compact(element.innerText).includes("L2 不發布，理由不是檔案太大")
+  );
+  const register = registers[0] ?? null;
+  const lede = document.querySelector("main .chapter-intro .lede");
+  const licensing = [...document.querySelectorAll("main h2")].find((element) =>
+    compact(element.innerText) === "授權與再散布"
+  ) ?? null;
+  return {
+    mode,
+    counts: {
+      registers: registers.length,
+      terms: terms.length,
+      uses: uses.length,
+      descriptions: descriptions.length,
+      tables: tables.length,
+      bodyRows: table?.querySelectorAll("tbody > tr").length ?? 0,
+      downloads: table?.querySelectorAll("a[download]").length ?? 0,
+      l2Downloads: document.querySelectorAll(
+        '[data-data-layer="L2"] a[download], [data-data-layer="L2"] + [data-data-layer-description="L2"] a[download]'
+      ).length,
+      boundaries: boundaries.length,
+    },
+    register: inspect(register),
+    layers: terms.map((term) => {
+      const level = term.getAttribute("data-data-layer") ?? "";
+      const use = term.querySelector("[data-data-layer-use]");
+      const description = document.querySelector(
+        '[data-data-layer-description="' + CSS.escape(level) + '"]'
+      );
+      return {
+        level,
+        term: compact(term.querySelector("[data-data-layer-term]")?.innerText),
+        useText: compact(use?.innerText),
+        accessibleUse: null,
+        descriptionText: compact(description?.innerText),
+        termInspection: inspect(term.querySelector("[data-data-layer-term]")),
+        useInspection: inspect(use),
+        descriptionInspection: inspect(description),
+      };
+    }),
+    table: inspect(table, tableWrapper),
+    tableWrapper: tableWrapper ? {
+      inspection: inspect(tableWrapper, null, true),
+      clientWidth: tableWrapper.clientWidth,
+      scrollWidth: tableWrapper.scrollWidth,
+      overflowX: getComputedStyle(tableWrapper).overflowX,
+    } : null,
+    l2BoundaryText: compact(boundaries[0]?.innerText),
+    l2Boundary: inspect(boundaries[0] ?? null),
+    landmarks: {
+      lede: inspect(lede),
+      register: inspect(register),
+      table: inspect(table, tableWrapper),
+      licensing: inspect(licensing),
+      l2Boundary: inspect(boundaries[0] ?? null),
+    },
+    viewport: { width: innerWidth, height: innerHeight },
+    document: {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    },
+  };
+})()`;
+
 function textZoomRouteMatrixProblems(routes = TEXT_ZOOM_ROUTES) {
-  return ["/detection/", "/forecast/", "/health/", "/methods/"]
+  return ["/data/", "/detection/", "/forecast/", "/health/", "/methods/"]
     .filter((route) => !routes.includes(route))
     .map((route) => `200% text-zoom route matrix does not exercise ${route}`);
 }
@@ -6869,6 +7196,86 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality methods seven-case index self-test passed");
 
+  const dataPart = (top, sourceIndex, extra = {}) =>
+    healthPart(top, sourceIndex, { left: 20, right: 620, width: 600, height: 48, ...extra });
+  const completeDataRegister = {
+    mode: "normal",
+    counts: { registers: 1, terms: 3, uses: 3, descriptions: 3, tables: 1, bodyRows: 21, downloads: 42, l2Downloads: 0, boundaries: 1 },
+    register: dataPart(180, 20, { height: 270 }),
+    layers: DATA_LAYER_ROWS.map(([level, term, useText, descriptionFragments], index) => ({
+      level,
+      term,
+      useText,
+      accessibleUse: useText,
+      descriptionText: descriptionFragments.join("，"),
+      termInspection: dataPart(240 + index * 70, 30 + index * 3),
+      useInspection: dataPart(270 + index * 70, 31 + index * 3, { height: 24 }),
+      descriptionInspection: dataPart(300 + index * 70, 32 + index * 3),
+    })),
+    table: dataPart(540, 100, { height: 900 }),
+    tableWrapper: { inspection: dataPart(520, 99, { height: 940 }), clientWidth: 600, scrollWidth: 900, overflowX: "auto" },
+    l2BoundaryText: "L2 不發布，理由不是檔案太大。這個專案繞過這個矛盾而不是解決它。",
+    l2Boundary: dataPart(1620, 110, { height: 140 }),
+    landmarks: {
+      lede: dataPart(100, 10),
+      register: dataPart(180, 20, { height: 270 }),
+      table: dataPart(540, 100, { height: 900 }),
+      licensing: dataPart(1500, 105, { height: 80 }),
+      l2Boundary: dataPart(1620, 110, { height: 140 }),
+    },
+    viewport: { width: 1280, height: 720 },
+    document: { clientWidth: 1280, scrollWidth: 1280 },
+  };
+  const dataPreflightMisses = [];
+  const dataControlProblems = dataProvenanceRegisterProblems(completeDataRegister, completeDataRegister.viewport);
+  if (dataControlProblems.length) dataPreflightMisses.push(`complete control: ${dataControlProblems.join(", ")}`);
+  const dataMutations = [
+    ["invalid mode", "mode is invalid", (state) => { state.mode = "other"; }],
+    ["missing register", "register count is 0", (state) => { state.counts.registers = 0; state.register = null; }],
+    ["hidden register", "register is hidden", (state) => { state.register.hidden = true; }],
+    ["register disclosure", "register is user-collapsible", (state) => { state.register.detailsAncestor = true; }],
+    ["missing level", "layer inventory changed", (state) => { state.layers.pop(); state.counts.terms = 2; state.counts.uses = 2; state.counts.descriptions = 2; }],
+    ["duplicate use hook", "layer use hook inventory changed", (state) => { state.counts.uses = 4; }],
+    ["reordered levels", "layer 1 identity changed", (state) => { [state.layers[0], state.layers[1]] = [state.layers[1], state.layers[0]]; }],
+    ["wrong term", "layer 1 term changed", (state) => { state.layers[0].term = "L1 站-日"; }],
+    ["wrong use", "layer 1 use changed", (state) => { state.layers[0].useText = "另一種用途"; }],
+    ["wrong use AX", "layer 1 accessible use changed", (state) => { state.layers[0].accessibleUse = "另一種用途"; }],
+    ["changed description", "layer 1 description changed", (state) => { state.layers[0].descriptionText = "不同描述"; }],
+    ["hidden use", "layer 1 use is hidden", (state) => { state.layers[0].useInspection.hidden = true; }],
+    ["off-canvas use", "layer 1 use is horizontally off-canvas", (state) => { state.layers[0].useInspection.left = 1300; state.layers[0].useInspection.right = 1900; }],
+    ["clipped use", "layer 1 use is clipped by an ancestor", (state) => { state.layers[0].useInspection.ancestorClipped = true; }],
+    ["zero-area use", "layer 1 use has no rendered area", (state) => { state.layers[0].useInspection.height = 0; }],
+    ["visual level reorder", "layer visual order changed", (state) => { state.layers[0].termInspection.top = 800; }],
+    ["missing table", "download table count is 0", (state) => { state.counts.tables = 0; state.table = null; }],
+    ["lost table row", "download row count is 20", (state) => { state.counts.bodyRows = 20; }],
+    ["lost download", "download link count is 41", (state) => { state.counts.downloads = 41; }],
+    ["L2 download", "L2 unexpectedly has 1 download", (state) => { state.counts.l2Downloads = 1; }],
+    ["broken local scroller", "download table local scroller changed", (state) => { state.tableWrapper.overflowX = "visible"; }],
+    ["missing L2 boundary", "L2 boundary count is 0", (state) => { state.counts.boundaries = 0; state.l2Boundary = null; }],
+    ["changed L2 boundary", "L2 boundary text changed", (state) => { state.l2BoundaryText = "L2 不發布。"; }],
+    ["source reorder", "provenance source order changed", (state) => { state.landmarks.register.sourceIndex = 106; }],
+    ["register below viewport", "register does not enter the first viewport", (state) => { state.landmarks.register.top = 720; }],
+    ["document overflow", "document scrolls sideways", (state) => { state.document.scrollWidth = 1281; }],
+    ["no-JavaScript hidden use", "no-JavaScript layer 1 use is hidden", (state) => { state.mode = "no-js"; state.layers[0].useInspection.hidden = true; }],
+    ["print disclosure", "print register is user-collapsible", (state) => { state.mode = "print"; state.register.detailsAncestor = true; }],
+    ["zoom overflow", "zoom document scrolls sideways", (state) => { state.mode = "zoom"; state.document.scrollWidth = 1281; }],
+  ];
+  for (const [name, expectedProblem, mutate] of dataMutations) {
+    const state = structuredClone(completeDataRegister);
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before) {
+      dataPreflightMisses.push(`${name} mutation did not change the control`);
+      continue;
+    }
+    const problems = dataProvenanceRegisterProblems(state, state.viewport);
+    if (!problems.some((problem) => problem.includes(expectedProblem))) dataPreflightMisses.push(`${name} -> ${expectedProblem}`);
+  }
+  const missingDataZoomProblems = textZoomRouteMatrixProblems(TEXT_ZOOM_ROUTES.filter((route) => route !== "/data/"));
+  if (!missingDataZoomProblems.some((problem) => problem.includes("/data/"))) dataPreflightMisses.push("text-zoom route contract accepts a missing /data/");
+  if (dataPreflightMisses.length) throw new Error(`the Data preflight misses ${dataPreflightMisses.join("; ")}`);
+  console.log("site quality data provenance register self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -8364,6 +8771,16 @@ async function main() {
     return state;
   };
 
+  const dataProvenanceRegisterSnapshot = async (mode) => {
+    const state = await evaluate(dataProvenanceRegisterSnapshotExpression(mode));
+    if (!state) return state;
+    const [useTexts] = await accessibilityTextsForSelectors(["[data-data-layer-use]"]);
+    for (const [index, row] of state.layers.entries()) {
+      row.accessibleUse = useTexts[index] ?? null;
+    }
+    return state;
+  };
+
   const detectionBrowserMutationFailures = async (origin) => {
     const failures = [];
     await send("Emulation.setDeviceMetricsOverride", {
@@ -9288,6 +9705,75 @@ async function main() {
           `${mutation.name} did not reach ${JSON.stringify(mutation.expected)} ` +
             `(received ${problems.join(", ") || "no problems"})`,
         );
+      }
+    }
+    return failures;
+  };
+
+  const dataBrowserMutationFailures = async (origin) => {
+    const failures = [];
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    const mutations = [
+      { name: "missing level", expected: "layer inventory changed", script: `document.querySelector('[data-data-layer="L2"]').remove()` },
+      { name: "duplicate level", expected: "layer term hook inventory changed", script: `document.querySelector('[data-data-layer="L0"]').after(document.querySelector('[data-data-layer="L0"]').cloneNode(true))` },
+      { name: "reordered level", expected: "layer 1 identity changed", script: `(() => { const a=document.querySelector('[data-data-layer="L0"]'); const b=document.querySelector('[data-data-layer="L1"]'); b.after(a); })()` },
+      { name: "wrong term", expected: "layer 1 term changed", script: `document.querySelector('[data-data-layer="L0"] [data-data-layer-term]').textContent="另一層"` },
+      { name: "wrong use", expected: "layer 1 use changed", script: `document.querySelector('[data-data-layer="L0"] [data-data-layer-use]').textContent="另一種用途"` },
+      { name: "inaccessible use", expected: "layer 1 accessible use changed", script: `document.querySelector('[data-data-layer="L0"] [data-data-layer-use]').setAttribute("aria-label","另一種用途")` },
+      { name: "hidden use", expected: "layer 1 use is hidden", script: `document.querySelector('[data-data-layer="L0"] [data-data-layer-use]').hidden=true` },
+      { name: "off-canvas use", expected: "layer 1 use is horizontally off-canvas", script: `(() => { const e=document.querySelector('[data-data-layer="L0"] [data-data-layer-use]'); e.style.cssText="position:fixed;left:1400px;width:280px"; })()` },
+      { name: "clipped use", expected: "layer 1 use is clipped by an ancestor", script: `(() => { const e=document.querySelector('[data-data-layer="L0"] [data-data-layer-use]'); const w=document.createElement("span"); w.style.cssText="display:block;height:5px;overflow:hidden"; e.before(w); w.append(e); })()` },
+      { name: "description change", expected: "layer 1 description changed", script: `document.querySelector('[data-data-layer-description="L0"]').textContent="不同描述"` },
+      { name: "disclosure around register", expected: "register is user-collapsible", script: `(() => { const e=document.querySelector("[data-data-layer-register]"); const d=document.createElement("details"); d.open=true; e.before(d); d.append(e); })()` },
+      { name: "table relocation", expected: "provenance source order changed", script: `document.querySelector("[data-data-layer-register]").before(document.querySelector(".table-wrap"))` },
+      { name: "lost download", expected: "download link count is 41", script: `document.querySelector(".table-wrap a[download]").remove()` },
+      { name: "added L2 download", expected: "L2 unexpectedly has 1 download", script: `(() => { const a=document.createElement("a"); a.download=""; a.href="#"; document.querySelector('[data-data-layer-description="L2"]').append(a); })()` },
+      { name: "lost L2 boundary", expected: "L2 boundary count is 0", script: `(() => { [...document.querySelectorAll(".note")].find((e)=>e.innerText.includes("L2 不發布"))?.remove(); })()` },
+    ];
+    const requiredNames = [
+      "missing level", "duplicate level", "reordered level", "wrong term", "wrong use",
+      "inaccessible use", "hidden use", "off-canvas use", "clipped use", "description change",
+      "disclosure around register", "table relocation", "lost download", "added L2 download",
+      "lost L2 boundary",
+    ];
+    for (const name of requiredNames) {
+      if (!mutations.some((mutation) => mutation.name === name)) {
+        failures.push(`data browser mutation coverage is missing ${name}`);
+      }
+    }
+    if (failures.length) return failures;
+    const loadData = async (label) => {
+      await send("Page.navigate", { url: `${origin}/data/` });
+      return settled(evaluate, 8000, `/data/ ${label}`);
+    };
+    if (!(await loadData("browser mutation control"))) {
+      return ["browser mutation control never finished styling"];
+    }
+    const control = await dataProvenanceRegisterSnapshot("normal");
+    const controlProblems = dataProvenanceRegisterProblems(control, control?.viewport);
+    if (controlProblems.length) {
+      failures.push(`clean production snapshot rejected: ${controlProblems.join(", ")}`);
+    }
+    for (const mutation of mutations) {
+      if (!(await loadData(`browser mutation ${mutation.name}`))) {
+        failures.push(`${mutation.name} page never finished styling`);
+        continue;
+      }
+      await evaluate(mutation.script);
+      await settlePaint(evaluate);
+      const state = await dataProvenanceRegisterSnapshot("normal");
+      const problems = dataProvenanceRegisterProblems(state, state?.viewport);
+      if (!problems.some((problem) => problem.includes(mutation.expected))) {
+        failures.push(`${mutation.name} did not reach ${JSON.stringify(mutation.expected)} (received ${problems.join(", ") || "no problems"})`);
       }
     }
     return failures;
@@ -10914,7 +11400,7 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
-  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST) {
+  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST) {
     console.log("site-quality stage: detection browser mutations");
     const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
     if (DETECTION_BROWSER_SELF_TEST) {
@@ -10929,7 +11415,7 @@ async function main() {
       failures.push(`/detection/ browser mutation: ${problem}`);
     }
   }
-  if (!FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST) {
+  if (!FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST) {
     console.log("site-quality stage: health browser mutations");
     const healthMutationFailures = await healthBrowserMutationFailures(origin);
     if (HEALTH_BROWSER_SELF_TEST) {
@@ -10944,7 +11430,7 @@ async function main() {
       failures.push(`/health/ browser mutation: ${problem}`);
     }
   }
-  if (!METHODS_BROWSER_SELF_TEST) {
+  if (!METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST) {
     console.log("site-quality stage: forecast browser mutations");
     const forecastMutationFailures = await forecastBrowserMutationFailures(origin);
     if (FORECAST_BROWSER_SELF_TEST) {
@@ -10959,18 +11445,33 @@ async function main() {
       failures.push(`/forecast/ browser mutation: ${problem}`);
     }
   }
-  console.log("site-quality stage: methods browser mutations");
-  const methodsMutationFailures = await methodsBrowserMutationFailures(origin);
-  if (METHODS_BROWSER_SELF_TEST) {
-    if (methodsMutationFailures.length) {
-      for (const problem of methodsMutationFailures) console.log(`  FAIL: ${problem}`);
+  if (!DATA_BROWSER_SELF_TEST) {
+    console.log("site-quality stage: methods browser mutations");
+    const methodsMutationFailures = await methodsBrowserMutationFailures(origin);
+    if (METHODS_BROWSER_SELF_TEST) {
+      if (methodsMutationFailures.length) {
+        for (const problem of methodsMutationFailures) console.log(`  FAIL: ${problem}`);
+        return 1;
+      }
+      console.log("site quality methods browser mutation self-test passed");
+      return 0;
+    }
+    for (const problem of methodsMutationFailures) {
+      failures.push(`/methods/ browser mutation: ${problem}`);
+    }
+  }
+  console.log("site-quality stage: data browser mutations");
+  const dataMutationFailures = await dataBrowserMutationFailures(origin);
+  if (DATA_BROWSER_SELF_TEST) {
+    if (dataMutationFailures.length) {
+      for (const problem of dataMutationFailures) console.log(`  FAIL: ${problem}`);
       return 1;
     }
-    console.log("site quality methods browser mutation self-test passed");
+    console.log("site quality data browser mutation self-test passed");
     return 0;
   }
-  for (const problem of methodsMutationFailures) {
-    failures.push(`/methods/ browser mutation: ${problem}`);
+  for (const problem of dataMutationFailures) {
+    failures.push(`/data/ browser mutation: ${problem}`);
   }
   console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
@@ -11442,6 +11943,12 @@ async function main() {
         failures.push(`${route}: ${problem}`);
       }
     }
+    if (route === "/data/") {
+      const dataState = await dataProvenanceRegisterSnapshot("no-js");
+      for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
+        failures.push(`${route}: ${problem}`);
+      }
+    }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
         failures.push(`${route}: no-JavaScript ${problem}`);
@@ -11727,6 +12234,26 @@ async function main() {
           );
         }
         for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
+          failures.push(`${route} @${width}x${height} light opening: ${problem}`);
+        }
+      }
+      if (route === "/data/") {
+        const dataState = await dataProvenanceRegisterSnapshot("normal");
+        if ((width === 375 && height === 812) || (width === 1280 && height === 720)) {
+          console.log(
+            "site-quality data opening " +
+              JSON.stringify({
+                width,
+                height,
+                registerTop: dataState?.landmarks?.register?.top ?? null,
+                registerBottom: dataState?.landmarks?.register?.bottom ?? null,
+                horizontalOverflow:
+                  (dataState?.document?.scrollWidth ?? 0) -
+                  (dataState?.document?.clientWidth ?? 0),
+              }),
+          );
+        }
+        for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
           failures.push(`${route} @${width}x${height} light opening: ${problem}`);
         }
       }
@@ -12062,6 +12589,16 @@ async function main() {
     }
   }
 
+  await send("Page.navigate", { url: `${origin}/data/` });
+  if (!(await settled(evaluate, 8000, "/data/ print provenance register"))) {
+    failures.push("data print page never finished styling");
+  } else {
+    const dataState = await dataProvenanceRegisterSnapshot("print");
+    for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
+      failures.push(`/data/ print: ${problem}`);
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -12154,6 +12691,12 @@ async function main() {
         if (route === "/methods/") {
           const methodsState = await methodsCaseIndexSnapshot("normal");
           for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/data/") {
+          const dataState = await dataProvenanceRegisterSnapshot("normal");
+          for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
@@ -13616,6 +14159,12 @@ async function main() {
     if (route === "/methods/") {
       const methodsState = await methodsCaseIndexSnapshot("zoom");
       for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
+        failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (route === "/data/") {
+      const dataState = await dataProvenanceRegisterSnapshot("zoom");
+      for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
         failures.push(`${state}: ${problem}`);
       }
     }
