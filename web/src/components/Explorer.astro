@@ -100,7 +100,7 @@ const candidates = pollutantIndex.map((p) => ({
 }));
 ---
 
-<section id="explore" class="page">
+<section id="explore" class="page" data-explorer-workspace data-explorer-state="initial">
   <ChapterIntro slug="explore">
   <p class="lede">
     這是一個在讀者瀏覽器內執行的資料庫。沒有查詢伺服器，沒有 API 金鑰，
@@ -110,6 +110,24 @@ const candidates = pollutantIndex.map((p) => ({
 
   <div class="primary-tool" data-primary-evidence>
     <h2>公開站日資料的瀏覽器內查詢</h2>
+
+    <ol class="explorer-path" data-explorer-path aria-label="查詢步驟">
+      <li data-explorer-step="choose">
+        <span class="explorer-step-number">01</span>
+        <strong>選一個問題</strong>
+        <span>從六個現有範例開始；需要時再展開 SQL。</span>
+      </li>
+      <li data-explorer-step="execute">
+        <span class="explorer-step-number">02</span>
+        <strong>在瀏覽器內執行</strong>
+        <span>按下按鈕後才載入查詢引擎與可用資料。</span>
+      </li>
+      <li data-explorer-step="read">
+        <span class="explorer-step-number">03</span>
+        <strong>讀結果與限制</strong>
+        <span>把表格、空結果或錯誤，和下方限制一起讀。</span>
+      </li>
+    </ol>
 
     <p>資料是站-日層級。</p>
 
@@ -126,12 +144,12 @@ const candidates = pollutantIndex.map((p) => ({
       </style>
     </noscript>
 
-    <p class="note explorer-nojs">
+    <p class="note explorer-nojs" data-explorer-nojs>
       瀏覽器內查詢需要 JavaScript。SQL 範例仍可閱讀，但本頁不會下載查詢引擎或執行查詢；
       公開資料與重建方式見第十章。
     </p>
 
-    <div class="controls explorer-controls">
+    <div class="controls explorer-controls" data-explorer-controls>
       <label class="control-field">
         <span class="control-label">範例</span>
         <select id="example-select">
@@ -165,7 +183,7 @@ const candidates = pollutantIndex.map((p) => ({
     nothing until the button is pressed, and a disclosure that needs script to
     open would break that for a reader who never presses it.
   */}
-  <details class="sql-panel">
+  <details class="sql-panel" data-explorer-sql>
     <summary>檢視或修改查詢語句</summary>
     <textarea id="sql" spellcheck="false" aria-label="SQL 查詢" rows="10">{EXAMPLES[0].sql}</textarea>
   </details>
@@ -179,16 +197,16 @@ const candidates = pollutantIndex.map((p) => ({
     needs the table names before they write, not after they have already run
     something; and a list of identifiers is a list, not a paragraph.
   */}
-  <div id="tables" class="tables">
+  <div id="tables" class="tables" data-explorer-tables>
     <p class="tables-hint">按下執行之後，這裡會列出實際可以查的表。</p>
   </div>
 
   {/* `tabindex="-1"` so `reveal()` can move focus here after a run — not
       reachable by Tab, only programmatically, which is what a landing target
       wants. */}
-  <div id="result" class="result" tabindex="-1"></div>
+  <div id="result" class="result" tabindex="-1" data-explorer-result></div>
 
-  <div class="note caveat">
+  <div class="note caveat" data-explorer-caveat>
     <strong>查得到哪些測項，取決於這個站台放了哪些檔案。</strong>
     完整的 21 個測項共 54.6 MB，沒有全部進版本庫。
     要在本機拿到全部：<code>uv run twair export web</code>。
@@ -758,17 +776,60 @@ const candidates = pollutantIndex.map((p) => ({
     display: none;
   }
 
+  .explorer-path {
+    display: grid;
+    gap: var(--space-3);
+    margin: var(--space-4) 0;
+    padding: var(--space-3) 0;
+    border-block: 1px solid var(--line);
+    list-style: none;
+  }
+
+  .explorer-path li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0 var(--space-2);
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  .explorer-step-number {
+    grid-row: 1 / span 2;
+    color: var(--text-faint);
+    font-family: var(--font-numeric);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .explorer-path strong {
+    font-weight: 600;
+  }
+
+  .explorer-path span {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
   .explorer-controls .status {
     min-height: 1.7em;
   }
 
   @media (min-width: 40rem) {
+    .explorer-path {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     .explorer-controls {
       grid-template-columns: minmax(12rem, 1fr) auto;
     }
 
     .explorer-controls .status {
       grid-column: 1 / -1;
+    }
+  }
+
+  @media print {
+    .explorer-path {
+      grid-template-columns: 1fr;
     }
   }
 

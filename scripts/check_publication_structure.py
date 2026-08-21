@@ -10,6 +10,7 @@ the Astro source that produced it.
 from __future__ import annotations
 
 import copy
+import hashlib
 import itertools
 import json
 import math
@@ -988,6 +989,223 @@ def methods_case_index_failures_for_text(html: str) -> list[str]:
         figure_case = destination_by_case.get(case_number)
         if figure_case is None or not matches[0].is_inside(figure_case):
             failures.append(f"methods Figure {identifier[9:12].replace('-', '.')} moved cases")
+
+    return failures
+
+
+EXPLORER_STEPS = (
+    ("choose", "選一個問題", "從六個現有範例開始；需要時再展開 SQL。"),
+    ("execute", "在瀏覽器內執行", "按下按鈕後才載入查詢引擎與可用資料。"),
+    ("read", "讀結果與限制", "把表格、空結果或錯誤，和下方限制一起讀。"),
+)
+EXPLORER_EXAMPLES = (
+    (
+        "PM2.5 日均值最高的十個站日",
+        "e735ae4b9a33e6023ccd2eab276857aa1f1cf374f28fdfdcb14344f4b059977e",
+    ),
+    (
+        "各站年均，2024 年，由高至低",
+        "b266c697fd77dccf298f4e4accf5abcd28c4b260303a7d71b3e48f3010cce348",
+    ),
+    (
+        "超過日均標準的天數，逐月分布",
+        "bf115aa1b3ea851436eaacad70d089be906f39b0b1679209a4064f7e53da1dd2",
+    ),
+    (
+        "PM2.5 佔 PM10 的比例，逐年",
+        "ed756618fb4392be2f9cbdc4f3e352252daa1090ac4843398bdb4e308915b8bc",
+    ),
+    (
+        "PM2.5 大於 PM10 的比率（物理上不可能）",
+        "a4a9ca9cdbd02c7f8b82f0bb9a814e5961517f06d76afb6621cbd8539a98dae7",
+    ),
+    (
+        "覆蓋率不足而被扣住的日均值",
+        "a36aa61adc4041faf03ef9ceddab0c2f4a742c51357241ee70c6ecd2bd52c91d",
+    ),
+)
+
+
+def explorer_guided_workspace_failures_for_text(
+    html: str,
+    expected_examples: Sequence[tuple[str, str]] = EXPLORER_EXAMPLES,
+) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    elements = parser.elements
+
+    all_workspaces = [
+        element for element in elements if "data-explorer-workspace" in element.attributes
+    ]
+    workspaces = [element for element in all_workspaces if element.visible]
+    if len(workspaces) != 1 or workspaces != all_workspaces:
+        failures.append(f"explore workspace inventory changed: {len(workspaces)}")
+        workspace = None
+    else:
+        workspace = workspaces[0]
+        if workspace.attributes.get("data-explorer-state") != "initial":
+            failures.append("explore workspace initial state changed")
+
+    all_paths = [element for element in elements if "data-explorer-path" in element.attributes]
+    paths = [element for element in all_paths if element.visible]
+    if len(paths) != 1 or paths != all_paths:
+        failures.append(f"explore guide inventory changed: {len(paths)}")
+        path = None
+    else:
+        path = paths[0]
+        parent = path.parent
+        direct_children = [child for child in parent.children if child.visible] if parent else []
+        path_index = direct_children.index(path) if path in direct_children else -1
+        if (
+            path.tag != "ol"
+            or workspace is None
+            or not path.is_inside(workspace)
+            or parent is None
+            or "primary-tool" not in parent.classes
+            or "data-primary-evidence" not in parent.attributes
+            or path.attributes.get("aria-label") != "查詢步驟"
+            or path_index != 1
+            or direct_children[0].tag != "h2"
+            or _is_inside_disclosure(path)
+        ):
+            failures.append("explore guide structure changed")
+
+    all_steps = [element for element in elements if "data-explorer-step" in element.attributes]
+    steps = [element for element in all_steps if element.visible]
+    if len(steps) != len(EXPLORER_STEPS) or steps != all_steps:
+        failures.append(f"explore guide step inventory changed: {len(steps)}")
+    observed_keys = [step.attributes.get("data-explorer-step") for step in steps]
+    if observed_keys != [step[0] for step in EXPLORER_STEPS]:
+        failures.append(f"explore guide step order changed: {observed_keys!r}")
+    if path is not None:
+        direct_steps = [child for child in path.children if child.visible and child.tag == "li"]
+        if direct_steps != steps or len(direct_steps) != len(EXPLORER_STEPS):
+            failures.append("explore guide steps are not exact direct list items")
+
+    for index, (key, title, description) in enumerate(EXPLORER_STEPS):
+        if index >= len(steps):
+            continue
+        step = steps[index]
+        children = [child for child in step.children if child.visible]
+        if (
+            step.tag != "li"
+            or path is None
+            or step.parent is not path
+            or step.attributes.get("data-explorer-step") != key
+            or [child.tag for child in children] != ["span", "strong", "span"]
+            or "explorer-step-number" not in children[0].classes
+            or children[0].rendered_text() != f"{index + 1:02d}"
+            or children[1].rendered_text() != title
+            or children[2].rendered_text() != description
+        ):
+            failures.append(f"explore guide step {key} content changed")
+        if _is_inside_disclosure(step):
+            failures.append(f"explore guide step {key} became user-collapsible")
+
+    hook_contract = (
+        ("controls", "data-explorer-controls"),
+        ("sql", "data-explorer-sql"),
+        ("tables", "data-explorer-tables"),
+        ("result", "data-explorer-result"),
+        ("caveat", "data-explorer-caveat"),
+        ("no-js notice", "data-explorer-nojs"),
+    )
+    hooks: dict[str, Element | None] = {}
+    for label, attribute in hook_contract:
+        all_matches = [element for element in elements if attribute in element.attributes]
+        matches = [element for element in all_matches if element.visible]
+        if len(matches) != 1 or matches != all_matches:
+            failures.append(f"explore {label} inventory changed: {len(matches)}")
+            hooks[label] = None
+        else:
+            hooks[label] = matches[0]
+            if workspace is None or not matches[0].is_inside(workspace):
+                failures.append(f"explore {label} moved outside the workspace")
+
+    order_labels = ("controls", "sql", "tables", "result", "caveat")
+    ordered = [hooks[label] for label in order_labels]
+    if path is not None and all(element is not None for element in ordered):
+        observed_order = [
+            path.start_order,
+            *(element.start_order for element in ordered if element),
+        ]
+        if observed_order != sorted(observed_order):
+            failures.append("explore guide-to-result source order changed")
+
+    ids = {
+        identifier: [e for e in elements if e.attributes.get("id") == identifier]
+        for identifier in (
+            "example-select",
+            "run",
+            "status",
+            "sql",
+            "tables",
+            "result",
+            "explorer-examples",
+        )
+    }
+    for identifier in ("example-select", "run", "status", "sql", "tables", "result"):
+        visible = [element for element in ids[identifier] if element.visible]
+        if len(visible) != 1 or visible != ids[identifier]:
+            failures.append(f"explore #{identifier} inventory changed: {len(visible)}")
+
+    controls = hooks.get("controls")
+    selector = next((e for e in ids["example-select"] if e.visible), None)
+    run = next((e for e in ids["run"] if e.visible), None)
+    status = next((e for e in ids["status"] if e.visible), None)
+    if controls is not None:
+        for label, element in (("selector", selector), ("run control", run), ("status", status)):
+            if element is None or not element.is_inside(controls):
+                failures.append(f"explore {label} moved outside the controls")
+    if run is not None and (
+        run.tag != "button"
+        or run.attributes.get("type") != "button"
+        or run.rendered_text() != "執行查詢"
+    ):
+        failures.append("explore run control changed")
+    if status is not None and (
+        status.attributes.get("role") != "status" or status.attributes.get("aria-live") != "polite"
+    ):
+        failures.append("explore live status semantics changed")
+
+    labels: list[str] = []
+    if selector is not None:
+        options = [child for child in selector.children if child.visible and child.tag == "option"]
+        labels = [option.rendered_text() for option in options]
+        values = [option.attributes.get("value") for option in options]
+        if values != [str(index) for index in range(len(expected_examples))]:
+            failures.append(f"explore example option values changed: {values!r}")
+    expected_labels = [label for label, _ in expected_examples]
+    if labels != expected_labels:
+        failures.append(f"explore example labels changed: {labels!r}")
+
+    scripts = ids["explorer-examples"]
+    if len(scripts) != 1:
+        failures.append(f"explore SQL inventory changed: {len(scripts)}")
+    else:
+        script = scripts[0]
+        raw_json = "".join(script.source_text)
+        if script.tag != "script" or script.attributes.get("type") != "application/json":
+            failures.append("explore SQL script semantics changed")
+        try:
+            sql_values = json.loads(raw_json)
+        except json.JSONDecodeError:
+            failures.append("explore SQL inventory is not valid JSON")
+        else:
+            if not isinstance(sql_values, list) or any(
+                not isinstance(value, str) for value in sql_values
+            ):
+                failures.append("explore SQL inventory shape changed")
+            else:
+                digests = [
+                    hashlib.sha256(value.encode("utf-8")).hexdigest() for value in sql_values
+                ]
+                expected_digests = [digest for _, digest in expected_examples]
+                if len(sql_values) != len(expected_examples) or digests != expected_digests:
+                    failures.append(f"explore SQL identity or order changed: {digests!r}")
 
     return failures
 
@@ -2961,7 +3179,222 @@ def _site_destination_from_href(href: str | None) -> tuple[str, str] | None:
     return base, f"/{segments[-1]}/"
 
 
+def _run_explorer_preflight() -> None:
+    labels = [label for label, _ in EXPLORER_EXAMPLES]
+    sql_values = [f"SELECT {index};" for index in range(1, len(labels) + 1)]
+    expected_examples = tuple(
+        (label, hashlib.sha256(sql.encode("utf-8")).hexdigest())
+        for label, sql in zip(labels, sql_values, strict=True)
+    )
+    steps = [
+        (
+            f'<li data-explorer-step="{key}"><span class="explorer-step-number">'
+            f"{index + 1:02d}</span><strong>{title}</strong><span>{description}</span></li>"
+        )
+        for index, (key, title, description) in enumerate(EXPLORER_STEPS)
+    ]
+    guide = '<ol data-explorer-path aria-label="查詢步驟">' + "".join(steps) + "</ol>"
+    options = [f'<option value="{index}">{label}</option>' for index, label in enumerate(labels)]
+    controls = (
+        '<div data-explorer-controls><select id="example-select">'
+        + "".join(options)
+        + '</select><button id="run" type="button">執行查詢</button>'
+        '<span id="status" role="status" aria-live="polite"></span></div>'
+    )
+    sql_panel = (
+        '<details data-explorer-sql><summary>SQL</summary><textarea id="sql"></textarea></details>'
+    )
+    tables = '<div id="tables" data-explorer-tables>tables</div>'
+    result = '<div id="result" data-explorer-result tabindex="-1"></div>'
+    caveat = "<div data-explorer-caveat>caveat</div>"
+    nojs = "<p data-explorer-nojs>no JavaScript</p>"
+    script_json = json.dumps(sql_values, ensure_ascii=False, separators=(",", ":"))
+    script = f'<script id="explorer-examples" type="application/json">{script_json}</script>'
+    primary = (
+        '<div class="primary-tool" data-primary-evidence><h2>Tool</h2>'
+        f"{guide}{nojs}{controls}</div>"
+    )
+    valid = (
+        '<section data-explorer-workspace data-explorer-state="initial">'
+        f"{primary}{sql_panel}{tables}{result}{caveat}</section>{script}"
+    )
+    valid_failures = explorer_guided_workspace_failures_for_text(valid, expected_examples)
+    if valid_failures:
+        raise RuntimeError(
+            f"explore guided-workspace preflight rejected the valid control: {valid_failures}"
+        )
+
+    def changed(name: str, original: str, old: str, new: str) -> str:
+        if old not in original:
+            raise RuntimeError(f"explore mutation {name} did not reach its fixture seam")
+        mutated = original.replace(old, new, 1)
+        if mutated == original:
+            raise RuntimeError(f"explore mutation {name} did not change the fixture")
+        return mutated
+
+    reordered_steps = guide.replace(steps[0] + steps[1], steps[1] + steps[0], 1)
+    reordered_options = controls.replace(options[0] + options[1], options[1] + options[0], 1)
+    reordered_sql = json.dumps(
+        [sql_values[1], sql_values[0], *sql_values[2:]],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    mutations = {
+        "missing guide": (
+            "explore guide inventory changed",
+            changed("missing guide", valid, guide, ""),
+        ),
+        "duplicate guide": (
+            "explore guide inventory changed",
+            changed("duplicate guide", valid, guide, guide + guide),
+        ),
+        "missing step": (
+            "explore guide step inventory changed",
+            changed("missing step", valid, steps[0], ""),
+        ),
+        "extra step": (
+            "explore guide step inventory changed",
+            changed(
+                "extra step",
+                valid,
+                "</ol>",
+                '<li data-explorer-step="extra"><strong>Extra</strong><span>Extra</span></li></ol>',
+            ),
+        ),
+        "duplicate step": (
+            "explore guide step inventory changed",
+            changed("duplicate step", valid, steps[0], steps[0] + steps[0]),
+        ),
+        "reordered steps": (
+            "explore guide step order changed",
+            changed("reordered steps", valid, guide, reordered_steps),
+        ),
+        "renamed step": (
+            "explore guide step choose content changed",
+            changed(
+                "renamed step", valid, "<strong>選一個問題</strong>", "<strong>先選資料</strong>"
+            ),
+        ),
+        "hidden step": (
+            "explore guide step inventory changed",
+            changed(
+                "hidden step",
+                valid,
+                '<li data-explorer-step="choose">',
+                '<li data-explorer-step="choose" hidden>',
+            ),
+        ),
+        "template-only step": (
+            "explore guide step inventory changed",
+            changed("template-only step", valid, steps[0], f"<template>{steps[0]}</template>"),
+        ),
+        "disclosure-wrapped step": (
+            "explore guide steps are not exact direct list items",
+            changed(
+                "disclosure-wrapped step",
+                valid,
+                steps[0],
+                f"<details open>{steps[0]}</details>",
+            ),
+        ),
+        "guide after controls": (
+            "explore guide-to-result source order changed",
+            changed(
+                "guide after controls", valid, guide + nojs + controls, nojs + controls + guide
+            ),
+        ),
+        "SQL before controls": (
+            "explore guide-to-result source order changed",
+            changed(
+                "SQL before controls",
+                valid,
+                controls + "</div>" + sql_panel,
+                sql_panel + controls + "</div>",
+            ),
+        ),
+        "tables before SQL": (
+            "explore guide-to-result source order changed",
+            changed("tables before SQL", valid, sql_panel + tables, tables + sql_panel),
+        ),
+        "result before tables": (
+            "explore guide-to-result source order changed",
+            changed("result before tables", valid, tables + result, result + tables),
+        ),
+        "caveat before result": (
+            "explore guide-to-result source order changed",
+            changed("caveat before result", valid, result + caveat, caveat + result),
+        ),
+        "missing label": (
+            "explore example option values changed",
+            changed("missing label", valid, options[0], ""),
+        ),
+        "duplicate label": (
+            "explore example option values changed",
+            changed("duplicate label", valid, options[0], options[0] + options[0]),
+        ),
+        "reordered labels": (
+            "explore example option values changed",
+            changed("reordered labels", valid, controls, reordered_options),
+        ),
+        "changed label": (
+            "explore example labels changed",
+            changed("changed label", valid, labels[0], f"{labels[0]}（改）"),
+        ),
+        "missing SQL": (
+            "explore SQL identity or order changed",
+            changed(
+                "missing SQL",
+                valid,
+                script_json,
+                json.dumps(sql_values[1:], ensure_ascii=False, separators=(",", ":")),
+            ),
+        ),
+        "duplicate SQL": (
+            "explore SQL identity or order changed",
+            changed(
+                "duplicate SQL",
+                valid,
+                script_json,
+                json.dumps([sql_values[0], *sql_values], ensure_ascii=False, separators=(",", ":")),
+            ),
+        ),
+        "reordered SQL": (
+            "explore SQL identity or order changed",
+            changed("reordered SQL", valid, script_json, reordered_sql),
+        ),
+        "changed SQL": (
+            "explore SQL identity or order changed",
+            changed(
+                "changed SQL",
+                valid,
+                script_json,
+                json.dumps(
+                    ["SELECT 99;", *sql_values[1:]],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            ),
+        ),
+        "duplicate controls": (
+            "explore controls inventory changed",
+            changed("duplicate controls", valid, controls, controls + controls),
+        ),
+        "duplicate result": (
+            "explore result inventory changed",
+            changed("duplicate result", valid, result, result + result),
+        ),
+    }
+    for name, (expected_prefix, mutation) in mutations.items():
+        mutation_failures = explorer_guided_workspace_failures_for_text(mutation, expected_examples)
+        if not any(failure.startswith(expected_prefix) for failure in mutation_failures):
+            raise RuntimeError(
+                f"explore preflight did not reject {name} for the expected reason: "
+                f"{mutation_failures}"
+            )
+
+
 def _run_preflight() -> None:
+    _run_explorer_preflight()
     url_controls = [
         " ///trend/",
         "\t///trend/",
@@ -5845,6 +6278,8 @@ def main(argv: list[str]) -> int:
                             html, data_contract.descriptions, data_contract.downloads
                         )
                     )
+            elif slug == "explore":
+                failures.extend(explorer_guided_workspace_failures_for_text(html))
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible reading map")
             if slug == "stations":
