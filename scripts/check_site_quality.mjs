@@ -86,6 +86,7 @@ const TEXT_ZOOM_ROUTES = [
   "/space/",
   "/sources/",
   "/detection/",
+  "/forecast/",
   "/health/",
   "/methods/",
   "/explore/",
@@ -239,6 +240,7 @@ const PORT = Number(opt("port", "4399"));
 const SELF_TEST = args.includes("--self-test");
 const DETECTION_BROWSER_SELF_TEST = args.includes("--detection-browser-self-test");
 const HEALTH_BROWSER_SELF_TEST = args.includes("--health-browser-self-test");
+const FORECAST_BROWSER_SELF_TEST = args.includes("--forecast-browser-self-test");
 const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
 const CDP_TIMEOUT_MS =
   Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
@@ -1717,6 +1719,185 @@ function healthExpectedEvidenceFromPayload(payload) {
 
 const EXPECTED_HEALTH_EVIDENCE = healthExpectedEvidenceFromPayload(HEALTH_STORY_PAYLOAD);
 
+const FORECAST_STORY_PAYLOAD = JSON.parse(
+  readFileSync(join(process.cwd(), "web", "public", "data", "story", "forecast.json"), "utf8"),
+);
+const FORECAST_PAYLOAD_KEYS = [
+  "baselines",
+  "horizons",
+  "leakage_note",
+  "period",
+  "reading",
+  "skill_formula",
+  "target",
+  "validation",
+];
+const FORECAST_BASELINE_KEYS = ["label", "name", "what", "why"];
+const FORECAST_READING_KEYS = ["claim", "detail"];
+const FORECAST_HORIZON_KEYS = [
+  "climatology_rmse",
+  "horizon",
+  "model_r2",
+  "model_rmse",
+  "n",
+  "per_split",
+  "persistence_rmse",
+  "skill_climatology",
+  "skill_climatology_worst",
+  "skill_persistence",
+  "skill_persistence_worst",
+  "splits",
+  "splits_not_beating_persistence",
+  "stations",
+];
+const FORECAST_SPLIT_KEYS = ["model_r2", "skill_climatology", "skill_persistence", "split"];
+const FORECAST_HORIZONS = [1, 6, 24, 48];
+const FORECAST_READING_KEYS_ORDERED = [
+  "r2-skill",
+  "two-baselines",
+  "split-instability",
+  "shared-feature-bug",
+];
+const FORECAST_DECISION_ROWS = [
+  [
+    "error",
+    "誤差",
+    "先看圖 6.1：模型、persistence 與 climatology 的 RMSE 隨期距如何變化。",
+    "#evidence-6-1-title",
+  ],
+  [
+    "skill",
+    "基準優勢",
+    "再看圖 6.2：同一批預測相對 persistence 與 climatology 還剩多少優勢。",
+    "#evidence-6-2-title",
+  ],
+  [
+    "cost",
+    "計算代價",
+    "最後看成本表與圖 6.3：額外計算是否換得可用的準確度。",
+    "#forecast-cost",
+  ],
+];
+
+function forecastExactKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
+}
+
+function forecastFiniteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function forecastExpectedEvidenceFromPayload(payload) {
+  if (!forecastExactKeys(payload, FORECAST_PAYLOAD_KEYS)) {
+    throw new Error("forecast payload top-level shape changed");
+  }
+  if (
+    !Array.isArray(payload.period) || payload.period.length !== 2 ||
+    payload.period.some((year) => !Number.isInteger(year)) ||
+    JSON.stringify(payload.period) !== JSON.stringify([...payload.period].sort((a, b) => a - b))
+  ) {
+    throw new Error("forecast payload period changed");
+  }
+  for (const key of ["target", "validation", "skill_formula", "leakage_note"]) {
+    if (typeof payload[key] !== "string" || !payload[key].trim()) {
+      throw new Error(`forecast payload ${key} changed`);
+    }
+  }
+  if (!Array.isArray(payload.baselines) || payload.baselines.length !== 2) {
+    throw new Error("forecast payload baseline inventory changed");
+  }
+  const baselineNames = ["persistence", "climatology"];
+  const baselines = payload.baselines.map((row, index) => {
+    if (!forecastExactKeys(row, FORECAST_BASELINE_KEYS)) {
+      throw new Error(`forecast payload baseline ${index + 1} shape changed`);
+    }
+    for (const key of ["name", "label", "what", "why"]) {
+      if (typeof row[key] !== "string" || !row[key].trim()) {
+        throw new Error(`forecast payload baseline ${index + 1} text changed`);
+      }
+    }
+    if (row.name !== baselineNames[index]) {
+      throw new Error("forecast payload baseline identity or order changed");
+    }
+    return Object.freeze([row.name, row.label, row.what, row.why]);
+  });
+  if (!Array.isArray(payload.reading) || payload.reading.length !== 4) {
+    throw new Error("forecast payload reading inventory changed");
+  }
+  const readings = payload.reading.map((row, index) => {
+    if (!forecastExactKeys(row, FORECAST_READING_KEYS)) {
+      throw new Error(`forecast payload reading ${index + 1} shape changed`);
+    }
+    if (
+      typeof row.claim !== "string" || !row.claim.trim() ||
+      typeof row.detail !== "string" || !row.detail.trim()
+    ) {
+      throw new Error(`forecast payload reading ${index + 1} text changed`);
+    }
+    return Object.freeze([row.claim, row.detail]);
+  });
+  if (!Array.isArray(payload.horizons) || payload.horizons.length !== FORECAST_HORIZONS.length) {
+    throw new Error("forecast payload horizon inventory changed");
+  }
+  const observedHorizons = [];
+  for (const [index, row] of payload.horizons.entries()) {
+    if (!forecastExactKeys(row, FORECAST_HORIZON_KEYS)) {
+      throw new Error(`forecast payload horizon ${index + 1} shape changed`);
+    }
+    for (const key of ["horizon", "n", "stations", "splits", "splits_not_beating_persistence"]) {
+      if (!Number.isInteger(row[key]) || row[key] < 0) {
+        throw new Error(`forecast payload horizon ${index + 1} ${key} is invalid`);
+      }
+    }
+    for (const key of [
+      "model_r2",
+      "skill_persistence",
+      "skill_persistence_worst",
+      "skill_climatology",
+      "skill_climatology_worst",
+      "model_rmse",
+      "persistence_rmse",
+      "climatology_rmse",
+    ]) {
+      if (!forecastFiniteNumber(row[key])) {
+        throw new Error(`forecast payload horizon ${index + 1} metric is invalid`);
+      }
+    }
+    if (!Array.isArray(row.per_split) || row.per_split.length !== row.splits) {
+      throw new Error(`forecast payload horizon ${index + 1} split inventory changed`);
+    }
+    const splitNames = new Set();
+    for (const [splitIndex, split] of row.per_split.entries()) {
+      if (!forecastExactKeys(split, FORECAST_SPLIT_KEYS)) {
+        throw new Error(
+          `forecast payload horizon ${index + 1} split ${splitIndex + 1} shape changed`,
+        );
+      }
+      if (typeof split.split !== "string" || !split.split.trim() || splitNames.has(split.split)) {
+        throw new Error(`forecast payload horizon ${index + 1} split identity changed`);
+      }
+      splitNames.add(split.split);
+      for (const key of ["skill_persistence", "skill_climatology", "model_r2"]) {
+        if (!forecastFiniteNumber(split[key])) {
+          throw new Error(`forecast payload horizon ${index + 1} split metric is invalid`);
+        }
+      }
+    }
+    observedHorizons.push(row.horizon);
+  }
+  if (JSON.stringify(observedHorizons) !== JSON.stringify(FORECAST_HORIZONS)) {
+    throw new Error("forecast payload horizon identity or order changed");
+  }
+  return Object.freeze({
+    horizons: Object.freeze(observedHorizons),
+    readings: Object.freeze(readings),
+    baselines: Object.freeze(baselines),
+  });
+}
+
+const EXPECTED_FORECAST_EVIDENCE = forecastExpectedEvidenceFromPayload(FORECAST_STORY_PAYLOAD);
+
 function healthInspectionProblems(inspection, label, scope, viewport) {
   const problems = [];
   if (!inspection) return [`${scope}${label} inspection is missing`];
@@ -1930,6 +2111,198 @@ function healthAssumptionLedgerProblems(state, expected, viewport) {
     if (!Number.isFinite(visiblePlotHeight) || visiblePlotHeight < 180) {
       problems.push(`${scope}less than 180px of primary plot data is visible`);
     }
+  }
+  if (
+    !Number.isFinite(state?.document?.clientWidth) ||
+    !Number.isFinite(state?.document?.scrollWidth) ||
+    state.document.scrollWidth > state.document.clientWidth
+  ) {
+    problems.push(`${scope}document scrolls sideways`);
+  }
+  return problems;
+}
+
+function forecastHorizonDecisionProblems(state, expected, viewport) {
+  const modeLabels = { normal: "", "no-js": "no-JavaScript ", print: "print ", zoom: "zoom " };
+  if (!Object.prototype.hasOwnProperty.call(modeLabels, state?.mode)) {
+    return ["forecast horizon-decision mode is invalid"];
+  }
+  const scope = modeLabels[state.mode];
+  const problems = [];
+  const regions = [
+    ["decisionSheet", "decision sheet"],
+    ["readingBand", "reading band"],
+    ["baselineBand", "baseline band"],
+  ];
+  for (const [key, label] of regions) {
+    if (state?.counts?.[key] !== 1) {
+      problems.push(`${scope}${label} count is ${String(state?.counts?.[key])}, expected 1`);
+    }
+    if (state?.regions?.[key]) {
+      problems.push(...healthInspectionProblems(state.regions[key], label, scope, viewport));
+    }
+  }
+
+  const landmarks = state?.landmarks ?? {};
+  const landmarkKeys = [
+    "figure1Title",
+    "primaryPlot",
+    "decisionSheet",
+    "figure2Title",
+    "readingBand",
+    "baselineBand",
+    "cost",
+  ];
+  const landmarkLabels = {
+    figure1Title: "Figure 6.1 title",
+    primaryPlot: "primary plot",
+    decisionSheet: "decision sheet",
+    figure2Title: "Figure 6.2 title",
+    readingBand: "reading band",
+    baselineBand: "baseline band",
+    cost: "cost heading",
+  };
+  for (const key of landmarkKeys) {
+    const landmark = landmarks[key];
+    const label = landmarkLabels[key];
+    if (!landmark) {
+      problems.push(`${scope}${label} landmark is missing`);
+      continue;
+    }
+    if (
+      !["top", "right", "bottom", "left", "width", "height"].every(
+        (edge) => Number.isFinite(landmark[edge]),
+      ) ||
+      !Number.isInteger(landmark.sourceIndex) || landmark.sourceIndex < 0
+    ) {
+      problems.push(`${scope}${label} landmark geometry is invalid`);
+    }
+    if (landmark.cssOrder !== 0) problems.push(`${scope}${label} uses CSS order`);
+  }
+  const orderedLandmarks = landmarkKeys.map((key) => landmarks[key]);
+  if (orderedLandmarks.every(Boolean)) {
+    const sourceOrdered = orderedLandmarks.every(
+      (part, index) => index === 0 || orderedLandmarks[index - 1].sourceIndex < part.sourceIndex,
+    );
+    const visuallyOrdered = orderedLandmarks.every(
+      (part, index) => index === 0 || orderedLandmarks[index - 1].top < part.top,
+    );
+    if (!sourceOrdered || !visuallyOrdered) problems.push(`${scope}evidence order changed`);
+  }
+
+  const decisionRows = state?.decisionRows;
+  if (!Array.isArray(decisionRows) || decisionRows.length !== FORECAST_DECISION_ROWS.length) {
+    problems.push(`${scope}decision row inventory changed`);
+  } else {
+    if (state?.counts?.decisionRows !== FORECAST_DECISION_ROWS.length) {
+      problems.push(`${scope}decision row hook inventory changed`);
+    }
+    for (const [index, contract] of FORECAST_DECISION_ROWS.entries()) {
+      const row = decisionRows[index];
+      const expectedText = contract[1] + contract[2];
+      if (row?.key !== contract[0]) problems.push(`${scope}decision row ${index + 1} key changed`);
+      if (row?.label !== contract[1]) {
+        problems.push(`${scope}decision row ${index + 1} label changed`);
+      }
+      if (row?.bodyText !== contract[2]) {
+        problems.push(`${scope}decision row ${index + 1} body changed`);
+      }
+      if (row?.href !== contract[3]) {
+        problems.push(`${scope}decision row ${index + 1} link changed`);
+      }
+      if (healthTextIdentity(row?.accessibleText) !== healthTextIdentity(expectedText)) {
+        problems.push(`${scope}decision row ${index + 1} accessible text changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(row?.inspection, `decision row ${index + 1}`, scope, viewport),
+      );
+    }
+    if (!healthRowsAreVisuallyOrdered(decisionRows)) {
+      problems.push(`${scope}decision row visual order changed`);
+    }
+  }
+
+  const readingRows = state?.readingRows;
+  if (!Array.isArray(readingRows) || readingRows.length !== expected?.readings?.length) {
+    problems.push(`${scope}reading row inventory changed`);
+  } else {
+    if (state?.counts?.readingRows !== expected.readings.length) {
+      problems.push(`${scope}reading row hook inventory changed`);
+    }
+    for (const [index, contract] of expected.readings.entries()) {
+      const row = readingRows[index];
+      if (row?.key !== FORECAST_READING_KEYS_ORDERED[index]) {
+        problems.push(`${scope}reading row ${index + 1} key changed`);
+      }
+      if (row?.heading !== contract[0]) {
+        problems.push(`${scope}reading row ${index + 1} heading changed`);
+      }
+      if (row?.bodyText !== contract[1]) {
+        problems.push(`${scope}reading row ${index + 1} body changed`);
+      }
+      if (healthTextIdentity(row?.accessibleHeading) !== healthTextIdentity(contract[0])) {
+        problems.push(`${scope}reading row ${index + 1} accessible heading changed`);
+      }
+      if (healthTextIdentity(row?.accessibleBody) !== healthTextIdentity(contract[1])) {
+        problems.push(`${scope}reading row ${index + 1} accessible body changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(row?.inspection, `reading row ${index + 1}`, scope, viewport),
+      );
+    }
+    if (!healthRowsAreVisuallyOrdered(readingRows)) {
+      problems.push(`${scope}reading row visual order changed`);
+    }
+  }
+
+  const baselineRows = state?.baselineRows;
+  if (!Array.isArray(baselineRows) || baselineRows.length !== expected?.baselines?.length) {
+    problems.push(`${scope}baseline row inventory changed`);
+  } else {
+    if (state?.counts?.baselineRows !== expected.baselines.length) {
+      problems.push(`${scope}baseline row hook inventory changed`);
+    }
+    for (const [index, contract] of expected.baselines.entries()) {
+      const row = baselineRows[index];
+      if (row?.key !== contract[0]) problems.push(`${scope}baseline row ${index + 1} key changed`);
+      if (healthTextIdentity(row?.heading) !== healthTextIdentity(contract[0] + contract[1])) {
+        problems.push(`${scope}baseline row ${index + 1} heading changed`);
+      }
+      if (row?.whatText !== contract[2]) {
+        problems.push(`${scope}baseline row ${index + 1} what changed`);
+      }
+      if (row?.whyText !== contract[3]) {
+        problems.push(`${scope}baseline row ${index + 1} why changed`);
+      }
+      if (
+        healthTextIdentity(row?.accessibleText) !==
+        healthTextIdentity(contract[0] + contract[1] + contract[2] + contract[3])
+      ) {
+        problems.push(`${scope}baseline row ${index + 1} accessible text changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(row?.inspection, `baseline row ${index + 1}`, scope, viewport),
+      );
+    }
+    if (!healthRowsAreVisuallyOrdered(baselineRows)) {
+      problems.push(`${scope}baseline row visual order changed`);
+    }
+  }
+
+  const occurrenceCount = (text, value) => String(text ?? "").split(value).length - 1;
+  for (const [, , body] of FORECAST_DECISION_ROWS) {
+    if (occurrenceCount(state?.pageText, body) !== 1) {
+      problems.push(`${scope}decision sentence locality changed ${JSON.stringify(body)}`);
+    }
+  }
+  if (JSON.stringify(expected?.horizons) !== JSON.stringify(FORECAST_HORIZONS)) {
+    problems.push(`${scope}payload no longer supports the horizon decision`);
+  }
+  if (
+    viewport?.width === 375 && viewport?.height === 812 &&
+    (!Number.isFinite(landmarks.primaryPlot?.top) || landmarks.primaryPlot.top >= viewport.height)
+  ) {
+    problems.push(`${scope}primary plot does not enter the first viewport`);
   }
   if (
     !Number.isFinite(state?.document?.clientWidth) ||
@@ -2588,8 +2961,158 @@ const healthAssumptionLedgerSnapshotExpression = (mode) => `(() => {
   };
 })()`;
 
+const forecastHorizonDecisionSnapshotExpression = (mode) => `(() => {
+  const mode = ${JSON.stringify(mode)};
+  const compact = (value) => String(value ?? "").replace(/\\s+/g, " ").trim();
+  const allElements = [...document.querySelectorAll("main *")];
+  const sourceIndex = (element) => element ? allElements.indexOf(element) : -1;
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
+  const inspect = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const ownStyle = getComputedStyle(element);
+    let rendered = rect.width > 0 && rect.height > 0;
+    let opacity = 1;
+    let hidden = false;
+    let ariaHidden = false;
+    let inert = false;
+    let detailsAncestor = false;
+    let cssClip = false;
+    let cssClipPath = false;
+    let visibleLeft = rect.left;
+    let visibleRight = rect.right;
+    let visibleTop = rect.top;
+    let visibleBottom = rect.bottom;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const nodeOpacity = Number(style.opacity);
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        style.visibility === "collapse" || !Number.isFinite(nodeOpacity) || nodeOpacity <= 0
+      ) rendered = false;
+      if (Number.isFinite(nodeOpacity)) opacity *= nodeOpacity;
+      hidden ||= node.hasAttribute("hidden");
+      ariaHidden ||= node.getAttribute("aria-hidden") === "true";
+      inert ||= node.hasAttribute("inert");
+      detailsAncestor ||= node instanceof HTMLDetailsElement;
+      cssClip ||= style.clip !== "auto";
+      cssClipPath ||= style.clipPath !== "none";
+      if (node !== element) {
+        const bounds = node.getBoundingClientRect();
+        if (clippingOverflow.has(style.overflowX)) {
+          visibleLeft = Math.max(visibleLeft, bounds.left);
+          visibleRight = Math.min(visibleRight, bounds.right);
+        }
+        if (clippingOverflow.has(style.overflowY)) {
+          visibleTop = Math.max(visibleTop, bounds.top);
+          visibleBottom = Math.min(visibleBottom, bounds.bottom);
+        }
+      }
+    }
+    return {
+      display: ownStyle.display,
+      visibility: ownStyle.visibility,
+      rendered,
+      hidden,
+      ariaHidden,
+      inert,
+      accessible: rendered && !hidden && !ariaHidden && !inert,
+      opacity,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      sourceIndex: sourceIndex(element),
+      cssOrder: Number(ownStyle.order) || 0,
+      selfOverflowX: clippingOverflow.has(ownStyle.overflowX)
+        ? Math.max(0, element.scrollWidth - element.clientWidth) : 0,
+      selfOverflowY: clippingOverflow.has(ownStyle.overflowY)
+        ? Math.max(0, element.scrollHeight - element.clientHeight) : 0,
+      ancestorClipped:
+        visibleRight - visibleLeft < rect.width - 1 ||
+        visibleBottom - visibleTop < rect.height - 1,
+      cssClip,
+      cssClipPath,
+      detailsAncestor,
+    };
+  };
+  const sheets = [...document.querySelectorAll("[data-forecast-decision-sheet]")];
+  const readingBands = [...document.querySelectorAll("[data-forecast-reading-band]")];
+  const baselineBands = [...document.querySelectorAll("[data-forecast-baseline-band]")];
+  const sheet = sheets[0] ?? null;
+  const readingBand = readingBands[0] ?? null;
+  const baselineBand = baselineBands[0] ?? null;
+  const decisionRows = [...(sheet?.querySelectorAll(":scope > ol > li") ?? [])];
+  const readingRows = [...(readingBand?.children ?? [])];
+  const baselineRows = [...(baselineBand?.children ?? [])];
+  const figure1Title = document.querySelector("#evidence-6-1-title");
+  const primaryPlot = document.querySelector("[data-primary-evidence] [data-primary-plot]");
+  const figure2Title = document.querySelector("#evidence-6-2-title");
+  const cost = document.querySelector("#forecast-cost");
+  return {
+    mode,
+    counts: {
+      decisionSheet: sheets.length,
+      readingBand: readingBands.length,
+      baselineBand: baselineBands.length,
+      decisionRows: decisionRows.length,
+      readingRows: readingRows.length,
+      baselineRows: baselineRows.length,
+    },
+    regions: {
+      decisionSheet: inspect(sheet),
+      readingBand: inspect(readingBand),
+      baselineBand: inspect(baselineBand),
+    },
+    landmarks: {
+      figure1Title: inspect(figure1Title),
+      primaryPlot: inspect(primaryPlot),
+      decisionSheet: inspect(sheet),
+      figure2Title: inspect(figure2Title),
+      readingBand: inspect(readingBand),
+      baselineBand: inspect(baselineBand),
+      cost: inspect(cost),
+    },
+    decisionRows: decisionRows.map((row) => {
+      const link = row.querySelector(":scope > a");
+      return {
+        key: row.getAttribute("data-forecast-decision") ?? "",
+        label: compact(link?.querySelector(":scope > strong")?.innerText),
+        bodyText: compact(link?.querySelector(":scope > p")?.innerText),
+        href: link?.getAttribute("href") ?? "",
+        accessibleText: null,
+        inspection: inspect(row),
+      };
+    }),
+    readingRows: readingRows.map((row) => ({
+      key: row.getAttribute("data-forecast-reading") ?? "",
+      heading: compact(row.querySelector(":scope > h2")?.innerText),
+      bodyText: compact(row.querySelector(":scope > p")?.innerText),
+      accessibleHeading: null,
+      accessibleBody: null,
+      inspection: inspect(row),
+    })),
+    baselineRows: baselineRows.map((row) => ({
+      key: row.getAttribute("data-forecast-baseline") ?? "",
+      heading: compact(row.querySelector(":scope > h2")?.innerText),
+      whatText: compact(row.querySelector(":scope > p:first-of-type")?.innerText),
+      whyText: compact(row.querySelector(":scope > p:last-of-type")?.innerText),
+      accessibleText: null,
+      inspection: inspect(row),
+    })),
+    pageText: compact(document.querySelector("main")?.innerText),
+    viewport: { width: innerWidth, height: innerHeight },
+    document: {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    },
+  };
+})()`;
+
 function textZoomRouteMatrixProblems(routes = TEXT_ZOOM_ROUTES) {
-  return ["/detection/", "/health/"]
+  return ["/detection/", "/forecast/", "/health/"]
     .filter((route) => !routes.includes(route))
     .map((route) => `200% text-zoom route matrix does not exercise ${route}`);
 }
@@ -5643,6 +6166,238 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality health assumption-ledger self-test passed");
 
+  const invalidForecastPayloads = [
+    ["top-level shape", "top-level shape changed", (payload) => { payload.extra = true; }],
+    ["baseline count", "baseline inventory changed", (payload) => { payload.baselines.pop(); }],
+    ["baseline order", "baseline identity or order changed", (payload) => {
+      payload.baselines.reverse();
+    }],
+    ["reading count", "reading inventory changed", (payload) => { payload.reading.pop(); }],
+    ["empty reading", "reading 1 text changed", (payload) => { payload.reading[0].claim = ""; }],
+    ["horizon count", "horizon inventory changed", (payload) => { payload.horizons.pop(); }],
+    ["horizon order", "horizon identity or order changed", (payload) => {
+      payload.horizons.reverse();
+    }],
+    ["boolean horizon", "horizon 1 horizon is invalid", (payload) => {
+      payload.horizons[0].horizon = true;
+    }],
+    ["non-finite metric", "horizon 1 metric is invalid", (payload) => {
+      payload.horizons[0].model_r2 = Number.NaN;
+    }],
+    ["duplicate split", "horizon 1 split identity changed", (payload) => {
+      payload.horizons[0].per_split[1].split = payload.horizons[0].per_split[0].split;
+    }],
+  ];
+  for (const [name, expectedError, mutate] of invalidForecastPayloads) {
+    const payload = structuredClone(FORECAST_STORY_PAYLOAD);
+    const before = JSON.stringify(payload);
+    mutate(payload);
+    if (JSON.stringify(payload) === before) {
+      throw new Error(`forecast payload mutation ${name} did not change the control`);
+    }
+    try {
+      forecastExpectedEvidenceFromPayload(payload);
+    } catch (error) {
+      if (!String(error?.message ?? error).includes(expectedError)) {
+        throw new Error(
+          `forecast payload mutation ${name} raised ${String(error)}, expected ${expectedError}`,
+        );
+      }
+      continue;
+    }
+    throw new Error(`forecast payload parser accepts ${name}`);
+  }
+  const forecastPart = (top, sourceIndex, extra = {}) => healthPart(top, sourceIndex, extra);
+  const completeForecastDecision = {
+    mode: "normal",
+    counts: {
+      decisionSheet: 1,
+      readingBand: 1,
+      baselineBand: 1,
+      decisionRows: 3,
+      readingRows: 4,
+      baselineRows: 2,
+    },
+    regions: {
+      decisionSheet: forecastPart(390, 30),
+      readingBand: forecastPart(900, 80),
+      baselineBand: forecastPart(1120, 100),
+    },
+    landmarks: {
+      figure1Title: forecastPart(180, 10),
+      primaryPlot: forecastPart(250, 20),
+      decisionSheet: forecastPart(390, 30),
+      figure2Title: forecastPart(720, 60),
+      readingBand: forecastPart(900, 80),
+      baselineBand: forecastPart(1120, 100),
+      cost: forecastPart(1400, 120),
+    },
+    decisionRows: FORECAST_DECISION_ROWS.map((row, index) => ({
+      key: row[0],
+      label: row[1],
+      bodyText: row[2],
+      href: row[3],
+      accessibleText: row[1] + row[2],
+      inspection: forecastPart(410 + index * 50, 31 + index),
+    })),
+    readingRows: EXPECTED_FORECAST_EVIDENCE.readings.map((row, index) => ({
+      key: FORECAST_READING_KEYS_ORDERED[index],
+      heading: row[0],
+      bodyText: row[1],
+      accessibleHeading: row[0],
+      accessibleBody: row[1],
+      inspection: forecastPart(920 + index * 50, 81 + index),
+    })),
+    baselineRows: EXPECTED_FORECAST_EVIDENCE.baselines.map((row, index) => ({
+      key: row[0],
+      heading: row[0] + " " + row[1],
+      whatText: row[2],
+      whyText: row[3],
+      accessibleText: row.join(""),
+      inspection: forecastPart(1140 + index * 70, 101 + index),
+    })),
+    pageText: FORECAST_DECISION_ROWS.map((row) => row[2]).join(" "),
+    viewport: { width: 375, height: 812 },
+    document: { clientWidth: 375, scrollWidth: 375 },
+  };
+  const forecastPreflightMisses = [];
+  const forecastControlProblems = forecastHorizonDecisionProblems(
+    completeForecastDecision,
+    EXPECTED_FORECAST_EVIDENCE,
+    completeForecastDecision.viewport,
+  );
+  if (forecastControlProblems.length) {
+    forecastPreflightMisses.push(`complete control: ${forecastControlProblems.join(", ")}`);
+  }
+  const forecastMutations = [
+    ["invalid mode", "mode is invalid", (state) => { state.mode = "other"; }],
+    ["missing sheet", "decision sheet count is 0", (state) => {
+      state.counts.decisionSheet = 0;
+      state.regions.decisionSheet = null;
+    }],
+    ["extra reading band", "reading band count is 2", (state) => {
+      state.counts.readingBand = 2;
+    }],
+    ["hidden sheet", "decision sheet is hidden", (state) => {
+      state.regions.decisionSheet.hidden = true;
+    }],
+    ["aria-hidden band", "reading band is aria-hidden", (state) => {
+      state.regions.readingBand.ariaHidden = true;
+    }],
+    ["zero-opacity baseline", "baseline band opacity is zero", (state) => {
+      state.regions.baselineBand.opacity = 0;
+    }],
+    ["zero area", "decision sheet has no rendered area", (state) => {
+      state.regions.decisionSheet.width = 0;
+    }],
+    ["self overflow", "reading band clips its own content", (state) => {
+      state.regions.readingBand.selfOverflowX = 3;
+    }],
+    ["ancestor clip", "baseline band is clipped by an ancestor", (state) => {
+      state.regions.baselineBand.ancestorClipped = true;
+    }],
+    ["CSS clip", "decision sheet uses CSS clip", (state) => {
+      state.regions.decisionSheet.cssClip = true;
+    }],
+    ["off canvas", "baseline band is horizontally off-canvas", (state) => {
+      state.regions.baselineBand.left = 400;
+      state.regions.baselineBand.right = 700;
+    }],
+    ["details", "reading band is user-collapsible", (state) => {
+      state.regions.readingBand.detailsAncestor = true;
+    }],
+    ["missing decision", "decision row inventory changed", (state) => {
+      state.decisionRows.pop();
+      state.counts.decisionRows = 2;
+    }],
+    ["decision key", "decision row 1 key changed", (state) => {
+      state.decisionRows[0].key = "skill";
+    }],
+    ["decision text", "decision row 1 body changed", (state) => {
+      state.decisionRows[0].bodyText = "不同說明";
+    }],
+    ["decision AX", "decision row 1 accessible text changed", (state) => {
+      state.decisionRows[0].accessibleText = "另一個名稱";
+    }],
+    ["decision link", "decision row 1 link changed", (state) => {
+      state.decisionRows[0].href = "#forecast-cost";
+    }],
+    ["decision visual reorder", "decision row visual order changed", (state) => {
+      state.decisionRows[0].inspection.top = 600;
+    }],
+    ["reading reorder", "reading row 1 key changed", (state) => {
+      state.readingRows.reverse();
+    }],
+    ["reading body", "reading row 1 body changed", (state) => {
+      state.readingRows[0].bodyText = "不同解讀";
+    }],
+    ["reading AX", "reading row 1 accessible heading changed", (state) => {
+      state.readingRows[0].accessibleHeading = "不同標題";
+    }],
+    ["baseline text", "baseline row 1 what changed", (state) => {
+      state.baselineRows[0].whatText = "不同基準";
+    }],
+    ["baseline AX", "baseline row 1 accessible text changed", (state) => {
+      state.baselineRows[0].accessibleText = "不同基準";
+    }],
+    ["source order", "evidence order changed", (state) => {
+      state.landmarks.decisionSheet.sourceIndex = 70;
+    }],
+    ["computed order", "Figure 6.2 title uses CSS order", (state) => {
+      state.landmarks.figure2Title.cssOrder = 2;
+    }],
+    ["duplicate sentence", "decision sentence locality changed", (state) => {
+      state.pageText += " " + FORECAST_DECISION_ROWS[0][2];
+    }],
+    ["mobile plot below viewport", "primary plot does not enter the first viewport", (state) => {
+      state.landmarks.primaryPlot.top = 812;
+    }],
+    ["page overflow", "document scrolls sideways", (state) => {
+      state.document.scrollWidth = 376;
+    }],
+    ["no-JavaScript missing sheet", "no-JavaScript decision sheet count is 0", (state) => {
+      state.mode = "no-js";
+      state.counts.decisionSheet = 0;
+      state.regions.decisionSheet = null;
+    }],
+    ["print hidden band", "print baseline band display is none", (state) => {
+      state.mode = "print";
+      state.regions.baselineBand.display = "none";
+    }],
+    ["zoom order", "zoom evidence order changed", (state) => {
+      state.mode = "zoom";
+      state.landmarks.cost.top = 800;
+      state.landmarks.baselineBand.top = 900;
+    }],
+  ];
+  for (const [name, expectedProblem, mutate] of forecastMutations) {
+    const state = structuredClone(completeForecastDecision);
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before) {
+      forecastPreflightMisses.push(`${name} mutation did not change the control`);
+      continue;
+    }
+    const problems = forecastHorizonDecisionProblems(
+      state,
+      EXPECTED_FORECAST_EVIDENCE,
+      state.viewport,
+    );
+    if (!problems.some((problem) => problem.includes(expectedProblem))) {
+      forecastPreflightMisses.push(`${name} -> ${expectedProblem}`);
+    }
+  }
+  const missingForecastZoomProblems = textZoomRouteMatrixProblems(
+    TEXT_ZOOM_ROUTES.filter((route) => route !== "/forecast/"),
+  );
+  if (!missingForecastZoomProblems.some((problem) => problem.includes("/forecast/"))) {
+    throw new Error("the text-zoom route contract accepts a missing /forecast/");
+  }
+  if (forecastPreflightMisses.length) {
+    throw new Error(`the forecast preflight misses ${forecastPreflightMisses.join("; ")}`);
+  }
+  console.log("site quality forecast horizon decision self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -7097,6 +7852,29 @@ async function main() {
     return state;
   };
 
+  const forecastHorizonDecisionSnapshot = async (mode) => {
+    const state = await evaluate(forecastHorizonDecisionSnapshotExpression(mode));
+    if (!state) return state;
+    const [decisionTexts, readingHeadingTexts, readingBodyTexts, baselineTexts] =
+      await accessibilityTextsForSelectors([
+        "[data-forecast-decision-sheet] > ol > [data-forecast-decision] > a",
+        "[data-forecast-reading-band] > [data-forecast-reading] > h2",
+        "[data-forecast-reading-band] > [data-forecast-reading] > p",
+        "[data-forecast-baseline-band] > [data-forecast-baseline]",
+      ]);
+    for (const [index, row] of state.decisionRows.entries()) {
+      row.accessibleText = decisionTexts[index] ?? null;
+    }
+    for (const [index, row] of state.readingRows.entries()) {
+      row.accessibleHeading = readingHeadingTexts[index] ?? null;
+      row.accessibleBody = readingBodyTexts[index] ?? null;
+    }
+    for (const [index, row] of state.baselineRows.entries()) {
+      row.accessibleText = baselineTexts[index] ?? null;
+    }
+    return state;
+  };
+
   const detectionBrowserMutationFailures = async (origin) => {
     const failures = [];
     await send("Emulation.setDeviceMetricsOverride", {
@@ -7575,6 +8353,232 @@ async function main() {
       const problems = healthAssumptionLedgerProblems(
         state,
         EXPECTED_HEALTH_EVIDENCE,
+        state?.viewport,
+      );
+      if (!problems.some((problem) => problem.includes(mutation.expected))) {
+        failures.push(
+          `${mutation.name} did not reach ${JSON.stringify(mutation.expected)} ` +
+            `(received ${problems.join(", ") || "no problems"})`,
+        );
+      }
+    }
+    return failures;
+  };
+
+  const forecastBrowserMutationFailures = async (origin) => {
+    const failures = [];
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    const mutations = [
+      {
+        name: "hidden decision sheet",
+        expected: "decision sheet is hidden",
+        script: `document.querySelector("[data-forecast-decision-sheet]").hidden = true`,
+      },
+      {
+        name: "aria-hidden reading band",
+        expected: "reading band is aria-hidden",
+        script: `document.querySelector("[data-forecast-reading-band]")
+          .setAttribute("aria-hidden", "true")`,
+      },
+      {
+        name: "zero-opacity baseline band",
+        expected: "baseline band opacity is zero",
+        script: `document.querySelector("[data-forecast-baseline-band]")
+          .style.setProperty("opacity", "0", "important")`,
+      },
+      {
+        name: "decision sheet self overflow",
+        expected: "decision sheet clips its own content",
+        script: `(() => {
+          const element = document.querySelector("[data-forecast-decision-sheet]");
+          element.style.setProperty("width", "40px", "important");
+          element.style.setProperty("overflow-x", "hidden", "important");
+          element.style.setProperty("white-space", "nowrap", "important");
+        })()`,
+      },
+      {
+        name: "reading ancestor clipping",
+        expected: "reading band is clipped by an ancestor",
+        script: `(() => {
+          const element = document.querySelector("[data-forecast-reading-band]");
+          const wrapper = document.createElement("div");
+          wrapper.style.setProperty("height", "1px", "important");
+          wrapper.style.setProperty("overflow", "hidden", "important");
+          element.before(wrapper);
+          wrapper.append(element);
+        })()`,
+      },
+      {
+        name: "decision CSS clip",
+        expected: "decision sheet uses CSS clip",
+        script: `(() => {
+          const element = document.querySelector("[data-forecast-decision-sheet]");
+          element.style.setProperty("position", "absolute", "important");
+          element.style.setProperty("clip", "rect(0px, 1px, 1px, 0px)", "important");
+        })()`,
+      },
+      {
+        name: "baseline CSS clip-path",
+        expected: "baseline band uses CSS clip-path",
+        script: `document.querySelector("[data-forecast-baseline-band]")
+          .style.setProperty("clip-path", "inset(50%)", "important")`,
+      },
+      {
+        name: "off-canvas baseline",
+        expected: "baseline band is horizontally off-canvas",
+        script: `document.querySelector("[data-forecast-baseline-band]")
+          .style.setProperty("transform", "translateX(200vw)", "important")`,
+      },
+      {
+        name: "decision row key",
+        expected: "decision row 1 key changed",
+        script: `document.querySelector("[data-forecast-decision]")
+          .setAttribute("data-forecast-decision", "skill")`,
+      },
+      {
+        name: "decision visible body",
+        expected: "decision row 1 body changed",
+        script: `document.querySelector("[data-forecast-decision] p").textContent = "不同說明。"`,
+      },
+      {
+        name: "decision AX text",
+        expected: "decision row 1 accessible text changed",
+        script: `document.querySelector("[data-forecast-decision] a")
+          .setAttribute("aria-label", "另一個決策")`,
+      },
+      {
+        name: "decision link",
+        expected: "decision row 1 link changed",
+        script: `document.querySelector("[data-forecast-decision] a")
+          .setAttribute("href", "#forecast-cost")`,
+      },
+      {
+        name: "extra decision row",
+        expected: "decision row inventory changed",
+        script: `document.querySelector("[data-forecast-decision-sheet] ol")
+          .append(document.querySelector("[data-forecast-decision]").cloneNode(true))`,
+      },
+      {
+        name: "decision visual reverse",
+        expected: "decision row visual order changed",
+        script: `(() => {
+          const list = document.querySelector("[data-forecast-decision-sheet] ol");
+          list.style.setProperty("display", "flex", "important");
+          list.style.setProperty("flex-direction", "row-reverse", "important");
+          for (const row of list.children) row.style.setProperty("flex", "1", "important");
+        })()`,
+      },
+      {
+        name: "reading order",
+        expected: "reading row 1 key changed",
+        script: `(() => {
+          const band = document.querySelector("[data-forecast-reading-band]");
+          band.prepend(band.lastElementChild);
+        })()`,
+      },
+      {
+        name: "reading body",
+        expected: "reading row 1 body changed",
+        script: `document.querySelector("[data-forecast-reading] p").textContent = "不同解讀。"`,
+      },
+      {
+        name: "reading AX heading",
+        expected: "reading row 1 accessible heading changed",
+        script: `document.querySelector("[data-forecast-reading] h2")
+          .setAttribute("aria-label", "不同標題")`,
+      },
+      {
+        name: "baseline text",
+        expected: "baseline row 1 what changed",
+        script: `document.querySelector("[data-forecast-baseline] p").textContent = "不同基準。"`,
+      },
+      {
+        name: "baseline AX",
+        expected: "baseline row 1 accessible text changed",
+        script: `document.querySelector("[data-forecast-baseline]")
+          .setAttribute("aria-label", "另一條基準")`,
+      },
+      {
+        name: "sheet after Figure 6.2",
+        expected: "evidence order changed",
+        script: `(() => {
+          const sheet = document.querySelector("[data-forecast-decision-sheet]");
+          document.querySelector("#evidence-6-2-title").closest(".evidence-figure").after(sheet);
+        })()`,
+      },
+      {
+        name: "duplicate decision sentence",
+        expected: "decision sentence locality changed",
+        script: `(() => {
+          const duplicate = document.createElement("p");
+          duplicate.textContent = ${JSON.stringify(FORECAST_DECISION_ROWS[0][2])};
+          document.querySelector("main").append(duplicate);
+        })()`,
+      },
+      ...[
+        ["decision sheet", "[data-forecast-decision-sheet]"],
+        ["reading band", "[data-forecast-reading-band]"],
+        ["baseline band", "[data-forecast-baseline-band]"],
+      ].flatMap(([label, selector]) => [
+        {
+          name: `open disclosure around ${label}`,
+          expected: `${label} is user-collapsible`,
+          script: `(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            const details = document.createElement("details");
+            details.open = true;
+            element.before(details);
+            details.append(element);
+          })()`,
+        },
+        {
+          name: `closed disclosure around ${label}`,
+          expected: `${label} is user-collapsible`,
+          script: `(() => {
+            const element = document.querySelector(${JSON.stringify(selector)});
+            const details = document.createElement("details");
+            element.before(details);
+            details.append(element);
+          })()`,
+        },
+      ]),
+    ];
+    const loadForecast = async (label) => {
+      await send("Page.navigate", { url: `${origin}/forecast/` });
+      return settled(evaluate, 8000, `/forecast/ ${label}`);
+    };
+    if (!(await loadForecast("browser mutation control"))) {
+      return ["browser mutation control never finished styling"];
+    }
+    const control = await forecastHorizonDecisionSnapshot("normal");
+    const controlProblems = forecastHorizonDecisionProblems(
+      control,
+      EXPECTED_FORECAST_EVIDENCE,
+      control?.viewport,
+    );
+    if (controlProblems.length) {
+      failures.push(`clean production snapshot rejected: ${controlProblems.join(", ")}`);
+    }
+    for (const mutation of mutations) {
+      if (!(await loadForecast(`browser mutation ${mutation.name}`))) {
+        failures.push(`${mutation.name} page never finished styling`);
+        continue;
+      }
+      await evaluate(mutation.script);
+      await settlePaint(evaluate);
+      const state = await forecastHorizonDecisionSnapshot(mutation.mode ?? "normal");
+      const problems = forecastHorizonDecisionProblems(
+        state,
+        EXPECTED_FORECAST_EVIDENCE,
         state?.viewport,
       );
       if (!problems.some((problem) => problem.includes(mutation.expected))) {
@@ -9207,7 +10211,7 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
-  if (!HEALTH_BROWSER_SELF_TEST) {
+  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST) {
     console.log("site-quality stage: detection browser mutations");
     const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
     if (DETECTION_BROWSER_SELF_TEST) {
@@ -9222,18 +10226,33 @@ async function main() {
       failures.push(`/detection/ browser mutation: ${problem}`);
     }
   }
-  console.log("site-quality stage: health browser mutations");
-  const healthMutationFailures = await healthBrowserMutationFailures(origin);
-  if (HEALTH_BROWSER_SELF_TEST) {
-    if (healthMutationFailures.length) {
-      for (const problem of healthMutationFailures) console.log(`  FAIL: ${problem}`);
+  if (!FORECAST_BROWSER_SELF_TEST) {
+    console.log("site-quality stage: health browser mutations");
+    const healthMutationFailures = await healthBrowserMutationFailures(origin);
+    if (HEALTH_BROWSER_SELF_TEST) {
+      if (healthMutationFailures.length) {
+        for (const problem of healthMutationFailures) console.log(`  FAIL: ${problem}`);
+        return 1;
+      }
+      console.log("site quality health browser mutation self-test passed");
+      return 0;
+    }
+    for (const problem of healthMutationFailures) {
+      failures.push(`/health/ browser mutation: ${problem}`);
+    }
+  }
+  console.log("site-quality stage: forecast browser mutations");
+  const forecastMutationFailures = await forecastBrowserMutationFailures(origin);
+  if (FORECAST_BROWSER_SELF_TEST) {
+    if (forecastMutationFailures.length) {
+      for (const problem of forecastMutationFailures) console.log(`  FAIL: ${problem}`);
       return 1;
     }
-    console.log("site quality health browser mutation self-test passed");
+    console.log("site quality forecast browser mutation self-test passed");
     return 0;
   }
-  for (const problem of healthMutationFailures) {
-    failures.push(`/health/ browser mutation: ${problem}`);
+  for (const problem of forecastMutationFailures) {
+    failures.push(`/forecast/ browser mutation: ${problem}`);
   }
   console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
@@ -9689,6 +10708,16 @@ async function main() {
         failures.push(`${route}: ${problem}`);
       }
     }
+    if (route === "/forecast/") {
+      const forecastState = await forecastHorizonDecisionSnapshot("no-js");
+      for (const problem of forecastHorizonDecisionProblems(
+        forecastState,
+        EXPECTED_FORECAST_EVIDENCE,
+        forecastState?.viewport,
+      )) {
+        failures.push(`${route}: ${problem}`);
+      }
+    }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
         failures.push(`${route}: no-JavaScript ${problem}`);
@@ -9925,6 +10954,31 @@ async function main() {
           healthState,
           EXPECTED_HEALTH_EVIDENCE,
           healthState?.viewport,
+        )) {
+          failures.push(`${route} @${width}x${height} light opening: ${problem}`);
+        }
+      }
+      if (route === "/forecast/") {
+        const forecastState = await forecastHorizonDecisionSnapshot("normal");
+        if ((width === 375 && height === 812) || (width === 1280 && height === 720)) {
+          console.log(
+            "site-quality forecast opening " +
+              JSON.stringify({
+                width,
+                height,
+                plotTop: forecastState?.landmarks?.primaryPlot?.top ?? null,
+                plotBottom: forecastState?.landmarks?.primaryPlot?.bottom ?? null,
+                sheetTop: forecastState?.landmarks?.decisionSheet?.top ?? null,
+                horizontalOverflow:
+                  (forecastState?.document?.scrollWidth ?? 0) -
+                  (forecastState?.document?.clientWidth ?? 0),
+              }),
+          );
+        }
+        for (const problem of forecastHorizonDecisionProblems(
+          forecastState,
+          EXPECTED_FORECAST_EVIDENCE,
+          forecastState?.viewport,
         )) {
           failures.push(`${route} @${width}x${height} light opening: ${problem}`);
         }
@@ -10237,6 +11291,20 @@ async function main() {
     }
   }
 
+  await send("Page.navigate", { url: `${origin}/forecast/` });
+  if (!(await settled(evaluate, 8000, "/forecast/ print horizon decision"))) {
+    failures.push("forecast print page never finished styling");
+  } else {
+    const forecastState = await forecastHorizonDecisionSnapshot("print");
+    for (const problem of forecastHorizonDecisionProblems(
+      forecastState,
+      EXPECTED_FORECAST_EVIDENCE,
+      forecastState?.viewport,
+    )) {
+      failures.push(`/forecast/ print: ${problem}`);
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -10312,6 +11380,16 @@ async function main() {
             healthState,
             EXPECTED_HEALTH_EVIDENCE,
             healthState?.viewport,
+          )) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/forecast/") {
+          const forecastState = await forecastHorizonDecisionSnapshot("normal");
+          for (const problem of forecastHorizonDecisionProblems(
+            forecastState,
+            EXPECTED_FORECAST_EVIDENCE,
+            forecastState?.viewport,
           )) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
@@ -11758,6 +12836,16 @@ async function main() {
         healthState,
         EXPECTED_HEALTH_EVIDENCE,
         healthState?.viewport,
+      )) {
+        failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (route === "/forecast/") {
+      const forecastState = await forecastHorizonDecisionSnapshot("zoom");
+      for (const problem of forecastHorizonDecisionProblems(
+        forecastState,
+        EXPECTED_FORECAST_EVIDENCE,
+        forecastState?.viewport,
       )) {
         failures.push(`${state}: ${problem}`);
       }
