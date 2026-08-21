@@ -511,6 +511,14 @@ brand
    繪圖區。換站時，選擇器、風速型態標記、caption、
    讀值與每個 CBPF cell 維持同一測站；無 JavaScript 仍是可自行辨識的靜態閱讀
    路徑，紙本則保留方法界線、圖 4.1 caption、讀值與方法限制。
+74. **第五章以證據與讀法開場，詮釋邊界留在證據之後。** `/detection/` 依 source
+   order 呈現章節識別、lede、圖 5.1 問題、「先看灰線 → 再看橘點 → 最後看門檻」
+   的有序 reading key、主圖與相連 caption，接著是一個由
+   `detection-limit.json` 綁定的三事件語意比較區；事件的身分、順序、類型與實際／機率
+   預期值都由 payload 決定。不可收合的 inference boundary 在後續證據之前保持可見。
+   共用品質閘門
+   在 responsive 視埠、無 JavaScript、列印與加大文字狀態均要求同一順序、可見性、
+   accessibility 與無整頁橫向溢出。
 
 
 ## Accessibility & Inclusion
