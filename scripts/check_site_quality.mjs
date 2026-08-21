@@ -241,6 +241,7 @@ const SELF_TEST = args.includes("--self-test");
 const DETECTION_BROWSER_SELF_TEST = args.includes("--detection-browser-self-test");
 const HEALTH_BROWSER_SELF_TEST = args.includes("--health-browser-self-test");
 const FORECAST_BROWSER_SELF_TEST = args.includes("--forecast-browser-self-test");
+const METHODS_BROWSER_SELF_TEST = args.includes("--methods-browser-self-test");
 const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
 const CDP_TIMEOUT_MS =
   Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
@@ -448,6 +449,10 @@ function countyLabelProblems({ map, labels, expectedVisible = null }) {
 function chapterOpeningProblems(state) {
   const problems = [];
   const viewport = state?.viewport;
+  const openingKinds = new Set(["evidence", "index"]);
+  if (!openingKinds.has(state?.openingKind)) {
+    problems.push("chapter opening kind is invalid");
+  }
   if (
     !Number.isFinite(viewport?.width) || !Number.isFinite(viewport?.height) ||
     viewport.width <= 0 || viewport.height <= 0
@@ -511,7 +516,10 @@ function chapterOpeningProblems(state) {
     return true;
   };
   if (geometryPart("primary evidence", state?.primary)) {
-    if (state.primary.top >= viewport.height || state.primary.bottom <= 0) {
+    if (
+      state?.openingKind === "evidence" &&
+      (state.primary.top >= viewport.height || state.primary.bottom <= 0)
+    ) {
       problems.push("chapter primary evidence is outside the initial viewport");
     }
   }
@@ -522,7 +530,10 @@ function chapterOpeningProblems(state) {
     if (geometryPart("primary plot", state.primaryPlot)) {
       if (!Number.isFinite(state.primaryPlot.dataAreaVisible) || state.primaryPlot.dataAreaVisible < 0) {
         problems.push("chapter primary plot has invalid visible-data geometry");
-      } else if (viewport.width === 1280 && viewport.height === 720) {
+      } else if (
+        state?.openingKind === "evidence" &&
+        viewport.width === 1280 && viewport.height === 720
+      ) {
         if (state.primaryPlot.top >= viewport.height * 55 / 100) {
           problems.push("chapter primary plot starts at or below 55vh");
         }
@@ -1778,6 +1789,15 @@ const FORECAST_DECISION_ROWS = [
     "#forecast-cost",
   ],
 ];
+const METHOD_CASE_ROWS = [
+  ["01", "月平均抹掉了六成的變異", "#method-case-01"],
+  ["02", "拿 PM10 預測 PM2.5", "#method-case-02"],
+  ["03", "把風向當成 0 到 360 的普通數字", "#method-case-03"],
+  ["04", "用常態檢定證明資料常態", "#method-case-04"],
+  ["05", "NO、NO₂、NOx 一起放進迴歸", "#method-case-05"],
+  ["06", "用 AIC/BIC 當作模型好壞的證據", "#method-case-06"],
+  ["07", "用一句話處理掉所有缺漏值", "#method-case-07"],
+];
 
 function forecastExactKeys(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value) &&
@@ -2303,6 +2323,129 @@ function forecastHorizonDecisionProblems(state, expected, viewport) {
     (!Number.isFinite(landmarks.primaryPlot?.top) || landmarks.primaryPlot.top >= viewport.height)
   ) {
     problems.push(`${scope}primary plot does not enter the first viewport`);
+  }
+  if (
+    !Number.isFinite(state?.document?.clientWidth) ||
+    !Number.isFinite(state?.document?.scrollWidth) ||
+    state.document.scrollWidth > state.document.clientWidth
+  ) {
+    problems.push(`${scope}document scrolls sideways`);
+  }
+  return problems;
+}
+
+function methodsCaseIndexProblems(state, viewport) {
+  const modeLabels = { normal: "", "no-js": "no-JavaScript ", print: "print ", zoom: "zoom " };
+  if (!Object.prototype.hasOwnProperty.call(modeLabels, state?.mode)) {
+    return ["methods seven-case index mode is invalid"];
+  }
+  const scope = modeLabels[state.mode];
+  const problems = [];
+  if (state?.counts?.indexes !== 1) {
+    problems.push(`${scope}case index count is ${String(state?.counts?.indexes)}, expected 1`);
+  }
+  if (state?.counts?.labelTargets !== 1) {
+    problems.push(
+      `${scope}case index label count is ${String(state?.counts?.labelTargets)}, expected 1`,
+    );
+  }
+  if (state?.index) {
+    problems.push(...healthInspectionProblems(state.index, "case index", scope, viewport));
+  }
+  if (state?.indexHeading !== "七個案例索引") {
+    problems.push(`${scope}case index heading changed`);
+  }
+  if (healthTextIdentity(state?.indexAccessibleName) !== healthTextIdentity("七個案例索引")) {
+    problems.push(`${scope}case index accessible name changed`);
+  }
+
+  const links = state?.links;
+  if (!Array.isArray(links) || links.length !== METHOD_CASE_ROWS.length) {
+    problems.push(`${scope}case link inventory changed`);
+  } else {
+    if (state?.counts?.links !== METHOD_CASE_ROWS.length) {
+      problems.push(`${scope}case link hook inventory changed`);
+    }
+    for (const [index, contract] of METHOD_CASE_ROWS.entries()) {
+      const row = links[index];
+      const [number, title, href] = contract;
+      if (row?.number !== number) problems.push(`${scope}case link ${index + 1} number changed`);
+      if (row?.title !== title) problems.push(`${scope}case link ${index + 1} title changed`);
+      if (row?.href !== href) problems.push(`${scope}case link ${index + 1} href changed`);
+      if (row?.targetId !== href.slice(1)) {
+        problems.push(`${scope}case link ${index + 1} target identity changed`);
+      }
+      if (healthTextIdentity(row?.visibleText) !== healthTextIdentity(number + title)) {
+        problems.push(`${scope}case link ${index + 1} visible text changed`);
+      }
+      if (healthTextIdentity(row?.accessibleText) !== healthTextIdentity(title)) {
+        problems.push(`${scope}case link ${index + 1} accessible text changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(row?.inspection, `case link ${index + 1}`, scope, viewport),
+      );
+      if (!Number.isFinite(row?.inspection?.height) || row.inspection.height < 44) {
+        problems.push(`${scope}case link ${index + 1} target is shorter than 44px`);
+      }
+    }
+    if (!healthRowsAreVisuallyOrdered(links)) {
+      problems.push(`${scope}case link visual order changed`);
+    }
+  }
+
+  const destinations = state?.destinations;
+  if (!Array.isArray(destinations) || destinations.length !== METHOD_CASE_ROWS.length) {
+    problems.push(`${scope}case destination inventory changed`);
+  } else {
+    if (state?.counts?.destinations !== METHOD_CASE_ROWS.length) {
+      problems.push(`${scope}case destination hook inventory changed`);
+    }
+    for (const [index, contract] of METHOD_CASE_ROWS.entries()) {
+      const row = destinations[index];
+      const [number, title, href] = contract;
+      if (row?.number !== number) {
+        problems.push(`${scope}case destination ${index + 1} number changed`);
+      }
+      if (row?.id !== href.slice(1)) {
+        problems.push(`${scope}case destination ${index + 1} id changed`);
+      }
+      if (row?.heading !== title) {
+        problems.push(`${scope}case destination ${index + 1} heading changed`);
+      }
+      if (healthTextIdentity(row?.accessibleHeading) !== healthTextIdentity(title)) {
+        problems.push(`${scope}case destination ${index + 1} accessible heading changed`);
+      }
+      problems.push(
+        ...healthInspectionProblems(
+          row?.inspection,
+          `case destination ${index + 1}`,
+          scope,
+          viewport,
+        ),
+      );
+    }
+    if (!healthRowsAreVisuallyOrdered(destinations)) {
+      problems.push(`${scope}case destination visual order changed`);
+    }
+  }
+
+  const landmarks = state?.landmarks ?? {};
+  const ordered = [landmarks.lede, landmarks.index, ...(destinations ?? []).map((row) => row.inspection)];
+  if (ordered.some((part) => !part)) {
+    problems.push(`${scope}casebook source-order landmark is missing`);
+  } else {
+    const sourceOrdered = ordered.every(
+      (part, index) => index === 0 || ordered[index - 1].sourceIndex < part.sourceIndex,
+    );
+    if (!sourceOrdered) problems.push(`${scope}casebook source order changed`);
+  }
+  if (
+    (viewport?.width === 375 && viewport?.height === 812) ||
+    (viewport?.width === 1280 && viewport?.height === 720)
+  ) {
+    if (!Number.isFinite(landmarks.index?.top) || landmarks.index.top >= viewport.height) {
+      problems.push(`${scope}case index does not enter the first viewport`);
+    }
   }
   if (
     !Number.isFinite(state?.document?.clientWidth) ||
@@ -3111,8 +3254,134 @@ const forecastHorizonDecisionSnapshotExpression = (mode) => `(() => {
   };
 })()`;
 
+const methodsCaseIndexSnapshotExpression = (mode) => `(() => {
+  const mode = ${JSON.stringify(mode)};
+  const compact = (value) => String(value ?? "").replace(/\\s+/g, " ").trim();
+  const allElements = [...document.querySelectorAll("main *")];
+  const sourceIndex = (element) => element ? allElements.indexOf(element) : -1;
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
+  const inspect = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const ownStyle = getComputedStyle(element);
+    let rendered = rect.width > 0 && rect.height > 0;
+    let opacity = 1;
+    let hidden = false;
+    let ariaHidden = false;
+    let inert = false;
+    let detailsAncestor = false;
+    let cssClip = false;
+    let cssClipPath = false;
+    let visibleLeft = rect.left;
+    let visibleRight = rect.right;
+    let visibleTop = rect.top;
+    let visibleBottom = rect.bottom;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const nodeOpacity = Number(style.opacity);
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        style.visibility === "collapse" || !Number.isFinite(nodeOpacity) || nodeOpacity <= 0
+      ) rendered = false;
+      if (Number.isFinite(nodeOpacity)) opacity *= nodeOpacity;
+      hidden ||= node.hasAttribute("hidden");
+      ariaHidden ||= node.getAttribute("aria-hidden") === "true";
+      inert ||= node.hasAttribute("inert");
+      detailsAncestor ||= node instanceof HTMLDetailsElement;
+      cssClip ||= style.clip !== "auto";
+      cssClipPath ||= style.clipPath !== "none";
+      if (node !== element) {
+        const bounds = node.getBoundingClientRect();
+        if (clippingOverflow.has(style.overflowX)) {
+          visibleLeft = Math.max(visibleLeft, bounds.left);
+          visibleRight = Math.min(visibleRight, bounds.right);
+        }
+        if (clippingOverflow.has(style.overflowY)) {
+          visibleTop = Math.max(visibleTop, bounds.top);
+          visibleBottom = Math.min(visibleBottom, bounds.bottom);
+        }
+      }
+    }
+    return {
+      display: ownStyle.display,
+      visibility: ownStyle.visibility,
+      rendered,
+      hidden,
+      ariaHidden,
+      inert,
+      accessible: rendered && !hidden && !ariaHidden && !inert,
+      opacity,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      sourceIndex: sourceIndex(element),
+      cssOrder: Number(ownStyle.order) || 0,
+      selfOverflowX: clippingOverflow.has(ownStyle.overflowX)
+        ? Math.max(0, element.scrollWidth - element.clientWidth) : 0,
+      selfOverflowY: clippingOverflow.has(ownStyle.overflowY)
+        ? Math.max(0, element.scrollHeight - element.clientHeight) : 0,
+      ancestorClipped:
+        visibleRight - visibleLeft < rect.width - 1 ||
+        visibleBottom - visibleTop < rect.height - 1,
+      cssClip,
+      cssClipPath,
+      detailsAncestor,
+    };
+  };
+  const indexes = [...document.querySelectorAll("[data-method-case-index]")];
+  const labels = [...document.querySelectorAll("#method-case-index-title")];
+  const links = [...document.querySelectorAll("[data-method-case-link]")];
+  const destinations = [...document.querySelectorAll("[data-method-case]")];
+  const index = indexes[0] ?? null;
+  const lede = document.querySelector("main .chapter-intro .lede");
+  const primary = document.querySelector("[data-primary-evidence]");
+  const primaryPlot = primary?.querySelector("[data-primary-plot]") ?? null;
+  return {
+    mode,
+    counts: {
+      indexes: indexes.length,
+      labelTargets: labels.length,
+      links: links.length,
+      destinations: destinations.length,
+    },
+    index: inspect(index),
+    indexHeading: compact(labels[0]?.innerText),
+    indexAccessibleName: null,
+    links: links.map((link) => ({
+      number: link.getAttribute("data-case") ?? "",
+      title: compact(link.querySelector(":scope > span:last-child")?.innerText),
+      href: link.getAttribute("href") ?? "",
+      targetId: document.getElementById((link.getAttribute("href") ?? "").replace(/^#/, ""))?.id ?? "",
+      visibleText: compact(link.innerText),
+      accessibleText: null,
+      inspection: inspect(link),
+    })),
+    destinations: destinations.map((destination) => ({
+      number: destination.getAttribute("data-method-case") ?? "",
+      id: destination.id,
+      heading: compact(destination.querySelector(":scope > h2 > span:last-child")?.innerText),
+      accessibleHeading: null,
+      inspection: inspect(destination),
+    })),
+    landmarks: {
+      lede: inspect(lede),
+      index: inspect(index),
+      primary: inspect(primary),
+      primaryPlot: inspect(primaryPlot),
+    },
+    viewport: { width: innerWidth, height: innerHeight },
+    document: {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    },
+  };
+})()`;
+
 function textZoomRouteMatrixProblems(routes = TEXT_ZOOM_ROUTES) {
-  return ["/detection/", "/forecast/", "/health/"]
+  return ["/detection/", "/forecast/", "/health/", "/methods/"]
     .filter((route) => !routes.includes(route))
     .map((route) => `200% text-zoom route matrix does not exercise ${route}`);
 }
@@ -4734,6 +5003,7 @@ async function lifecycleSelfTest() {
     primary: { visible: true, top: 250, bottom: 650 },
     primaryPlot: { visible: true, top: 300, bottom: 520, dataAreaVisible: 180 },
     chartRoute: true,
+    openingKind: "evidence",
   };
   const missedChapterOpeningProblems = [];
   const expectChapterOpeningProblem = (name, state, expected) => {
@@ -4773,6 +5043,28 @@ async function lifecycleSelfTest() {
     "missing primary evidence",
     { ...completeChapterOpening, primary: null },
     "primary evidence is missing",
+  );
+  expectChapterOpeningProblem(
+    "evidence opening below viewport",
+    {
+      ...completeChapterOpening,
+      primary: { visible: true, top: 720, bottom: 1120 },
+    },
+    "primary evidence is outside the initial viewport",
+  );
+  const completeIndexedOpening = {
+    ...completeChapterOpening,
+    openingKind: "index",
+    primary: { visible: true, top: 900, bottom: 1300 },
+    primaryPlot: { visible: true, top: 1000, bottom: 1220, dataAreaVisible: 0 },
+  };
+  if (chapterOpeningProblems(completeIndexedOpening).length) {
+    throw new Error("the chapter-opening predicate rejects a complete indexed opening");
+  }
+  expectChapterOpeningProblem(
+    "invalid opening kind",
+    { ...completeChapterOpening, openingKind: "other" },
+    "chapter opening kind is invalid",
   );
   expectChapterOpeningProblem(
     "plot starting at 55vh",
@@ -6398,6 +6690,185 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality forecast horizon decision self-test passed");
 
+  const methodsPart = (top, sourceIndex, extra = {}) =>
+    healthPart(top, sourceIndex, { left: 20, right: 620, width: 600, height: 48, ...extra });
+  const completeMethodsIndex = {
+    mode: "normal",
+    counts: { indexes: 1, labelTargets: 1, links: 7, destinations: 7 },
+    index: methodsPart(180, 20, { height: 260 }),
+    indexHeading: "七個案例索引",
+    indexAccessibleName: "七個案例索引",
+    links: METHOD_CASE_ROWS.map(([number, title, href], index) => ({
+      number,
+      title,
+      href,
+      targetId: href.slice(1),
+      visibleText: number + title,
+      accessibleText: title,
+      inspection: methodsPart(240 + Math.floor(index / 2) * 52, 30 + index, {
+        left: index % 2 === 0 ? 20 : 330,
+        right: index % 2 === 0 ? 310 : 620,
+        width: 290,
+        height: 48,
+      }),
+    })),
+    destinations: METHOD_CASE_ROWS.map(([number, title, href], index) => ({
+      number,
+      id: href.slice(1),
+      heading: title,
+      accessibleHeading: title,
+      inspection: methodsPart(520 + index * 520, 100 + index, { height: 480 }),
+    })),
+    landmarks: {
+      lede: methodsPart(100, 10),
+      index: methodsPart(180, 20, { height: 260 }),
+    },
+    viewport: { width: 1280, height: 720 },
+    document: { clientWidth: 1280, scrollWidth: 1280 },
+  };
+  const methodsPreflightMisses = [];
+  const methodsControlProblems = methodsCaseIndexProblems(
+    completeMethodsIndex,
+    completeMethodsIndex.viewport,
+  );
+  if (methodsControlProblems.length) {
+    methodsPreflightMisses.push(`complete control: ${methodsControlProblems.join(", ")}`);
+  }
+  const methodsMutations = [
+    ["invalid mode", "mode is invalid", (state) => { state.mode = "other"; }],
+    ["missing index", "case index count is 0", (state) => {
+      state.counts.indexes = 0;
+      state.index = null;
+    }],
+    ["duplicate label", "case index label count is 2", (state) => {
+      state.counts.labelTargets = 2;
+    }],
+    ["hidden index", "case index is hidden", (state) => { state.index.hidden = true; }],
+    ["aria-hidden index", "case index is aria-hidden", (state) => {
+      state.index.ariaHidden = true;
+    }],
+    ["zero-opacity index", "case index opacity is zero", (state) => {
+      state.index.opacity = 0;
+    }],
+    ["index self overflow", "case index clips its own content", (state) => {
+      state.index.selfOverflowX = 2;
+    }],
+    ["index ancestor clip", "case index is clipped by an ancestor", (state) => {
+      state.index.ancestorClipped = true;
+    }],
+    ["index CSS clip", "case index uses CSS clip", (state) => { state.index.cssClip = true; }],
+    ["index off canvas", "case index is horizontally off-canvas", (state) => {
+      state.index.left = 1300;
+      state.index.right = 1900;
+    }],
+    ["index disclosure", "case index is user-collapsible", (state) => {
+      state.index.detailsAncestor = true;
+    }],
+    ["wrong heading", "case index heading changed", (state) => {
+      state.indexHeading = "方法摘要";
+    }],
+    ["wrong index AX", "case index accessible name changed", (state) => {
+      state.indexAccessibleName = "另一個索引";
+    }],
+    ["missing link", "case link inventory changed", (state) => {
+      state.links.pop();
+      state.counts.links = 6;
+    }],
+    ["duplicate hook", "case link hook inventory changed", (state) => {
+      state.counts.links = 8;
+    }],
+    ["wrong link number", "case link 1 number changed", (state) => {
+      state.links[0].number = "02";
+    }],
+    ["wrong link title", "case link 1 title changed", (state) => {
+      state.links[0].title = "不同案例";
+    }],
+    ["wrong link href", "case link 1 href changed", (state) => {
+      state.links[0].href = "#method-case-02";
+    }],
+    ["wrong target identity", "case link 1 target identity changed", (state) => {
+      state.links[0].targetId = "method-case-02";
+    }],
+    ["wrong visible text", "case link 1 visible text changed", (state) => {
+      state.links[0].visibleText = "01不同案例";
+    }],
+    ["wrong link AX", "case link 1 accessible text changed", (state) => {
+      state.links[0].accessibleText = "另一個名稱";
+    }],
+    ["short target", "case link 1 target is shorter than 44px", (state) => {
+      state.links[0].inspection.height = 43;
+    }],
+    ["hidden link", "case link 1 is hidden", (state) => {
+      state.links[0].inspection.hidden = true;
+    }],
+    ["visual link reorder", "case link visual order changed", (state) => {
+      state.links[0].inspection.top = 400;
+    }],
+    ["missing destination", "case destination inventory changed", (state) => {
+      state.destinations.pop();
+      state.counts.destinations = 6;
+    }],
+    ["destination id", "case destination 1 id changed", (state) => {
+      state.destinations[0].id = "method-case-02";
+    }],
+    ["destination heading", "case destination 1 heading changed", (state) => {
+      state.destinations[0].heading = "不同案例";
+    }],
+    ["destination AX", "case destination 1 accessible heading changed", (state) => {
+      state.destinations[0].accessibleHeading = "不同案例";
+    }],
+    ["destination hidden", "case destination 1 is hidden", (state) => {
+      state.destinations[0].inspection.hidden = true;
+    }],
+    ["destination reorder", "case destination visual order changed", (state) => {
+      state.destinations[0].inspection.top = 1200;
+    }],
+    ["source reorder", "casebook source order changed", (state) => {
+      state.landmarks.index.sourceIndex = 101;
+    }],
+    ["index below viewport", "case index does not enter the first viewport", (state) => {
+      state.landmarks.index.top = 720;
+    }],
+    ["document overflow", "document scrolls sideways", (state) => {
+      state.document.scrollWidth = 1281;
+    }],
+    ["no-JavaScript hidden index", "no-JavaScript case index is hidden", (state) => {
+      state.mode = "no-js";
+      state.index.hidden = true;
+    }],
+    ["print disclosure", "print case index is user-collapsible", (state) => {
+      state.mode = "print";
+      state.index.detailsAncestor = true;
+    }],
+    ["zoom AX", "zoom case link 1 accessible text changed", (state) => {
+      state.mode = "zoom";
+      state.links[0].accessibleText = "另一個名稱";
+    }],
+  ];
+  for (const [name, expectedProblem, mutate] of methodsMutations) {
+    const state = structuredClone(completeMethodsIndex);
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before) {
+      methodsPreflightMisses.push(`${name} mutation did not change the control`);
+      continue;
+    }
+    const problems = methodsCaseIndexProblems(state, state.viewport);
+    if (!problems.some((problem) => problem.includes(expectedProblem))) {
+      methodsPreflightMisses.push(`${name} -> ${expectedProblem}`);
+    }
+  }
+  const missingMethodsZoomProblems = textZoomRouteMatrixProblems(
+    TEXT_ZOOM_ROUTES.filter((route) => route !== "/methods/"),
+  );
+  if (!missingMethodsZoomProblems.some((problem) => problem.includes("/methods/"))) {
+    methodsPreflightMisses.push("text-zoom route contract accepts a missing /methods/");
+  }
+  if (methodsPreflightMisses.length) {
+    throw new Error(`the Methods preflight misses ${methodsPreflightMisses.join("; ")}`);
+  }
+  console.log("site quality methods seven-case index self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -7875,6 +8346,24 @@ async function main() {
     return state;
   };
 
+  const methodsCaseIndexSnapshot = async (mode) => {
+    const state = await evaluate(methodsCaseIndexSnapshotExpression(mode));
+    if (!state) return state;
+    const [indexNames, linkTexts, destinationHeadings] = await accessibilityTextsForSelectors([
+      "[data-method-case-index]",
+      "[data-method-case-link]",
+      "[data-method-case] > h2 > span:last-child",
+    ]);
+    state.indexAccessibleName = indexNames[0] ?? null;
+    for (const [index, row] of state.links.entries()) {
+      row.accessibleText = linkTexts[index] ?? null;
+    }
+    for (const [index, row] of state.destinations.entries()) {
+      row.accessibleHeading = destinationHeadings[index] ?? null;
+    }
+    return state;
+  };
+
   const detectionBrowserMutationFailures = async (origin) => {
     const failures = [];
     await send("Emulation.setDeviceMetricsOverride", {
@@ -8591,7 +9080,184 @@ async function main() {
     return failures;
   };
 
-  const chapterOpeningSnapshot = async (chartRoute) => evaluate(`(() => {
+  const methodsBrowserMutationFailures = async (origin) => {
+    const failures = [];
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    const mutations = [
+      {
+        name: "hidden index",
+        expected: "case index is hidden",
+        script: `document.querySelector("[data-method-case-index]").hidden = true`,
+      },
+      {
+        name: "wrong index accessible name",
+        expected: "case index accessible name changed",
+        script: `(() => {
+          const label = document.createElement("span");
+          label.id = "method-case-index-alternate-label";
+          label.textContent = "另一個索引";
+          const index = document.querySelector("[data-method-case-index]");
+          index.prepend(label);
+          index.setAttribute("aria-labelledby", label.id);
+        })()`,
+      },
+      {
+        name: "zero-opacity link",
+        expected: "case link 1 opacity is zero",
+        script: `document.querySelector("[data-method-case-link]").style.opacity = "0"`,
+      },
+      {
+        name: "link accessible text",
+        expected: "case link 1 accessible text changed",
+        script: `document.querySelector("[data-method-case-link]").setAttribute("aria-label", "另一個案例")`,
+      },
+      {
+        name: "link target height",
+        expected: "case link 1 target is shorter than 44px",
+        script: `(() => {
+          const link = document.querySelector("[data-method-case-link]");
+          link.style.setProperty("min-height", "0", "important");
+          link.style.setProperty("height", "20px", "important");
+          link.style.setProperty("padding", "0", "important");
+          link.style.setProperty("overflow", "hidden", "important");
+        })()`,
+      },
+      {
+        name: "link destination",
+        expected: "case link 1 href changed",
+        script: `document.querySelector("[data-method-case-link]").setAttribute("href", "#method-case-02")`,
+      },
+      {
+        name: "extra link",
+        expected: "case link inventory changed",
+        script: `(() => {
+          const link = document.querySelector("[data-method-case-link]");
+          link.closest("ol").append(link.closest("li").cloneNode(true));
+        })()`,
+      },
+      {
+        name: "missing destination",
+        expected: "case destination inventory changed",
+        script: `document.querySelector("[data-method-case='07']").remove()`,
+      },
+      {
+        name: "destination heading",
+        expected: "case destination 1 heading changed",
+        script: `document.querySelector("[data-method-case='01'] > h2 > span:last-child").textContent = "不同案例"`,
+      },
+      {
+        name: "destination accessible heading",
+        expected: "case destination 1 accessible heading changed",
+        script: `document.querySelector("[data-method-case='01'] > h2 > span:last-child").setAttribute("aria-label", "不同案例")`,
+      },
+      {
+        name: "index overflow",
+        expected: "case index clips its own content",
+        script: `(() => {
+          const index = document.querySelector("[data-method-case-index]");
+          index.style.setProperty("width", "40px", "important");
+          index.style.setProperty("overflow-x", "hidden", "important");
+          index.style.setProperty("white-space", "nowrap", "important");
+        })()`,
+      },
+      {
+        name: "ancestor clipping",
+        expected: "case index is clipped by an ancestor",
+        script: `(() => {
+          const index = document.querySelector("[data-method-case-index]");
+          const wrapper = document.createElement("div");
+          wrapper.style.cssText = "height:20px;overflow:hidden";
+          index.before(wrapper);
+          wrapper.append(index);
+        })()`,
+      },
+      {
+        name: "CSS clip",
+        expected: "case index uses CSS clip",
+        script: `document.querySelector("[data-method-case-index]").style.clipPath = "inset(20px)"`,
+      },
+      {
+        name: "link visual reorder",
+        expected: "case link visual order changed",
+        script: `(() => {
+          const list = document.querySelector("[data-method-case-index] ol");
+          list.style.display = "flex";
+          list.style.flexDirection = "column-reverse";
+        })()`,
+      },
+      {
+        name: "destination source reorder",
+        expected: "casebook source order changed",
+        script: `(() => {
+          const index = document.querySelector("[data-method-case-index]");
+          const first = document.querySelector("[data-method-case='01']");
+          first.after(index);
+        })()`,
+      },
+      ...["open", "closed"].map((state) => ({
+        name: `${state} disclosure around index`,
+        expected: "case index is user-collapsible",
+        script: `(() => {
+          const index = document.querySelector("[data-method-case-index]");
+          const details = document.createElement("details");
+          details.open = ${state === "open" ? "true" : "false"};
+          index.before(details);
+          details.append(index);
+        })()`,
+      })),
+    ];
+    const loadMethods = async (label) => {
+      await send("Page.navigate", { url: `${origin}/methods/` });
+      return settled(evaluate, 8000, `/methods/ ${label}`);
+    };
+    if (!(await loadMethods("browser mutation control"))) {
+      return ["browser mutation control never finished styling"];
+    }
+    const control = await methodsCaseIndexSnapshot("normal");
+    console.log(
+      "site-quality methods browser control " +
+        JSON.stringify({
+          viewport: control?.viewport ?? null,
+          indexTop: control?.landmarks?.index?.top ?? null,
+          indexBottom: control?.landmarks?.index?.bottom ?? null,
+          primaryTop: control?.landmarks?.primary?.top ?? null,
+          plotTop: control?.landmarks?.primaryPlot?.top ?? null,
+          plotBottom: control?.landmarks?.primaryPlot?.bottom ?? null,
+        }),
+    );
+    const controlProblems = methodsCaseIndexProblems(control, control?.viewport);
+    if (controlProblems.length) {
+      failures.push(`clean production snapshot rejected: ${controlProblems.join(", ")}`);
+    }
+    for (const mutation of mutations) {
+      if (!(await loadMethods(`browser mutation ${mutation.name}`))) {
+        failures.push(`${mutation.name} page never finished styling`);
+        continue;
+      }
+      await evaluate(mutation.script);
+      await settlePaint(evaluate);
+      const state = await methodsCaseIndexSnapshot("normal");
+      const problems = methodsCaseIndexProblems(state, state?.viewport);
+      if (!problems.some((problem) => problem.includes(mutation.expected))) {
+        failures.push(
+          `${mutation.name} did not reach ${JSON.stringify(mutation.expected)} ` +
+            `(received ${problems.join(", ") || "no problems"})`,
+        );
+      }
+    }
+    return failures;
+  };
+
+  const chapterOpeningSnapshot = async (chartRoute, openingKind = "evidence") => evaluate(`(() => {
     const rendered = (element) => {
       if (!element) return false;
       for (let node = element; node; node = node.parentElement) {
@@ -8674,6 +9340,7 @@ async function main() {
           ? { ...inspect(primaryPlot), dataAreaVisible: visibleDataArea(primaryPlot) }
           : null,
         chartRoute: ${JSON.stringify(chartRoute)},
+        openingKind: ${JSON.stringify(openingKind)},
       },
       intro: {
         visible: rendered(intro),
@@ -10211,7 +10878,7 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
-  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST) {
+  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST) {
     console.log("site-quality stage: detection browser mutations");
     const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
     if (DETECTION_BROWSER_SELF_TEST) {
@@ -10226,7 +10893,7 @@ async function main() {
       failures.push(`/detection/ browser mutation: ${problem}`);
     }
   }
-  if (!FORECAST_BROWSER_SELF_TEST) {
+  if (!FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST) {
     console.log("site-quality stage: health browser mutations");
     const healthMutationFailures = await healthBrowserMutationFailures(origin);
     if (HEALTH_BROWSER_SELF_TEST) {
@@ -10241,18 +10908,33 @@ async function main() {
       failures.push(`/health/ browser mutation: ${problem}`);
     }
   }
-  console.log("site-quality stage: forecast browser mutations");
-  const forecastMutationFailures = await forecastBrowserMutationFailures(origin);
-  if (FORECAST_BROWSER_SELF_TEST) {
-    if (forecastMutationFailures.length) {
-      for (const problem of forecastMutationFailures) console.log(`  FAIL: ${problem}`);
+  if (!METHODS_BROWSER_SELF_TEST) {
+    console.log("site-quality stage: forecast browser mutations");
+    const forecastMutationFailures = await forecastBrowserMutationFailures(origin);
+    if (FORECAST_BROWSER_SELF_TEST) {
+      if (forecastMutationFailures.length) {
+        for (const problem of forecastMutationFailures) console.log(`  FAIL: ${problem}`);
+        return 1;
+      }
+      console.log("site quality forecast browser mutation self-test passed");
+      return 0;
+    }
+    for (const problem of forecastMutationFailures) {
+      failures.push(`/forecast/ browser mutation: ${problem}`);
+    }
+  }
+  console.log("site-quality stage: methods browser mutations");
+  const methodsMutationFailures = await methodsBrowserMutationFailures(origin);
+  if (METHODS_BROWSER_SELF_TEST) {
+    if (methodsMutationFailures.length) {
+      for (const problem of methodsMutationFailures) console.log(`  FAIL: ${problem}`);
       return 1;
     }
-    console.log("site quality forecast browser mutation self-test passed");
+    console.log("site quality methods browser mutation self-test passed");
     return 0;
   }
-  for (const problem of forecastMutationFailures) {
-    failures.push(`/forecast/ browser mutation: ${problem}`);
+  for (const problem of methodsMutationFailures) {
+    failures.push(`/methods/ browser mutation: ${problem}`);
   }
   console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
@@ -10718,6 +11400,12 @@ async function main() {
         failures.push(`${route}: ${problem}`);
       }
     }
+    if (route === "/methods/") {
+      const methodsState = await methodsCaseIndexSnapshot("no-js");
+      for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
+        failures.push(`${route}: ${problem}`);
+      }
+    }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
         failures.push(`${route}: no-JavaScript ${problem}`);
@@ -10868,7 +11556,10 @@ async function main() {
         continue;
       }
       const chartRoute = CHART_ROUTES.has(route);
-      const snapshot = await chapterOpeningSnapshot(chartRoute);
+      const snapshot = await chapterOpeningSnapshot(
+        chartRoute,
+        route === "/methods/" ? "index" : "evidence",
+      );
       totals.chapterOpeningChecks += 1;
       if (!snapshot?.state) {
         failures.push(`${route} @${width}x${height} light: opening probe returned nothing`);
@@ -10980,6 +11671,26 @@ async function main() {
           EXPECTED_FORECAST_EVIDENCE,
           forecastState?.viewport,
         )) {
+          failures.push(`${route} @${width}x${height} light opening: ${problem}`);
+        }
+      }
+      if (route === "/methods/") {
+        const methodsState = await methodsCaseIndexSnapshot("normal");
+        if ((width === 375 && height === 812) || (width === 1280 && height === 720)) {
+          console.log(
+            "site-quality methods opening " +
+              JSON.stringify({
+                width,
+                height,
+                indexTop: methodsState?.landmarks?.index?.top ?? null,
+                indexBottom: methodsState?.landmarks?.index?.bottom ?? null,
+                horizontalOverflow:
+                  (methodsState?.document?.scrollWidth ?? 0) -
+                  (methodsState?.document?.clientWidth ?? 0),
+              }),
+          );
+        }
+        for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
           failures.push(`${route} @${width}x${height} light opening: ${problem}`);
         }
       }
@@ -11305,6 +12016,16 @@ async function main() {
     }
   }
 
+  await send("Page.navigate", { url: `${origin}/methods/` });
+  if (!(await settled(evaluate, 8000, "/methods/ print case index"))) {
+    failures.push("methods print page never finished styling");
+  } else {
+    const methodsState = await methodsCaseIndexSnapshot("print");
+    for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
+      failures.push(`/methods/ print: ${problem}`);
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -11391,6 +12112,12 @@ async function main() {
             EXPECTED_FORECAST_EVIDENCE,
             forecastState?.viewport,
           )) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/methods/") {
+          const methodsState = await methodsCaseIndexSnapshot("normal");
+          for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
@@ -12847,6 +13574,12 @@ async function main() {
         EXPECTED_FORECAST_EVIDENCE,
         forecastState?.viewport,
       )) {
+        failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (route === "/methods/") {
+      const methodsState = await methodsCaseIndexSnapshot("zoom");
+      for (const problem of methodsCaseIndexProblems(methodsState, methodsState?.viewport)) {
         failures.push(`${state}: ${problem}`);
       }
     }
