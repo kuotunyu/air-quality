@@ -506,6 +506,11 @@ brand
    它們框定的證據，圖 3.1 仍是第一張主要證據；兩張分析圖與兩張表維持原有清單。
    這個 field-note 次序已在四個審查寬度、深淺兩色、無 JavaScript、列印與 200%
    文字縮放下量測，沒有建立第二套章節 registry，也沒有修改科學內容。
+73. **第四章先界定方法，才讓讀者操作條件式風向圖譜。** `/sources/` 依 source order
+   呈現開場、方法界線、測站選擇器與圖 4.1；手機初始 viewport 已進入圖題與極座標
+   繪圖區。換站時，選擇器、風速型態標記、caption、
+   讀值與每個 CBPF cell 維持同一測站；無 JavaScript 仍是可自行辨識的靜態閱讀
+   路徑，紙本則保留方法界線、圖 4.1 caption、讀值與方法限制。
 
 
 ## Accessibility & Inclusion

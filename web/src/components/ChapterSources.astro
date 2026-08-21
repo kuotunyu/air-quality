@@ -128,6 +128,10 @@ const legend = BREAKS.map((b, i) => ({
 <section id="sources" class="page">
   <ChapterIntro slug="sources">
   <p class="lede">{data.explains}</p>
+  <aside data-sources-method-boundary aria-labelledby="sources-method-boundary-title">
+    <strong id="sources-method-boundary-title">先讀方法界線</strong>
+    <p>CBPF 描述條件機率，不識別污染來源；尖峰風速不等於來源距離。</p>
+  </aside>
   </ChapterIntro>
 
   {/*
@@ -174,8 +178,8 @@ const legend = BREAKS.map((b, i) => ({
     </style>
   </noscript>
 
-  <p class="note cbpf-nojs">
-    這張圖的測站選單需要 JavaScript。目前顯示的是<strong>{initial}</strong>（{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}）。
+  <p class="note cbpf-nojs" data-sources-nojs-fallback>
+    這張圖的測站選單需要 JavaScript。目前顯示的是<strong data-sources-nojs-station>{initial}</strong>（<span data-sources-nojs-classification>{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>）。
     每個測站的 CBPF 與下方所有數字都可以從
     <code>twair analyze m7</code> 重算。
   </p>
@@ -185,7 +189,7 @@ const legend = BREAKS.map((b, i) => ({
       nothing — so this is the only signal that the figure moved. */}
   <p id="cbpf-say" class="visually-hidden" role="status" aria-live="polite"></p>
 
-  <div class="picker-row">
+  <div class="picker-row" data-sources-picker>
     <label>
       測站
       <select id="cbpf-station">
@@ -204,7 +208,7 @@ const legend = BREAKS.map((b, i) => ({
         }
       </select>
     </label>
-    <span id="cbpf-wind-peak-class" class="badge">{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>
+    <span id="cbpf-wind-peak-class" class="badge" data-wind-peak-class={start.wind_peak_class}>{WIND_PEAK_CLASS[start.wind_peak_class] ?? start.wind_peak_class}</span>
   </div>
 
   {/*
@@ -599,6 +603,46 @@ const legend = BREAKS.map((b, i) => ({
     gap: 0.9rem;
     flex-wrap: wrap;
     margin: 0;
+  }
+  @media (max-width: 25rem) {
+    :global(body #sources > .chapter-intro) {
+      margin-bottom: var(--space-1);
+    }
+    :global(body #sources [data-sources-method-boundary]) {
+      margin-block: var(--space-1) 0;
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence]) {
+      margin-block-start: var(--space-1);
+      padding-block-start: var(--space-1);
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence] > figure) {
+      margin-block-start: var(--space-1);
+    }
+  }
+  @media (min-width: 64rem) and (max-width: 99.999rem) and (max-height: 45rem) {
+    :global(body #sources) {
+      padding-block-start: 0;
+    }
+    :global(body #sources > .chapter-intro) {
+      margin-bottom: 0;
+    }
+    :global(body #sources > .chapter-intro > .eyebrow),
+    :global(body #sources > .chapter-intro h1) {
+      margin-bottom: 0;
+    }
+    :global(body #sources [data-sources-method-boundary]) {
+      margin-block: 0;
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence]) {
+      margin-block-start: 0;
+      padding-block-start: 0;
+    }
+    :global(body #sources > .evidence-figure[data-primary-evidence] > figure) {
+      margin-block-start: 0;
+    }
+    :global(body #sources [data-primary-evidence] .chart.polar) {
+      padding-block-start: 0;
+    }
   }
   .picker-row label {
     display: flex;
