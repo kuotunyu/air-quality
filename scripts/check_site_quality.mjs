@@ -10702,6 +10702,7 @@ async function main() {
       const sql = document.querySelector("#sql");
       if (${JSON.stringify(sql)} !== null) sql.value = ${JSON.stringify(sql)};
       const run = document.querySelector("#run");
+      run.focus();
       run.click();
       return {
         state: document.querySelector("[data-explorer-workspace]")?.dataset.explorerState ?? "",
@@ -10771,6 +10772,84 @@ async function main() {
       }
       if (!deferredAfterClick.some((url) => /\/data\/l1\//iu.test(url))) {
         failures.push("default query did not probe an L1 data file after action");
+      }
+
+      const staleFailureLoading = await clickWithSql("SELECT * FROM definitely_not_a_table;");
+      if (staleFailureLoading?.state !== "loading" || staleFailureLoading?.result !== "") {
+        failures.push(
+          `stale-result setup did not clear and enter loading: ${JSON.stringify(staleFailureLoading)}`,
+        );
+      }
+      const staleFailure = await waitForOutcome("failure", "stale-result setup query");
+      if (staleFailure?.state !== "failure") {
+        failures.push(
+          `stale-result setup state is ${String(staleFailure?.state)}, expected failure`,
+        );
+      }
+      const staleDefaultSql = await evaluate(`JSON.parse(
+        document.querySelector("#explorer-examples")?.textContent ?? "[]"
+      )[0] ?? null`);
+      await send("Network.emulateNetworkConditions", {
+        offline: false,
+        latency: 1500,
+        downloadThroughput: -1,
+        uploadThroughput: -1,
+      });
+      try {
+        const slowLoading = await clickWithSql(staleDefaultSql);
+        if (slowLoading?.state !== "loading" || slowLoading?.result !== "") {
+          failures.push(
+            `slow retry did not clear and enter loading: ${JSON.stringify(slowLoading)}`,
+          );
+        }
+        await send("Emulation.setDeviceMetricsOverride", {
+          width: 900,
+          height: 720,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await sleep(250);
+        const resizedLoading = await explorerGuidedWorkspaceSnapshot("normal");
+        if (resizedLoading?.state !== "loading") {
+          failures.push(
+            `slow retry did not remain loading through the resize seam: ` +
+              `${String(resizedLoading?.state)}`,
+          );
+        } else {
+          const resizedLoadingProblems = explorerGuidedWorkspaceProblems(
+            resizedLoading,
+            { width: 900, height: 720 },
+          );
+          if (resizedLoadingProblems.length) {
+            failures.push(
+              `loading resize restored a prior answer: ${resizedLoadingProblems.join(", ")} ` +
+                `(snapshot=${JSON.stringify({
+                  state: resizedLoading.state,
+                  status: resizedLoading.status,
+                  result: resizedLoading.result,
+                })})`,
+            );
+          }
+        }
+      } finally {
+        await send("Network.emulateNetworkConditions", {
+          offline: false,
+          latency: 0,
+          downloadThroughput: -1,
+          uploadThroughput: -1,
+        });
+        await send("Emulation.setDeviceMetricsOverride", {
+          width: 1280,
+          height: 720,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+      }
+      const staleRetry = await waitForOutcome("success", "stale-result resize retry");
+      if (staleRetry?.state !== "success") {
+        failures.push(
+          `stale-result resize retry state is ${String(staleRetry?.state)}, expected success`,
+        );
       }
 
       const emptyLoading = await clickWithSql(

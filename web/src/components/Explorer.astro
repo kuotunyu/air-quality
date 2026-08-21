@@ -371,6 +371,7 @@ const candidates = pollutantIndex.map((p) => ({
     setWorkspaceState("loading");
     runButton.disabled = true;
     resultEl.innerHTML = "";
+    shown = null;
     setStatus("準備查詢", true);
     try {
       const { db } = await prepare();
