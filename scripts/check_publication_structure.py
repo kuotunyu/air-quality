@@ -20,7 +20,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
@@ -861,6 +861,9 @@ HEALTH_FUNCTION_KEYS = frozenset(
     }
 )
 HEALTH_SERIES_KEYS = frozenset({"name", "label", "value", "why", "years", "paf"})
+HEALTH_HEADLINE_KEYS = frozenset(
+    {"first_year", "last_year", "first_share", "last_share", "first_range", "last_range"}
+)
 HEALTH_ASSUMPTION_ROWS = (
     (
         "counterfactual",
@@ -900,10 +903,15 @@ class HealthExpectedEvidence:
     spread_count: int
     deaths: str
     exposure: str
+    reading_bodies: tuple[str, str]
 
 
 def _finite_health_number(value: object) -> bool:
     return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _health_number(value: float) -> str:
+    return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
 def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvidence:
@@ -943,6 +951,7 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
         count = len(series) if isinstance(series, list) else "not a list"
         raise ValueError(f"health payload counterfactual-series inventory changed: {count}")
     identities: set[str] = set()
+    series_by_name: dict[str, dict[str, object]] = {}
     for index, row in enumerate(series, start=1):
         if not isinstance(row, dict) or set(row) != HEALTH_SERIES_KEYS:
             raise ValueError(f"health payload counterfactual series {index} shape changed")
@@ -952,6 +961,7 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
         if row["name"] in identities:
             raise ValueError("health payload counterfactual series identity is duplicated")
         identities.add(row["name"])
+        series_by_name[row["name"]] = row
         if not _finite_health_number(row["value"]):
             raise ValueError(f"health payload counterfactual series {index} value is invalid")
         if row["years"] != years:
@@ -963,6 +973,56 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
             or any(not _finite_health_number(value) for value in paf)
         ):
             raise ValueError(f"health payload counterfactual series {index} values changed")
+
+    headline = payload["headline"]
+    if not isinstance(headline, dict) or set(headline) != HEALTH_HEADLINE_KEYS:
+        raise ValueError("health payload headline shape changed")
+    for key in ("first_year", "last_year"):
+        if isinstance(headline[key], bool) or not isinstance(headline[key], int):
+            raise ValueError(f"health payload headline {key} is invalid")
+    for key in ("first_share", "last_share"):
+        if not _finite_health_number(headline[key]):
+            raise ValueError(f"health payload headline {key} is invalid")
+    for key in ("first_range", "last_range"):
+        value = headline[key]
+        if (
+            not isinstance(value, list)
+            or len(value) != 2
+            or any(not _finite_health_number(item) for item in value)
+        ):
+            raise ValueError(f"health payload headline {key} is invalid")
+    if headline["first_year"] not in years or headline["last_year"] not in years:
+        raise ValueError("health payload headline years changed")
+    if "gbd_low" not in series_by_name or "gbd_high" not in series_by_name:
+        raise ValueError("health payload TMREL endpoint identity changed")
+    tmrel_low = series_by_name["gbd_low"]["value"]
+    tmrel_high = series_by_name["gbd_high"]["value"]
+    if (
+        isinstance(tmrel_low, bool)
+        or not isinstance(tmrel_low, (int, float))
+        or not math.isfinite(tmrel_low)
+        or isinstance(tmrel_high, bool)
+        or not isinstance(tmrel_high, (int, float))
+        or not math.isfinite(tmrel_high)
+    ):
+        raise ValueError("health payload TMREL endpoint value is invalid")
+
+    first_range = headline["first_range"]
+    last_range = headline["last_range"]
+    robust_body = (
+        f"{headline['first_year']} 年是 {_health_number(first_range[0] * 100)}–"
+        f"{_health_number(first_range[1] * 100)}%，{headline['last_year']} 年是 "
+        f"{_health_number(last_range[0] * 100)}–{_health_number(last_range[1] * 100)}%。"
+        "無論選哪個基準，都下降了大約一半到三分之二。"
+        "這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。"
+    )
+    sensitive_body = (
+        f"{headline['last_year']} 年的答案是 {_health_number(last_range[0] * 100)}% 還是 "
+        f"{_health_number(last_range[1] * 100)}%，差了將近一倍，而唯一的差別是把 "
+        f"{_health_number(tmrel_low)} 還是 "
+        f"{_health_number(tmrel_high)} μg/m³ 當作比較基準——"
+        "這兩個數字是同一份 published TMREL 區間的兩端。"
+    )
 
     not_reported = payload["not_reported"]
     if not isinstance(not_reported, dict) or set(not_reported) != {"deaths", "exposure"}:
@@ -984,6 +1044,7 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
         spread_count=len(spread),
         deaths=deaths,
         exposure=exposure,
+        reading_bodies=(robust_body, sensitive_body),
     )
 
 
@@ -1049,9 +1110,13 @@ def health_assumption_ledger_failures_for_text(
         if observed_keys != expected_keys:
             failures.append(f"health assumption row order changed: {observed_keys!r}")
         for row, (_key, label, explanation) in zip(rows, HEALTH_ASSUMPTION_ROWS, strict=False):
-            if _health_text_identity(row.rendered_text()) != _health_text_identity(
-                label + explanation
-            ):
+            visible_children = [child for child in row.children if child.visible]
+            if [child.tag for child in visible_children] != ["strong", "p"]:
+                failures.append("health assumption row structure changed")
+                continue
+            if visible_children[0].rendered_text() != label:
+                failures.append("health assumption row text changed")
+            if visible_children[1].rendered_text() != explanation:
                 failures.append("health assumption row text changed")
 
     if reading_band is not None:
@@ -1069,10 +1134,19 @@ def health_assumption_ledger_failures_for_text(
         expected_keys = [row[0] for row in HEALTH_READING_ROWS]
         if observed_keys != expected_keys:
             failures.append(f"health reading row order changed: {observed_keys!r}")
-        for row, (_key, heading) in zip(rows, HEALTH_READING_ROWS, strict=False):
-            headings = [child for child in row.children if child.tag == "h2" and child.visible]
-            if len(headings) != 1 or headings[0].rendered_text() != heading:
+        for row, (_key, heading), body in zip(
+            rows, HEALTH_READING_ROWS, expected.reading_bodies, strict=False
+        ):
+            visible_children = [child for child in row.children if child.visible]
+            if [child.tag for child in visible_children] != ["h2", "p"]:
+                failures.append("health reading row body changed")
+                continue
+            if visible_children[0].rendered_text() != heading:
                 failures.append("health reading row text changed")
+            if _health_text_identity(visible_children[1].rendered_text()) != _health_text_identity(
+                body
+            ):
+                failures.append("health reading row body changed")
 
     if boundaries is not None:
         rows = _health_direct_rows(boundaries, "data-health-inference")
@@ -3428,8 +3502,8 @@ def _run_preflight() -> None:
 </ol>
 <section data-primary-evidence><p class="evidence-title">比較基準如何改變可歸因比例？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
 <div data-health-reading-band>
-<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>範圍與結論</p></section>
-<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>端點與說明</p></section>
+<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>
+<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 2.4 還是 5.9 μg/m³ 當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端。</p></section>
 </div>
 <section><p class="evidence-title">比較基準造成的落差佔估計值多少？</p></section>
 <div data-health-inference-boundaries>
@@ -3444,6 +3518,10 @@ def _run_preflight() -> None:
         spread_count=2,
         deaths="沒有死亡人數。",
         exposure="測站平均不是人口加權暴露。",
+        reading_bodies=(
+            "2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。",
+            "2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 2.4 還是 5.9 μg/m³ 當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端。",
+        ),
     )
     valid_health_failures = health_assumption_ledger_failures_for_text(
         valid_health_brief, valid_health_expected
@@ -3515,6 +3593,14 @@ def _run_preflight() -> None:
             "health assumption row text changed",
             valid_health_brief.replace("圖 7.1 與圖 7.2 量化", "圖 7.1 與圖 7.2 猜測", 1),
         ),
+        "ledger label loses its structure": (
+            "health assumption row structure changed",
+            valid_health_brief.replace(
+                "<strong>比較基準</strong><p>圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。</p>",
+                "<p>比較基準圖 7.1 與圖 7.2 量化四種反事實濃度造成的差異。</p>",
+                1,
+            ),
+        ),
         "hidden ledger": (
             "health assumption ledger inventory changed",
             valid_health_brief.replace(
@@ -3566,7 +3652,15 @@ def _run_preflight() -> None:
         "missing reading row": (
             "health reading row inventory changed",
             valid_health_brief.replace(
-                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>範圍與結論</p></section>\n',
+                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>\n',
+                "",
+                1,
+            ),
+        ),
+        "missing reading body": (
+            "health reading row body changed",
+            valid_health_brief.replace(
+                "<p>2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p>",
                 "",
                 1,
             ),
@@ -3619,9 +3713,9 @@ def _run_preflight() -> None:
         ],
         "series": [
             {
-                "name": f"series-{index}",
+                "name": ("zero", "gbd_low", "who_guideline", "gbd_high")[index],
                 "label": f"label-{index}",
-                "value": float(index),
+                "value": (0.0, 2.4, 5.0, 5.9)[index],
                 "why": "why",
                 "years": [2024, 2025],
                 "paf": [0.2, 0.1],
@@ -3673,14 +3767,27 @@ def _run_preflight() -> None:
             changed_health_payload(
                 series=[
                     {
-                        "name": f"series-{index}",
+                        "name": ("zero", "gbd_low", "who_guideline")[index],
                         "label": f"label-{index}",
-                        "value": float(index),
+                        "value": (0.0, 2.4, 5.0)[index],
                         "why": "why",
                         "years": [2024, 2025],
                         "paf": [0.2, 0.1],
                     }
                     for index in range(3)
+                ]
+            ),
+        ),
+        "headline shape": (
+            "health payload headline shape changed",
+            changed_health_payload(headline={"first_year": 2024}),
+        ),
+        "missing TMREL endpoint": (
+            "health payload TMREL endpoint identity changed",
+            changed_health_payload(
+                series=[
+                    {**row, "name": "alternate_high"} if row["name"] == "gbd_high" else row
+                    for row in cast(list[dict[str, object]], valid_health_payload["series"])
                 ]
             ),
         ),

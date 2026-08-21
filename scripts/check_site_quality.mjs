@@ -1538,6 +1538,14 @@ const HEALTH_FUNCTION_KEYS = [
   "source_url",
 ];
 const HEALTH_SERIES_KEYS = ["label", "name", "paf", "value", "why", "years"];
+const HEALTH_HEADLINE_KEYS = [
+  "first_range",
+  "first_share",
+  "first_year",
+  "last_range",
+  "last_share",
+  "last_year",
+];
 const HEALTH_ASSUMPTION_ROWS = [
   [
     "counterfactual",
@@ -1572,6 +1580,10 @@ function healthTextIdentity(value) {
 function healthExactKeys(value, expected) {
   return value && typeof value === "object" && !Array.isArray(value) &&
     JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
+}
+
+function healthNumber(value) {
+  return Number(value.toFixed(1)).toString();
 }
 
 function healthExpectedEvidenceFromPayload(payload) {
@@ -1616,6 +1628,7 @@ function healthExpectedEvidenceFromPayload(payload) {
     throw new Error("health payload counterfactual-series inventory changed");
   }
   const identities = new Set();
+  const seriesByName = new Map();
   for (const [index, row] of payload.series.entries()) {
     if (!healthExactKeys(row, HEALTH_SERIES_KEYS)) {
       throw new Error(`health payload counterfactual series ${index + 1} shape changed`);
@@ -1629,6 +1642,7 @@ function healthExpectedEvidenceFromPayload(payload) {
       throw new Error("health payload counterfactual series identity is duplicated");
     }
     identities.add(row.name);
+    seriesByName.set(row.name, row);
     if (typeof row.value !== "number" || !Number.isFinite(row.value)) {
       throw new Error(`health payload counterfactual series ${index + 1} value is invalid`);
     }
@@ -1642,6 +1656,45 @@ function healthExpectedEvidenceFromPayload(payload) {
       throw new Error(`health payload counterfactual series ${index + 1} values changed`);
     }
   }
+  const headline = payload.headline;
+  if (!healthExactKeys(headline, HEALTH_HEADLINE_KEYS)) {
+    throw new Error("health payload headline shape changed");
+  }
+  for (const key of ["first_year", "last_year"]) {
+    if (!Number.isInteger(headline[key]) || !payload.years.includes(headline[key])) {
+      throw new Error(`health payload headline ${key} is invalid`);
+    }
+  }
+  for (const key of ["first_share", "last_share"]) {
+    if (typeof headline[key] !== "number" || !Number.isFinite(headline[key])) {
+      throw new Error(`health payload headline ${key} is invalid`);
+    }
+  }
+  for (const key of ["first_range", "last_range"]) {
+    if (
+      !Array.isArray(headline[key]) || headline[key].length !== 2 ||
+      headline[key].some((value) => typeof value !== "number" || !Number.isFinite(value))
+    ) {
+      throw new Error(`health payload headline ${key} is invalid`);
+    }
+  }
+  const tmrelLow = seriesByName.get("gbd_low");
+  const tmrelHigh = seriesByName.get("gbd_high");
+  if (!tmrelLow || !tmrelHigh) {
+    throw new Error("health payload TMREL endpoint identity changed");
+  }
+  const robustBody =
+    `${headline.first_year} 年是 ${healthNumber(headline.first_range[0] * 100)}–` +
+    `${healthNumber(headline.first_range[1] * 100)}%，${headline.last_year} 年是 ` +
+    `${healthNumber(headline.last_range[0] * 100)}–` +
+    `${healthNumber(headline.last_range[1] * 100)}%。` +
+    "無論選哪個基準，都下降了大約一半到三分之二。" +
+    "這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。";
+  const sensitiveBody =
+    `${headline.last_year} 年的答案是 ${healthNumber(headline.last_range[0] * 100)}% 還是 ` +
+    `${healthNumber(headline.last_range[1] * 100)}%，差了將近一倍，而唯一的差別是把 ` +
+    `${healthNumber(tmrelLow.value)} 還是 ${healthNumber(tmrelHigh.value)} μg/m³ ` +
+    "當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端。";
   if (!healthExactKeys(payload.not_reported, ["deaths", "exposure"])) {
     throw new Error("health payload no-inference boundary changed");
   }
@@ -1658,6 +1711,7 @@ function healthExpectedEvidenceFromPayload(payload) {
     spreadCount: payload.spread_share.length,
     deaths: payload.not_reported.deaths,
     exposure: payload.not_reported.exposure,
+    readingBodies: Object.freeze([robustBody, sensitiveBody]),
   });
 }
 
@@ -1700,6 +1754,21 @@ function healthInspectionProblems(inspection, label, scope, viewport) {
   }
   if (inspection.cssOrder !== 0) problems.push(`${scope}${label} uses CSS order`);
   return problems;
+}
+
+function healthRowsAreVisuallyOrdered(rows) {
+  return rows.every((row, index) => {
+    if (index === 0) return true;
+    const previous = rows[index - 1]?.inspection;
+    const current = row?.inspection;
+    if (
+      !previous || !current ||
+      !Number.isFinite(previous.top) || !Number.isFinite(previous.left) ||
+      !Number.isFinite(current.top) || !Number.isFinite(current.left)
+    ) return false;
+    if (Math.abs(current.top - previous.top) <= 1) return current.left > previous.left + 1;
+    return current.top > previous.top + 1;
+  });
 }
 
 function healthAssumptionLedgerProblems(state, expected, viewport) {
@@ -1806,6 +1875,13 @@ function healthAssumptionLedgerProblems(state, expected, viewport) {
         if (healthTextIdentity(row?.accessibleHeading) !== healthTextIdentity(contract[1])) {
           problems.push(`${scope}${label} row ${index + 1} accessible heading changed`);
         }
+        const body = expected?.readingBodies?.[index];
+        if (healthTextIdentity(row?.bodyText) !== healthTextIdentity(body)) {
+          problems.push(`${scope}${label} row ${index + 1} body changed`);
+        }
+        if (healthTextIdentity(row?.accessibleBody) !== healthTextIdentity(body)) {
+          problems.push(`${scope}${label} row ${index + 1} accessible body changed`);
+        }
       } else {
         const body = index === 0 ? expected?.deaths : expected?.exposure;
         const expectedText = contract[1] + body;
@@ -1817,6 +1893,9 @@ function healthAssumptionLedgerProblems(state, expected, viewport) {
         }
       }
       problems.push(...healthInspectionProblems(row?.inspection, `${label} row ${index + 1}`, scope, viewport));
+    }
+    if (Array.isArray(rows) && rows.length === contracts.length && !healthRowsAreVisuallyOrdered(rows)) {
+      problems.push(`${scope}${label} row visual order changed`);
     }
   }
 
@@ -2490,6 +2569,8 @@ const healthAssumptionLedgerSnapshotExpression = (mode) => `(() => {
       key: row.getAttribute("data-health-reading") ?? "",
       heading: compact(row.querySelector(":scope > h2")?.innerText),
       accessibleHeading: null,
+      bodyText: compact(row.querySelector(":scope > p")?.innerText),
+      accessibleBody: null,
       inspection: inspect(row),
     })),
     inferenceRows: inferenceRows.map((row) => ({
@@ -2507,10 +2588,10 @@ const healthAssumptionLedgerSnapshotExpression = (mode) => `(() => {
   };
 })()`;
 
-function textZoomRouteMatrixProblems() {
-  return TEXT_ZOOM_ROUTES.includes("/detection/")
-    ? []
-    : ["200% text-zoom route matrix does not exercise /detection/"];
+function textZoomRouteMatrixProblems(routes = TEXT_ZOOM_ROUTES) {
+  return ["/detection/", "/health/"]
+    .filter((route) => !routes.includes(route))
+    .map((route) => `200% text-zoom route matrix does not exercise ${route}`);
 }
 
 function englishClaimPattern(phrase) {
@@ -5277,6 +5358,7 @@ async function lifecycleSelfTest() {
     spreadCount: 2,
     deaths: "死亡人數需要人口與基礎死亡率。",
     exposure: "測站平均不是人口加權暴露。",
+    readingBodies: ["範圍與結論", "端點與說明"],
   };
   const invalidHealthPayloads = [
     ["top-level shape", "top-level shape changed", (payload) => { payload.extra = true; }],
@@ -5291,6 +5373,12 @@ async function lifecycleSelfTest() {
     }],
     ["duplicate series identity", "series identity is duplicated", (payload) => {
       payload.series[1].name = payload.series[0].name;
+    }],
+    ["headline shape", "headline shape changed", (payload) => {
+      delete payload.headline.last_range;
+    }],
+    ["missing TMREL endpoint", "TMREL endpoint identity changed", (payload) => {
+      payload.series.find((row) => row.name === "gbd_high").name = "alternate_high";
     }],
     ["empty deaths boundary", "no-inference boundary changed", (payload) => {
       payload.not_reported.deaths = "";
@@ -5357,12 +5445,16 @@ async function lifecycleSelfTest() {
         key: "robust",
         heading: "下降幅度對比較基準穩健",
         accessibleHeading: "下降幅度對比較基準穩健",
+        bodyText: "範圍與結論",
+        accessibleBody: "範圍與結論",
         inspection: healthPart(530, 71),
       },
       {
         key: "sensitive",
         heading: "當前水準對比較基準敏感",
         accessibleHeading: "當前水準對比較基準敏感",
+        bodyText: "端點與說明",
+        accessibleBody: "端點與說明",
         inspection: healthPart(580, 72),
       },
     ],
@@ -5464,6 +5556,18 @@ async function lifecycleSelfTest() {
     ["wrong reading AX heading", "reading row 1 accessible heading changed", (state) => {
       state.readingRows[0].accessibleHeading = "假設穩健";
     }],
+    ["missing reading body", "reading row 1 body changed", (state) => {
+      state.readingRows[0].bodyText = "";
+    }],
+    ["wrong reading AX body", "reading row 1 accessible body changed", (state) => {
+      state.readingRows[0].accessibleBody = "另一段解讀";
+    }],
+    ["assumption rows visually reversed", "assumption row visual order changed", (state) => {
+      state.assumptionRows[0].inspection.left = 500;
+      state.assumptionRows[1].inspection.left = 300;
+      state.assumptionRows[2].inspection.left = 100;
+      for (const row of state.assumptionRows) row.inspection.top = 190;
+    }],
     ["missing inference row", "inference row inventory changed", (state) => {
       state.inferenceRows.pop();
       state.counts.inferenceRows = 1;
@@ -5527,6 +5631,12 @@ async function lifecycleSelfTest() {
     if (!problems.some((problem) => problem.includes(expectedProblem))) {
       healthPreflightMisses.push(`${name} -> ${expectedProblem}`);
     }
+  }
+  const missingHealthZoomProblems = textZoomRouteMatrixProblems(
+    TEXT_ZOOM_ROUTES.filter((route) => route !== "/health/"),
+  );
+  if (!missingHealthZoomProblems.some((problem) => problem.includes("/health/"))) {
+    throw new Error("the text-zoom route contract accepts a missing /health/");
   }
   if (healthPreflightMisses.length) {
     throw new Error(`the health preflight misses ${healthPreflightMisses.join("; ")}`);
@@ -6967,10 +7077,11 @@ async function main() {
   const healthAssumptionLedgerSnapshot = async (mode) => {
     const state = await evaluate(healthAssumptionLedgerSnapshotExpression(mode));
     if (!state) return state;
-    const [assumptionTexts, readingHeadingTexts, inferenceTexts] =
+    const [assumptionTexts, readingHeadingTexts, readingBodyTexts, inferenceTexts] =
       await accessibilityTextsForSelectors([
         "[data-health-assumption-ledger] > [data-health-assumption]",
         "[data-health-reading-band] > [data-health-reading] > h2",
+        "[data-health-reading-band] > [data-health-reading] > p",
         "[data-health-inference-boundaries] > [data-health-inference]",
       ]);
     for (const [index, row] of state.assumptionRows.entries()) {
@@ -6978,6 +7089,7 @@ async function main() {
     }
     for (const [index, row] of state.readingRows.entries()) {
       row.accessibleHeading = readingHeadingTexts[index] ?? null;
+      row.accessibleBody = readingBodyTexts[index] ?? null;
     }
     for (const [index, row] of state.inferenceRows.entries()) {
       row.accessibleText = inferenceTexts[index] ?? null;
@@ -7361,6 +7473,27 @@ async function main() {
         expected: "reading row 1 accessible heading changed",
         script: `document.querySelector("[data-health-reading] h2")
           .setAttribute("aria-label", "假設穩健")`,
+      },
+      {
+        name: "missing reading body",
+        expected: "reading row 1 body changed",
+        script: `document.querySelector("[data-health-reading] p").remove()`,
+      },
+      {
+        name: "wrong reading body AX text",
+        expected: "reading row 1 accessible body changed",
+        script: `document.querySelector("[data-health-reading] p")
+          .setAttribute("aria-label", "另一段解讀")`,
+      },
+      {
+        name: "assumption rows visually reversed",
+        expected: "assumption row visual order changed",
+        script: `(() => {
+          const ledger = document.querySelector("[data-health-assumption-ledger]");
+          ledger.style.setProperty("display", "flex", "important");
+          ledger.style.setProperty("flex-direction", "row-reverse", "important");
+          for (const row of ledger.children) row.style.setProperty("flex", "1", "important");
+        })()`,
       },
       {
         name: "wrong inference visible text",
