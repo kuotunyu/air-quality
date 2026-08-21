@@ -9116,6 +9116,27 @@ async function main() {
         script: `document.querySelector("[data-method-case-link]").style.opacity = "0"`,
       },
       {
+        name: "off-canvas case link",
+        expected: "case link 1 is horizontally off-canvas",
+        script: `(() => {
+          const link = document.querySelector("[data-method-case-link]");
+          link.style.setProperty("position", "fixed", "important");
+          link.style.setProperty("left", "1400px", "important");
+          link.style.setProperty("width", "280px", "important");
+        })()`,
+      },
+      {
+        name: "clipped case link",
+        expected: "case link 1 is clipped by an ancestor",
+        script: `(() => {
+          const link = document.querySelector("[data-method-case-link]");
+          const wrapper = document.createElement("div");
+          wrapper.style.cssText = "height:8px;overflow:hidden";
+          link.before(wrapper);
+          wrapper.append(link);
+        })()`,
+      },
+      {
         name: "link accessible text",
         expected: "case link 1 accessible text changed",
         script: `document.querySelector("[data-method-case-link]").setAttribute("aria-label", "另一個案例")`,
@@ -9148,6 +9169,11 @@ async function main() {
         name: "missing destination",
         expected: "case destination inventory changed",
         script: `document.querySelector("[data-method-case='07']").remove()`,
+      },
+      {
+        name: "hidden case destination",
+        expected: "case destination 1 is hidden",
+        script: `document.querySelector("[data-method-case='01']").hidden = true`,
       },
       {
         name: "destination heading",
@@ -9215,6 +9241,16 @@ async function main() {
         })()`,
       })),
     ];
+    for (const requiredName of [
+      "off-canvas case link",
+      "clipped case link",
+      "hidden case destination",
+    ]) {
+      if (!mutations.some((mutation) => mutation.name === requiredName)) {
+        failures.push(`methods browser mutation coverage is missing ${requiredName}`);
+      }
+    }
+    if (failures.length) return failures;
     const loadMethods = async (label) => {
       await send("Page.navigate", { url: `${origin}/methods/` });
       return settled(evaluate, 8000, `/methods/ ${label}`);
