@@ -526,6 +526,12 @@ brand
    邊界持續說明本專案不報死亡人數，也不把測站中位數稱為任何人的暴露。共用品質閘門在
    responsive 視埠、無 JavaScript、列印與 200% 文字縮放下要求同一順序、可見文字、
    accessibility、圖題與無整頁橫向溢出。
+76. **第六章把預測有效期距讀成一個三步決策。** `/forecast/` 先呈現圖 6.1，接著以
+   誤差、基準優勢與計算代價三個連結分別指向圖 6.1、圖 6.2 與成本段落；圖 6.2 後的
+   四則讀法與 persistence／climatology 兩條基準說明均由 Forecast payload 決定，
+   並維持同一來源與視覺順序。共用品質閘門在 responsive 視埠、無 JavaScript、列印與
+   200% 文字縮放下要求決策表、讀法與基準區保持可見、可由 accessibility tree 讀取、
+   不可收合，且不造成整頁橫向溢出。
 
 
 ## Accessibility & Inclusion
