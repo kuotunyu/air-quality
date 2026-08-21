@@ -532,6 +532,12 @@ brand
    並維持同一來源與視覺順序。共用品質閘門在 responsive 視埠、無 JavaScript、列印與
    200% 文字縮放下要求決策表、讀法與基準區保持可見、可由 accessibility tree 讀取、
    不可收合，且不造成整頁橫向溢出。
+77. **第八章先列出案例全貌，再進入第一組證據。** `/methods/` 依 source order
+   呈現精確七筆案例索引，每個連結的編號、標題與目的地都對應同一個案例標題，
+   完整案例與證據維持 01→07 的原有次序。這個 index-first 開場只在第八章取代
+   第 68 條的 first-plot 首屏條件；共用品質門在 responsive 視埠、無 JavaScript、列印與
+   200% 文字縮放下仍要求索引與全部目的地可見、可由 accessibility tree 讀取、
+   不可收合，且不造成整頁橫向溢出。
 
 
 ## Accessibility & Inclusion
