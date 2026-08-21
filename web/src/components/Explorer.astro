@@ -236,6 +236,13 @@ const candidates = pollutantIndex.map((p) => ({
   const resultEl = document.getElementById("result") as HTMLElement;
   const tablesEl = document.getElementById("tables") as HTMLElement;
   const exampleSelect = document.getElementById("example-select") as HTMLSelectElement;
+  const workspaceEl = document.querySelector("[data-explorer-workspace]") as HTMLElement;
+
+  type ExplorerState = "initial" | "loading" | "success" | "empty" | "failure";
+
+  function setWorkspaceState(state: ExplorerState) {
+    workspaceEl.dataset.explorerState = state;
+  }
 
   function json<T>(id: string, fallback: T): T {
     const node = document.getElementById(id);
@@ -361,8 +368,10 @@ const candidates = pollutantIndex.map((p) => ({
   }
 
   runButton.addEventListener("click", async () => {
+    setWorkspaceState("loading");
     runButton.disabled = true;
     resultEl.innerHTML = "";
+    setStatus("準備查詢", true);
     try {
       const { db } = await prepare();
       const duckModule = await duck();
@@ -378,8 +387,10 @@ const candidates = pollutantIndex.map((p) => ({
       );
       shown = { columns, kinds, rows, total, truncated, columnKind: duckModule.columnKind };
       paint();
+      setWorkspaceState(rows.length === 0 ? "empty" : "success");
       reveal();
     } catch (error) {
+      setWorkspaceState("failure");
       /*
        * The reason goes in the status, not only in the box below.
        *
@@ -830,6 +841,17 @@ const candidates = pollutantIndex.map((p) => ({
   @media print {
     .explorer-path {
       grid-template-columns: 1fr;
+    }
+
+    .explorer-controls,
+    .tables,
+    .result,
+    .explorer-nojs {
+      display: none;
+    }
+
+    .sql-panel > textarea {
+      display: block !important;
     }
   }
 

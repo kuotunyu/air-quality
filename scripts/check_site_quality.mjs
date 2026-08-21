@@ -243,6 +243,7 @@ const HEALTH_BROWSER_SELF_TEST = args.includes("--health-browser-self-test");
 const FORECAST_BROWSER_SELF_TEST = args.includes("--forecast-browser-self-test");
 const METHODS_BROWSER_SELF_TEST = args.includes("--methods-browser-self-test");
 const DATA_BROWSER_SELF_TEST = args.includes("--data-browser-self-test");
+const EXPLORE_BROWSER_SELF_TEST = args.includes("--explorer-browser-self-test");
 const requestedCdpTimeout = Number(opt("cdp-timeout-ms", "15000"));
 const CDP_TIMEOUT_MS =
   Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0 ? requestedCdpTimeout : 15000;
@@ -2743,6 +2744,342 @@ function dataProvenanceRegisterProblems(state, viewport) {
   return problems;
 }
 
+const EXPLORER_GUIDED_STEPS = Object.freeze([
+  Object.freeze({
+    key: "choose",
+    number: "01",
+    title: "選一個問題",
+    text: "從六個現有範例開始；需要時再展開 SQL。",
+  }),
+  Object.freeze({
+    key: "execute",
+    number: "02",
+    title: "在瀏覽器內執行",
+    text: "按下按鈕後才載入查詢引擎與可用資料。",
+  }),
+  Object.freeze({
+    key: "read",
+    number: "03",
+    title: "讀結果與限制",
+    text: "把表格、空結果或錯誤，和下方限制一起讀。",
+  }),
+]);
+const EXPLORER_STATE_KEYS = Object.freeze([
+  "caveat", "counts", "document", "mode", "noJs", "result", "run", "sql", "state",
+  "status", "steps", "tables",
+]);
+const EXPLORER_COUNT_KEYS = Object.freeze([
+  "caveats", "controls", "paths", "results", "sql", "steps", "tables", "workspace",
+]);
+const EXPLORER_INSPECTION_KEYS = Object.freeze([
+  "accessible", "ancestorClipped", "ariaHidden", "bottom", "cssClip", "cssClipPath",
+  "cssOrder", "detailsAncestor", "display", "height", "hidden", "inert", "left",
+  "opacity", "rendered", "right", "selfOverflowX", "selfOverflowY", "sourceIndex", "top",
+  "visibility", "width",
+]);
+
+function explorerExactKeys(value, expected) {
+  return value && typeof value === "object" && !Array.isArray(value) &&
+    JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
+}
+
+function explorerInspectionSchemaProblems(inspection, label) {
+  const problems = [];
+  if (!explorerExactKeys(inspection, EXPLORER_INSPECTION_KEYS)) {
+    return [`explore ${label} inspection shape changed`];
+  }
+  for (const key of [
+    "accessible", "ancestorClipped", "ariaHidden", "cssClip", "cssClipPath",
+    "detailsAncestor", "hidden", "inert", "rendered",
+  ]) {
+    if (typeof inspection[key] !== "boolean") {
+      problems.push(`explore ${label} inspection ${key} is not boolean`);
+    }
+  }
+  for (const key of [
+    "bottom", "cssOrder", "height", "left", "opacity", "right", "selfOverflowX",
+    "selfOverflowY", "sourceIndex", "top", "width",
+  ]) {
+    if (typeof inspection[key] !== "number" || !Number.isFinite(inspection[key])) {
+      problems.push(`explore ${label} inspection ${key} is not finite`);
+    }
+  }
+  for (const key of ["display", "visibility"]) {
+    if (typeof inspection[key] !== "string") {
+      problems.push(`explore ${label} inspection ${key} is not a string`);
+    }
+  }
+  return problems;
+}
+
+function explorerVisibleInspectionProblems(inspection, label, scope, viewport, allowDetails = false) {
+  const problems = explorerInspectionSchemaProblems(inspection, label);
+  if (problems.length) return problems;
+  return healthInspectionProblems(inspection, label, scope, viewport).filter(
+    (problem) => !allowDetails || !problem.endsWith(" is user-collapsible"),
+  );
+}
+
+function explorerHiddenInspectionProblems(inspection, label, scope) {
+  const problems = explorerInspectionSchemaProblems(inspection, label);
+  if (problems.length) return problems;
+  if (inspection.rendered) problems.push(`${scope}${label} is visibly rendered`);
+  if (inspection.accessible) problems.push(`${scope}${label} remains in accessibility`);
+  return problems;
+}
+
+function explorerGuidedWorkspaceProblems(state, viewport) {
+  if (!explorerExactKeys(state, EXPLORER_STATE_KEYS)) {
+    return ["explore state shape changed"];
+  }
+  const modeLabels = { normal: "", "no-js": "no-JavaScript ", print: "print ", zoom: "zoom " };
+  if (!Object.prototype.hasOwnProperty.call(modeLabels, state.mode)) {
+    return ["explore mode is invalid"];
+  }
+  const scope = modeLabels[state.mode];
+  const problems = [];
+  const validStates = state.mode === "no-js"
+    ? ["no-js"]
+    : state.mode === "normal"
+      ? ["initial", "loading", "success", "empty", "failure"]
+      : ["initial"];
+  if (!validStates.includes(state.state)) problems.push(`${scope}explore state is invalid`);
+
+  if (!explorerExactKeys(state.counts, EXPLORER_COUNT_KEYS)) {
+    problems.push(`${scope}explore count shape changed`);
+  } else {
+    const expectedCounts = {
+      caveats: 1,
+      controls: 1,
+      paths: 1,
+      results: 1,
+      sql: 1,
+      steps: EXPLORER_GUIDED_STEPS.length,
+      tables: 1,
+      workspace: 1,
+    };
+    for (const [key, expected] of Object.entries(expectedCounts)) {
+      if (!Number.isInteger(state.counts[key]) || state.counts[key] !== expected) {
+        problems.push(`${scope}explore ${key} count is ${String(state.counts[key])}, expected ${expected}`);
+      }
+    }
+  }
+
+  if (!Array.isArray(state.steps) || state.steps.length !== EXPLORER_GUIDED_STEPS.length) {
+    problems.push(`${scope}explore step inventory changed`);
+  } else {
+    for (const [index, expected] of EXPLORER_GUIDED_STEPS.entries()) {
+      const step = state.steps[index];
+      if (!explorerExactKeys(step, ["accessibleText", "inspection", "key", "text", "title"])) {
+        problems.push(`${scope}explore step ${index + 1} shape changed`);
+        continue;
+      }
+      if (step.key !== expected.key) problems.push(`${scope}explore step ${index + 1} key changed`);
+      if (healthTextIdentity(step.title) !== healthTextIdentity(expected.title)) {
+        problems.push(`${scope}explore step ${index + 1} title changed`);
+      }
+      if (healthTextIdentity(step.text) !== healthTextIdentity(expected.text)) {
+        problems.push(`${scope}explore step ${index + 1} text changed`);
+      }
+      const expectedAccessible = `${expected.number}${expected.title}${expected.text}`;
+      if (healthTextIdentity(step.accessibleText) !== healthTextIdentity(expectedAccessible)) {
+        problems.push(`${scope}explore step ${index + 1} accessible text changed`);
+      }
+      problems.push(
+        ...explorerVisibleInspectionProblems(
+          step.inspection,
+          `step ${index + 1}`,
+          scope,
+          viewport,
+        ),
+      );
+    }
+    if (!healthRowsAreVisuallyOrdered(state.steps)) {
+      problems.push(`${scope}explore step visual order changed`);
+    }
+  }
+
+  const objectContracts = [
+    ["run", state.run, ["accessibleText", "disabled", "inspection"]],
+    ["status", state.status, ["busy", "failed", "inspection", "text"]],
+    ["tables", state.tables, ["inspection", "text"]],
+    ["result", state.result, ["emptyMessage", "errorDetail", "focused", "hasRows", "inspection", "text"]],
+    ["caveat", state.caveat, ["inspection", "text"]],
+    ["sql", state.sql, ["inspection", "open", "text"]],
+    ["no-JavaScript notice", state.noJs, ["inspection", "text"]],
+    ["document", state.document, ["clientWidth", "scrollWidth"]],
+  ];
+  for (const [label, value, keys] of objectContracts) {
+    if (!explorerExactKeys(value, keys)) problems.push(`${scope}explore ${label} shape changed`);
+  }
+  if (problems.some((problem) => problem.includes(" shape changed"))) return problems;
+
+  for (const [label, value] of [
+    ["run disabled", state.run.disabled],
+    ["status busy", state.status.busy],
+    ["status failed", state.status.failed],
+    ["result hasRows", state.result.hasRows],
+    ["result emptyMessage", state.result.emptyMessage],
+    ["result focused", state.result.focused],
+    ["SQL open", state.sql.open],
+  ]) {
+    if (typeof value !== "boolean") problems.push(`${scope}explore ${label} is not boolean`);
+  }
+  for (const [label, value] of [
+    ["status text", state.status.text],
+    ["tables text", state.tables.text],
+    ["result text", state.result.text],
+    ["caveat text", state.caveat.text],
+    ["SQL text", state.sql.text],
+    ["no-JavaScript text", state.noJs.text],
+  ]) {
+    if (typeof value !== "string") problems.push(`${scope}explore ${label} is not a string`);
+  }
+  if (state.run.accessibleText !== null && typeof state.run.accessibleText !== "string") {
+    problems.push(`${scope}explore run accessibleText is invalid`);
+  }
+  if (state.result.errorDetail !== null && typeof state.result.errorDetail !== "string") {
+    problems.push(`${scope}explore result errorDetail is invalid`);
+  }
+  if (
+    typeof state.document.clientWidth !== "number" || !Number.isFinite(state.document.clientWidth) ||
+    typeof state.document.scrollWidth !== "number" || !Number.isFinite(state.document.scrollWidth)
+  ) {
+    problems.push(`${scope}explore document dimensions are invalid`);
+  } else if (state.document.scrollWidth > state.document.clientWidth) {
+    problems.push(`${scope}explore document scrolls sideways`);
+  }
+
+  problems.push(
+    ...explorerVisibleInspectionProblems(state.sql.inspection, "SQL disclosure", scope, viewport, true),
+    ...explorerVisibleInspectionProblems(state.caveat.inspection, "caveat", scope, viewport),
+  );
+  if (!healthTextIdentity(state.sql.text).includes("檢視或修改查詢語句")) {
+    problems.push(`${scope}explore SQL disclosure text changed`);
+  }
+  if (
+    !healthTextIdentity(state.caveat.text).includes("查得到哪些測項，取決於這個站台放了哪些檔案") ||
+    !healthTextIdentity(state.caveat.text).includes("逐時原始資料另有授權問題待確認")
+  ) {
+    problems.push(`${scope}explore caveat text changed`);
+  }
+
+  const interactive = state.mode === "normal" || state.mode === "zoom";
+  if (interactive) {
+    problems.push(
+      ...explorerVisibleInspectionProblems(state.run.inspection, "run control", scope, viewport),
+      ...explorerVisibleInspectionProblems(state.status.inspection, "status", scope, viewport),
+      ...explorerVisibleInspectionProblems(state.tables.inspection, "table inventory", scope, viewport),
+      ...explorerHiddenInspectionProblems(state.noJs.inspection, "no-JavaScript notice", scope),
+    );
+    if (healthTextIdentity(state.run.accessibleText) !== "執行查詢") {
+      problems.push(`${scope}explore run accessible text changed`);
+    }
+    if (!healthTextIdentity(state.tables.text)) {
+      problems.push(`${scope}explore table inventory text is empty`);
+    }
+  } else {
+    problems.push(
+      ...explorerHiddenInspectionProblems(state.run.inspection, "run control", scope),
+      ...explorerHiddenInspectionProblems(state.status.inspection, "status", scope),
+      ...explorerHiddenInspectionProblems(state.tables.inspection, "table inventory", scope),
+      ...explorerHiddenInspectionProblems(state.result.inspection, "result", scope),
+    );
+    if (state.mode === "no-js") {
+      problems.push(
+        ...explorerVisibleInspectionProblems(
+          state.noJs.inspection,
+          "no-JavaScript notice",
+          scope,
+          viewport,
+        ),
+      );
+      const noJsText = healthTextIdentity(state.noJs.text);
+      if (!noJsText.includes("瀏覽器內查詢需要JavaScript") || !noJsText.includes("不會下載查詢引擎")) {
+        problems.push(`${scope}explore no-JavaScript notice changed`);
+      }
+    } else {
+      problems.push(
+        ...explorerHiddenInspectionProblems(state.noJs.inspection, "no-JavaScript notice", scope),
+      );
+      if (!healthTextIdentity(state.sql.text).includes("SELECT")) {
+        problems.push(`${scope}explore print SQL content is missing`);
+      }
+    }
+  }
+
+  const inspections = [
+    ...(state.steps ?? []).map((step) => step.inspection),
+    state.run.inspection,
+    state.sql.inspection,
+    state.tables.inspection,
+    state.result.inspection,
+    state.caveat.inspection,
+  ];
+  if (
+    inspections.some((inspection) => !Number.isFinite(inspection?.sourceIndex)) ||
+    !inspections.every(
+      (inspection, index) => index === 0 || inspections[index - 1].sourceIndex < inspection.sourceIndex,
+    )
+  ) {
+    problems.push(`${scope}explore source order changed`);
+  }
+
+  const blankResult =
+    state.result.text === "" && !state.result.hasRows && !state.result.emptyMessage &&
+    state.result.errorDetail === null && !state.result.focused;
+  if (state.mode === "normal") {
+    if (state.state === "initial") {
+      if (state.run.disabled || state.status.text !== "" || state.status.busy || state.status.failed) {
+        problems.push("explore initial controls changed");
+      }
+      if (!blankResult) problems.push("explore initial result is not empty");
+    } else if (state.state === "loading") {
+      if (!state.run.disabled || !state.status.busy || state.status.failed || !state.status.text) {
+        problems.push("explore loading semantics changed");
+      }
+      if (!blankResult) problems.push("explore loading presents a prior result");
+    } else if (state.state === "success") {
+      if (
+        state.run.disabled || state.status.busy || state.status.failed || !state.status.text.includes("列") ||
+        !state.result.hasRows || state.result.emptyMessage || state.result.errorDetail !== null ||
+        !state.result.focused
+      ) problems.push("explore success semantics changed");
+    } else if (state.state === "empty") {
+      if (
+        state.run.disabled || state.status.busy || state.status.failed || !state.status.text.includes("0 列") ||
+        state.result.hasRows || !state.result.emptyMessage || state.result.errorDetail !== null ||
+        !state.result.focused || !state.result.text.includes("查詢成立，但")
+      ) problems.push("explore empty semantics changed");
+    } else if (state.state === "failure") {
+      if (
+        state.run.disabled || state.status.busy || !state.status.failed ||
+        !state.status.text.startsWith("查詢失敗：") || state.result.hasRows ||
+        state.result.emptyMessage || !state.result.errorDetail || !state.result.focused ||
+        !healthTextIdentity(state.result.text).includes(
+          healthTextIdentity(state.result.errorDetail),
+        )
+      ) problems.push("explore failure semantics changed");
+    }
+    if (["success", "empty", "failure"].includes(state.state)) {
+      problems.push(
+        ...explorerVisibleInspectionProblems(state.result.inspection, "result", scope, viewport),
+      );
+    }
+  } else if (state.mode === "zoom" || state.mode === "print") {
+    if (state.run.disabled || state.status.text !== "" || state.status.busy || state.status.failed) {
+      problems.push(`${scope}explore initial controls changed`);
+    }
+    if (!blankResult) problems.push(`${scope}explore initial result is not empty`);
+  } else if (
+    state.run.disabled || state.status.text !== "" || state.status.busy || state.status.failed ||
+    !blankResult
+  ) {
+    problems.push("no-JavaScript explore inactive state changed");
+  }
+  return problems;
+}
+
 const HISTORICAL_STATION_ROUTES = new Set(["/", "/space/", "/data/"]);
 
 function historicalStationCopyProblems(route, text) {
@@ -3832,8 +4169,167 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
   };
 })()`;
 
+const explorerGuidedWorkspaceSnapshotExpression = (mode) => `(() => {
+  const mode = ${JSON.stringify(mode)};
+  const compact = (value) => String(value ?? "").replace(/\\s+/g, " ").trim();
+  const allElements = [...document.querySelectorAll("main *")];
+  const sourceIndex = (element) => element ? allElements.indexOf(element) : -1;
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
+  const inspect = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    const ownStyle = getComputedStyle(element);
+    let rendered = rect.width > 0 && rect.height > 0;
+    let opacity = 1;
+    let hidden = false;
+    let ariaHidden = false;
+    let inert = false;
+    let detailsAncestor = false;
+    let cssClip = false;
+    let cssClipPath = false;
+    let visibleLeft = rect.left;
+    let visibleRight = rect.right;
+    let visibleTop = rect.top;
+    let visibleBottom = rect.bottom;
+    for (let node = element; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      const nodeOpacity = Number(style.opacity);
+      if (
+        style.display === "none" || style.visibility === "hidden" ||
+        style.visibility === "collapse" || !Number.isFinite(nodeOpacity) || nodeOpacity <= 0
+      ) rendered = false;
+      if (Number.isFinite(nodeOpacity)) opacity *= nodeOpacity;
+      hidden ||= node.hasAttribute("hidden");
+      ariaHidden ||= node.getAttribute("aria-hidden") === "true";
+      inert ||= node.hasAttribute("inert");
+      detailsAncestor ||= node instanceof HTMLDetailsElement;
+      cssClip ||= style.clip !== "auto";
+      cssClipPath ||= style.clipPath !== "none";
+      if (node !== element) {
+        const bounds = node.getBoundingClientRect();
+        if (clippingOverflow.has(style.overflowX)) {
+          visibleLeft = Math.max(visibleLeft, bounds.left);
+          visibleRight = Math.min(visibleRight, bounds.right);
+        }
+        if (clippingOverflow.has(style.overflowY)) {
+          visibleTop = Math.max(visibleTop, bounds.top);
+          visibleBottom = Math.min(visibleBottom, bounds.bottom);
+        }
+      }
+    }
+    return {
+      display: ownStyle.display,
+      visibility: ownStyle.visibility,
+      rendered,
+      hidden,
+      ariaHidden,
+      inert,
+      accessible: rendered && !hidden && !ariaHidden && !inert,
+      opacity,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      sourceIndex: sourceIndex(element),
+      cssOrder: Number(ownStyle.order) || 0,
+      selfOverflowX: clippingOverflow.has(ownStyle.overflowX)
+        ? Math.max(0, element.scrollWidth - element.clientWidth) : 0,
+      selfOverflowY: clippingOverflow.has(ownStyle.overflowY)
+        ? Math.max(0, element.scrollHeight - element.clientHeight) : 0,
+      ancestorClipped:
+        visibleRight - visibleLeft < rect.width - 1 ||
+        visibleBottom - visibleTop < rect.height - 1,
+      cssClip,
+      cssClipPath,
+      detailsAncestor,
+    };
+  };
+  const workspaces = [...document.querySelectorAll("[data-explorer-workspace]")];
+  const paths = [...document.querySelectorAll("[data-explorer-path]")];
+  const steps = [...document.querySelectorAll("[data-explorer-step]")];
+  const controls = [...document.querySelectorAll("[data-explorer-controls]")];
+  const sqlPanels = [...document.querySelectorAll("[data-explorer-sql]")];
+  const tables = [...document.querySelectorAll("[data-explorer-tables]")];
+  const results = [...document.querySelectorAll("[data-explorer-result]")];
+  const caveats = [...document.querySelectorAll("[data-explorer-caveat]")];
+  const noJsNotices = [...document.querySelectorAll("[data-explorer-nojs]")];
+  const workspace = workspaces[0] ?? null;
+  const run = document.querySelector("#run");
+  const status = document.querySelector("#status");
+  const sql = sqlPanels[0] ?? null;
+  const tableInventory = tables[0] ?? null;
+  const result = results[0] ?? null;
+  const caveat = caveats[0] ?? null;
+  const noJs = noJsNotices[0] ?? null;
+  return {
+    mode,
+    state: mode === "no-js" ? "no-js" : workspace?.dataset.explorerState ?? "",
+    counts: {
+      workspace: workspaces.length,
+      paths: paths.length,
+      steps: steps.length,
+      controls: controls.length,
+      sql: sqlPanels.length,
+      tables: tables.length,
+      results: results.length,
+      caveats: caveats.length,
+    },
+    steps: steps.map((step) => ({
+      key: step.getAttribute("data-explorer-step") ?? "",
+      title: compact(step.querySelector(":scope > strong")?.innerText),
+      text: compact(step.querySelector(":scope > span:last-child")?.innerText),
+      accessibleText: null,
+      inspection: inspect(step),
+    })),
+    run: {
+      disabled: run instanceof HTMLButtonElement ? run.disabled : null,
+      accessibleText: null,
+      inspection: inspect(run),
+    },
+    status: {
+      text: compact(status?.innerText),
+      busy: status?.getAttribute("data-busy") === "true",
+      failed: status?.getAttribute("data-failed") === "true",
+      inspection: inspect(status),
+    },
+    sql: {
+      text: compact(
+        [sql?.innerText, sql?.querySelector("textarea")?.value].filter(Boolean).join(" "),
+      ),
+      open: sql instanceof HTMLDetailsElement ? sql.open : null,
+      inspection: inspect(sql),
+    },
+    tables: {
+      text: compact(tableInventory?.innerText),
+      inspection: inspect(tableInventory),
+    },
+    result: {
+      text: compact(result?.innerText),
+      hasRows: Boolean(result?.querySelector("tbody > tr")),
+      emptyMessage: Boolean(result?.querySelector(".no-rows")),
+      errorDetail: result?.querySelector(".error")?.textContent ?? null,
+      inspection: inspect(result),
+      focused: document.activeElement === result,
+    },
+    caveat: {
+      text: compact(caveat?.innerText),
+      inspection: inspect(caveat),
+    },
+    noJs: {
+      text: compact(noJs?.innerText),
+      inspection: inspect(noJs),
+    },
+    document: {
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    },
+  };
+})()`;
+
 function textZoomRouteMatrixProblems(routes = TEXT_ZOOM_ROUTES) {
-  return ["/data/", "/detection/", "/forecast/", "/health/", "/methods/"]
+  return ["/data/", "/detection/", "/explore/", "/forecast/", "/health/", "/methods/"]
     .filter((route) => !routes.includes(route))
     .map((route) => `200% text-zoom route matrix does not exercise ${route}`);
 }
@@ -7411,8 +7907,189 @@ async function lifecycleSelfTest() {
   }
   const missingDataZoomProblems = textZoomRouteMatrixProblems(TEXT_ZOOM_ROUTES.filter((route) => route !== "/data/"));
   if (!missingDataZoomProblems.some((problem) => problem.includes("/data/"))) dataPreflightMisses.push("text-zoom route contract accepts a missing /data/");
+  const missingExploreZoomProblems = textZoomRouteMatrixProblems(
+    TEXT_ZOOM_ROUTES.filter((route) => route !== "/explore/"),
+  );
+  if (!missingExploreZoomProblems.some((problem) => problem.includes("/explore/"))) {
+    dataPreflightMisses.push("text-zoom route contract accepts a missing /explore/");
+  }
   if (dataPreflightMisses.length) throw new Error(`the Data preflight misses ${dataPreflightMisses.join("; ")}`);
   console.log("site quality data provenance register self-test passed");
+
+  const explorerPart = (top, sourceIndex, extra = {}) =>
+    healthPart(top, sourceIndex, { left: 100, right: 700, width: 600, height: 40, ...extra });
+  const explorerHiddenPart = (top, sourceIndex) => explorerPart(top, sourceIndex, {
+    display: "none",
+    rendered: false,
+    accessible: false,
+    width: 0,
+    height: 0,
+    right: 100,
+    bottom: top,
+  });
+  const explorerFixture = (state = "initial", mode = "normal") => {
+    const hiddenForMode = mode === "no-js" || mode === "print";
+    const terminal = ["success", "empty", "failure"].includes(state);
+    const fixture = {
+      mode,
+      state,
+      counts: {
+        workspace: 1,
+        paths: 1,
+        steps: 3,
+        controls: 1,
+        sql: 1,
+        tables: 1,
+        results: 1,
+        caveats: 1,
+      },
+      steps: EXPLORER_GUIDED_STEPS.map((step, index) => ({
+        key: step.key,
+        title: step.title,
+        text: step.text,
+        accessibleText: `${step.number}${step.title}${step.text}`,
+        inspection: explorerPart(200, 20 + index, {
+          left: 100 + index * 200,
+          right: 280 + index * 200,
+          width: 180,
+        }),
+      })),
+      run: {
+        disabled: state === "loading",
+        accessibleText: hiddenForMode ? null : "執行查詢",
+        inspection: hiddenForMode ? explorerHiddenPart(320, 30) : explorerPart(320, 30),
+      },
+      status: {
+        text: state === "loading"
+          ? "準備查詢"
+          : state === "success"
+            ? "10 列 · 12 ms"
+            : state === "empty"
+              ? "0 列 · 8 ms"
+              : state === "failure"
+                ? "查詢失敗：Catalog Error"
+                : "",
+        busy: state === "loading",
+        failed: state === "failure",
+        inspection: hiddenForMode ? explorerHiddenPart(360, 31) : explorerPart(360, 31),
+      },
+      sql: {
+        text: mode === "print" ? "檢視或修改查詢語句 SELECT 1;" : "檢視或修改查詢語句",
+        open: false,
+        inspection: explorerPart(420, 40, { detailsAncestor: true }),
+      },
+      tables: {
+        text: "按下執行之後，這裡會列出實際可以查的表。",
+        inspection: hiddenForMode ? explorerHiddenPart(480, 50) : explorerPart(480, 50),
+      },
+      result: {
+        text: state === "success"
+          ? "station_name date mean"
+          : state === "empty"
+            ? "查詢成立，但沒有任何一列符合條件。"
+            : state === "failure"
+              ? "Catalog Error"
+              : "",
+        hasRows: state === "success",
+        emptyMessage: state === "empty",
+        errorDetail: state === "failure" ? "Catalog Error" : null,
+        inspection: hiddenForMode || !terminal
+          ? explorerHiddenPart(560, 60)
+          : explorerPart(560, 60),
+        focused: terminal,
+      },
+      caveat: {
+        text: "查得到哪些測項，取決於這個站台放了哪些檔案。逐時原始資料另有授權問題待確認。",
+        inspection: explorerPart(640, 70),
+      },
+      noJs: {
+        text: "瀏覽器內查詢需要 JavaScript。本頁不會下載查詢引擎或執行查詢。",
+        inspection: mode === "no-js" ? explorerPart(280, 25) : explorerHiddenPart(280, 25),
+      },
+      document: { clientWidth: 1280, scrollWidth: 1280 },
+    };
+    return fixture;
+  };
+  const explorerPreflightMisses = [];
+  for (const control of [
+    explorerFixture("initial"),
+    explorerFixture("loading"),
+    explorerFixture("success"),
+    explorerFixture("empty"),
+    explorerFixture("failure"),
+    explorerFixture("initial", "zoom"),
+    explorerFixture("initial", "print"),
+    explorerFixture("no-js", "no-js"),
+  ]) {
+    const controlProblems = explorerGuidedWorkspaceProblems(control, { width: 1280, height: 720 });
+    if (controlProblems.length) {
+      explorerPreflightMisses.push(`complete ${control.mode}/${control.state}: ${controlProblems.join(", ")}`);
+    }
+  }
+  const multilineFailure = explorerFixture("failure");
+  multilineFailure.result.errorDetail = "Catalog Error\nLINE 1: SELECT";
+  multilineFailure.result.text = "Catalog Error LINE 1: SELECT";
+  const multilineFailureProblems = explorerGuidedWorkspaceProblems(
+    multilineFailure,
+    { width: 1280, height: 720 },
+  );
+  if (multilineFailureProblems.length) {
+    explorerPreflightMisses.push(
+      `valid multiline failure rejected: ${multilineFailureProblems.join(", ")}`,
+    );
+  }
+  const explorerMutations = [
+    ["missing top-level key", "state shape changed", (state) => { delete state.caveat; }],
+    ["extra top-level key", "state shape changed", (state) => { state.extra = true; }],
+    ["invalid mode", "mode is invalid", (state) => { state.mode = "other"; }],
+    ["boolean count", "workspace count is true", (state) => { state.counts.workspace = true; }],
+    ["missing step", "step inventory changed", (state) => { state.steps.pop(); state.counts.steps = 2; }],
+    ["extra step key", "step 1 shape changed", (state) => { state.steps[0].extra = true; }],
+    ["reordered steps", "step 1 key changed", (state) => { [state.steps[0], state.steps[1]] = [state.steps[1], state.steps[0]]; }],
+    ["wrong step title", "step 1 title changed", (state) => { state.steps[0].title = "另一個問題"; }],
+    ["wrong step text", "step 1 text changed", (state) => { state.steps[0].text = "另一段說明"; }],
+    ["wrong step AX", "step 1 accessible text changed", (state) => { state.steps[0].accessibleText = "另一段名稱"; }],
+    ["hidden step", "step 1 is hidden", (state) => { state.steps[0].inspection.hidden = true; }],
+    ["zero-area step", "step 1 has no rendered area", (state) => { state.steps[0].inspection.height = 0; }],
+    ["off-canvas step", "step 1 is horizontally off-canvas", (state) => { state.steps[0].inspection.left = 1300; state.steps[0].inspection.right = 1480; }],
+    ["clipped step", "step 1 is clipped by an ancestor", (state) => { state.steps[0].inspection.ancestorClipped = true; }],
+    ["disclosure step", "step 1 is user-collapsible", (state) => { state.steps[0].inspection.detailsAncestor = true; }],
+    ["non-finite geometry", "step 1 inspection width is not finite", (state) => { state.steps[0].inspection.width = Number.NaN; }],
+    ["visual step reorder", "step visual order changed", (state) => { state.steps[0].inspection.left = 700; }],
+    ["source reorder", "source order changed", (state) => { state.run.inspection.sourceIndex = 19; }],
+    ["integer run disabled", "run disabled is not boolean", (state) => { state.run.disabled = 1; }],
+    ["wrong run AX", "run accessible text changed", (state) => { state.run.accessibleText = "開始"; }],
+    ["hidden run", "run control is hidden", (state) => { state.run.inspection.hidden = true; }],
+    ["status busy type", "status busy is not boolean", (state) => { state.status.busy = 1; }],
+    ["loading enabled run", "loading semantics changed", (state) => { state.state = "loading"; state.status.text = "準備查詢"; state.status.busy = true; }],
+    ["loading prior result", "loading presents a prior result", (state) => { state.state = "loading"; state.run.disabled = true; state.status.text = "準備查詢"; state.status.busy = true; state.result.text = "舊答案"; }],
+    ["success without rows", "success semantics changed", (state) => { Object.assign(state, explorerFixture("success")); state.result.hasRows = false; }],
+    ["empty without message", "empty semantics changed", (state) => { Object.assign(state, explorerFixture("empty")); state.result.emptyMessage = false; }],
+    ["failure without detail", "failure semantics changed", (state) => { Object.assign(state, explorerFixture("failure")); state.result.errorDetail = null; }],
+    ["lost result focus", "success semantics changed", (state) => { Object.assign(state, explorerFixture("success")); state.result.focused = false; }],
+    ["no-JavaScript active run", "no-JavaScript run control is visibly rendered", (state) => { Object.assign(state, explorerFixture("no-js", "no-js")); state.run.inspection = explorerPart(320, 30); }],
+    ["no-JavaScript hidden notice", "no-JavaScript no-JavaScript notice is hidden", (state) => { Object.assign(state, explorerFixture("no-js", "no-js")); state.noJs.inspection.hidden = true; }],
+    ["print missing SQL", "print SQL content is missing", (state) => { Object.assign(state, explorerFixture("initial", "print")); state.sql.text = "檢視或修改查詢語句"; }],
+    ["document overflow", "document scrolls sideways", (state) => { state.document.scrollWidth = 1281; }],
+    ["zoom contradictory result", "zoom explore initial result is not empty", (state) => { Object.assign(state, explorerFixture("initial", "zoom")); state.result.text = "舊答案"; state.result.hasRows = true; state.result.inspection = explorerPart(560, 60); }],
+  ];
+  for (const [name, expectedProblem, mutate] of explorerMutations) {
+    const state = explorerFixture("initial");
+    const before = JSON.stringify(state);
+    mutate(state);
+    if (JSON.stringify(state) === before) {
+      explorerPreflightMisses.push(`${name} mutation did not change the control`);
+      continue;
+    }
+    const problems = explorerGuidedWorkspaceProblems(state, { width: 1280, height: 720 });
+    if (!problems.some((problem) => problem.includes(expectedProblem))) {
+      explorerPreflightMisses.push(`${name} -> ${expectedProblem}`);
+    }
+  }
+  if (explorerPreflightMisses.length) {
+    throw new Error(`the Explore preflight misses ${explorerPreflightMisses.join("; ")}`);
+  }
+  console.log("site quality explore guided local workspace self-test passed");
 
   const completeCompactIdentity = {
     visible: true,
@@ -7941,6 +8618,7 @@ async function openBrowser(chrome, debugPort) {
   let id = 0;
   const pending = new Map();
   const eventWaiters = new Map();
+  const eventHandlers = new Map();
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.id && pending.has(message.id)) {
@@ -7950,6 +8628,9 @@ async function openBrowser(chrome, debugPort) {
     if (message.method && eventWaiters.has(message.method)) {
       for (const resolve of eventWaiters.get(message.method)) resolve(message.params);
       eventWaiters.delete(message.method);
+    }
+    if (message.method && eventHandlers.has(message.method)) {
+      for (const handler of eventHandlers.get(message.method)) handler(message.params);
     }
   });
   const send = (method, params = {}, label = method) => {
@@ -7986,11 +8667,21 @@ async function openBrowser(chrome, debugPort) {
       if (!waiters?.size) eventWaiters.delete(method);
     });
   };
+  const onEvent = (method, handler) => {
+    const handlers = eventHandlers.get(method) ?? new Set();
+    handlers.add(handler);
+    eventHandlers.set(method, handlers);
+    return () => {
+      handlers.delete(handler);
+      if (!handlers.size) eventHandlers.delete(method);
+    };
+  };
 
   return {
     send,
     evaluate,
     waitForEvent,
+    onEvent,
     async close() {
       ws.close();
       await terminateProcess(proc);
@@ -8396,6 +9087,7 @@ async function main() {
   let send = browser.send;
   let evaluate = browser.evaluate;
   let waitForEvent = browser.waitForEvent;
+  let onEvent = browser.onEvent;
   const restartBrowser = async () => {
     debugPort += 1;
     browser = await replaceBrowser(browser, () => openBrowser(chrome, debugPort));
@@ -8403,6 +9095,7 @@ async function main() {
     send = browser.send;
     evaluate = browser.evaluate;
     waitForEvent = browser.waitForEvent;
+    onEvent = browser.onEvent;
   };
 
   const pressKey = async (key) => {
@@ -8922,6 +9615,20 @@ async function main() {
     for (const [index, row] of state.downloadRows.entries()) {
       row.downloadAccessibleTexts = downloadTexts.slice(index * 2, index * 2 + 2);
     }
+    return state;
+  };
+
+  const explorerGuidedWorkspaceSnapshot = async (mode) => {
+    const state = await evaluate(explorerGuidedWorkspaceSnapshotExpression(mode));
+    if (!state) return state;
+    const [stepTexts, runTexts] = await accessibilityTextsForSelectors([
+      "[data-explorer-step]",
+      "#run",
+    ]);
+    for (const [index, step] of state.steps.entries()) {
+      step.accessibleText = stepTexts[index] ?? null;
+    }
+    state.run.accessibleText = runTexts[0] ?? null;
     return state;
   };
 
@@ -9925,6 +10632,250 @@ async function main() {
       if (!problems.some((problem) => problem.includes(mutation.expected))) {
         failures.push(`${mutation.name} did not reach ${JSON.stringify(mutation.expected)} (received ${problems.join(", ") || "no problems"})`);
       }
+    }
+    return failures;
+  };
+
+  const explorerBrowserMutationFailures = async (origin) => {
+    const failures = [];
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await send("Emulation.setEmulatedMedia", {
+      media: "",
+      features: [{ name: "prefers-color-scheme", value: "light" }],
+    });
+    await send("Page.enable");
+    await send("Network.enable");
+    await send("Network.setCacheDisabled", { cacheDisabled: true });
+    const requests = [];
+    const stopNetwork = onEvent("Network.requestWillBeSent", (event) => {
+      const url = event?.request?.url;
+      if (typeof url === "string") requests.push(url);
+    });
+    const deferredRequest = (url) =>
+      /(?:\/data\/l1\/|\bduckdb|\/duck\.|\.wasm(?:$|\?))/iu.test(url);
+    const loadExplore = async (label) => {
+      await send("Page.navigate", { url: `${origin}/explore/` });
+      return settled(evaluate, 8000, `/explore/ ${label}`);
+    };
+    const checkSnapshot = async (label, mode = "normal") => {
+      const state = await explorerGuidedWorkspaceSnapshot(mode);
+      const problems = explorerGuidedWorkspaceProblems(state, { width: 1280, height: 720 });
+      if (problems.length) {
+        failures.push(
+          `${label}: ${problems.join(", ")} ` +
+            `(snapshot=${JSON.stringify({
+              state: state?.state,
+              run: state?.run,
+              status: state?.status,
+              result: state?.result,
+              sql: state?.sql,
+            })})`,
+        );
+      }
+      return state;
+    };
+    const waitForOutcome = async (expected, label) => {
+      let last = null;
+      for (let waited = 0; waited <= 30000; waited += 100) {
+        last = await evaluate(`(() => ({
+          state: document.querySelector("[data-explorer-workspace]")?.dataset.explorerState ?? "",
+          disabled: document.querySelector("#run")?.disabled ?? null,
+          hasRows: Boolean(document.querySelector("[data-explorer-result] tbody > tr")),
+          empty: Boolean(document.querySelector("[data-explorer-result] .no-rows")),
+          failure: Boolean(document.querySelector("[data-explorer-result] .error")),
+        }))()`);
+        if (last?.state === expected) return explorerGuidedWorkspaceSnapshot("normal");
+        if (!last?.disabled && (last?.hasRows || last?.empty || last?.failure)) {
+          return explorerGuidedWorkspaceSnapshot("normal");
+        }
+        await sleep(100);
+      }
+      failures.push(`${label} did not reach ${expected}; last state ${JSON.stringify(last)}`);
+      return explorerGuidedWorkspaceSnapshot("normal");
+    };
+    const clickWithSql = (sql) => evaluate(`(() => {
+      const sql = document.querySelector("#sql");
+      if (${JSON.stringify(sql)} !== null) sql.value = ${JSON.stringify(sql)};
+      const run = document.querySelector("#run");
+      run.click();
+      return {
+        state: document.querySelector("[data-explorer-workspace]")?.dataset.explorerState ?? "",
+        disabled: run.disabled,
+        status: document.querySelector("#status")?.innerText?.trim() ?? "",
+        busy: document.querySelector("#status")?.dataset.busy === "true",
+        result: document.querySelector("[data-explorer-result]")?.innerText?.trim() ?? "",
+        focused: document.activeElement === document.querySelector("[data-explorer-result]"),
+      };
+    })()`);
+    try {
+      if (!(await loadExplore("production-state control"))) {
+        return ["production-state control never finished styling"];
+      }
+      const initialRequestCount = requests.length;
+      const initialDeferred = requests.slice(0, initialRequestCount).filter(deferredRequest);
+      if (initialDeferred.length) {
+        failures.push(`initial page eagerly requested ${initialDeferred.join(", ")}`);
+      }
+      const initial = await checkSnapshot("initial production snapshot");
+      if (initial?.state !== "initial") failures.push("initial production state changed");
+
+      const noJsRequestIndex = requests.length;
+      const noJs = await navigateWithoutPageScripts(
+        send,
+        waitForEvent,
+        `${origin}/explore/`,
+        async () => {
+          await settlePaint(evaluate, "/explore/ no-JavaScript render wait");
+          return explorerGuidedWorkspaceSnapshot("no-js");
+        },
+      );
+      const noJsProblems = explorerGuidedWorkspaceProblems(noJs, { width: 1280, height: 720 });
+      if (noJsProblems.length) failures.push(`no-JavaScript query: ${noJsProblems.join(", ")}`);
+      const noJsDeferred = requests.slice(noJsRequestIndex).filter(deferredRequest);
+      if (noJsDeferred.length) {
+        failures.push(`no-JavaScript page requested ${noJsDeferred.join(", ")}`);
+      }
+      if (!(await loadExplore("post-no-JavaScript production-state control"))) {
+        failures.push("post-no-JavaScript production-state control never finished styling");
+      }
+      const actionRequestIndex = requests.length;
+
+      const firstLoading = await clickWithSql(null);
+      if (
+        firstLoading?.state !== "loading" || firstLoading?.disabled !== true ||
+        firstLoading?.busy !== true || !firstLoading?.status || firstLoading?.result !== "" ||
+        firstLoading?.focused
+      ) {
+        failures.push(`click did not synchronously enter loading: ${JSON.stringify(firstLoading)}`);
+      }
+      const success = await waitForOutcome("success", "default query");
+      if (success?.state !== "success") {
+        failures.push(`default query state is ${String(success?.state)}, expected success`);
+      }
+      const successProblems = explorerGuidedWorkspaceProblems(success, { width: 1280, height: 720 });
+      if (successProblems.length) failures.push(`default query: ${successProblems.join(", ")}`);
+      const deferredAfterClick = requests.slice(actionRequestIndex).filter(deferredRequest);
+      if (
+        !deferredAfterClick.some((url) => /\/_astro\/duckdb-browser\.[^/]+\.js(?:$|\?)/iu.test(url)) ||
+        !deferredAfterClick.some((url) => /\.worker\.[^/]+\.js(?:$|\?)/iu.test(url))
+      ) {
+        failures.push(
+          `default query did not request the DuckDB module and worker after action ` +
+            `(requests=${JSON.stringify(requests.slice(actionRequestIndex))})`,
+        );
+      }
+      if (!deferredAfterClick.some((url) => /\/data\/l1\//iu.test(url))) {
+        failures.push("default query did not probe an L1 data file after action");
+      }
+
+      const emptyLoading = await clickWithSql(
+        'SELECT station_name FROM "PM2.5" WHERE 1 = 0;',
+      );
+      if (emptyLoading?.state !== "loading" || emptyLoading?.result !== "") {
+        failures.push(`empty query did not clear and enter loading: ${JSON.stringify(emptyLoading)}`);
+      }
+      const empty = await waitForOutcome("empty", "zero-row query");
+      if (empty?.state !== "empty") {
+        failures.push(`zero-row query state is ${String(empty?.state)}, expected empty`);
+      }
+      const emptyProblems = explorerGuidedWorkspaceProblems(empty, { width: 1280, height: 720 });
+      if (emptyProblems.length) failures.push(`zero-row query: ${emptyProblems.join(", ")}`);
+
+      const failureLoading = await clickWithSql("SELECT * FROM definitely_not_a_table;");
+      if (failureLoading?.state !== "loading" || failureLoading?.result !== "") {
+        failures.push(`invalid query did not clear and enter loading: ${JSON.stringify(failureLoading)}`);
+      }
+      const failure = await waitForOutcome("failure", "invalid query");
+      if (failure?.state !== "failure") {
+        failures.push(`invalid query state is ${String(failure?.state)}, expected failure`);
+      }
+      const failureProblems = explorerGuidedWorkspaceProblems(failure, { width: 1280, height: 720 });
+      if (failureProblems.length) {
+        failures.push(
+          `invalid query: ${failureProblems.join(", ")} ` +
+            `(snapshot=${JSON.stringify({
+              state: failure?.state,
+              run: failure?.run,
+              status: failure?.status,
+              result: failure?.result,
+            })})`,
+        );
+      }
+
+      const defaultSql = await evaluate(`JSON.parse(
+        document.querySelector("#explorer-examples")?.textContent ?? "[]"
+      )[0] ?? null`);
+      const retryLoading = await clickWithSql(defaultSql);
+      if (retryLoading?.state !== "loading" || retryLoading?.result !== "") {
+        failures.push(`retry did not clear and enter loading: ${JSON.stringify(retryLoading)}`);
+      }
+      const retry = await waitForOutcome("success", "retry query");
+      if (retry?.state !== "success") {
+        failures.push(`retry state is ${String(retry?.state)}, expected success`);
+      }
+      const retryProblems = explorerGuidedWorkspaceProblems(retry, { width: 1280, height: 720 });
+      if (retryProblems.length) failures.push(`retry query: ${retryProblems.join(", ")}`);
+
+      await send("Emulation.setEmulatedMedia", { media: "print" });
+      if (!(await loadExplore("print contract"))) {
+        failures.push("print page never finished styling");
+      } else {
+        await checkSnapshot("print query", "print");
+      }
+      await send("Emulation.setEmulatedMedia", { media: "", features: [] });
+      if (!(await loadExplore("zoom contract"))) {
+        failures.push("zoom page never finished styling");
+      } else {
+        await evaluate(`(() => {
+          const base = parseFloat(getComputedStyle(document.documentElement).fontSize);
+          document.documentElement.style.setProperty("font-size", String(base * 2) + "px", "important");
+        })()`);
+        await settlePaint(evaluate, "/explore/ 200% text render wait");
+        await checkSnapshot("zoom query", "zoom");
+      }
+
+      const mutations = [
+        { name: "hidden step", expected: "step 1 is hidden", script: `document.querySelector("[data-explorer-step]").hidden = true` },
+        { name: "wrong step AX", expected: "step 1 accessible text changed", script: `document.querySelector("[data-explorer-step]").setAttribute("aria-label", "另一個步驟")` },
+        { name: "step self overflow", expected: "step 1 clips its own content", script: `(() => { const e=document.querySelector("[data-explorer-step]"); e.style.cssText="width:40px;overflow:hidden;white-space:nowrap"; })()` },
+        { name: "step ancestor clipping", expected: "step 1 is clipped by an ancestor", script: `(() => { const e=document.querySelector("[data-explorer-step]"); const w=document.createElement("div"); w.style.cssText="height:1px;overflow:hidden"; e.before(w); w.append(e); })()` },
+        { name: "step CSS clip", expected: "step 1 uses CSS clip", script: `document.querySelector("[data-explorer-step]").style.cssText="position:absolute;clip:rect(0px,1px,1px,0px)"` },
+        { name: "step CSS clip-path", expected: "step 1 uses CSS clip-path", script: `document.querySelector("[data-explorer-step]").style.clipPath="inset(50%)"` },
+        { name: "off-canvas step", expected: "step 1 is horizontally off-canvas", script: `document.querySelector("[data-explorer-step]").style.transform="translateX(200vw)"` },
+        { name: "step disclosure", expected: "step 1 is user-collapsible", script: `(() => { const e=document.querySelector("[data-explorer-step]"); const d=document.createElement("details"); d.open=true; e.before(d); d.append(e); })()` },
+        { name: "reordered steps", expected: "step 1 key changed", script: `(() => { const p=document.querySelector("[data-explorer-path]"); p.prepend(p.lastElementChild); })()` },
+        { name: "hidden run", expected: "run control is hidden", script: `document.querySelector("#run").hidden=true` },
+        { name: "wrong run AX", expected: "run accessible text changed", script: `document.querySelector("#run").setAttribute("aria-label", "開始")` },
+        { name: "controls after SQL", expected: "source order changed", script: `document.querySelector("[data-explorer-sql]").after(document.querySelector("[data-explorer-controls]"))` },
+        { name: "result before tables", expected: "source order changed", script: `document.querySelector("[data-explorer-tables]").before(document.querySelector("[data-explorer-result]"))` },
+        { name: "caveat before result", expected: "source order changed", script: `document.querySelector("[data-explorer-result]").before(document.querySelector("[data-explorer-caveat]"))` },
+        { name: "duplicate result", expected: "results count is 2", script: `document.querySelector("[data-explorer-result]").after(document.querySelector("[data-explorer-result]").cloneNode(true))` },
+        { name: "document overflow", expected: "document scrolls sideways", script: `document.body.style.width="200vw"` },
+      ];
+      for (const mutation of mutations) {
+        if (!(await loadExplore(`browser mutation ${mutation.name}`))) {
+          failures.push(`${mutation.name} page never finished styling`);
+          continue;
+        }
+        await evaluate(mutation.script);
+        await settlePaint(evaluate);
+        const state = await explorerGuidedWorkspaceSnapshot("normal");
+        const problems = explorerGuidedWorkspaceProblems(state, { width: 1280, height: 720 });
+        if (!problems.some((problem) => problem.includes(mutation.expected))) {
+          failures.push(
+            `${mutation.name} did not reach ${JSON.stringify(mutation.expected)} ` +
+              `(received ${problems.join(", ") || "no problems"})`,
+          );
+        }
+      }
+    } finally {
+      stopNetwork();
+      await send("Network.disable");
     }
     return failures;
   };
@@ -11550,7 +12501,7 @@ async function main() {
   };
 
   const origin = `http://127.0.0.1:${PORT}`;
-  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST) {
+  if (!HEALTH_BROWSER_SELF_TEST && !FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST && !EXPLORE_BROWSER_SELF_TEST) {
     console.log("site-quality stage: detection browser mutations");
     const detectionMutationFailures = await detectionBrowserMutationFailures(origin);
     if (DETECTION_BROWSER_SELF_TEST) {
@@ -11565,7 +12516,7 @@ async function main() {
       failures.push(`/detection/ browser mutation: ${problem}`);
     }
   }
-  if (!FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST) {
+  if (!FORECAST_BROWSER_SELF_TEST && !METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST && !EXPLORE_BROWSER_SELF_TEST) {
     console.log("site-quality stage: health browser mutations");
     const healthMutationFailures = await healthBrowserMutationFailures(origin);
     if (HEALTH_BROWSER_SELF_TEST) {
@@ -11580,7 +12531,7 @@ async function main() {
       failures.push(`/health/ browser mutation: ${problem}`);
     }
   }
-  if (!METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST) {
+  if (!METHODS_BROWSER_SELF_TEST && !DATA_BROWSER_SELF_TEST && !EXPLORE_BROWSER_SELF_TEST) {
     console.log("site-quality stage: forecast browser mutations");
     const forecastMutationFailures = await forecastBrowserMutationFailures(origin);
     if (FORECAST_BROWSER_SELF_TEST) {
@@ -11595,7 +12546,7 @@ async function main() {
       failures.push(`/forecast/ browser mutation: ${problem}`);
     }
   }
-  if (!DATA_BROWSER_SELF_TEST) {
+  if (!DATA_BROWSER_SELF_TEST && !EXPLORE_BROWSER_SELF_TEST) {
     console.log("site-quality stage: methods browser mutations");
     const methodsMutationFailures = await methodsBrowserMutationFailures(origin);
     if (METHODS_BROWSER_SELF_TEST) {
@@ -11610,18 +12561,33 @@ async function main() {
       failures.push(`/methods/ browser mutation: ${problem}`);
     }
   }
-  console.log("site-quality stage: data browser mutations");
-  const dataMutationFailures = await dataBrowserMutationFailures(origin);
-  if (DATA_BROWSER_SELF_TEST) {
-    if (dataMutationFailures.length) {
-      for (const problem of dataMutationFailures) console.log(`  FAIL: ${problem}`);
+  if (!EXPLORE_BROWSER_SELF_TEST) {
+    console.log("site-quality stage: data browser mutations");
+    const dataMutationFailures = await dataBrowserMutationFailures(origin);
+    if (DATA_BROWSER_SELF_TEST) {
+      if (dataMutationFailures.length) {
+        for (const problem of dataMutationFailures) console.log(`  FAIL: ${problem}`);
+        return 1;
+      }
+      console.log("site quality data browser mutation self-test passed");
+      return 0;
+    }
+    for (const problem of dataMutationFailures) {
+      failures.push(`/data/ browser mutation: ${problem}`);
+    }
+  }
+  console.log("site-quality stage: explore browser mutations and production states");
+  const exploreMutationFailures = await explorerBrowserMutationFailures(origin);
+  if (EXPLORE_BROWSER_SELF_TEST) {
+    if (exploreMutationFailures.length) {
+      for (const problem of exploreMutationFailures) console.log(`  FAIL: ${problem}`);
       return 1;
     }
-    console.log("site quality data browser mutation self-test passed");
+    console.log("site quality explore browser mutation self-test passed");
     return 0;
   }
-  for (const problem of dataMutationFailures) {
-    failures.push(`/data/ browser mutation: ${problem}`);
+  for (const problem of exploreMutationFailures) {
+    failures.push(`/explore/ browser mutation: ${problem}`);
   }
   console.log("site-quality stage: theme and storage contract");
   await send("Emulation.setDeviceMetricsOverride", {
@@ -12099,6 +13065,15 @@ async function main() {
         failures.push(`${route}: ${problem}`);
       }
     }
+    if (route === "/explore/") {
+      const explorerState = await explorerGuidedWorkspaceSnapshot("no-js");
+      for (const problem of explorerGuidedWorkspaceProblems(
+        explorerState,
+        { width: 375, height: 800 },
+      )) {
+        failures.push(`${route}: ${problem}`);
+      }
+    }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
         failures.push(`${route}: no-JavaScript ${problem}`);
@@ -12404,6 +13379,12 @@ async function main() {
           );
         }
         for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
+          failures.push(`${route} @${width}x${height} light opening: ${problem}`);
+        }
+      }
+      if (route === "/explore/") {
+        const explorerState = await explorerGuidedWorkspaceSnapshot("normal");
+        for (const problem of explorerGuidedWorkspaceProblems(explorerState, { width, height })) {
           failures.push(`${route} @${width}x${height} light opening: ${problem}`);
         }
       }
@@ -12749,6 +13730,19 @@ async function main() {
     }
   }
 
+  await send("Page.navigate", { url: `${origin}/explore/` });
+  if (!(await settled(evaluate, 8000, "/explore/ print guided workspace"))) {
+    failures.push("explore print page never finished styling");
+  } else {
+    const explorerState = await explorerGuidedWorkspaceSnapshot("print");
+    for (const problem of explorerGuidedWorkspaceProblems(
+      explorerState,
+      { width: 1440, height: 900 },
+    )) {
+      failures.push(`/explore/ print: ${problem}`);
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -12847,6 +13841,12 @@ async function main() {
         if (route === "/data/") {
           const dataState = await dataProvenanceRegisterSnapshot("normal");
           for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/explore/") {
+          const explorerState = await explorerGuidedWorkspaceSnapshot("normal");
+          for (const problem of explorerGuidedWorkspaceProblems(explorerState, { width, height })) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
@@ -14315,6 +15315,12 @@ async function main() {
     if (route === "/data/") {
       const dataState = await dataProvenanceRegisterSnapshot("zoom");
       for (const problem of dataProvenanceRegisterProblems(dataState, dataState?.viewport)) {
+        failures.push(`${state}: ${problem}`);
+      }
+    }
+    if (route === "/explore/") {
+      const explorerState = await explorerGuidedWorkspaceSnapshot("zoom");
+      for (const problem of explorerGuidedWorkspaceProblems(explorerState, { width, height })) {
         failures.push(`${state}: ${problem}`);
       }
     }

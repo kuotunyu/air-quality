@@ -45,6 +45,7 @@ def test_the_site_quality_gate_self_tests_its_bounded_browser_protocol() -> None
         "site quality forecast horizon decision self-test passed",
         "site quality methods seven-case index self-test passed",
         "site quality data provenance register self-test passed",
+        "site quality explore guided local workspace self-test passed",
         "site quality compact identity self-test passed",
         "site quality sources conditional-atlas self-test passed",
         "site quality browser restart self-test passed",
