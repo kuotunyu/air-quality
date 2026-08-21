@@ -83,7 +83,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   </style>
 </noscript>
 
-<div class="picker" data-primary-evidence>
+<div class="picker" data-primary-evidence data-station-picker>
   <p class="note nojs">
     這一章的測站選單需要 JavaScript。下面直接列出全部 {cards.length} 個測站，
     依縣市由北到南排序。
@@ -107,7 +107,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   */}
   <p id="station-say" class="visually-hidden" role="status" aria-live="polite"></p>
 
-  <div class="controls station-controls">
+  <div class="controls station-controls" data-station-controls>
     <label class="control-field">
       <span class="control-label">測站</span>
       <select id="station-select">
@@ -141,27 +141,28 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
       <article
         class="report"
         data-station={card.station_name}
+        data-station-report
         hidden={card.station_name !== initial.station_name}
       >
-        <header>
+        <header data-station-identity>
           <h2>
-            {card.station_name}
+            <span data-station-name>{card.station_name}</span>
             <span class="place">
               {card.county}
               {card.township ? ` ${card.township}` : ""}
               {card.station_type ? ` · ${stationType(card.station_type)}` : ""}
             </span>
           </h2>
-          <span class="year num">{card.year} 年</span>
+          <span class="year num" data-station-year>{card.year} 年</span>
         </header>
 
-        <div class="grid grid-4">
-          <div class="stat">
+        <div class="station-stats" data-station-stats>
+          <div class="stat" data-station-stat="annual-mean">
             <span class="stat-value">{n(card.annual_mean)}</span>
             <span class="stat-label">年均 PM2.5</span>
             <span class="stat-note">μg/m³</span>
           </div>
-          <div class="stat">
+          <div class="stat" data-station-stat="who-annual">
             <span class="stat-value">{card.times_who_annual}×</span>
             <span class="stat-label">WHO 年均指引的倍數</span>
             <span class="stat-note">指引值 5 μg/m³</span>
@@ -177,14 +178,14 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
             from the same place the threshold came from, or it is a caption for a
             number it is not attached to.
           */}
-          <div class="stat">
+          <div class="stat" data-station-stat="who-days">
             <span class="stat-value">{card.days_over_who ?? "—"}</span>
             <span class="stat-label">超過 WHO 日均指引的天數</span>
             <span class="stat-note">
               {n(guidelines.who_2021_daily)} μg/m³ · 共 {card.days_with_data} 天有資料
             </span>
           </div>
-          <div class="stat">
+          <div class="stat" data-station-stat="taiwan-days">
             <span class="stat-value">{card.days_over_taiwan ?? "—"}</span>
             <span class="stat-label">超過台灣日均標準的天數</span>
             <span class="stat-note">
@@ -193,20 +194,20 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
           </div>
         </div>
 
-        <div class="row">
-          <p class="line">
+        <div class="row" data-station-comparisons>
+          <p class="line" data-station-comparison="conversion">
             <span class="num big">{card.cigarettes_per_day}</span> 支菸／天
             <span class="dim">——粗略等效換算</span>
           </p>
           {
             card.rank != null && card.stations_ranked != null && (
-              <p class="line">
+              <p class="line" data-station-comparison="rank">
                 全台排名 <span class="num big">{card.rank}</span>
                 <span class="dim">／{card.stations_ranked} 站（1 = 年均最低）</span>
               </p>
             )
           }
-          <p class="line">
+          <p class="line" data-station-comparison="worst-day">
             當年日均最高的一天 <span class="num big">{n(card.worst_day)}</span>{" "}
             <span class="dim">μg/m³</span>
           </p>
@@ -224,7 +225,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     chapter 1's time series gets the limit in force each year. A reader who
     knows the number changed has to be able to see which one this is.
   */}
-  <p class="note">
+  <p class="note" data-station-standard-note>
     這一欄用的是<strong>現行</strong>標準（{n(guidelines.taiwan_daily)} μg/m³），
     每一站、每一年都同一把尺——{TW_PM25_TIGHTENED} 年 9 月 30 日之前，日均標準是
     {" "}{TW_PM25_DAILY_BEFORE} μg/m³，而 {TW_PM25_ADDED} 年之前 PM2.5 根本不在
@@ -238,7 +239,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     那裡的橫軸就是時間，法規改了本來就該看得見，{TW_PM25_ADDED} 年以前也就沒有線。
   </p>
 
-  <p class="note caveat">{caveat}</p>
+  <p class="note caveat" data-station-conversion-note>{caveat}</p>
 </div>
 
 <script>
@@ -287,7 +288,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 
 <style>
   .picker {
-    margin-top: 1.5rem;
+    margin-top: var(--space-4);
   }
 
   .station-controls {
@@ -314,10 +315,12 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     margin-bottom: 0;
   }
   .report {
-    background: var(--bg-raised);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 1.4rem 1.5rem;
+    container-type: inline-size;
+    background: transparent;
+    border: 0;
+    border-block: 1px solid var(--line);
+    border-radius: 0;
+    padding: var(--space-4) 0;
   }
   .report header {
     display: flex;
@@ -346,9 +349,9 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     font-size: var(--text-sm);
   }
   .row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem 2.2rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: var(--space-3);
     margin-top: 1.5rem;
     padding-top: 1.2rem;
     border-top: 1px solid var(--line-soft);
@@ -371,5 +374,57 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   .dim {
     color: var(--text-faint);
     font-size: var(--text-sm);
+  }
+
+  .station-stats {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .station-stats > .stat {
+    min-width: 0;
+    padding-block: var(--space-3);
+    border-block-start: 1px solid var(--line-soft);
+  }
+
+  .picker > .note[data-station-standard-note],
+  .picker > .note[data-station-conversion-note] {
+    max-width: var(--measure);
+    background: transparent;
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  @container (min-width: 30rem) {
+    .station-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .station-stats > .stat {
+      padding-inline-end: var(--space-3);
+    }
+  }
+
+  @container (min-width: 40rem) {
+    .station-stats {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  @media print {
+    .station-controls,
+    #station-say,
+    .nojs {
+      display: none !important;
+    }
+
+    .report[hidden] {
+      display: block !important;
+    }
+
+    .report {
+      break-inside: avoid;
+    }
   }
 </style>
