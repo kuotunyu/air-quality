@@ -538,6 +538,12 @@ brand
    第 68 條的 first-plot 首屏條件；共用品質門在 responsive 視埠、無 JavaScript、列印與
    200% 文字縮放下仍要求索引與全部目的地可見、可由 accessibility tree 讀取、
    不可收合，且不造成整頁橫向溢出。
+78. **第十章把資料層級寫成讀者可採取的任務。** `/data/` 依 source order 呈現
+   L0「閱讀者 · 快速查值與網站圖表」、L1「分析者 · 逐日查詢與桌面分析」與
+   L2「重現者 · 逐時稽核與管線重建」三筆 provenance register，並保留原有內容描述、
+   二十一筆測項與四十二個 L0／L1 下載，以及 L2 不提供下載的授權界線。共用品質閘門在
+   responsive 視埠、無 JavaScript、列印與 200% 文字縮放下要求相同的層級、用途、順序、
+   accessibility 與可見性；窄版表格只在自己的 wrapper 內捲動，不得造成整頁橫向溢出。
 
 
 ## Accessibility & Inclusion
