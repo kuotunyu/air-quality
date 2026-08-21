@@ -544,6 +544,12 @@ brand
    二十一筆測項與四十二個 L0／L1 下載，以及 L2 不提供下載的授權界線。共用品質閘門在
    responsive 視埠、無 JavaScript、列印與 200% 文字縮放下要求相同的層級、用途、順序、
    accessibility 與可見性；窄版表格只在自己的 wrapper 內捲動，不得造成整頁橫向溢出。
+79. **第九章把本機查詢寫成三步閱讀路徑。** `/explore/` 依 source order 呈現「選一個問題」、
+   「在瀏覽器內執行」與「讀結果與限制」，保留六個既有範例、按下執行後才載入的
+   DuckDB-WASM、可編輯 SQL、實際可用表、空結果、完整錯誤與 L2／授權限制。共用品質閘門
+   以真實 production handler 覆蓋 initial、loading、success、empty、failure、retry 與
+   no-JavaScript，並在 responsive、列印與 200% 文字縮放下要求相同的順序、可見性、
+   accessibility、焦點與無整頁橫向溢出。
 
 
 ## Accessibility & Inclusion
