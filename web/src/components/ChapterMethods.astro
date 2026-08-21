@@ -120,6 +120,16 @@ const gTicks = ticks(gDomain[0], gDomain[1], 4);
  */
 const WEEKDAY_NAMES = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"];
 
+const METHOD_CASES = [
+  { number: "01", id: "method-case-01", title: "月平均抹掉了六成的變異" },
+  { number: "02", id: "method-case-02", title: "拿 PM10 預測 PM2.5" },
+  { number: "03", id: "method-case-03", title: "把風向當成 0 到 360 的普通數字" },
+  { number: "04", id: "method-case-04", title: "用常態檢定證明資料常態" },
+  { number: "05", id: "method-case-05", title: "NO、NO₂、NOx 一起放進迴歸" },
+  { number: "06", id: "method-case-06", title: "用 AIC/BIC 當作模型好壞的證據" },
+  { number: "07", id: "method-case-07", title: "用一句話處理掉所有缺漏值" },
+] as const;
+
 // --- small inline chart for the diurnal cycle -------------------------------
 const dDomain = padded(diurnalValues, { zero: false });
 const dx = linear([0, 23], [0, 100]);
@@ -135,9 +145,27 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </p>
   </ChapterIntro>
 
+  <nav
+    class="method-case-index"
+    data-method-case-index
+    aria-labelledby="method-case-index-title"
+  >
+    <h2 id="method-case-index-title">七個案例索引</h2>
+    <ol>
+      {METHOD_CASES.map((entry) => (
+        <li>
+          <a data-method-case-link data-case={entry.number} href={`#${entry.id}`}>
+            <span class="num" aria-hidden="true">{entry.number}</span>
+            <span>{entry.title}</span>
+          </a>
+        </li>
+      ))}
+    </ol>
+  </nav>
+
   <!-- ─── 錯誤一 ─── -->
-  <article class="mistake">
-    <h2><span class="num">01</span> 月平均抹掉了六成的變異</h2>
+  <article class="mistake" id={METHOD_CASES[0].id} data-method-case={METHOD_CASES[0].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[0].number}</span> <span>{METHOD_CASES[0].title}</span></h2>
 
     <p>
       被丟掉的是什麼？下圖是日內節律，一個看得見、也最容易說明的成分。
@@ -318,8 +346,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </article>
 
   <!-- ─── 錯誤二 ─── -->
-  <article class="mistake">
-    <h2><span class="num">02</span> 拿 PM10 預測 PM2.5</h2>
+  <article class="mistake" id={METHOD_CASES[1].id} data-method-case={METHOD_CASES[1].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[1].number}</span> <span>{METHOD_CASES[1].title}</span></h2>
 
     <p>
       這個基準裡最顯著的變數是 PM10。
@@ -356,8 +384,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </article>
 
   <!-- ─── 錯誤三 ─── -->
-  <article class="mistake">
-    <h2><span class="num">03</span> 把風向當成 0 到 360 的普通數字</h2>
+  <article class="mistake" id={METHOD_CASES[2].id} data-method-case={METHOD_CASES[2].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[2].number}</span> <span>{METHOD_CASES[2].title}</span></h2>
 
     <p>
       風向是<strong>圓形變數</strong>：359° 和 1° 相差 2 度，不是 358 度。
@@ -433,8 +461,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </article>
 
   <!-- ─── 錯誤四 ─── -->
-  <article class="mistake">
-    <h2><span class="num">04</span> 用常態檢定證明資料常態</h2>
+  <article class="mistake" id={METHOD_CASES[3].id} data-method-case={METHOD_CASES[3].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[3].number}</span> <span>{METHOD_CASES[3].title}</span></h2>
 
     <p>
       常見的做法是先跑 Kolmogorov–Smirnov 檢定，看到 p 值全部是 .000，
@@ -501,8 +529,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </article>
 
   <!-- ─── 錯誤五 ─── -->
-  <article class="mistake">
-    <h2><span class="num">05</span> NO、NO₂、NOx 一起放進迴歸</h2>
+  <article class="mistake" id={METHOD_CASES[4].id} data-method-case={METHOD_CASES[4].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[4].number}</span> <span>{METHOD_CASES[4].title}</span></h2>
 
     <p>
       NOx = NO + NO₂ 是一個恆等式。三個變數同時進入線性模型，
@@ -565,8 +593,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </article>
 
   <!-- ─── 錯誤六 ─── -->
-  <article class="mistake">
-    <h2><span class="num">06</span> 用 AIC/BIC 當作模型好壞的證據</h2>
+  <article class="mistake" id={METHOD_CASES[5].id} data-method-case={METHOD_CASES[5].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[5].number}</span> <span>{METHOD_CASES[5].title}</span></h2>
 
     <p>
       沒有留測試集時，模型只能在訓練資料上評估，用 AIC/BIC 比較。
@@ -597,8 +625,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   </article>
 
   <!-- ─── 錯誤七 ─── -->
-  <article class="mistake">
-    <h2><span class="num">07</span> 用一句話處理掉所有缺漏值</h2>
+  <article class="mistake" id={METHOD_CASES[6].id} data-method-case={METHOD_CASES[6].number}>
+    <h2><span class="num" aria-hidden="true">{METHOD_CASES[6].number}</span> <span>{METHOD_CASES[6].title}</span></h2>
 
     <p>
       缺漏值常常被一句話處理掉：<strong>「以鄰近測站之資料代替」</strong>。
@@ -828,6 +856,74 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 </section>
 
 <style>
+  .method-case-index {
+    container-type: inline-size;
+    margin: var(--space-3) 0 var(--space-4);
+    border-block: 1px solid var(--line);
+  }
+  .method-case-index > h2 {
+    margin: 0;
+    padding: var(--space-2) 0;
+    border-block-end: 1px solid var(--line);
+  }
+  .method-case-index ol {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .method-case-index li {
+    min-width: 0;
+    border-block-end: 1px solid var(--line);
+  }
+  .method-case-index li:nth-child(odd) {
+    padding-inline-end: var(--space-3);
+    border-inline-end: 1px solid var(--line);
+  }
+  .method-case-index li:nth-child(even) {
+    padding-inline-start: var(--space-3);
+  }
+  .method-case-index li:nth-last-child(-n + 2) {
+    border-block-end: 0;
+  }
+  .method-case-index li:last-child {
+    border-inline-end: 0;
+  }
+  .method-case-index a {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    gap: var(--space-1);
+    align-items: baseline;
+    min-height: 44px;
+    padding: var(--space-1) 0;
+    color: inherit;
+    text-decoration-color: transparent;
+  }
+  .method-case-index a:hover,
+  .method-case-index a:focus-visible {
+    text-decoration-color: currentColor;
+  }
+  [data-method-case] {
+    scroll-margin-top: var(--space-5);
+  }
+  @container (max-width: 42rem) {
+    .method-case-index ol {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .method-case-index li,
+    .method-case-index li:nth-child(odd),
+    .method-case-index li:nth-child(even),
+    .method-case-index li:nth-last-child(-n + 2) {
+      padding-inline: 0;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--line);
+    }
+    .method-case-index li:last-child {
+      border-block-end: 0;
+    }
+  }
+
   /*
    * Eight of these stack down the chapter, so their separation is paid seven
    * times. It was 3.5rem of collapsed margin plus 2.5rem of padding above the

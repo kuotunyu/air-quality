@@ -835,6 +835,160 @@ def load_detection_expected_events() -> tuple[DetectionExpectedEvent, ...]:
     return _detection_expected_events_from_payload(payload)
 
 
+METHOD_CASE_ROWS = (
+    ("01", "月平均抹掉了六成的變異", "#method-case-01"),
+    ("02", "拿 PM10 預測 PM2.5", "#method-case-02"),
+    ("03", "把風向當成 0 到 360 的普通數字", "#method-case-03"),
+    ("04", "用常態檢定證明資料常態", "#method-case-04"),
+    ("05", "NO、NO₂、NOx 一起放進迴歸", "#method-case-05"),
+    ("06", "用 AIC/BIC 當作模型好壞的證據", "#method-case-06"),
+    ("07", "用一句話處理掉所有缺漏值", "#method-case-07"),
+)
+METHOD_FIGURE_TITLES = (
+    ("evidence-8-1-title", "月平均隱藏了多少逐時變異？", "01"),
+    ("evidence-8-2-title", "不同補值方法對不同缺口長度付出什麼代價？", "07"),
+)
+
+
+def methods_case_index_failures_for_text(html: str) -> list[str]:
+    parser = StructureParser()
+    parser.feed(html)
+    parser.close()
+    parser.finish()
+    failures = list(parser.errors)
+    elements = parser.elements
+
+    indexes = [
+        element
+        for element in elements
+        if "data-method-case-index" in element.attributes and element.visible
+    ]
+    ordered_list: Element | None = None
+    if len(indexes) != 1:
+        failures.append(f"methods case index inventory changed: {len(indexes)}")
+        index = None
+    else:
+        index = indexes[0]
+        if _is_inside_disclosure(index):
+            failures.append("methods case index is user-collapsible")
+        children = [child for child in index.children if child.visible]
+        if (
+            index.tag != "nav"
+            or index.attributes.get("aria-labelledby") != "method-case-index-title"
+            or [child.tag for child in children] != ["h2", "ol"]
+            or children[0].attributes.get("id") != "method-case-index-title"
+            or children[0].rendered_text() != "七個案例索引"
+        ):
+            failures.append("methods case index semantics changed")
+        else:
+            ordered_list = children[1]
+        label_targets = [
+            element
+            for element in elements
+            if element.attributes.get("id") == "method-case-index-title"
+        ]
+        expected_label = children[0] if children and children[0].tag == "h2" else None
+        if len(label_targets) != 1 or label_targets[0] is not expected_label:
+            failures.append("methods case index label inventory changed")
+
+    index_rows = list(ordered_list.children) if ordered_list is not None else []
+    if len(index_rows) != len(METHOD_CASE_ROWS) or any(
+        row.tag != "li" or not row.visible for row in index_rows
+    ):
+        failures.append(f"methods case index row structure changed: {len(index_rows)}")
+
+    all_links = [element for element in elements if "data-method-case-link" in element.attributes]
+    links = [element for element in all_links if element.visible]
+    if len(links) != len(METHOD_CASE_ROWS) or links != all_links:
+        failures.append(f"methods case link inventory changed: {len(links)}")
+    observed_link_cases = [link.attributes.get("data-case") for link in links]
+    if observed_link_cases != [row[0] for row in METHOD_CASE_ROWS]:
+        failures.append(f"methods case link order changed: {observed_link_cases!r}")
+    for link, (number, title, expected_href) in zip(links, METHOD_CASE_ROWS, strict=False):
+        if (
+            link.tag != "a"
+            or index is None
+            or not link.is_inside(index)
+            or link.parent is None
+            or link.parent.tag != "li"
+            or link.parent not in index_rows
+        ):
+            failures.append("methods case link structure changed")
+            continue
+        if link.attributes.get("data-case") != number:
+            failures.append("methods case link identity changed")
+        if link.attributes.get("href") != expected_href:
+            failures.append("methods case link destination changed")
+        if link.rendered_text() != title:
+            failures.append("methods case link text changed")
+        children = link.children
+        if (
+            [child.tag for child in children] != ["span", "span"]
+            or children[0].attributes.get("aria-hidden") != "true"
+            or children[0].visible
+            or children[0].source_rendered_text() != number
+            or not children[1].visible
+            or children[1].rendered_text() != title
+        ):
+            failures.append("methods case link structure changed")
+
+    all_destinations = [element for element in elements if "data-method-case" in element.attributes]
+    destinations = [element for element in all_destinations if element.visible]
+    if len(destinations) != len(METHOD_CASE_ROWS) or destinations != all_destinations:
+        failures.append(f"methods case destination inventory changed: {len(destinations)}")
+    observed_destination_cases = [
+        destination.attributes.get("data-method-case") for destination in destinations
+    ]
+    if observed_destination_cases != [row[0] for row in METHOD_CASE_ROWS]:
+        failures.append(f"methods case destination order changed: {observed_destination_cases!r}")
+    destination_by_case: dict[str, Element] = {}
+    for case_element, (number, title, href) in zip(destinations, METHOD_CASE_ROWS, strict=False):
+        expected_id = href.removeprefix("#")
+        if case_element.tag != "article" or _is_inside_disclosure(case_element):
+            failures.append("methods case destination structure changed")
+        if case_element.attributes.get("id") != expected_id:
+            failures.append("methods case destination identity changed")
+        anchor_matches = [
+            element for element in elements if element.attributes.get("id") == expected_id
+        ]
+        if len(anchor_matches) != 1 or anchor_matches[0] is not case_element:
+            failures.append("methods case destination anchor inventory changed")
+        headings = [child for child in case_element.children if child.visible and child.tag == "h2"]
+        if len(headings) != 1 or headings[0].rendered_text() != title:
+            failures.append("methods case destination heading changed")
+        elif (
+            [child.tag for child in headings[0].children] != ["span", "span"]
+            or headings[0].children[0].attributes.get("aria-hidden") != "true"
+            or headings[0].children[0].visible
+            or headings[0].children[0].source_rendered_text() != number
+            or not headings[0].children[1].visible
+            or headings[0].children[1].rendered_text() != title
+        ):
+            failures.append("methods case destination heading structure changed")
+        destination_by_case[number] = case_element
+
+    if index is not None and destinations and index.start_order >= destinations[0].start_order:
+        failures.append("methods case index no longer precedes case 01")
+    ledes = [element for element in elements if "lede" in element.classes and element.visible]
+    if index is not None and len(ledes) == 1 and ledes[0].start_order >= index.start_order:
+        failures.append("methods case index no longer follows the chapter lede")
+
+    for identifier, expected_title, case_number in METHOD_FIGURE_TITLES:
+        matches = [element for element in elements if element.attributes.get("id") == identifier]
+        if (
+            len(matches) != 1
+            or not matches[0].visible
+            or matches[0].rendered_text() != expected_title
+        ):
+            failures.append(f"methods Figure {identifier[9:12].replace('-', '.')} title changed")
+            continue
+        figure_case = destination_by_case.get(case_number)
+        if figure_case is None or not matches[0].is_inside(figure_case):
+            failures.append(f"methods Figure {identifier[9:12].replace('-', '.')} moved cases")
+
+    return failures
+
+
 FORECAST_PAYLOAD_KEYS = frozenset(
     {
         "period",
@@ -3841,6 +3995,159 @@ def _run_preflight() -> None:
             "detection limitation brief preflight misses: " + "; ".join(detection_preflight_misses)
         )
 
+    valid_methods_index = """
+<p class="lede">這一章的對照組是一組常見但有缺陷的分析做法。</p>
+<nav class="method-case-index" data-method-case-index aria-labelledby="method-case-index-title">
+<h2 id="method-case-index-title">七個案例索引</h2>
+<ol>
+<li><a data-method-case-link data-case="01" href="#method-case-01"><span aria-hidden="true">01</span><span>月平均抹掉了六成的變異</span></a></li>
+<li><a data-method-case-link data-case="02" href="#method-case-02"><span aria-hidden="true">02</span><span>拿 PM10 預測 PM2.5</span></a></li>
+<li><a data-method-case-link data-case="03" href="#method-case-03"><span aria-hidden="true">03</span><span>把風向當成 0 到 360 的普通數字</span></a></li>
+<li><a data-method-case-link data-case="04" href="#method-case-04"><span aria-hidden="true">04</span><span>用常態檢定證明資料常態</span></a></li>
+<li><a data-method-case-link data-case="05" href="#method-case-05"><span aria-hidden="true">05</span><span>NO、NO₂、NOx 一起放進迴歸</span></a></li>
+<li><a data-method-case-link data-case="06" href="#method-case-06"><span aria-hidden="true">06</span><span>用 AIC/BIC 當作模型好壞的證據</span></a></li>
+<li><a data-method-case-link data-case="07" href="#method-case-07"><span aria-hidden="true">07</span><span>用一句話處理掉所有缺漏值</span></a></li>
+</ol>
+</nav>
+<article class="mistake" id="method-case-01" data-method-case="01"><h2><span aria-hidden="true">01</span><span>月平均抹掉了六成的變異</span></h2><p id="evidence-8-1-title">月平均隱藏了多少逐時變異？</p></article>
+<article class="mistake" id="method-case-02" data-method-case="02"><h2><span aria-hidden="true">02</span><span>拿 PM10 預測 PM2.5</span></h2></article>
+<article class="mistake" id="method-case-03" data-method-case="03"><h2><span aria-hidden="true">03</span><span>把風向當成 0 到 360 的普通數字</span></h2></article>
+<article class="mistake" id="method-case-04" data-method-case="04"><h2><span aria-hidden="true">04</span><span>用常態檢定證明資料常態</span></h2></article>
+<article class="mistake" id="method-case-05" data-method-case="05"><h2><span aria-hidden="true">05</span><span>NO、NO₂、NOx 一起放進迴歸</span></h2></article>
+<article class="mistake" id="method-case-06" data-method-case="06"><h2><span aria-hidden="true">06</span><span>用 AIC/BIC 當作模型好壞的證據</span></h2></article>
+<article class="mistake" id="method-case-07" data-method-case="07"><h2><span aria-hidden="true">07</span><span>用一句話處理掉所有缺漏值</span></h2><p id="evidence-8-2-title">不同補值方法對不同缺口長度付出什麼代價？</p></article>
+<article class="mistake epilogue"><h2>兩項經全量資料否證的原始主張</h2></article>
+"""
+    valid_methods_failures = methods_case_index_failures_for_text(valid_methods_index)
+    if valid_methods_failures:
+        raise RuntimeError(
+            "methods seven-case index preflight rejected the valid control: "
+            f"{valid_methods_failures}"
+        )
+
+    methods_nav_start = valid_methods_index.index('<nav class="method-case-index"')
+    methods_nav_end = valid_methods_index.index("</nav>", methods_nav_start) + len("</nav>")
+    methods_nav = valid_methods_index[methods_nav_start:methods_nav_end]
+    methods_without_nav = (
+        valid_methods_index[:methods_nav_start] + valid_methods_index[methods_nav_end:]
+    )
+    methods_case_1_start = methods_without_nav.index('<article class="mistake" id="method-case-01"')
+    methods_case_1_end = methods_without_nav.index("</article>", methods_case_1_start) + len(
+        "</article>"
+    )
+    methods_index_after_case_1 = (
+        methods_without_nav[:methods_case_1_end]
+        + "\n"
+        + methods_nav
+        + methods_without_nav[methods_case_1_end:]
+    )
+
+    methods_markup_mutations = {
+        "missing link": (
+            "methods case link inventory changed",
+            valid_methods_index.replace(
+                '<li><a data-method-case-link data-case="04" href="#method-case-04"><span aria-hidden="true">04</span><span>用常態檢定證明資料常態</span></a></li>\n',
+                "",
+                1,
+            ),
+        ),
+        "extra link": (
+            "methods case link inventory changed",
+            valid_methods_index.replace(
+                "</ol>",
+                '<li><a data-method-case-link data-case="08" href="#method-case-08"><span aria-hidden="true">08</span><span>多餘案例</span></a></li></ol>',
+                1,
+            ),
+        ),
+        "duplicate link identity": (
+            "methods case link order changed",
+            valid_methods_index.replace('data-case="07"', 'data-case="06"', 1),
+        ),
+        "unhooked extra row": (
+            "methods case index row structure changed",
+            valid_methods_index.replace(
+                "</ol>", '<li><a href="#method-case-01">未綁定的複本</a></li></ol>', 1
+            ),
+        ),
+        "link changes child semantics": (
+            "methods case link structure changed",
+            valid_methods_index.replace(
+                '<span aria-hidden="true">01</span><span>月平均抹掉了六成的變異</span>',
+                '<span aria-hidden="true">01</span><strong>月平均抹掉了六成的變異</strong>',
+                1,
+            ),
+        ),
+        "reordered links": (
+            "methods case link order changed",
+            valid_methods_index.replace('data-case="01"', 'data-case="temporary"', 1)
+            .replace('data-case="02"', 'data-case="01"', 1)
+            .replace('data-case="temporary"', 'data-case="02"', 1),
+        ),
+        "renamed link": (
+            "methods case link text changed",
+            valid_methods_index.replace("拿 PM10 預測 PM2.5", "拿相關性當預測", 1),
+        ),
+        "redirected link": (
+            "methods case link destination changed",
+            valid_methods_index.replace('href="#method-case-06"', 'href="#method-case-05"', 1),
+        ),
+        "missing destination": (
+            "methods case destination inventory changed",
+            valid_methods_index.replace(' data-method-case="03"', "", 1),
+        ),
+        "duplicate destination anchor": (
+            "methods case destination anchor inventory changed",
+            valid_methods_index + '<span id="method-case-01">複本</span>',
+        ),
+        "destination heading changes child semantics": (
+            "methods case destination heading structure changed",
+            valid_methods_index.replace(
+                '<h2><span aria-hidden="true">01</span><span>月平均抹掉了六成的變異</span></h2>',
+                '<h2><span aria-hidden="true">01</span><strong>月平均抹掉了六成的變異</strong></h2>',
+                1,
+            ),
+        ),
+        "reordered destinations": (
+            "methods case destination order changed",
+            valid_methods_index.replace('data-method-case="01"', 'data-method-case="temporary"', 1)
+            .replace('data-method-case="02"', 'data-method-case="01"', 1)
+            .replace('data-method-case="temporary"', 'data-method-case="02"', 1),
+        ),
+        "hidden link": (
+            "methods case link inventory changed",
+            valid_methods_index.replace(
+                "<a data-method-case-link", "<a hidden data-method-case-link", 1
+            ),
+        ),
+        "collapsible index": (
+            "methods case index is user-collapsible",
+            valid_methods_index.replace(
+                '<nav class="method-case-index"', '<details open><nav class="method-case-index"', 1
+            ).replace("</nav>\n", "</nav></details>\n", 1),
+        ),
+        "index after case 01": (
+            "methods case index no longer precedes case 01",
+            methods_index_after_case_1,
+        ),
+        "changed Figure 8.1": (
+            "methods Figure 8.1 title changed",
+            valid_methods_index.replace("月平均隱藏了多少逐時變異？", "舊標題", 1),
+        ),
+        "changed Figure 8.2": (
+            "methods Figure 8.2 title changed",
+            valid_methods_index.replace("不同補值方法對不同缺口長度付出什麼代價？", "舊標題", 1),
+        ),
+    }
+    for name, (expected_failure, html) in methods_markup_mutations.items():
+        if html == valid_methods_index:
+            raise RuntimeError(f"methods seven-case index preflight did not apply {name}")
+        mutation_failures = methods_case_index_failures_for_text(html)
+        if not any(failure.startswith(expected_failure) for failure in mutation_failures):
+            raise RuntimeError(
+                f"methods seven-case index preflight did not reject {name} for "
+                f"{expected_failure}: {mutation_failures}"
+            )
+
     valid_forecast_brief = """
 <p class="lede">這一章量的是往前看能走多遠還算有用。</p>
 <section data-primary-evidence><p id="evidence-6-1-title" class="evidence-title">各預測期距的誤差如何變化？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
@@ -5022,6 +5329,8 @@ def main(argv: list[str]) -> int:
                     failures.extend(
                         health_assumption_ledger_failures_for_text(html, expected_health)
                     )
+            elif slug == "methods":
+                failures.extend(methods_case_index_failures_for_text(html))
             elif visible_reading_map_count(html):
                 failures.append("chapter unexpectedly contains a visible reading map")
             if slug == "stations":
