@@ -193,3 +193,107 @@ def test_missing_daily_layer_fails_before_the_destination_is_created(tmp_path: P
         build_dataset_bundle(source=source, destination=destination)
 
     assert not destination.exists()
+
+
+def _built_bundle(tmp_path: Path) -> Path:
+    from twair.viz.hf_dataset import build_dataset_bundle
+
+    source = tmp_path / "public"
+    destination = tmp_path / "dataset"
+    _write_public_layers(source)
+    build_dataset_bundle(source=source, destination=destination)
+    return destination
+
+
+# --- the consumer's side of the boundary -------------------------------------
+#
+# Everything above tests what the builder writes and what it refuses. These test
+# what somebody running `load_dataset` can actually obtain, because the dataset
+# card's YAML is a *claim* about exactly that and nothing had ever executed it.
+# A card can be well-formed, satisfy the structural assertions above, and still
+# not load — and `PLAN.md` names this gate as the precondition for deciding on
+# publication, so it has to exist before that decision, not after.
+#
+# A local directory path needs no network; `cache_dir` keeps the developer's
+# real ~/.cache/huggingface out of the run.
+
+
+def test_the_card_offers_exactly_the_two_public_configurations(tmp_path: Path) -> None:
+    """The redistribution boundary read from outside. A consumer is offered the
+    monthly and daily aggregates and nothing else; a third surface could only
+    appear by being added to the card, and this is what would object."""
+    from datasets import get_dataset_config_names
+
+    assert get_dataset_config_names(str(_built_bundle(tmp_path))) == ["monthly", "daily"]
+
+
+def test_a_caller_who_names_no_configuration_gets_the_monthly_aggregate(
+    tmp_path: Path,
+) -> None:
+    """`configs[0]["default"] is True` is asserted above as YAML. This is the
+    same claim as behaviour: a bare `load_dataset` must not fail, and must not
+    quietly hand back the daily rows instead."""
+    from datasets import load_dataset
+
+    loaded = load_dataset(
+        str(_built_bundle(tmp_path)), split="full", cache_dir=str(tmp_path / "cache")
+    )
+
+    assert loaded.column_names == [
+        "pollutant",
+        "name_zh",
+        "unit",
+        "station_name",
+        "month",
+        "mean",
+        "n_days",
+    ]
+    assert loaded.num_rows == 4
+
+
+def test_both_kinds_of_null_survive_the_trip_through_datasets(tmp_path: Path) -> None:
+    """The polars round trip is covered above. This is a different
+    serialisation — parquet into Arrow into Python — and the distinction it must
+    preserve is the one the card documents: a null at `n_days == 0` means the
+    station was not reporting, a null at `n_days > 0` means the aggregate was
+    withheld for coverage. Collapsing either into the other reports absence of
+    data where there was a deliberate withholding, or the reverse."""
+    from datasets import load_dataset
+
+    bundle = _built_bundle(tmp_path)
+    cache = str(tmp_path / "cache")
+
+    monthly = load_dataset(str(bundle), name="monthly", split="full", cache_dir=cache)
+    daily = load_dataset(str(bundle), name="daily", split="full", cache_dir=cache)
+
+    assert len([r for r in monthly if r["mean"] is None and r["n_days"] == 0]) == 2
+    assert len([r for r in monthly if r["mean"] is None and r["n_days"] > 0]) == 1
+    assert len([r for r in daily if r["mean"] is None and r["n_valid"] == 0]) == 1
+    assert len([r for r in daily if r["mean"] is None and r["n_valid"] > 0]) == 1
+
+
+def test_the_manifest_measures_the_bytes_a_consumer_actually_loads(tmp_path: Path) -> None:
+    """The manifest carries a sha256 and a row count per file so a downloader
+    can verify what they received. Nothing checked that those describe the files
+    the loader actually reads — a manifest measuring a path nobody loads would
+    look complete while verifying nothing."""
+    import hashlib
+
+    from datasets import load_dataset
+
+    bundle = _built_bundle(tmp_path)
+    cache = str(tmp_path / "cache")
+    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+
+    loaded_rows = {
+        f"data/{name}/pm25.parquet": load_dataset(
+            str(bundle), name=name, split="full", cache_dir=cache
+        ).num_rows
+        for name in ("monthly", "daily")
+    }
+
+    assert {item["path"] for item in manifest["files"]} == set(loaded_rows)
+    for item in manifest["files"]:
+        digest = hashlib.sha256((bundle / item["path"]).read_bytes()).hexdigest()
+        assert digest == item["sha256"]
+        assert item["rows"] == loaded_rows[item["path"]]
