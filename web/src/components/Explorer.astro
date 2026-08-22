@@ -237,6 +237,8 @@ const candidates = pollutantIndex.map((p) => ({
   const tablesEl = document.getElementById("tables") as HTMLElement;
   const exampleSelect = document.getElementById("example-select") as HTMLSelectElement;
   const workspaceEl = document.querySelector("[data-explorer-workspace]") as HTMLElement;
+  const controlsEl = document.querySelector("[data-explorer-controls]") as HTMLElement;
+  const sqlPanel = document.querySelector("[data-explorer-sql]") as HTMLDetailsElement;
 
   type ExplorerState = "initial" | "loading" | "success" | "empty" | "failure";
 
@@ -416,7 +418,130 @@ const candidates = pollutantIndex.map((p) => ({
     } finally {
       runButton.disabled = false;
     }
+    renderActions();
   });
+
+  /*
+   * Taking the answer away, and sending someone else to it.
+   *
+   * Until now a reader who ran a query could read the table and nothing else —
+   * the numbers were on screen and the only way out was to select them. That is
+   * a strange place for a chapter whose whole premise is that this is a database
+   * rather than six fixed charts.
+   *
+   * Both controls are built here rather than in the markup, so a reader without
+   * JavaScript never meets a button that cannot work. The `<noscript>` block
+   * above hides the surrounding controls for the same reason.
+   */
+  const actionsEl = document.createElement("div");
+  actionsEl.className = "explorer-actions";
+  actionsEl.hidden = true;
+  controlsEl.after(actionsEl);
+
+  const csvButton = document.createElement("button");
+  csvButton.type = "button";
+  csvButton.className = "explorer-action";
+  const linkButton = document.createElement("button");
+  linkButton.type = "button";
+  linkButton.className = "explorer-action";
+  linkButton.textContent = "複製此查詢的連結";
+  actionsEl.append(csvButton, linkButton);
+
+  /*
+   * One field, escaped for CSV.
+   *
+   * NULL leaves the field empty, which is the CSV convention and the only
+   * representation that is not a number. Writing 0 here would say the opposite
+   * of what this page spends a paragraph explaining: a withheld mean is not a
+   * measurement of zero.
+   */
+  function csvField(value: unknown): string {
+    if (value === null || value === undefined) return "";
+    const text = String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function renderActions(): void {
+    if (!shown || shown.rows.length === 0) {
+      actionsEl.hidden = true;
+      return;
+    }
+    /*
+     * The label carries the row count when the result was capped.
+     *
+     * The status line already refuses to report a capped number as if it were
+     * the answer. A download button is where that lie would be easiest to tell
+     * and hardest to notice, because the file outlives the page that explained
+     * it — so the button says which it is, and the file name repeats it.
+     */
+    csvButton.textContent = shown.truncated
+      ? `下載 CSV（顯示的前 ${shown.rows.length} 列，非全部 ${shown.total.toLocaleString("en-US")} 列）`
+      : `下載 CSV（${shown.rows.length} 列）`;
+    actionsEl.hidden = false;
+  }
+
+  csvButton.addEventListener("click", () => {
+    if (!shown) return;
+    const lines = [
+      shown.columns.map(csvField).join(","),
+      ...shown.rows.map((row) => row.map(csvField).join(",")),
+    ];
+    /*
+     * A BOM, because these tables carry station names.
+     *
+     * Excel on Windows reads a BOM-less UTF-8 CSV in the system code page, which
+     * for the readers of this site turns 「西屯」 into mojibake on open. The BOM
+     * costs three bytes and every other tool ignores it.
+     */
+    const blob = new Blob(["﻿" + lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = shown.truncated
+      ? `twair-query-first-${shown.rows.length}-of-${shown.total}.csv`
+      : `twair-query-${shown.rows.length}-rows.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+
+  /*
+   * The query in the address bar, and never run on arrival.
+   *
+   * A link that ran its own SQL the moment it opened would be a stranger's code
+   * executing because someone clicked a URL. It is only DuckDB-WASM over public
+   * Parquet in the reader's own browser, so the worst case is a slow query — but
+   * "it can only waste your battery" is not a reason to take the decision away.
+   * The query arrives in the box, the box opens so it is visible before it runs,
+   * and the reader presses the same button they would have pressed anyway.
+   */
+  const SQL_HASH = "#sql=";
+
+  linkButton.addEventListener("click", async () => {
+    const url = `${location.origin}${location.pathname}${SQL_HASH}${encodeURIComponent(sqlBox.value)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      linkButton.textContent = "已複製連結";
+    } catch {
+      // A clipboard the browser refuses is not a failure worth a dialogue: put
+      // the URL in the address bar so it can be copied the ordinary way.
+      location.hash = `${SQL_HASH.slice(1)}${encodeURIComponent(sqlBox.value)}`;
+      linkButton.textContent = "連結已放入網址列";
+    }
+    window.setTimeout(() => {
+      linkButton.textContent = "複製此查詢的連結";
+    }, 2400);
+  });
+
+  if (location.hash.startsWith(SQL_HASH)) {
+    const shared = decodeURIComponent(location.hash.slice(SQL_HASH.length));
+    if (shared.trim()) {
+      sqlBox.value = shared;
+      sqlPanel.open = true;
+      setStatus("已載入分享的查詢，按「執行查詢」開始");
+    }
+  }
 
   /*
    * The last result, kept so its LAYOUT can be recomputed without re-querying.
@@ -825,6 +950,22 @@ const candidates = pollutantIndex.map((p) => ({
     min-height: 1.7em;
   }
 
+  /* Built by script and hidden until a query has rows, so this never occupies
+     space for a reader who has not run anything — and never at all without
+     JavaScript, where neither control could work. Wrapping rather than a fixed
+     row: the CSV label carries its own row count and grows when a result is
+     capped, which is exactly when it must not push the page sideways. */
+  .explorer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .explorer-actions[hidden] {
+    display: none;
+  }
+
   @media (min-width: 40rem) {
     .explorer-path {
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -845,6 +986,7 @@ const candidates = pollutantIndex.map((p) => ({
     }
 
     .explorer-controls,
+    .explorer-actions,
     .tables,
     .result,
     .explorer-nojs {

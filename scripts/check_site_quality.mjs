@@ -10724,6 +10724,17 @@ async function main() {
       }
       const initial = await checkSnapshot("initial production snapshot");
       if (initial?.state !== "initial") failures.push("initial production state changed");
+      /*
+       * Nothing to export yet, so nothing offering to. A page that opens with a
+       * download button has promised the reader an answer it does not have.
+       */
+      const idleExport = await evaluate(`(() => {
+        const el = document.querySelector(".explorer-actions");
+        return { present: Boolean(el), hidden: el ? el.hidden : null };
+      })()`);
+      if (idleExport?.present && idleExport.hidden !== true) {
+        failures.push("explore export controls are visible before any query has run");
+      }
 
       const noJsRequestIndex = requests.length;
       const noJs = await navigateWithoutPageScripts(
@@ -10760,6 +10771,41 @@ async function main() {
       }
       const successProblems = explorerGuidedWorkspaceProblems(success, { width: 1280, height: 720 });
       if (successProblems.length) failures.push(`default query: ${successProblems.join(", ")}`);
+
+      /*
+       * The export controls, which only exist once there is something to export.
+       *
+       * They are built by script rather than shipped in the markup, so a reader
+       * without JavaScript never meets a button that cannot work — which also
+       * means nothing in the static HTML can be checked for them, and this is
+       * the only place they can be seen at all.
+       *
+       * The CSV label is checked for the row count rather than for being
+       * non-empty. A capped result reports the cap in the status line already;
+       * a download button is where that omission would be easiest to make and
+       * hardest to notice, because the file outlives the page that explained it.
+       */
+      const exportControls = await evaluate(`(() => {
+        const el = document.querySelector(".explorer-actions");
+        if (!el) return { present: false };
+        const labels = [...el.querySelectorAll("button")].map((b) => b.textContent ?? "");
+        return { present: true, hidden: el.hidden, labels };
+      })()`);
+      if (!exportControls?.present) {
+        failures.push("explore export controls are missing after a successful query");
+      } else if (exportControls.hidden) {
+        failures.push("explore export controls stayed hidden after a successful query");
+      } else {
+        if (exportControls.labels.length !== 2) {
+          failures.push(`explore export controls show ${exportControls.labels.length} buttons, expected 2`);
+        }
+        if (!exportControls.labels.some((label) => /CSV/u.test(label) && /\d/u.test(label))) {
+          failures.push(`explore CSV button names no row count: ${JSON.stringify(exportControls.labels)}`);
+        }
+        if (!exportControls.labels.some((label) => /連結/u.test(label))) {
+          failures.push(`explore has no share-link button: ${JSON.stringify(exportControls.labels)}`);
+        }
+      }
       const deferredAfterClick = requests.slice(actionRequestIndex).filter(deferredRequest);
       if (
         !deferredAfterClick.some((url) => /\/_astro\/duckdb-browser\.[^/]+\.js(?:$|\?)/iu.test(url)) ||
