@@ -281,6 +281,26 @@ def check_the_two_aggregations_still_agree(text: str, gap: float) -> list[str]:
     ]
 
 
+def check_the_floor_still_sits_above_the_signal(limit: dict[str, float]) -> list[str]:
+    """D8 states two ranges and then draws a conclusion from their order:
+    「噪音底線高於訊號」, and from that, 「無法分辨這種大小的效應——不是這些事件沒有
+    影響」.
+
+    Every one of the four ends can be corrected faithfully after a re-run while
+    that ordering quietly stops holding, which would leave the chapter drawing a
+    detection-limit conclusion its own numbers no longer support. The same shape
+    as D8's 「低於機率預期」, so it is checked the same way: against the payload,
+    not against the prose.
+    """
+    if limit["sd_lo"] > limit["effect_hi"]:
+        return []
+    return [
+        "ChapterDetection.astro noise floor above signal  "
+        f"floor starts at {limit['sd_lo']:.3g} but the largest effect is "
+        f"{limit['effect_hi']:.3g} — 「噪音底線高於訊號」 no longer describes this"
+    ]
+
+
 def manifest_truth() -> dict[str, float]:
     if not MANIFEST.exists():
         raise SystemExit(f"no manifest at {MANIFEST} — run `twair export web` first")
@@ -321,6 +341,37 @@ def detection_truth() -> dict[str, float]:
                 )
             found[f"{station}_{suffix}"] = float(row[field])
     return found
+
+
+def limit_truth() -> dict[str, float]:
+    """The two ranges D8's 「測不到」 aside compares.
+
+    Both ends of both come from the calendar-window events, which is what the
+    sentence says — 「這個方法在**這些日曆窗口**的噪音底線」. That restriction is
+    load-bearing, not incidental: the trend-break event's placebo sd is 0.66, and
+    including it would put the floor's lower end near 0.7 while the sentence says
+    2.5.
+
+    The conclusion printed immediately after — 「噪音底線高於訊號」 — is a relation
+    between the two ranges, so a re-run could move either end and leave a sentence
+    whose own numbers stop supporting it.
+    """
+    if not DETECTION.exists():
+        raise SystemExit(f"no payload at {DETECTION} — run `twair export web` first")
+    payload: dict[str, Any] = json.loads(DETECTION.read_text(encoding="utf-8"))
+
+    windows = [event for event in payload.get("events", []) if event.get("kind") == "window"]
+    if not windows:
+        raise SystemExit(f"{DETECTION.name} has no calendar-window event to bound the ranges")
+
+    sds = [float(event["median_placebo_sd"]) for event in windows]
+    effects = [abs(float(event["median_effect"])) for event in windows]
+    return {
+        "sd_lo": min(sds),
+        "sd_hi": max(sds),
+        "effect_lo": min(effects),
+        "effect_hi": max(effects),
+    }
 
 
 def core_truth() -> dict[str, float]:
@@ -489,6 +540,46 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     ),
     (
         Claim(
+            "ChapterDetection.astro",
+            "noise floor low end",
+            r"噪音底線是\s*([\d.]+)",
+            1,
+        ),
+        "limit",
+        "sd_lo",
+    ),
+    (
+        Claim(
+            "ChapterDetection.astro",
+            "noise floor high end",
+            r"噪音底線是\s*[\d.]+[–\-]\s*([\d.]+)",
+            1,
+        ),
+        "limit",
+        "sd_hi",
+    ),
+    (
+        Claim(
+            "ChapterDetection.astro",
+            "effect size low end",
+            r"效應量是\s*([\d.]+)",
+            1,
+        ),
+        "limit",
+        "effect_lo",
+    ),
+    (
+        Claim(
+            "ChapterDetection.astro",
+            "effect size high end",
+            r"效應量是\s*[\d.]+[–\-]\s*([\d.]+)",
+            1,
+        ),
+        "limit",
+        "effect_hi",
+    ),
+    (
+        Claim(
             "ChapterMethods.astro",
             "tree r2 with the raw bearing",
             r"R²\s*([\d.]+)\s*對\s*[\d.]+",
@@ -583,6 +674,7 @@ def main() -> int:
         "detection": detection_truth(),
         "core": core_truth(),
         "retention": retention_truth(),
+        "limit": limit_truth(),
     }
     deweather = deweather_truth()
 
@@ -609,11 +701,13 @@ def main() -> int:
             check_the_two_aggregations_still_agree(sources[trend.name], deweather["gap"])
         )
 
+    problems.extend(check_the_floor_still_sits_above_the_signal(truths["limit"]))
+
     read = [name for name, text in sources.items() if text]
     if not read:
         raise SystemExit("no chapter was read — refusing to report success for checking none")
 
-    print(f"claims checked   : {len(CLAIMS)} + 1 relation")
+    print(f"claims checked   : {len(CLAIMS)} + 2 relations")
     print(f"chapters read    : {len(read)}")
     print(f"disagreements    : {len(problems)}")
     for problem in problems:

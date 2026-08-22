@@ -771,3 +771,101 @@ class TestTruthCanLiveInARegeneratedReport:
 
         assert self.claim_for("1998 retention rate").check(source, 0.3403) == []
         assert self.claim_for("1997 and 2001 retention rate").check(source, 0.0) == []
+
+
+class TestTheLimitSentenceIsFourNumbers:
+    """D8's 「測不到」 aside compares two ranges, and all four ends were typed.
+
+    「噪音底線是 2.5–3.5 μg/m³，而待測的效應量是 0.5–1.6 μg/m³。噪音底線高於訊號。」
+    The conclusion rests on the first range sitting above the second, so a re-run
+    that moved either could leave a sentence whose numbers no longer support the
+    claim printed immediately after them.
+
+    Both derive from the payload. The prose says 「這些日曆窗口」, which is exactly
+    the `kind == "window"` events — the trend-break event has a placebo sd of
+    0.66 and would drag the floor's lower end well below what the sentence says,
+    so the restriction is load-bearing rather than incidental.
+    """
+
+    @staticmethod
+    def claim_for(what: str) -> site_prose.Claim:
+        for claim, _, _ in site_prose.CLAIMS:
+            if claim.component == "ChapterDetection.astro" and claim.what == what:
+                return claim
+        raise AssertionError(f"no shipped claim for {what}")
+
+    def test_the_window_events_bound_both_ranges(self) -> None:
+        truth = site_prose.limit_truth()
+
+        assert set(truth) == {"sd_lo", "sd_hi", "effect_lo", "effect_hi"}
+        # The whole point of the aside: the floor sits above the signal.
+        assert truth["sd_lo"] > truth["effect_hi"]
+
+    def test_the_trend_break_event_is_excluded(self) -> None:
+        """Its placebo sd is 0.66. Including it would put the floor's lower end
+        near 0.7, and the sentence — which says 2.5 — would then be wrong while
+        the gate agreed with it."""
+        truth = site_prose.limit_truth()
+
+        assert truth["sd_lo"] > 1.0
+
+    def test_a_payload_with_no_window_event_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "detection-limit.json"
+        path.write_text(
+            json.dumps({"events": [{"event": "x", "kind": "trend_break"}]}), encoding="utf-8"
+        )
+        monkeypatch.setattr(site_prose, "DETECTION", path)
+
+        with pytest.raises(SystemExit) as excinfo:
+            site_prose.limit_truth()
+
+        assert "window" in str(excinfo.value)
+
+    def test_a_drifted_noise_floor_is_reported(self) -> None:
+        problems = self.claim_for("noise floor low end").check(
+            "這個方法在這些日曆窗口的噪音底線是 1.9–3.5 μg/m³，", 2.503
+        )
+
+        assert len(problems) == 1
+        assert "says 1.9" in problems[0]
+
+    def test_a_drifted_effect_size_is_reported(self) -> None:
+        problems = self.claim_for("effect size high end").check(
+            "而待測的效應量是 0.5–2.9 μg/m³。", 1.612
+        )
+
+        assert len(problems) == 1
+        assert "says 2.9" in problems[0]
+
+    def test_the_shipped_sentence_agrees_on_all_four(self) -> None:
+        source = site_prose.flat(
+            (site_prose.COMPONENTS / "ChapterDetection.astro").read_text(encoding="utf-8")
+        )
+        truth = site_prose.limit_truth()
+
+        for what, key in (
+            ("noise floor low end", "sd_lo"),
+            ("noise floor high end", "sd_hi"),
+            ("effect size low end", "effect_lo"),
+            ("effect size high end", "effect_hi"),
+        ):
+            assert self.claim_for(what).check(source, truth[key]) == [], what
+
+    def test_the_conclusion_is_checked_as_a_relation_not_as_four_cells(self) -> None:
+        """Every end can be corrected faithfully after a re-run while the
+        ordering they support quietly stops holding."""
+        holds = {"sd_lo": 2.503, "sd_hi": 3.512, "effect_lo": 0.494, "effect_hi": 1.612}
+        broken = {**holds, "effect_hi": 2.9}
+
+        assert site_prose.check_the_floor_still_sits_above_the_signal(holds) == []
+
+        problems = site_prose.check_the_floor_still_sits_above_the_signal(broken)
+        assert len(problems) == 1
+        assert "噪音底線高於訊號" in problems[0]
+
+    def test_the_real_payload_still_supports_the_conclusion(self) -> None:
+        assert (
+            site_prose.check_the_floor_still_sits_above_the_signal(site_prose.limit_truth()) == []
+        )
