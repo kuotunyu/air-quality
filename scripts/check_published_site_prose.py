@@ -33,10 +33,23 @@ Truth comes from committed sources, never from `data/`, which is gitignored and
 invisible to CI:
 
 * `reports/03-spatial.md` — regenerated from the M6 outputs on every run
+* `reports/01-core.md` — the same, from M2's rolling-origin comparison
+* `docs/data-quality.md` — its own header says `uv run twair qc report` makes it
 * `web/public/data/story/pitfalls.json` — the D-chapter export
 * `web/public/data/story/spatial-structure.json` — the M6 export
 * `web/public/data/story/detection-limit.json` — the M5 export
 * `web/public/data/manifest.json` — file sizes, as exported
+
+**A regenerated report is as good a source as a payload.** Two figures the site
+quotes have no JSON behind them — the LightGBM R² for raw-bearing against sin/cos
+encoding, and the per-year invalid-value retention rates — and a chapter cannot
+interpolate from Markdown, so those stay typed and are compared instead. That is
+what the five older gates already do for `docs/*.md`.
+
+Keep one distinction straight there. `docs/archive-formats.md` records that the
+retention rates are 「沒有守護」 because *verifying they are correct* needs 16 GB of
+raw archives CI can never have. Checking that a chapter still agrees with the
+generated report is a different question and needs only what is committed.
 
 One claim is about a **pair** rather than a number. D8 closes on 「前金 −23.4%、
 左營 −18.5%、古亭 −9.9%」 beside 「−0.24、−0.52、−0.12」: the first list is what a
@@ -70,6 +83,8 @@ SPATIAL_REPORT = REPO_ROOT / "reports" / "03-spatial.md"
 PITFALLS = REPO_ROOT / "web" / "public" / "data" / "story" / "pitfalls.json"
 MANIFEST = REPO_ROOT / "web" / "public" / "data" / "manifest.json"
 DETECTION = REPO_ROOT / "web" / "public" / "data" / "story" / "detection-limit.json"
+CORE_REPORT = REPO_ROOT / "reports" / "01-core.md"
+QUALITY_REPORT = REPO_ROOT / "docs" / "data-quality.md"
 
 # The three the D8 closing paragraph names by hand. Its argument is that the
 # first number looks like a finding and the second says it is not, so the two
@@ -308,6 +323,72 @@ def detection_truth() -> dict[str, float]:
     return found
 
 
+def core_truth() -> dict[str, float]:
+    """The two LightGBM R² values D3 compares, from the rolling-origin table.
+
+    Not every figure on the site has a JSON payload behind it, and that is no
+    reason to leave one unwatched. `reports/01-core.md` regenerates from the M2
+    outputs, so its table is as good a source as `spatial-structure.json` — the
+    chapter simply cannot interpolate from Markdown, so the number stays typed
+    and this compares it.
+    """
+    if not CORE_REPORT.exists():
+        raise SystemExit(f"no report at {CORE_REPORT} — regenerate it first")
+    text = CORE_REPORT.read_text(encoding="utf-8")
+
+    found: dict[str, float] = {}
+    for key, feature_set in (("r2_raw_wind", "full_raw_wind"), ("r2_sin_cos", "full")):
+        # | model | feature_set | rmse | mae | r2 | f1 | splits |
+        row = re.search(
+            rf"\|\s*lightgbm\s*\|\s*{feature_set}\s*\|[^|]+\|[^|]+\|\s*([\d.]+)\s*\|",
+            text,
+        )
+        if row is None:
+            raise SystemExit(
+                f"{CORE_REPORT.name} has no rolling-origin row for {feature_set} — "
+                "has the table been reworded?"
+            )
+        found[key] = num(row.group(1))
+    return found
+
+
+def retention_truth() -> dict[str, float]:
+    """Per-year invalid-value retention, from the generated QC report.
+
+    `docs/data-quality.md` says in its own header that `uv run twair qc report`
+    produces it. Note what this does and does not claim: `docs/archive-formats.md`
+    records that the retention rates are 「沒有守護」 because *verifying they are
+    correct* needs 16 GB of raw archives CI can never have. Checking that the
+    chapter still agrees with the generated report is a different question, and
+    it needs only what is committed.
+    """
+    if not QUALITY_REPORT.exists():
+        raise SystemExit(f"no report at {QUALITY_REPORT} — run `twair qc report` first")
+    whole = QUALITY_REPORT.read_text(encoding="utf-8")
+
+    # Scope to the retention section before matching. This report carries several
+    # tables with a year column, and an unscoped row pattern read 1997 as 0.8325
+    # out of the yearly validity table — matching, and reading the wrong number,
+    # which is worse than not matching at all.
+    start = whole.find("## 無效值的測值保留率")
+    if start == -1:
+        raise SystemExit(
+            f"{QUALITY_REPORT.name} has no 「無效值的測值保留率」 section — "
+            "has `twair qc report` been reworded?"
+        )
+    end = whole.find("\n## ", start + 1)
+    section = whole[start : end if end != -1 else len(whole)]
+
+    found: dict[str, float] = {}
+    for year in ("1997", "1998", "2001"):
+        # | year | generation | total | retained | ratio |
+        row = re.search(rf"\|\s*{year}\s*\|[^|]+\|[^|]+\|[^|]+\|\s*([\d.]+)\s*\|", section)
+        if row is None:
+            raise SystemExit(f"{QUALITY_REPORT.name} has no retention row for {year}")
+        found[year] = num(row.group(1))
+    return found
+
+
 CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     (
         Claim(
@@ -408,6 +489,46 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     ),
     (
         Claim(
+            "ChapterMethods.astro",
+            "tree r2 with the raw bearing",
+            r"R²\s*([\d.]+)\s*對\s*[\d.]+",
+            3,
+        ),
+        "core",
+        "r2_raw_wind",
+    ),
+    (
+        Claim(
+            "ChapterMethods.astro",
+            "tree r2 with sin/cos",
+            r"R²\s*[\d.]+\s*對\s*([\d.]+)",
+            3,
+        ),
+        "core",
+        "r2_sin_cos",
+    ),
+    (
+        Claim(
+            "ChapterMethods.astro",
+            "1997 and 2001 retention rate",
+            r"1997 與 2001 年的保留率是\s*([\d.]+)",
+            3,
+        ),
+        "retention",
+        "1997",
+    ),
+    (
+        Claim(
+            "ChapterMethods.astro",
+            "1998 retention rate",
+            r"1998 年\s*([\d.]+)",
+            3,
+        ),
+        "retention",
+        "1998",
+    ),
+    (
+        Claim(
             "ChapterDetection.astro",
             "urban lockdown percentage",
             r"封城期間的都會測站：前金\s*([−\-\d.]+)%",
@@ -460,6 +581,8 @@ def main() -> int:
         "pitfalls": pitfalls_truth(),
         "manifest": manifest_truth(),
         "detection": detection_truth(),
+        "core": core_truth(),
+        "retention": retention_truth(),
     }
     deweather = deweather_truth()
 
