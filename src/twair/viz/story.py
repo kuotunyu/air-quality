@@ -1422,9 +1422,24 @@ def _export_detection_limit(root: Path) -> list[Path]:
                 # Every placebo estimate, so the chart can show the real result
                 # inside the cloud it has to be distinguished from.
                 "placebo_effects": [_round(v, 2) for v in pool.to_list()],
+                # `effect_pct` and `z` ride along because the chapter quotes them
+                # in prose — the percentage a headline would print, beside the
+                # standardised effect that says it is indistinguishable from the
+                # placebos. The argument is the *pairing*, so a re-run that moved
+                # one and not the other would leave two individually plausible
+                # numbers that no longer belong together. Both are computed in
+                # `analysis/causal.py` and were already in this parquet; only the
+                # projection below was dropping them.
                 "station_effects": [
-                    {"station": r["station"], "effect": _round(r["effect"], 2)}
-                    for r in group.select("station", "effect").iter_rows(named=True)
+                    {
+                        "station": r["station"],
+                        "effect": _round(r["effect"], 2),
+                        "effect_pct": _round(r["effect_pct"], 2),
+                        "z": _round(r["z_against_placebo"], 3),
+                    }
+                    for r in group.select(
+                        "station", "effect", "effect_pct", "z_against_placebo"
+                    ).iter_rows(named=True)
                 ],
             }
         )

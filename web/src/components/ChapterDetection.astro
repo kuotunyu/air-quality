@@ -28,7 +28,10 @@ const events = detection.events as {
   n_expected_by_chance: number;
   credible_stations: string[];
   placebo_effects: number[];
-  station_effects: { station: string; effect: number }[];
+  // `effect_pct` and `z` are optional because the trend-break events carry a
+  // slope delta, for which a percentage of a baseline is not the same quantity.
+  // Only the calendar-window events have them.
+  station_effects: { station: string; effect: number; effect_pct?: number; z?: number }[];
 }[];
 
 const spatial = detection.spatial_check as {
@@ -39,6 +42,31 @@ const spatial = detection.spatial_check as {
 
 const windowed = events.filter((e) => e.kind === "window");
 const breaks = events.filter((e) => e.kind === "trend_break");
+
+/*
+ * The three urban stations the closing paragraph names, read from the payload.
+ *
+ * That paragraph's whole argument is a *pair*: the percentage a headline would
+ * print, beside the z-score saying it is indistinguishable from this station's
+ * own placebos. Typed by hand, a re-run could move one and not the other and
+ * leave two individually plausible numbers that no longer belong together —
+ * with nothing in the prose looking wrong.
+ *
+ * A missing station throws rather than rendering a blank: the sentence names
+ * them, so if the payload stops carrying one the build should say so.
+ */
+const URBAN = ["前金", "左營", "古亭"];
+const urban = URBAN.map((name) => {
+  const found = windowed[0]?.station_effects.find((s) => s.station === name);
+  if (!found || found.effect_pct === undefined || found.z === undefined) {
+    throw new Error(`detection-limit.json has no percentage or z for ${name}`);
+  }
+  return found as { station: string; effect: number; effect_pct: number; z: number };
+});
+
+// The prose around this uses U+2212, which reads as a minus rather than as the
+// hyphen `n()` emits. Nothing else on the page needed it, so it lives here.
+const minus = (value: number, places: number) => n(value, places).replace("-", "−");
 
 /*
  * One strip per event: placebos as a faint rug, the real estimates stacked
@@ -541,9 +569,9 @@ const estimandLabel = (kind: string) => {
   <h2>都會測站：百分比變化與標準化效應量</h2>
 
   <p>
-    封城期間的都會測站：前金 −23.4%、左營 −18.5%、古亭 −9.9%。
+    封城期間的都會測站：{urban.map((s) => `${s.station} ${minus(s.effect_pct, 1)}%`).join("、")}。
     這些數字放進新聞標題毫無問題。它們對應的 z 分數是
-    <strong>−0.24、−0.52、−0.12</strong>——全部深深落在安慰劑散布之內。
+    <strong>{urban.map((s) => minus(s.z, 2)).join("、")}</strong>——全部深深落在安慰劑散布之內。
   </p>
 
   <h2>空間檢定</h2>

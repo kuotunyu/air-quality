@@ -29,6 +29,7 @@ never run. These tests are that failure path, kept.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -520,3 +521,110 @@ class TestAnInterpolationMustBeTheRightOne:
         claim = self.claim_for("ChapterSpatial.astro", "controls bar extent")
 
         assert claim.check("這裡是 0 到 {n(maxI,2)} 的五種控制", self.CONTROLS_AXIS) == []
+
+
+class TestThePairingIsTheArgument:
+    """D8's closing paragraph is two lists that only mean something together.
+
+    「前金 −23.4%、左營 −18.5%、古亭 −9.9%」 is what a headline would print, and
+    「−0.24、−0.52、−0.12」 is the same three stations in units of their own
+    placebo spread. The point is that the first list looks like a finding and the
+    second says it is not. Six numbers typed by hand: a re-run could move the
+    percentages and leave the z-scores, and both lists would still read as
+    plausible while no longer describing the same stations.
+
+    `analysis/causal.py` computed `effect_pct` and `z_against_placebo` all along
+    and `story.py` dropped them in a two-column projection, so the fix was to
+    carry them and interpolate.
+    """
+
+    @staticmethod
+    def claim_for(what: str) -> site_prose.Claim:
+        for claim, _, _ in site_prose.CLAIMS:
+            if claim.component == "ChapterDetection.astro" and claim.what == what:
+                return claim
+        raise AssertionError(f"no shipped claim for {what}")
+
+    def test_the_payload_carries_a_percentage_and_a_z_for_all_three(self) -> None:
+        """If an export ever drops them again, this says so — rather than the
+        page throwing at build time with the reason buried in a stack trace."""
+        truth = site_prose.detection_truth()
+
+        assert set(truth) == {"前金_pct", "左營_pct", "古亭_pct", "前金_z", "左營_z", "古亭_z"}
+        assert all(value < 0 for value in truth.values())
+
+    def test_a_missing_station_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = {
+            "events": [
+                {
+                    "event": "COVID-19 全國三級警戒",
+                    "kind": "window",
+                    "station_effects": [
+                        {"station": "前金", "effect": -1.94, "effect_pct": -23.42, "z": -0.242}
+                    ],
+                }
+            ]
+        }
+        path = tmp_path / "detection-limit.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(site_prose, "DETECTION", path)
+
+        with pytest.raises(SystemExit) as excinfo:
+            site_prose.detection_truth()
+
+        assert "左營" in str(excinfo.value)
+
+    def test_a_station_without_the_two_fields_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The exact regression this work removed: the projection carries the
+        station and its effect, and silently not the two the prose needs."""
+        payload = {
+            "events": [
+                {
+                    "event": "COVID-19 全國三級警戒",
+                    "kind": "window",
+                    "station_effects": [
+                        {"station": name, "effect": -1.0} for name in ("前金", "左營", "古亭")
+                    ],
+                }
+            ]
+        }
+        path = tmp_path / "detection-limit.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        monkeypatch.setattr(site_prose, "DETECTION", path)
+
+        with pytest.raises(SystemExit) as excinfo:
+            site_prose.detection_truth()
+
+        assert "effect_pct" in str(excinfo.value) or "z" in str(excinfo.value)
+
+    def test_a_hand_typed_percentage_that_drifted_is_reported(self) -> None:
+        claim = self.claim_for("urban lockdown percentage")
+
+        problems = claim.check("封城期間的都會測站：前金 −22.1%、左營 −18.5%、古亭 −9.9%。", -23.42)
+
+        assert len(problems) == 1
+        assert "says -22.1" in problems[0]
+
+    def test_the_shipped_interpolation_passes(self) -> None:
+        claim = self.claim_for("urban lockdown percentage")
+        source = (site_prose.COMPONENTS / "ChapterDetection.astro").read_text(encoding="utf-8")
+
+        assert claim.check(site_prose.flat(source), -23.42) == []
+
+    def test_a_hand_typed_z_that_drifted_is_reported(self) -> None:
+        claim = self.claim_for("urban lockdown z score")
+
+        problems = claim.check("z 分數是 <strong>−0.99、−0.52、−0.12</strong>——全部", -0.242)
+
+        assert len(problems) == 1
+        assert "says -0.99" in problems[0]
+
+    def test_the_shipped_z_interpolation_passes(self) -> None:
+        claim = self.claim_for("urban lockdown z score")
+        source = (site_prose.COMPONENTS / "ChapterDetection.astro").read_text(encoding="utf-8")
+
+        assert claim.check(site_prose.flat(source), -0.242) == []

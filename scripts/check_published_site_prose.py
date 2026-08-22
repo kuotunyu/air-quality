@@ -29,12 +29,23 @@ All three came from the same re-run, and none of them changed a conclusion: they
 are the reasons for a method, not results. That is precisely why they went
 unnoticed, and why a gate rather than a proofread is the right instrument.
 
-Truth comes from three committed sources, never from `data/`, which is gitignored
-and invisible to CI:
+Truth comes from committed sources, never from `data/`, which is gitignored and
+invisible to CI:
 
 * `reports/03-spatial.md` — regenerated from the M6 outputs on every run
 * `web/public/data/story/pitfalls.json` — the D-chapter export
+* `web/public/data/story/spatial-structure.json` — the M6 export
+* `web/public/data/story/detection-limit.json` — the M5 export
 * `web/public/data/manifest.json` — file sizes, as exported
+
+One claim is about a **pair** rather than a number. D8 closes on 「前金 −23.4%、
+左營 −18.5%、古亭 −9.9%」 beside 「−0.24、−0.52、−0.12」: the first list is what a
+headline would print, the second is the same three stations in units of their own
+placebo spread, and the argument is that one looks like a finding while the other
+says it is not. Six numbers typed by hand meant a re-run could move the
+percentages and leave the z-scores, and both lists would still read as plausible
+while no longer describing the same run. `analysis/causal.py` had computed both
+all along; `story.py` was dropping them in a two-column projection.
 
 Comparison is at the precision each sentence prints, with one unit of the last
 place as tolerance, because the sources are themselves rounded: a chapter
@@ -58,6 +69,12 @@ COMPONENTS = REPO_ROOT / "web" / "src" / "components"
 SPATIAL_REPORT = REPO_ROOT / "reports" / "03-spatial.md"
 PITFALLS = REPO_ROOT / "web" / "public" / "data" / "story" / "pitfalls.json"
 MANIFEST = REPO_ROOT / "web" / "public" / "data" / "manifest.json"
+DETECTION = REPO_ROOT / "web" / "public" / "data" / "story" / "detection-limit.json"
+
+# The three the D8 closing paragraph names by hand. Its argument is that the
+# first number looks like a finding and the second says it is not, so the two
+# have to describe the same station on the same run.
+URBAN = ("前金", "左營", "古亭")
 
 # U+2212 MINUS SIGN reads better in prose and does not parse as a hyphen.
 MINUS = {"−": "-", "–": "-"}
@@ -259,6 +276,38 @@ def manifest_truth() -> dict[str, float]:
     return {"l1_files": float(len(l1)), "l1_mb": sum(item["bytes"] for item in l1) / 1e6}
 
 
+def detection_truth() -> dict[str, float]:
+    """Percentage and z for the three stations D8's closing paragraph names.
+
+    `analysis/causal.py` computed both from the start and `story.py` dropped them
+    in a two-column projection, so the paragraph was six hand-typed numbers whose
+    *pairing* carried the argument. Raising on a station or a field that is not
+    there keeps a future projection from quietly reopening that.
+    """
+    if not DETECTION.exists():
+        raise SystemExit(f"no payload at {DETECTION} — run `twair export web` first")
+    payload: dict[str, Any] = json.loads(DETECTION.read_text(encoding="utf-8"))
+
+    window = [event for event in payload.get("events", []) if event.get("kind") == "window"]
+    if not window:
+        raise SystemExit(f"{DETECTION.name} has no calendar-window event")
+    by_station = {row["station"]: row for row in window[0].get("station_effects", [])}
+
+    found: dict[str, float] = {}
+    for station in URBAN:
+        row = by_station.get(station)
+        if row is None:
+            raise SystemExit(f"{DETECTION.name} has no {station} in the first window event")
+        for field, suffix in (("effect_pct", "pct"), ("z", "z")):
+            if field not in row:
+                raise SystemExit(
+                    f"{DETECTION.name} carries no {field} for {station} — "
+                    "has the story projection stopped selecting it?"
+                )
+            found[f"{station}_{suffix}"] = float(row[field])
+    return found
+
+
 CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     (
         Claim(
@@ -359,6 +408,28 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     ),
     (
         Claim(
+            "ChapterDetection.astro",
+            "urban lockdown percentage",
+            r"封城期間的都會測站：前金\s*([−\-\d.]+)%",
+            1,
+            without_a_literal=r"封城期間的都會測站：" + expression("{urban.map((s) =>"),
+        ),
+        "detection",
+        "前金_pct",
+    ),
+    (
+        Claim(
+            "ChapterDetection.astro",
+            "urban lockdown z score",
+            r"z 分數是\s*<strong>\s*([−\-\d.]+)、",
+            2,
+            without_a_literal=r"<strong>" + expression("{urban.map((s) => minus(s.z, 2)).join("),
+        ),
+        "detection",
+        "前金_z",
+    ),
+    (
+        Claim(
             "Explorer.astro",
             "published measurand count",
             r"完整的\s*(\d+)\s*個測項",
@@ -388,6 +459,7 @@ def main() -> int:
         "structure": structure_truth(),
         "pitfalls": pitfalls_truth(),
         "manifest": manifest_truth(),
+        "detection": detection_truth(),
     }
     deweather = deweather_truth()
 
