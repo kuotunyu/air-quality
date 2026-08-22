@@ -869,3 +869,81 @@ class TestTheLimitSentenceIsFourNumbers:
         assert (
             site_prose.check_the_floor_still_sits_above_the_signal(site_prose.limit_truth()) == []
         )
+
+
+class TestASentenceCanBeWrongAboutItsOwnCorrectNumbers:
+    """The health chapter named the wrong two assumptions for eight months.
+
+    Both figures in 「{last_range[0]}% 還是 {last_range[1]}%」 were interpolated and
+    both were right. The clause after them said the difference was 「把 2.4 還是
+    5.9 μg/m³ 當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端」, and
+    that was false: `analysis/health.py` builds the range as min/max across every
+    counterfactual, so its upper end is the zero-exposure assumption, which
+    `conf/health.yaml` calls almost certainly wrong at the bottom of the range.
+    2.4 gives 7.7%, beside a sentence standing next to 9.4%.
+
+    **No prose-agreement gate could have caught it**, because nothing disagreed
+    with anything — the numbers matched the payload and only the sentence about
+    them was untrue. It was found by working out what a different claim should be
+    anchored to, and the repair was to derive the description rather than correct
+    it, so the sentence follows the range instead of asserting something beside
+    it.
+
+    What a gate *can* hold is that the description stays derived. These tests do
+    that, and check the arithmetic the fix depends on.
+    """
+
+    @staticmethod
+    def claim_for(what: str) -> site_prose.Claim:
+        for claim, _, _ in site_prose.CLAIMS:
+            if claim.component == "ChapterHealth.astro" and claim.what == what:
+                return claim
+        raise AssertionError(f"no shipped claim for {what}")
+
+    def test_the_range_ends_still_resolve_to_two_counterfactuals(self) -> None:
+        truth = site_prose.health_truth()
+
+        assert set(truth) == {"lower_counterfactual", "upper_counterfactual"}
+        # The narrower counterfactual gives the smaller attributable fraction, so
+        # the range's first end is the higher concentration.
+        assert truth["lower_counterfactual"] > truth["upper_counterfactual"]
+
+    def test_a_range_end_matching_no_counterfactual_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The build throws on this too. Both are wanted: the page must not
+        render prose about an assumption nobody made, and CI must not need a
+        browser to find out."""
+        payload = {
+            "years": [2025],
+            "headline": {"last_year": 2025, "last_range": [0.052, 0.4242]},
+            "series": [
+                {"name": "gbd_high", "value": 5.9, "paf": [0.052]},
+                {"name": "zero", "value": 0.0, "paf": [0.0941]},
+            ],
+        }
+        path = tmp_path / "health.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setattr(site_prose, "HEALTH", path)
+
+        with pytest.raises(SystemExit) as excinfo:
+            site_prose.health_truth()
+
+        assert "0.4242" in str(excinfo.value)
+
+    def test_a_hand_typed_counterfactual_is_reported(self) -> None:
+        """The regression itself: someone types the value back in."""
+        claim = self.claim_for("first counterfactual named")
+
+        problems = claim.check("唯一的差別是把 2.4 還是 0 μg/m³ 當作比較基準", 5.9)
+
+        assert len(problems) == 1
+        assert "says 2.4" in problems[0]
+
+    def test_the_shipped_sentence_derives_both(self) -> None:
+        claim = self.claim_for("first counterfactual named")
+        source = site_prose.flat(
+            (site_prose.COMPONENTS / "ChapterHealth.astro").read_text(encoding="utf-8")
+        )
+
+        assert claim.check(source, 5.9) == []

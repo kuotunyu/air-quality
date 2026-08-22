@@ -85,6 +85,7 @@ MANIFEST = REPO_ROOT / "web" / "public" / "data" / "manifest.json"
 DETECTION = REPO_ROOT / "web" / "public" / "data" / "story" / "detection-limit.json"
 CORE_REPORT = REPO_ROOT / "reports" / "01-core.md"
 QUALITY_REPORT = REPO_ROOT / "docs" / "data-quality.md"
+HEALTH = REPO_ROOT / "web" / "public" / "data" / "story" / "health.json"
 
 # The three the D8 closing paragraph names by hand. Its argument is that the
 # first number looks like a finding and the second says it is not, so the two
@@ -440,6 +441,47 @@ def retention_truth() -> dict[str, float]:
     return found
 
 
+def health_truth() -> dict[str, float]:
+    """The two counterfactual concentrations the D7 headline range spans.
+
+    The chapter used to name them by hand as 「2.4 還是 5.9」 and call them the two
+    ends of the published TMREL interval. Its two percentages were interpolated
+    and correct; the sentence about them was not. `analysis/health.py` builds the
+    range as min/max of `paf_median` across **every** counterfactual, so the
+    upper end is the zero-exposure assumption — which `conf/health.yaml` calls
+    almost certainly wrong at the bottom of the range. 2.4 gives 7.7%.
+
+    No comparison could have found that: nothing disagreed with anything. What
+    this holds is the repair — the sentence names concentrations resolved from
+    the range rather than asserted beside it, and a range end that matches no
+    counterfactual is refused rather than described.
+    """
+    if not HEALTH.exists():
+        raise SystemExit(f"no payload at {HEALTH} — run `twair export web` first")
+    payload: dict[str, Any] = json.loads(HEALTH.read_text(encoding="utf-8"))
+
+    missing = sorted({"years", "headline", "series"} - set(payload))
+    if missing:
+        raise SystemExit(f"{HEALTH.name} is missing {missing}")
+    years = payload["years"]
+    headline = payload["headline"]
+    if headline["last_year"] not in years:
+        raise SystemExit(f"{HEALTH.name}: last_year {headline['last_year']} is not in years")
+    index = years.index(headline["last_year"])
+
+    ends: list[float] = []
+    for target in headline["last_range"]:
+        matched = [s for s in payload["series"] if abs(s["paf"][index] - target) < 5e-5]
+        if len(matched) != 1:
+            raise SystemExit(
+                f"{HEALTH.name}: PAF {target} in {headline['last_year']} matches "
+                f"{len(matched)} counterfactuals — the chapter would describe an "
+                "assumption nobody made"
+            )
+        ends.append(float(matched[0]["value"]))
+    return {"lower_counterfactual": ends[0], "upper_counterfactual": ends[1]}
+
+
 CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     (
         Claim(
@@ -620,6 +662,17 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     ),
     (
         Claim(
+            "ChapterHealth.astro",
+            "first counterfactual named",
+            r"唯一的差別是把\s*([\d.]+)\s*還是",
+            1,
+            without_a_literal=r"唯一的差別是把\s*" + expression("{rangeEnds[0].value}"),
+        ),
+        "health",
+        "lower_counterfactual",
+    ),
+    (
+        Claim(
             "ChapterDetection.astro",
             "urban lockdown percentage",
             r"封城期間的都會測站：前金\s*([−\-\d.]+)%",
@@ -674,6 +727,7 @@ def main() -> int:
         "detection": detection_truth(),
         "core": core_truth(),
         "retention": retention_truth(),
+        "health": health_truth(),
         "limit": limit_truth(),
     }
     deweather = deweather_truth()

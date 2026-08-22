@@ -1693,11 +1693,26 @@ function healthExpectedEvidenceFromPayload(payload) {
       throw new Error(`health payload headline ${key} is invalid`);
     }
   }
-  const tmrelLow = seriesByName.get("gbd_low");
-  const tmrelHigh = seriesByName.get("gbd_high");
-  if (!tmrelLow || !tmrelHigh) {
-    throw new Error("health payload TMREL endpoint identity changed");
-  }
+  /*
+   * The two concentrations the headline range spans, resolved from the range.
+   *
+   * This read gbd_low and gbd_high by name — 2.4 and 5.9 — and asserted the
+   * chapter named them, beside percentages taken from `last_range`.
+   * `analysis/health.py` builds that range as min/max across EVERY
+   * counterfactual, so its upper end is the zero-exposure assumption; 2.4 gives
+   * 7.7% where the sentence stood beside 9.4%. The same mistaken pairing was in
+   * `check_publication_structure.py`, which is why neither gate could see it:
+   * two independent checks agreed with each other and with the error, and a
+   * correct repair would have been reported by both as a regression.
+   */
+  const lastIndex = payload.years.indexOf(headline.last_year);
+  const rangeEnds = headline.last_range.map((target) => {
+    const matched = payload.series.filter((row) => Math.abs(row.paf[lastIndex] - target) < 5e-5);
+    if (matched.length !== 1) {
+      throw new Error("health payload headline range does not resolve to one counterfactual");
+    }
+    return matched[0];
+  });
   const robustBody =
     `${headline.first_year} 年是 ${healthNumber(headline.first_range[0] * 100)}–` +
     `${healthNumber(headline.first_range[1] * 100)}%，${headline.last_year} 年是 ` +
@@ -1708,8 +1723,8 @@ function healthExpectedEvidenceFromPayload(payload) {
   const sensitiveBody =
     `${headline.last_year} 年的答案是 ${healthNumber(headline.last_range[0] * 100)}% 還是 ` +
     `${healthNumber(headline.last_range[1] * 100)}%，差了將近一倍，而唯一的差別是把 ` +
-    `${healthNumber(tmrelLow.value)} 還是 ${healthNumber(tmrelHigh.value)} μg/m³ ` +
-    "當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端。";
+    `${healthNumber(rangeEnds[0].value)} 還是 ${healthNumber(rangeEnds[1].value)} μg/m³ ` +
+    `當作比較基準——這是上圖 ${payload.series.length} 條假設線的兩個極端，落差來自方法選擇，不是來自資料。`;
   if (!healthExactKeys(payload.not_reported, ["deaths", "exposure"])) {
     throw new Error("health payload no-inference boundary changed");
   }
@@ -7140,8 +7155,15 @@ async function lifecycleSelfTest() {
     ["headline shape", "headline shape changed", (payload) => {
       delete payload.headline.last_range;
     }],
-    ["missing TMREL endpoint", "TMREL endpoint identity changed", (payload) => {
-      payload.series.find((row) => row.name === "gbd_high").name = "alternate_high";
+    // Replaces a fixture that renamed gbd_high and expected a rejection. The
+    // range ends are resolved by value now, which a rename cannot break — and
+    // these two can. See the note beside the resolution above for why the old
+    // pairing was wrong in both this gate and check_publication_structure.py.
+    ["headline range off every counterfactual", "does not resolve to one counterfactual", (payload) => {
+      payload.headline.last_range = [payload.headline.last_range[0], 0.4242];
+    }],
+    ["counterfactuals indistinguishable", "does not resolve to one counterfactual", (payload) => {
+      for (const row of payload.series) row.paf = payload.series[0].paf.slice();
     }],
     ["empty deaths boundary", "no-inference boundary changed", (payload) => {
       payload.not_reported.deaths = "";

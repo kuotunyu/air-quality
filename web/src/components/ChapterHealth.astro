@@ -69,6 +69,37 @@ const notReported = health.not_reported as { deaths: string; exposure: string };
 const years = health.years as number[];
 const spreadShare = health.spread_share as number[];
 
+/*
+ * Which two assumptions the headline range actually spans.
+ *
+ * The sentence below used to name them by hand as 「2.4 還是 5.9」 and call them
+ * 「同一份 published TMREL 區間的兩端」. Both of its numbers are interpolated from
+ * `headline.last_range`, and the upper one is not 2.4: `analysis/health.py`
+ * builds that range as min/max of `paf_median` across ALL the counterfactuals,
+ * so its top is the zero-exposure assumption — which `conf/health.yaml` itself
+ * describes as 「almost certainly wrong at the bottom of the range where the
+ * epidemiology has no observations」. 2.4 gives 7.7%, next to a sentence standing
+ * beside 9.4%.
+ *
+ * The claim was wrong in a way no prose gate could catch, because both numbers
+ * were correct and only the sentence about them was false. So it is derived now
+ * rather than corrected: adding or removing a counterfactual moves the range,
+ * and the sentence follows it.
+ *
+ * A range end that matches no series throws, because the alternative is prose
+ * that describes an assumption nobody made.
+ */
+const lastIndex = years.indexOf(headline.last_year);
+const rangeEnds = headline.last_range.map((target) => {
+  const found = series.find((s) => Math.abs(s.paf[lastIndex] - target) < 5e-5);
+  if (!found) {
+    throw new Error(
+      `health.json: no counterfactual gives PAF ${target} in ${headline.last_year}`,
+    );
+  }
+  return found;
+});
+
 const allPaf = series.flatMap((s) => s.paf);
 const yPaf = linear([0, Math.max(...allPaf) * 1.1], [100, 0]);
 const xYear = linear([Math.min(...years), Math.max(...years)], [0, 100]);
@@ -301,8 +332,9 @@ const langOf = (s: string | null | undefined) =>
       <p class="small">
         {headline.last_year} 年的答案是 {n(headline.last_range[0] * 100, 1)}% 還是
         {" "}{n(headline.last_range[1] * 100, 1)}%，
-        <strong>差了將近一倍</strong>，而唯一的差別是把 2.4 還是 5.9 μg/m³
-        當作比較基準——這兩個數字是<strong>同一份 published TMREL 區間的兩端</strong>。
+        <strong>差了將近一倍</strong>，而唯一的差別是把 {rangeEnds[0].value} 還是
+        {" "}{rangeEnds[1].value} μg/m³ 當作比較基準——這是上圖 {series.length} 條
+        假設線的<strong>兩個極端</strong>，落差來自方法選擇，不是來自資料。
       </p>
     </section>
   </div>

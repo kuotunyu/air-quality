@@ -2034,20 +2034,6 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
             raise ValueError(f"health payload headline {key} is invalid")
     if headline["first_year"] not in years or headline["last_year"] not in years:
         raise ValueError("health payload headline years changed")
-    if "gbd_low" not in series_by_name or "gbd_high" not in series_by_name:
-        raise ValueError("health payload TMREL endpoint identity changed")
-    tmrel_low = series_by_name["gbd_low"]["value"]
-    tmrel_high = series_by_name["gbd_high"]["value"]
-    if (
-        isinstance(tmrel_low, bool)
-        or not isinstance(tmrel_low, (int, float))
-        or not math.isfinite(tmrel_low)
-        or isinstance(tmrel_high, bool)
-        or not isinstance(tmrel_high, (int, float))
-        or not math.isfinite(tmrel_high)
-    ):
-        raise ValueError("health payload TMREL endpoint value is invalid")
-
     first_range = headline["first_range"]
     last_range = headline["last_range"]
     robust_body = (
@@ -2057,12 +2043,36 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
         "無論選哪個基準，都下降了大約一半到三分之二。"
         "這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。"
     )
+    # The two concentrations the range actually spans, resolved from the range
+    # rather than read by name.
+    #
+    # This asserted `gbd_low` and `gbd_high` — 2.4 and 5.9 — beside percentages
+    # taken from `last_range`, and `analysis/health.py` builds that range as
+    # min/max of `paf_median` across EVERY counterfactual, so its upper end is
+    # the zero-exposure assumption. 2.4 gives 7.7% where the sentence stood
+    # beside 9.4%. The chapter said the two ends were 「同一份 published TMREL 區間
+    # 的兩端」 and this gate held it to saying so, which is the more serious half:
+    # a correct repair would have been reported as the regression.
+    last_index = years.index(headline["last_year"])
+    range_ends: list[float] = []
+    for target in last_range:
+        matched = [
+            entry
+            for entry in series
+            if isinstance(entry.get("paf"), list)
+            and _finite_health_number(entry["paf"][last_index])
+            and abs(entry["paf"][last_index] - target) < 5e-5
+        ]
+        if len(matched) != 1 or not _finite_health_number(matched[0]["value"]):
+            raise ValueError("health payload headline range does not resolve to one counterfactual")
+        range_ends.append(float(matched[0]["value"]))
+
     sensitive_body = (
         f"{headline['last_year']} 年的答案是 {_health_number(last_range[0] * 100)}% 還是 "
         f"{_health_number(last_range[1] * 100)}%，差了將近一倍，而唯一的差別是把 "
-        f"{_health_number(tmrel_low)} 還是 "
-        f"{_health_number(tmrel_high)} μg/m³ 當作比較基準——"
-        "這兩個數字是同一份 published TMREL 區間的兩端。"
+        f"{_health_number(range_ends[0])} 還是 "
+        f"{_health_number(range_ends[1])} μg/m³ 當作比較基準——"
+        f"這是上圖 {len(series)} 條假設線的兩個極端，落差來自方法選擇，不是來自資料。"
     )
 
     not_reported = payload["not_reported"]
@@ -5351,8 +5361,8 @@ def _run_preflight() -> None:
 </ol>
 <section data-primary-evidence><p class="evidence-title">比較基準如何改變可歸因比例？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
 <div data-health-reading-band>
-<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>
-<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 2.4 還是 5.9 μg/m³ 當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端。</p></section>
+<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>
+<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 5.9 還是 0 μg/m³ 當作比較基準——這是上圖 4 條假設線的兩個極端，落差來自方法選擇，不是來自資料。</p></section>
 </div>
 <section><p class="evidence-title">比較基準造成的落差佔估計值多少？</p></section>
 <div data-health-inference-boundaries>
@@ -5368,8 +5378,8 @@ def _run_preflight() -> None:
         deaths="沒有死亡人數。",
         exposure="測站平均不是人口加權暴露。",
         reading_bodies=(
-            "2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。",
-            "2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 2.4 還是 5.9 μg/m³ 當作比較基準——這兩個數字是同一份 published TMREL 區間的兩端。",
+            "2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。",
+            "2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 5.9 還是 0 μg/m³ 當作比較基準——這是上圖 4 條假設線的兩個極端，落差來自方法選擇，不是來自資料。",
         ),
     )
     valid_health_failures = health_assumption_ledger_failures_for_text(
@@ -5501,7 +5511,7 @@ def _run_preflight() -> None:
         "missing reading row": (
             "health reading row inventory changed",
             valid_health_brief.replace(
-                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>\n',
+                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>\n',
                 "",
                 1,
             ),
@@ -5509,7 +5519,7 @@ def _run_preflight() -> None:
         "missing reading body": (
             "health reading row body changed",
             valid_health_brief.replace(
-                "<p>2024 年是 10–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p>",
+                "<p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p>",
                 "",
                 1,
             ),
@@ -5567,7 +5577,11 @@ def _run_preflight() -> None:
                 "value": (0.0, 2.4, 5.0, 5.9)[index],
                 "why": "why",
                 "years": [2024, 2025],
-                "paf": [0.2, 0.1],
+                # Distinct per counterfactual, as the real export is: a lower
+                # comparison concentration attributes more. Identical values here
+                # made the headline range resolve to all four series at once,
+                # which is exactly the shape the derivation has to refuse.
+                "paf": [(0.2, 0.17, 0.14, 0.12)[index], (0.1, 0.08, 0.06, 0.05)[index]],
             }
             for index in range(4)
         ],
@@ -5579,7 +5593,7 @@ def _run_preflight() -> None:
             "last_year": 2025,
             "first_share": 0.2,
             "last_share": 0.4,
-            "first_range": [0.1, 0.2],
+            "first_range": [0.12, 0.2],
             "last_range": [0.05, 0.1],
         },
         "extrapolation": {"ceiling_ugm3": 30.0, "share_above": 0.2, "why": "why"},
@@ -5631,11 +5645,26 @@ def _run_preflight() -> None:
             "health payload headline shape changed",
             changed_health_payload(headline={"first_year": 2024}),
         ),
-        "missing TMREL endpoint": (
-            "health payload TMREL endpoint identity changed",
+        # These two replace a fixture that renamed `gbd_high` and expected a
+        # rejection. The sentence used to name the TMREL bounds by hand and this
+        # gate held it to that, beside percentages taken from a range spanning
+        # every counterfactual — so it was enforcing the error. The range ends
+        # are now resolved by value, which a rename cannot break and these two
+        # can.
+        "headline range off every counterfactual": (
+            "health payload headline range does not resolve to one counterfactual",
+            changed_health_payload(
+                headline={
+                    **cast(dict[str, object], valid_health_payload["headline"]),
+                    "last_range": [0.05, 0.42],
+                }
+            ),
+        ),
+        "counterfactuals indistinguishable at the last year": (
+            "health payload headline range does not resolve to one counterfactual",
             changed_health_payload(
                 series=[
-                    {**row, "name": "alternate_high"} if row["name"] == "gbd_high" else row
+                    {**row, "paf": [0.2, 0.1]}
                     for row in cast(list[dict[str, object]], valid_health_payload["series"])
                 ]
             ),
