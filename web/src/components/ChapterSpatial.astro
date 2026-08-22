@@ -14,6 +14,7 @@
  */
 import spatial from "../../public/data/story/spatial-structure.json";
 import { n, nFixed, ticks } from "../lib/chart";
+import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
@@ -330,8 +331,8 @@ const readingMap = [
     </div>
     <Fragment slot="caption">
       每月殘差 Moran's I 的平均（點）與 95% 塊狀 bootstrap 區間（線）。
-      <strong>刻度與上圖不同</strong>：上圖是 ±0.4 的距離分帶，這裡是 0 到 0.18
-      的五種控制，同一個統計量、兩張圖、兩個尺度，長度不能跨圖比。
+      <strong>刻度與上圖不同</strong>：上圖是 ±{n(maxAbs, 2)} 的距離分帶，
+      這裡是 0 到 {n(maxI, 2)} 的五種控制，同一個統計量、兩張圖、兩個尺度，長度不能跨圖比。
       「顯著月數」為 BH 校正後計數。
     </Fragment>
   </EvidenceFigure>
@@ -380,9 +381,11 @@ const readingMap = [
   <div class="note">
     <p>
       <strong>相關算在距全島均值的異常量上，這一步是檢定成立的前提。</strong>
-      生料月均值全島相關 0.73——那是共用的冬季高峰，用它來測，八個區會看起來
-      一樣好。減掉島均之後平均相關掉到 0.01，剩下的才是「這一站如何偏離全國」，
-      分區的資訊才量得出來。
+      生料月均值在全島高度相關——那是共用的冬季高峰，不是分區的性質；用它來測，
+      任何分區方式都會看起來同樣有效。減掉逐月島均之後平均相關趨近於零，剩下的才是
+      「這一站如何偏離全國」，分區的資訊到這裡才量得出來。兩個值每次執行重算，
+      現值印在 <a href={repoFile("reports/03-spatial.md")}>reports/03-spatial.md</a>；
+      這裡不轉述，因為先前寫死在這裡的那個數字已經漂掉了。
     </p>
   </div>
 

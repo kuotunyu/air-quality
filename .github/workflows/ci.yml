@@ -178,6 +178,16 @@ jobs:
       - name: The detection limits in prose still support what is said about them
         run: uv run python scripts/check_published_detection.py
 
+      # Every gate above reads Markdown. None read a `.astro` file, so the
+      # chapters readers actually open were the one prose surface with nothing
+      # watching it — and three figures had drifted there through the same
+      # 60-to-61 station re-run that the Markdown copies were corrected for.
+      # Reads `reports/03-spatial.md`, `pitfalls.json` and `manifest.json`, and
+      # accepts a sentence that interpolates its number or hands it to the file
+      # that recomputes it — but not one that has been deleted.
+      - name: The website's own prose still matches what recomputes it
+        run: uv run python scripts/check_published_site_prose.py
+
       - name: Test (Pytest)
         run: uv run pytest
 
