@@ -44,6 +44,8 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STORY = REPO_ROOT / "web" / "public" / "data" / "story"
+CORE_REPORT = REPO_ROOT / "reports" / "01-core.md"
+ROLLING_HEADING = "### 滾動原點驗證"
 
 SOURCES = {
     "README.md": REPO_ROOT / "README.md",
@@ -60,6 +62,50 @@ def load(name: str) -> dict[str, Any]:
         raise SystemExit(f"no payload at {path} — run `twair export web` first")
     payload: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     return payload
+
+
+def m2_rolling_r2() -> dict[str, float]:
+    """Mean R² per model over the rolling splits, from the report's own table.
+
+    Not from `data/outputs/`, which CI does not have, and not from a payload
+    either: `pitfalls.json` carries the `full` feature set but neither the tree's
+    raw-bearing score nor the persistence baseline's, and both are quoted in
+    `docs/working-rules.md`. `reports/01-core.md` regenerates from the same frame
+    on every run, which `check_published_site_prose.py` already relies on for the
+    same reason — a regenerated report is as good a source as a payload.
+
+    Scoped to the rolling section before matching rows. The leave-one-station and
+    leave-one-year tables repeat every model name with different numbers, and an
+    unscoped row pattern would read whichever came first — the mistake
+    `retention_truth()` made in the site-prose gate, which read 1997 out of the
+    wrong table.
+    """
+    if not CORE_REPORT.exists():
+        raise SystemExit(f"no report at {CORE_REPORT} — run `uv run twair report` first")
+    text = CORE_REPORT.read_text(encoding="utf-8")
+
+    start = text.find(ROLLING_HEADING)
+    if start < 0:
+        raise SystemExit(f"{CORE_REPORT.name} has no {ROLLING_HEADING!r} section")
+    end = text.find("\n### ", start + len(ROLLING_HEADING))
+    section = text[start : end if end > 0 else len(text)]
+
+    # Cell by cell rather than one regex across the row. A `\S+` for the first
+    # column matched the whole `|---|---|---|` divider, because that line has no
+    # spaces in it, and produced a key made of dashes with the persistence row's
+    # `mae` as its value — a table this gate would then have believed.
+    rows: dict[str, float] = {}
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 7 or cells[0] in {"model", ""} or set(cells[0]) <= {"-"}:
+            continue
+        try:
+            rows[f"{cells[0]}/{cells[1]}"] = float(cells[4])
+        except ValueError:
+            continue
+    if not rows:
+        raise SystemExit(f"{CORE_REPORT.name}: the rolling table has no readable rows")
+    return rows
 
 
 def card_facts() -> dict[str, Any]:
@@ -146,6 +192,11 @@ def build_claims() -> list[Claim]:
     raw_r2 = float(wind["raw_bearing"]["r_squared"])
     encoded_r2 = float(wind["sin_cos"]["r_squared"])
 
+    rolling = m2_rolling_r2()
+    for key in ("lightgbm/full_raw_wind", "lightgbm/full", "persistence/-"):
+        if key not in rolling:
+            raise SystemExit(f"{CORE_REPORT.name}: the rolling table has no {key} row")
+
     return [
         Claim(
             "national fall since 2006",
@@ -180,6 +231,43 @@ def build_claims() -> list[Claim]:
         # methodology.md's D8 table, the four numbers the normalisation rests on.
         # Every one is a field in the payload, so there is no arithmetic to get
         # wrong here — only the copying, which is exactly what goes stale.
+        # `docs/working-rules.md` states three of M2's figures in the present
+        # tense and nothing was comparing them. Verified by mutation on
+        # 2026-08-24: setting the pair to 0.999 / 0.111 left this gate,
+        # `check_published_site_prose` and `check_published_spatial` all green.
+        #
+        # The tree's scores are the report's, not the payload's — `pitfalls.json`
+        # carries `full` but not `full_raw_wind`, and no payload carries the
+        # persistence baseline at all. Three decimals in the prose against four
+        # in the table, so the tolerance is one unit of the printed place.
+        Claim(
+            "tree R2 with raw bearing",
+            r"raw bearing \(R²\s*([\d.]+)\)",
+            rolling["lightgbm/full_raw_wind"],
+            3,
+            files=("working-rules.md",),
+        ),
+        Claim(
+            "tree R2 with sin/cos",
+            r"with sin/cos \(([\d.]+)\)",
+            rolling["lightgbm/full"],
+            3,
+            files=("working-rules.md",),
+        ),
+        Claim(
+            "persistence baseline R2",
+            r"reaches R²\s*([\d.]+)",
+            rolling["persistence/-"],
+            3,
+            files=("working-rules.md",),
+        ),
+        Claim(
+            "best feature set against it",
+            r"reaches R²\s*[\d.]+\s*against\s*([\d.]+)",
+            rolling["lightgbm/full"],
+            3,
+            files=("working-rules.md",),
+        ),
         Claim(
             "median observed slope",
             r"觀測斜率中位數\s*\|\s*\*{0,2}(−?-?[\d.]+)",

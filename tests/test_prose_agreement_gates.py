@@ -60,6 +60,131 @@ class TestIntegersCompareExactly:
         assert not gate.agrees(0.157, 0.1555, 3)  # type: ignore[attr-defined]
 
 
+class TestTheM2TableIsReadFromTheReport:
+    """`docs/working-rules.md` states three of M2's figures and nothing read them.
+
+    Verified by mutation on 2026-08-24, before this existed: setting the tree
+    pair to 0.999 / 0.111 left `check_published_headline`,
+    `check_published_site_prose` and `check_published_spatial` all green. The
+    generator was fixed the same day; the static copies had no source at all.
+
+    Truth comes from `reports/01-core.md`'s own rolling table because no payload
+    carries these — `pitfalls.json` has the `full` feature set but not
+    `full_raw_wind`, and nothing carries the persistence baseline.
+    """
+
+    ROLLING = """### 滾動原點驗證（訓練用過去、測試用未來）
+
+| model | feature_set | rmse | mae | r2 | f1 | splits |
+|---|---|---|---|---|---|---|
+| persistence | - | 5.4046 | 3.7326 | 0.8995 | 0.8577 | 3 |
+| lightgbm | full_raw_wind | 11.8386 | 8.8616 | 0.5371 | 0.6538 | 3 |
+| lightgbm | full | 12.0159 | 9.0602 | 0.5238 | 0.6476 | 3 |
+
+### 留一測站（空間泛化）
+
+| model | feature_set | rmse | mae | r2 | f1 | splits |
+|---|---|---|---|---|---|---|
+| persistence | - | 9.9999 | 9.9999 | 0.1111 | 0.1111 | 3 |
+"""
+
+    def _report(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+        path = tmp_path / "01-core.md"
+        path.write_text(text, encoding="utf-8")
+        monkeypatch.setattr(headline, "CORE_REPORT", path)
+
+    def test_the_rows_are_read_by_model_and_feature_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._report(tmp_path, monkeypatch, self.ROLLING)
+
+        assert headline.m2_rolling_r2() == {
+            "persistence/-": 0.8995,
+            "lightgbm/full_raw_wind": 0.5371,
+            "lightgbm/full": 0.5238,
+        }
+
+    def test_the_divider_is_not_a_row(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        r"""`|---|---|---|` has no spaces in it, so a `\S+` for the first column
+        matched the whole line and produced a key of dashes carrying the
+        persistence row's `mae` as its value."""
+        self._report(tmp_path, monkeypatch, self.ROLLING)
+
+        keys = headline.m2_rolling_r2()
+
+        assert not [k for k in keys if set(k) <= {"-", "/"}]
+        assert 3.7326 not in keys.values(), "that is a mae, not an r2"
+
+    def test_only_the_rolling_section_is_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The leave-one-station table repeats every model name with different
+        numbers. An unscoped row pattern reads whichever comes first — the
+        mistake `retention_truth()` made against the yearly-validity table."""
+        self._report(tmp_path, monkeypatch, self.ROLLING)
+
+        assert headline.m2_rolling_r2()["persistence/-"] == 0.8995
+
+    def test_a_missing_section_is_refused_rather_than_read_as_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._report(tmp_path, monkeypatch, "## M2\n\nnothing here\n")
+
+        with pytest.raises(SystemExit, match="no '### 滾動原點驗證' section"):
+            headline.m2_rolling_r2()
+
+    def test_a_section_with_no_rows_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty result would make every claim below it raise a KeyError
+        rather than report, and a gate that finds nothing must not pass."""
+        self._report(tmp_path, monkeypatch, "### 滾動原點驗證\n\n_M2 尚未執行。_\n")
+
+        with pytest.raises(SystemExit, match="no readable rows"):
+            headline.m2_rolling_r2()
+
+    @pytest.mark.parametrize(
+        ("what", "pattern", "quoted"),
+        [
+            ("tree R2 with raw bearing", r"raw bearing \(R²\s*([\d.]+)\)", "0.999"),
+            ("tree R2 with sin/cos", r"with sin/cos \(([\d.]+)\)", "0.111"),
+            ("persistence baseline R2", r"reaches R²\s*([\d.]+)", "0.777"),
+        ],
+    )
+    def test_a_drifted_figure_is_a_disagreement(self, what: str, pattern: str, quoted: str) -> None:
+        sentence = (
+            f"with the raw bearing (R² {quoted}) than with sin/cos ({quoted}), "
+            f"and persistence reaches R² {quoted} against 0.524"
+        )
+        claim = headline.Claim(what, pattern, 0.5371, 3)
+
+        problems = claim.check("working-rules.md", sentence)
+
+        assert len(problems) == 1
+        assert "0.5371" in problems[0]
+
+    def test_the_published_figures_agree_with_the_report(self) -> None:
+        """The live check, on the committed files, so this cannot pass while the
+        real pair has drifted."""
+        rolling = headline.m2_rolling_r2()
+        text = (headline.SOURCES["working-rules.md"]).read_text(encoding="utf-8")
+
+        for what, pattern, key in (
+            (
+                "tree R2 with raw bearing",
+                r"raw bearing \(R²\s*([\d.]+)\)",
+                "lightgbm/full_raw_wind",
+            ),
+            ("tree R2 with sin/cos", r"with sin/cos \(([\d.]+)\)", "lightgbm/full"),
+            ("persistence baseline R2", r"reaches R²\s*([\d.]+)", "persistence/-"),
+        ):
+            assert (
+                headline.Claim(what, pattern, rolling[key], 3).check("working-rules.md", text) == []
+            )
+
+
 class TestSilenceIsNotAPass:
     """A reworded sentence must not switch off its own check."""
 
