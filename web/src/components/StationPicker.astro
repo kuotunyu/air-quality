@@ -108,6 +108,31 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   <p id="station-say" class="visually-hidden" role="status" aria-live="polite"></p>
 
   <div class="controls station-controls" data-station-controls>
+    {/*
+      Typing narrows the menu; the menu is still what chooses.
+
+      79 stations in 20 county groups is a long way to scroll for someone who
+      knows the name they want, and a native `<select>` types-to-jump by the
+      first character, which for 中文 depends on an IME committing before the
+      keystroke reaches it — 「西屯」 does not find 西屯.
+
+      This filters rather than replacing: the reader who does not know the name
+      still gets the county groups they were relying on, and the one who does
+      gets there in four keystrokes. It sits inside `.controls`, so the
+      `<noscript>` rule above takes it away with the menu — a filter that cannot
+      filter is the same nuisance the menu would be.
+    */}
+    <label class="control-field">
+      <span class="control-label">搜尋</span>
+      <input
+        id="station-filter"
+        type="search"
+        autocomplete="off"
+        placeholder="輸入測站名稱"
+        aria-describedby="station-filter-count"
+      />
+    </label>
+    <p id="station-filter-count" class="control-note" role="status" aria-live="polite"></p>
     <label class="control-field">
       <span class="control-label">測站</span>
       <select id="station-select">
@@ -248,6 +273,64 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 
   const say = document.getElementById("station-say");
 
+  /*
+   * The filter narrows the menu and never moves the card.
+   *
+   * `option.hidden` rather than removing options, measured rather than assumed:
+   * hiding the selected option leaves `value`, `selectedIndex` and the option's
+   * own text intact, so the control still reports the station whose card is on
+   * screen. That is the property this chapter's `<noscript>` block was written
+   * about — a control that agrees with you and then shows another station's
+   * numbers — and it would be no better for having been caused by a search box.
+   *
+   * A first version exempted the selected option from filtering, and its own
+   * comment was untrue: the option stayed visible while the county group around
+   * it was hidden, so it did not appear anyway. Filtering everything uniformly
+   * is both simpler and what the code actually does.
+   *
+   * Groups are hidden when they empty out. A county heading over nothing reads
+   * as a station that vanished rather than as one that did not match.
+   */
+  const filter = document.getElementById("station-filter") as HTMLInputElement | null;
+  const count = document.getElementById("station-filter-count");
+  const groups = Array.from(select?.querySelectorAll("optgroup") ?? []);
+
+  filter?.addEventListener("input", () => {
+    const needle = filter.value.trim().toLowerCase();
+    let matched = 0;
+    for (const group of groups) {
+      // The county matches too. A reader who knows 高雄 but not 前金 is exactly
+      // the one a search box is for, and the county names are already here as
+      // the group labels — matching only the option text answered 「沒有測站符合」
+      // to the most obvious thing anyone would type.
+      const county = (group.label ?? "").toLowerCase();
+      const countyHit = Boolean(needle) && county.includes(needle);
+      let groupMatched = 0;
+      for (const option of Array.from(group.querySelectorAll("option"))) {
+        const hit =
+          !needle || countyHit || (option.textContent ?? "").toLowerCase().includes(needle);
+        option.hidden = !hit;
+        if (hit) groupMatched += 1;
+      }
+      group.hidden = groupMatched === 0;
+      matched += groupMatched;
+    }
+    if (!count) return;
+    count.textContent = !needle
+      ? ""
+      : matched === 0
+        ? "沒有測站符合，選單維持完整"
+        : `${matched} 個測站符合`;
+    // Nothing matched, so nothing was narrowed: leave the reader the whole
+    // register rather than a menu that looks broken.
+    if (matched === 0) {
+      for (const group of groups) {
+        group.hidden = false;
+        for (const option of Array.from(group.querySelectorAll("option"))) option.hidden = false;
+      }
+    }
+  });
+
   select?.addEventListener("change", () => {
     for (const report of reports) {
       report.hidden = report.dataset.station !== select.value;
@@ -293,6 +376,39 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 
   .station-controls {
     max-width: min(100%, 24rem);
+  }
+
+  .station-controls input[type="search"] {
+    /* Same treatment the select gets four rules up in global.css, for the same
+       reason: a control sized inside a label is only bounded if it is told to
+       shrink. */
+    min-width: 0;
+    width: 100%;
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--text);
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 0.5rem 0.8rem;
+  }
+
+  .station-controls input[type="search"]:hover {
+    border-color: var(--text-faint);
+  }
+
+  /*
+   * Reserves its line whether or not it has anything to say.
+   *
+   * It is a live region, so it speaks when the count changes; if it collapsed
+   * when empty, the menu below would jump by a line on the first keystroke and
+   * again when the box is cleared.
+   */
+  .control-note {
+    min-height: 1.5em;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
   }
 
   /*

@@ -727,6 +727,25 @@ function stationDossierProblems(state) {
   if (!visibleBox(state?.picker)) problems.push("station dossier is not visibly rendered");
   if (!visibleBox(state?.select)) problems.push("station selector is not visibly rendered");
   else if (state.select.height < 44) problems.push("station selector target is shorter than 44px");
+  // The search box, when the page carries one. Checked for the same touch
+  // target the menu gets, and for the property that matters more: filtering
+  // must narrow the menu without moving the selection or the card.
+  if (state?.filter) {
+    if (!(state.filter.height >= 44)) {
+      problems.push("station filter target is shorter than 44px");
+    }
+    if (!state.filter.narrowedByCounty) {
+      problems.push(
+        `station filter did not narrow by county (${state.filter.narrowedTo} of ${state.filter.total})`,
+      );
+    }
+    if (!state.filter.heldWhileFiltered) {
+      problems.push("station filter moved the selection or the visible report");
+    }
+    if (!state.filter.restored) {
+      problems.push("station filter did not restore the whole menu when cleared");
+    }
+  }
   if (
     !Number.isInteger(state?.optionCount) || !Number.isInteger(state?.reportCount) ||
     state.optionCount <= 0 || state.optionCount !== state.reportCount
@@ -11364,6 +11383,44 @@ async function main() {
         liveIncludesThirdStat: false,
       },
     };
+    /*
+     * The search box narrows the menu and moves nothing else.
+     *
+     * A filter that changed the selection would recreate the failure this
+     * chapter's <noscript> block describes: the control agreeing with you while
+     * the card underneath is another station. Typing a county name is the case
+     * that matters, because matching only the option text answered
+     * 「沒有測站符合」 to the most obvious thing a reader would type.
+     */
+    const filterBox = document.querySelector("#station-filter");
+    if (filterBox && select) {
+      const heldValue = select.value;
+      const heldReport = visibleReports()[0]?.getAttribute("data-station") ?? null;
+      const total = select.options.length;
+      const county = select.querySelector("optgroup")?.label ?? "";
+      const settle = () =>
+        new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const stillShown = () =>
+        [...select.querySelectorAll("option")].filter((option) => !option.hidden).length;
+      filterBox.value = county;
+      filterBox.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle();
+      const narrowedTo = stillShown();
+      const heldWhileFiltered =
+        select.value === heldValue &&
+        (visibleReports()[0]?.getAttribute("data-station") ?? null) === heldReport;
+      filterBox.value = "";
+      filterBox.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle();
+      result.filter = {
+        height: filterBox.getBoundingClientRect().height,
+        total,
+        narrowedTo,
+        narrowedByCounty: narrowedTo > 0 && narrowedTo < total,
+        heldWhileFiltered,
+        restored: stillShown() === total,
+      };
+    }
     if (${JSON.stringify(changeStation)} && select && select.options.length > 1) {
       const original = select.value;
       const replacement = [...select.options].reverse().find((option) => option.value !== original);
