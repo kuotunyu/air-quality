@@ -211,11 +211,22 @@ def build_space_bundle(
             residuals = np.abs(truth - predicted)
             n = int(residuals.size)
             rank = min(n, int(np.ceil((n + 1) * (1.0 - CONFORMAL_ALPHA))))
+            # The distribution the band is one point on, so a page can say what
+            # the band alone hides. At 48 hours the calibration residuals have a
+            # TIGHTER core and a HEAVIER tail than at 24: p50 4.82 against 5.37,
+            # p80 9.41 against 9.56, and then p90 12.79 against 12.27. The 80%
+            # band is therefore narrower at the longer horizon, which reads as
+            # "more certain further out" and is the opposite of what the tail
+            # says. Carrying the percentiles is what lets the app state the
+            # crossover instead of drawing it.
             band = {
                 "nominal": 1.0 - CONFORMAL_ALPHA,
                 "half_width": float(np.sort(residuals)[rank - 1]),
                 "calibration_rows": n,
                 "calibration_model_rmse": float(np.sqrt(np.mean((truth - predicted) ** 2))),
+                "residual_percentiles": {
+                    str(q): float(np.percentile(residuals, q)) for q in (50, 80, 90, 95, 99)
+                },
                 "measured_coverage": (
                     "Not measured here. This calibration has no held-out period left to "
                     "check it against; the rolling-origin backtest in twair.models.forecast "

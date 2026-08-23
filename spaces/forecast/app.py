@@ -143,9 +143,19 @@ def forecast(station: str, timestamp: str, horizon: int) -> tuple[str, str]:
     band = MANIFEST["trained"][str(horizon)].get("band")
     if band:
         half = float(band["half_width"])
+        raw_low = model_value - half
+        # A concentration cannot be negative. The conformal band is symmetric by
+        # construction, so near the floor its lower end goes through zero — this
+        # showed -1.2 μg/m³ at 48 hours before the floor was applied.
+        #
+        # Clamped for display and SAID, not clamped quietly: truncating an
+        # interval narrows it, and a narrower interval covers less than the level
+        # it is labelled with. The note below reports the untruncated end so the
+        # reader can see what the method produced rather than what fits.
+        shown_low = max(0.0, raw_low)
         lines.append(
             f"| **模型** | **{model_value:.1f}** "
-            f"（{model_value - half:.1f}–{model_value + half:.1f}） | **{err(model_value)}** |"
+            f"（{shown_low:.1f}–{model_value + half:.1f}） | **{err(model_value)}** |"
         )
     else:
         lines.append(f"| **模型** | **{model_value:.1f}** | **{err(model_value)}** |")
@@ -166,6 +176,45 @@ def forecast(station: str, timestamp: str, horizon: int) -> tuple[str, str]:
             f"±{float(band['half_width']):.1f} μg/m³，由訓練期尾段 "
             f"{int(band['calibration_rows']):,} 列校準。"
         )
+        if raw_low < 0:
+            lines.append("")
+            lines.append(
+                f"下界原本是 {raw_low:.1f}，已截在 0。共形區間是對稱的，靠近下限時"
+                "必然穿過零；截斷會讓區間變窄，所以它實際涵蓋的比標示的 "
+                f"{float(band['nominal']):.0%} 少一些。"
+            )
+
+        # A longer horizon with a narrower band, said rather than drawn.
+        #
+        # At 48 hours the calibration residuals have a tighter core and a heavier
+        # tail than at 24, so the 80th percentile crosses over while p90 and p95
+        # do not. Left as two numbers in a table that reads as "more certain
+        # further out", which is the opposite of what the tail says. Derived from
+        # the manifest, so it appears only when the ordering actually inverts.
+        wider = [
+            (int(h), float(t["band"]["half_width"]))
+            for h, t in MANIFEST["trained"].items()
+            if t.get("band") and int(h) > horizon
+        ]
+        narrower = [(h, w) for h, w in sorted(wider) if w < half]
+        if narrower:
+            far, far_width = narrower[0]
+            here = band.get("residual_percentiles", {})
+            there = MANIFEST["trained"][str(far)]["band"].get("residual_percentiles", {})
+            lines.append("")
+            lines.append(
+                f"**注意**：{far} 小時的區間是 ±{far_width:.1f}，比這裡的 ±{half:.1f} **窄**。"
+                "這不是模型在更遠處更確定——是那個期距的誤差分布核心更緊、尾巴更重，"
+                f"交叉發生在第 80 與第 90 百分位之間"
+                + (
+                    f"（{horizon}h 的 p90 是 {float(here['90']):.1f}，"
+                    f"{far}h 是 {float(there['90']):.1f}）"
+                    if here.get("90") and there.get("90")
+                    else ""
+                )
+                + "。要比較不確定度的大小，看尾巴而不是看這條區間。"
+            )
+
         lines.append("")
         lines.append(
             "**這個水準是要求的，不是保證的。** 共形的保證是邊際的，並且假設校準與"
