@@ -448,6 +448,63 @@ class TestTheDeweatheredSeries:
         assert panel == {}
 
 
+class TestChapterOnesBoundaryParagraph:
+    """The sentence a reader meets first, and the two things wrong with it.
+
+    `0.445` was typed into this caveat two lines below the expression that
+    computes the same median, which is the exact pattern six prose gates exist
+    to catch. Nothing compared them: the headline gate would have caught a
+    drifted median, but only because `docs/methodology.md` retypes it too, so a
+    fix there alone would have left the website saying the old figure with every
+    gate green.
+
+    「一半以上」 is a second claim hiding in the same sentence. It is true because
+    the median sits below 0.5, and a re-run that pushed it above would make the
+    sentence false while every number in it stayed correct.
+    """
+
+    def test_the_number_is_the_one_it_was_given(self) -> None:
+        assert "0.512" in story._deweather_caveat(0.512)
+        assert "0.445" not in story._deweather_caveat(0.512)
+
+    def test_a_median_below_a_half_leaves_most_variance_unexplained(self) -> None:
+        assert "有一半以上不是本地氣象能解釋的" in story._deweather_caveat(0.445)
+
+    def test_a_median_above_a_half_says_the_opposite(self) -> None:
+        """The claim follows the value. Swapping only the quantifier would give
+        「有不到一半不是……」, a double negative that reads as a typo."""
+        caveat = story._deweather_caveat(0.6)
+
+        assert "本地氣象能解釋逐時變異的一半以上" in caveat
+        assert "有一半以上不是" not in caveat
+
+    def test_exactly_a_half_is_not_more_than_a_half(self) -> None:
+        assert "有一半以上不是" not in story._deweather_caveat(0.5)
+
+    def test_a_withheld_median_claims_no_proportion(self) -> None:
+        """A missing aggregate is reported, never invented — and a caveat that
+        named a figure it did not have would be the worst place to break that."""
+        caveat = story._deweather_caveat(None)
+
+        assert "這一次沒有量到" in caveat
+        assert "一半以上" not in caveat
+        assert "R² 中位數 " not in caveat.replace("的 holdout R² 中位數，", "")
+
+    @pytest.mark.parametrize("median", [0.445, 0.512, 0.6])
+    def test_both_borrowed_words_are_explained_where_they_appear(self, median: float) -> None:
+        """Chapter 1 is the homepage's primary path, and `holdout` appears once
+        on the whole site. `scripts/check_term_first_use.py` holds these two
+        anchors against the built page."""
+        caveat = story._deweather_caveat(median)
+
+        assert "把一段資料留著不給模型學" in caveat
+        assert "解釋掉的變異比例" in caveat
+
+    def test_a_whole_number_median_does_not_render_as_a_float(self) -> None:
+        """`:g` rather than `str`, so a median of 1.0 reads as 1 and not 1.0."""
+        assert "中位數 1——" in story._deweather_caveat(1.0)
+
+
 class TestTheSourcesPayload:
     def _payload(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         import json

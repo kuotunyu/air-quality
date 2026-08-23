@@ -112,15 +112,20 @@
 
   # ── Chapter 1: the primary entry point from the homepage's 從這裡開始 ─────────
   # `StartHere.astro` marks 先看全台趨勢 as its primary path, so this chapter is
-  # where the most readers arrive first, and it is the one that explains least.
+  # where the most readers arrive first, and it was the one that explained least:
+  # `holdout` appeared once on the whole site and nowhere with a meaning, and R²
+  # was defined in chapter 6, five chapters after a reader meets it here.
+  #
+  # Both are glossed in the paragraph now. That paragraph is built by
+  # `_deweather_caveat` in `src/twair/viz/story.py` rather than written in the
+  # component, so the anchors below are the exporter's words and a reword there
+  # is what will trip this.
   - "term": "holdout"
     "route": "/trend/"
-    "explains": null
-    "why": "全站只出現這一次，沒有任何一章解釋它"
+    "explains": "把一段資料留著不給模型學"
   - "term": "R²"
     "route": "/trend/"
-    "explains": null
-    "why": "第六章有解釋，第一章沒有；而第一章是多數讀者的入口"
+    "explains": "解釋掉的變異比例"
 
   # ── Chapter 8 ─────────────────────────────────────────────────────────────
   # The definition is exemplary — 「PM10 是直徑 10 微米以下的顆粒，PM2.5 是 2.5 微米

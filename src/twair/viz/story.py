@@ -1347,6 +1347,8 @@ def _export_deweather(root: Path) -> list[Path]:
     else:
         log.warning("stations table has no column 'airzone' — skipping the zone breakdown")
 
+    median_holdout_r2 = _round(summary["holdout_r2"].median(), 3)
+
     return [
         write_json(
             root / "deweather.json",
@@ -1367,12 +1369,8 @@ def _export_deweather(root: Path) -> list[Path]:
                 # fitted models landing on the same share is the finding.
                 "weather_share_p10": _round(significant["weather_share"].quantile(0.1), 3),
                 "weather_share_p90": _round(significant["weather_share"].quantile(0.9), 3),
-                "median_holdout_r2": _round(summary["holdout_r2"].median(), 3),
-                "caveat": (
-                    "正規化移除的是模型看得見的氣象影響。holdout R² 中位數 0.445，"
-                    "代表逐時變異有一半以上不是本地氣象能解釋的——境外傳輸就在其中，"
-                    "並會留在剩餘趨勢裡。它無法與排放、化學反應或其他未建模因素分開。"
-                ),
+                "median_holdout_r2": median_holdout_r2,
+                "caveat": _deweather_caveat(median_holdout_r2),
                 "by_zone": [
                     {
                         "airzone": row["airzone"],
@@ -1537,6 +1535,52 @@ def _export_pitfalls(root: Path) -> list[Path]:
     if not tables:
         return []
     return [write_json(root / "pitfalls.json", {"tables": tables})]
+
+
+def _deweather_caveat(median_holdout_r2: float | None) -> str:
+    """Chapter 1's boundary paragraph, built from the number it talks about.
+
+    This used to be a literal with `0.445` typed into it, two lines below the
+    expression that computes the same median. Nothing compared the two. The
+    headline gate would have caught a drifted median, but only because
+    `docs/methodology.md` retypes it as well — the caveat was covered by
+    coincidence, and a fix to `methodology.md` alone would have left the website
+    saying the old figure with every gate green.
+
+    「一半以上」 is a second claim hiding in the sentence: it is true because the
+    median is below 0.5, and a re-run that pushed it above would make the
+    sentence false while every number in it stayed correct. So the wording is
+    chosen from the value rather than fixed, which is the same reason
+    `bands.py` emits its crossover note only when the crossover is real.
+
+    `holdout` and `R²` are glossed here because this is chapter 1, and
+    `StartHere.astro` marks it the primary path — the chapter most readers meet
+    first was the one explaining least. The gloss follows chapter 6's habit of
+    saying what a value *means* rather than defining the statistic.
+
+    A null median passes through as a sentence that claims no number, because
+    this project reports a missing aggregate rather than inventing one.
+    """
+    opening = "正規化移除的是模型看得見的氣象影響。"
+    closing = "它無法與排放、化學反應或其他未建模因素分開。"
+    if median_holdout_r2 is None:
+        return (
+            f"{opening}這一批配適沒有留下可用的 holdout R² 中位數，"
+            f"所以本地氣象解釋掉多少逐時變異，這一次沒有量到。{closing}"
+        )
+    # Whole clause rather than a swapped quantifier: 「有不到一半不是……」 is a
+    # double negative that reads as a typo, and a sentence nobody can parse is
+    # not more honest than one nobody checked.
+    finding = (
+        "所以逐時變異有一半以上不是本地氣象能解釋的——境外傳輸就在其中，並會留在剩餘趨勢裡。"
+        if median_holdout_r2 < 0.5
+        else "所以本地氣象能解釋逐時變異的一半以上，剩下的部分才是境外傳輸等因素的去處。"
+    )
+    return (
+        f"{opening}holdout R² 中位數 {median_holdout_r2:g}——「holdout」是把一段資料"
+        "留著不給模型學、事後拿來考它，「R²」是它在那段資料上解釋掉的變異比例，"
+        f"1 是全部解釋、0 是完全解釋不了。{finding}{closing}"
+    )
 
 
 def _round(value: Any, places: int = 2) -> float | None:
