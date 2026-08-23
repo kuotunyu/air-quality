@@ -42,6 +42,12 @@ def scores() -> pl.DataFrame:
                 "skill_vs_persistence": 0.21,
                 "skill_vs_climatology": 0.55,
                 "beats_persistence": True,
+                # The band travels with every score row, so a stub that omits it
+                # cannot be summarised — which is what this file exercises.
+                "conformal_half_width": 10.0,
+                "conformal_coverage": 0.80,
+                "conformal_calibration_n": 5000,
+                "conformal_band_rmse": 8.1,
             }
             for i in (1, 2)
         ]

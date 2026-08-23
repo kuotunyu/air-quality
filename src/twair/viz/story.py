@@ -974,7 +974,7 @@ def _export_forecast(root: Path) -> list[Path]:
         log.warning("no M9 output — run `twair analyze m9`")
         return []
 
-    from twair.models.forecast import summarise_scores
+    from twair.models.forecast import CONFORMAL_ALPHA, summarise_scores
 
     # Derived from the splits rather than read from by_horizon.parquet: the
     # aggregate is a view of the scores, and re-deriving it means an older
@@ -1001,12 +1001,24 @@ def _export_forecast(root: Path) -> list[Path]:
                 "model_rmse": _round(row["model_rmse"], 2),
                 "persistence_rmse": _round(row["persistence_rmse"], 2),
                 "climatology_rmse": _round(row["climatology_rmse"], 2),
+                # The band, and what it actually caught. `coverage_worst` and
+                # `splits_below_nominal` travel with the mean for the same reason
+                # `skill_worst_split` does: at every horizon exactly one split
+                # undercovers, and the mean is the number that hides it.
+                "band_nominal": 1.0 - CONFORMAL_ALPHA,
+                "band_half_width": _round(row["conformal_half_width"], 2),
+                "band_coverage": _round(row["conformal_coverage"], 3),
+                "band_coverage_worst": _round(row["conformal_coverage_worst"], 3),
+                "band_splits_below_nominal": int(row["splits_below_nominal_coverage"]),
+                "band_model_rmse": _round(row["conformal_band_rmse"], 2),
                 "per_split": [
                     {
                         "split": s["split"],
                         "skill_persistence": _round(s["skill_vs_persistence"], 3),
                         "skill_climatology": _round(s["skill_vs_climatology"], 3),
                         "model_r2": _round(s["model_r2"], 3),
+                        "band_half_width": _round(s["conformal_half_width"], 2),
+                        "band_coverage": _round(s["conformal_coverage"], 3),
                     }
                     for s in splits.iter_rows(named=True)
                 ],

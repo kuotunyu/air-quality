@@ -1557,10 +1557,28 @@ FORECAST_HORIZON_KEYS = frozenset(
         "model_rmse",
         "persistence_rmse",
         "climatology_rmse",
+        # The conformal band. `check_site_quality.mjs` carries the same list and
+        # they have to move together — this one was left behind for exactly one
+        # mirror run, which is how long it took to find out.
+        "band_nominal",
+        "band_half_width",
+        "band_coverage",
+        "band_coverage_worst",
+        "band_splits_below_nominal",
+        "band_model_rmse",
         "per_split",
     }
 )
-FORECAST_SPLIT_KEYS = frozenset({"split", "skill_persistence", "skill_climatology", "model_r2"})
+FORECAST_SPLIT_KEYS = frozenset(
+    {
+        "split",
+        "skill_persistence",
+        "skill_climatology",
+        "model_r2",
+        "band_half_width",
+        "band_coverage",
+    }
+)
 FORECAST_HORIZONS = (1, 6, 24, 48)
 FORECAST_READING_IDENTITIES = (
     "r2-skill",
@@ -5256,12 +5274,20 @@ def _run_preflight() -> None:
                 "model_rmse": 5.0,
                 "persistence_rmse": 6.0,
                 "climatology_rmse": 7.0,
+                "band_nominal": 0.8,
+                "band_half_width": 6.0,
+                "band_coverage": 0.81,
+                "band_coverage_worst": 0.77,
+                "band_splits_below_nominal": 1,
+                "band_model_rmse": 5.1,
                 "per_split": [
                     {
                         "split": f"rolling_{split}",
                         "skill_persistence": 0.2,
                         "skill_climatology": 0.3,
                         "model_r2": 0.5,
+                        "band_half_width": 6.0,
+                        "band_coverage": 0.81,
                     }
                     for split in (1, 2)
                 ],

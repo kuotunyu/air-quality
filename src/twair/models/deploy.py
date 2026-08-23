@@ -37,7 +37,14 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from twair.models.forecast import HORIZONS, MODEL_PARAMS, TARGET, build_feature_frame
+from twair.models.forecast import (
+    CONFORMAL_ALPHA,
+    CONFORMAL_CALIBRATION_FRACTION,
+    HORIZONS,
+    MODEL_PARAMS,
+    TARGET,
+    build_feature_frame,
+)
 from twair.paths import REPO_ROOT
 
 log = logging.getLogger(__name__)
@@ -179,6 +186,44 @@ def build_space_bundle(
         model = lgb.LGBMRegressor(random_state=seed, **MODEL_PARAMS)
         model.fit(train.select(features).to_numpy(), train["target"].to_numpy())
 
+        # The band, calibrated the way `models/forecast.py` calibrates it.
+        #
+        # The shipped model is fitted on the whole training period, because that
+        # is the best forecast available to the demo. Its own residuals cannot
+        # size an interval — they are in-sample and would give a band far too
+        # narrow — so a second model is fitted on the earlier part and measured
+        # against the tail, and its quantile is what travels.
+        #
+        # The band therefore describes a model trained on 80% of these rows
+        # rather than the one shipped. The backtest measured that difference and
+        # found it small; `calibration_model_rmse` is written beside the width so
+        # a reader can see the comparison rather than take it on trust, and the
+        # Space's own manifest already says scoring belongs to the backtest.
+        ordered = train.sort("ts_local")
+        cut = int(ordered.height * (1.0 - CONFORMAL_CALIBRATION_FRACTION))
+        proper, calibration = ordered[:cut], ordered[cut:]
+        band: dict[str, Any] | None = None
+        if calibration.height >= 100 and proper.height >= 100:
+            calibrator = lgb.LGBMRegressor(random_state=seed, **MODEL_PARAMS)
+            calibrator.fit(proper.select(features).to_numpy(), proper["target"].to_numpy())
+            predicted = np.asarray(calibrator.predict(calibration.select(features).to_numpy()))
+            truth = calibration["target"].to_numpy()
+            residuals = np.abs(truth - predicted)
+            n = int(residuals.size)
+            rank = min(n, int(np.ceil((n + 1) * (1.0 - CONFORMAL_ALPHA))))
+            band = {
+                "nominal": 1.0 - CONFORMAL_ALPHA,
+                "half_width": float(np.sort(residuals)[rank - 1]),
+                "calibration_rows": n,
+                "calibration_model_rmse": float(np.sqrt(np.mean((truth - predicted) ** 2))),
+                "measured_coverage": (
+                    "Not measured here. This calibration has no held-out period left to "
+                    "check it against; the rolling-origin backtest in twair.models.forecast "
+                    "is where coverage is measured, and it found one split in four below "
+                    "the nominal level at every horizon."
+                ),
+            }
+
         path = out / "model" / f"pm25_h{horizon}.txt"
         # Written through Python rather than `save_model`, which hands the path
         # to LightGBM's C library. On Windows that goes through the ANSI code
@@ -190,6 +235,7 @@ def build_space_bundle(
             "rows": train.height,
             "file": f"model/pm25_h{horizon}.txt",
             "bytes": path.stat().st_size,
+            "band": band,
         }
         log.info("h%d: fitted on %d rows -> %s", horizon, train.height, path.name)
 

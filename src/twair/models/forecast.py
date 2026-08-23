@@ -173,6 +173,18 @@ class ForecastScore:
     skill_vs_persistence: float
     """1 - MSE(model)/MSE(persistence). The number that actually matters."""
     skill_vs_climatology: float
+    conformal_half_width: float
+    """± this many μg/m³ around the point forecast, for a nominal 80% band."""
+    conformal_coverage: float
+    """What that band actually caught on this split's held-out test set."""
+    conformal_calibration_n: int
+    conformal_band_rmse: float
+    """RMSE of the model the band belongs to, which trained on 80% of `train`.
+
+    Carried so the band can be read as describing this forecast rather than a
+    different one. If it drifted far from `model_rmse`, the interval would be
+    around a model the chapter does not report.
+    """
 
     @property
     def beats_persistence(self) -> bool:
@@ -191,6 +203,10 @@ class ForecastScore:
             "skill_vs_persistence": self.skill_vs_persistence,
             "skill_vs_climatology": self.skill_vs_climatology,
             "beats_persistence": self.beats_persistence,
+            "conformal_half_width": self.conformal_half_width,
+            "conformal_coverage": self.conformal_coverage,
+            "conformal_calibration_n": self.conformal_calibration_n,
+            "conformal_band_rmse": self.conformal_band_rmse,
         }
 
 
@@ -300,6 +316,60 @@ def _fit_predict(
     return np.asarray(model.predict(test.select(features).to_numpy()))
 
 
+CONFORMAL_ALPHA = 0.20
+"""Nominal miss rate: an 80% band. Named once so prose and payload cannot differ."""
+
+CONFORMAL_CALIBRATION_FRACTION = 0.20
+"""How much of each training set is held back to calibrate the band.
+
+Taken from the **end** of the training period, not at random. Split conformal
+assumes calibration and test are exchangeable; hourly PM2.5 is not, so the least
+wrong calibration set is the one nearest the test period in time. Sampling
+uniformly would calibrate a 2025 band partly on 2016.
+"""
+
+
+def _conformal_band(
+    train: pl.DataFrame, test: pl.DataFrame, features: list[str], *, seed: int
+) -> tuple[float, float, int, float]:
+    """Half-width, empirical coverage, calibration size, and the band's own RMSE.
+
+    Split conformal: fit on the earlier part of the training set, measure
+    absolute residuals on the held-out tail, and take their corrected quantile.
+    The band therefore belongs to a model trained on less data than the headline
+    one, which is why its RMSE comes back too — a band around a materially worse
+    model would not describe the forecast being published.
+
+    **The coverage is measured, not claimed.** The finite-sample guarantee is
+    marginal and rests on exchangeability, which this data violates: the
+    calibration tail and the test period differ by season, by trend, and by
+    whatever happened in between. What is reported is what the band actually
+    caught on held-out data, and `summarise_scores` carries the worst split
+    beside the mean for the same reason it does that for skill.
+    """
+    ordered = train.sort("ts_local")
+    cut = int(ordered.height * (1.0 - CONFORMAL_CALIBRATION_FRACTION))
+    proper, calibration = ordered[:cut], ordered[cut:]
+    if calibration.height < 100 or proper.height < 100:
+        return (float("nan"), float("nan"), calibration.height, float("nan"))
+
+    residuals = np.abs(
+        calibration["target"].to_numpy() - _fit_predict(proper, calibration, features, seed=seed)
+    )
+    n = int(residuals.size)
+    # ceil((n+1)(1-alpha))/n — the correction that makes the guarantee finite-
+    # sample rather than asymptotic. Clamped because it exceeds n when alpha is
+    # smaller than 1/(n+1), where no finite sample can deliver the level asked.
+    rank = min(n, int(np.ceil((n + 1) * (1.0 - CONFORMAL_ALPHA))))
+    half_width = float(np.sort(residuals)[rank - 1])
+
+    predicted = _fit_predict(proper, test, features, seed=seed)
+    truth = test["target"].to_numpy()
+    covered = float(np.mean(np.abs(truth - predicted) <= half_width))
+    band_rmse = float(np.sqrt(np.mean((truth - predicted) ** 2)))
+    return (half_width, covered, n, band_rmse)
+
+
 def run_forecast(
     root: Path | None = None,
     *,
@@ -355,6 +425,10 @@ def run_forecast(
             e_pers = truth - persistence
             e_clim = truth - climatology
 
+            half_width, coverage, calibration_n, band_rmse = _conformal_band(
+                split.train, split.test, features, seed=seed
+            )
+
             ss_tot = float(np.sum((truth - truth.mean()) ** 2))
             rows.append(
                 ForecastScore(
@@ -370,6 +444,10 @@ def run_forecast(
                     else float("nan"),
                     skill_vs_persistence=skill_score(e_model, e_pers),
                     skill_vs_climatology=skill_score(e_model, e_clim),
+                    conformal_half_width=half_width,
+                    conformal_coverage=coverage,
+                    conformal_calibration_n=calibration_n,
+                    conformal_band_rmse=band_rmse,
                 ).as_dict()
             )
 
@@ -409,6 +487,17 @@ def summarise_scores(scores: pl.DataFrame) -> pl.DataFrame:
             (pl.col("skill_vs_persistence") <= 0).sum().alias("splits_not_beating_persistence"),
             pl.col("skill_vs_climatology").mean(),
             pl.col("skill_vs_climatology").min().alias("skill_vs_climatology_worst"),
+            # Same rule as skill, for the same reason. A nominal 80% band whose
+            # splits ran 76.4% to 84.6% averages to 81.7%, and the average is the
+            # one number that makes an undercovering split disappear. The worst
+            # split and the count below nominal travel with the mean.
+            pl.col("conformal_half_width").mean(),
+            pl.col("conformal_coverage").mean(),
+            pl.col("conformal_coverage").min().alias("conformal_coverage_worst"),
+            (pl.col("conformal_coverage") < (1.0 - CONFORMAL_ALPHA))
+            .sum()
+            .alias("splits_below_nominal_coverage"),
+            pl.col("conformal_band_rmse").mean(),
         )
         .sort("horizon")
     )

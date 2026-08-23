@@ -142,7 +142,7 @@ const STATIC_TABLE_WRAPS = new Map([
   ["/space/", 2],
   ["/sources/", 0],
   ["/detection/", 4],
-  ["/forecast/", 2],
+  ["/forecast/", 3],
   ["/health/", 0],
   ["/methods/", 4],
   ["/explore/", 0],
@@ -159,12 +159,18 @@ const STATIC_TABLE_WRAPS = new Map([
  * published-vs-reproduced comparison table. 13 wrappers × 6 route-viewports =
  * 78, and each removed table had been a genuine scroller at two of the six.
  *
+ * 2026-08-23 — re-measured at 84 and 20, and /forecast/ from 2 wrappers to 3.
+ * The prediction-interval table is five columns of Chinese headers: one wrapper
+ * over six route-viewports is the +6, and it is a genuine scroller at the two
+ * 375px ones, which is the +2. Unwrapped it took the page 243px sideways at
+ * 375px, and this gate is what said so.
+ *
  * These numbers are re-measured when content legitimately changes, never
  * loosened to make a red run green. A wrapper vanishing for any other reason
  * still fails here, which is the whole point of pinning them.
  */
-const EXPECTED_TABLE_WRAPS = 78;
-const EXPECTED_TABLE_SCROLLERS = 18;
+const EXPECTED_TABLE_WRAPS = 84;
+const EXPECTED_TABLE_SCROLLERS = 20;
 
 /** APCA Lc 60 is the floor below which text stops carrying meaning reliably. */
 const MIN_LC = 60;
@@ -1782,6 +1788,13 @@ const FORECAST_PAYLOAD_KEYS = [
 const FORECAST_BASELINE_KEYS = ["label", "name", "what", "why"];
 const FORECAST_READING_KEYS = ["claim", "detail"];
 const FORECAST_HORIZON_KEYS = [
+  // Sorted, because `forecastExactKeys` compares sorted key lists.
+  "band_coverage",
+  "band_coverage_worst",
+  "band_half_width",
+  "band_model_rmse",
+  "band_nominal",
+  "band_splits_below_nominal",
   "climatology_rmse",
   "horizon",
   "model_r2",
@@ -1797,7 +1810,14 @@ const FORECAST_HORIZON_KEYS = [
   "splits_not_beating_persistence",
   "stations",
 ];
-const FORECAST_SPLIT_KEYS = ["model_r2", "skill_climatology", "skill_persistence", "split"];
+const FORECAST_SPLIT_KEYS = [
+  "band_coverage",
+  "band_half_width",
+  "model_r2",
+  "skill_climatology",
+  "skill_persistence",
+  "split",
+];
 const FORECAST_HORIZONS = [1, 6, 24, 48];
 const FORECAST_READING_KEYS_ORDERED = [
   "r2-skill",

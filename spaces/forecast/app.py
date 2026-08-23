@@ -140,7 +140,15 @@ def forecast(station: str, timestamp: str, horizon: int) -> tuple[str, str]:
             return "—"
         return f"{value - truth_value:+.1f}"
 
-    lines.append(f"| **模型** | **{model_value:.1f}** | **{err(model_value)}** |")
+    band = MANIFEST["trained"][str(horizon)].get("band")
+    if band:
+        half = float(band["half_width"])
+        lines.append(
+            f"| **模型** | **{model_value:.1f}** "
+            f"（{model_value - half:.1f}–{model_value + half:.1f}） | **{err(model_value)}** |"
+        )
+    else:
+        lines.append(f"| **模型** | **{model_value:.1f}** | **{err(model_value)}** |")
     lines.append(f"| persistence（跟現在一樣） | {persistence:.1f} | {err(persistence)} |")
     if clim is not None:
         lines.append(f"| climatology（這站這時候的平均） | {clim:.1f} | {err(clim)} |")
@@ -150,6 +158,21 @@ def forecast(station: str, timestamp: str, horizon: int) -> tuple[str, str]:
         lines.append("實際值不在這份樣本裡（樣本在該時刻之後就結束了）。")
     else:
         lines.append(f"| **實際發生** | **{truth_value:.1f}** | — |")
+
+    if band:
+        lines.append("")
+        lines.append(
+            f"括號是名目 {float(band['nominal']):.0%} 的 split conformal 區間，半寬 "
+            f"±{float(band['half_width']):.1f} μg/m³，由訓練期尾段 "
+            f"{int(band['calibration_rows']):,} 列校準。"
+        )
+        lines.append("")
+        lines.append(
+            "**這個水準是要求的，不是保證的。** 共形的保證是邊際的，並且假設校準與"
+            "測試可交換；逐時 PM2.5 不是。回測在每一個期距都量到四個分割中有一個"
+            "低於名目，而且每次都是同一個分割。這裡沒有留出期可以再量一次，所以"
+            "這條區間該讀成一個尺度，不是一個承諾。"
+        )
 
     s = SKILL.get(horizon)
     if s is None:

@@ -26,6 +26,13 @@ def _score(**overrides: object) -> ForecastScore:
         "model_r2": 0.5,
         "skill_vs_persistence": 0.21,
         "skill_vs_climatology": 0.55,
+        # A band that covers exactly its nominal level, so a test that says
+        # nothing about coverage does not accidentally assert under- or
+        # over-coverage. Cases about the band set these themselves.
+        "conformal_half_width": 10.0,
+        "conformal_coverage": 0.80,
+        "conformal_calibration_n": 5000,
+        "conformal_band_rmse": 8.1,
     }
     return ForecastScore(**{**base, **overrides})  # type: ignore[arg-type]
 
@@ -183,3 +190,88 @@ class TestTheStationCountTravels:
         summary = summarise_scores(scores).sort("horizon")
 
         assert summary["stations"].to_list() == [74, 71]
+
+
+class TestABandIsOnlyWorthItsMeasuredCoverage:
+    """A nominal level is a request; coverage is what came back.
+
+    Split conformal's guarantee is marginal and assumes calibration and test are
+    exchangeable. Hourly PM2.5 is not — the calibration tail and the test period
+    differ by season, by trend, and by whatever happened in between. Measured on
+    the real backtest at 24 hours, a nominal 80% band ran **76.4% to 84.6%**
+    across four rolling origins. The mean of that is 81.7%, which is the one
+    number that makes the undercovering split disappear.
+
+    So the same rule the skill scores already follow: the worst split and the
+    count below nominal travel with the mean, and these pin that they do.
+    """
+
+    def test_the_worst_split_travels_with_the_mean(self) -> None:
+        frame = pl.DataFrame(
+            [
+                _score(split=f"rolling_{i}", conformal_coverage=c).as_dict()
+                for i, c in enumerate([0.831, 0.825, 0.764, 0.846], start=1)
+            ]
+        )
+
+        summary = summarise_scores(frame)
+
+        assert summary["conformal_coverage"][0] == pytest.approx(0.8165, abs=5e-4)
+        assert summary["conformal_coverage_worst"][0] == pytest.approx(0.764)
+
+    def test_a_split_below_nominal_is_counted(self) -> None:
+        """0.764 is below the 0.80 asked for. One split, and the count says one."""
+        frame = pl.DataFrame(
+            [
+                _score(split=f"rolling_{i}", conformal_coverage=c).as_dict()
+                for i, c in enumerate([0.831, 0.825, 0.764, 0.846], start=1)
+            ]
+        )
+
+        assert summarise_scores(frame)["splits_below_nominal_coverage"][0] == 1
+
+    def test_a_band_that_covers_everywhere_counts_none(self) -> None:
+        frame = pl.DataFrame(
+            [
+                _score(split=f"rolling_{i}", conformal_coverage=c).as_dict()
+                for i, c in enumerate([0.81, 0.83, 0.80, 0.88], start=1)
+            ]
+        )
+
+        summary = summarise_scores(frame)
+
+        assert summary["splits_below_nominal_coverage"][0] == 0
+        # Exactly nominal is not below it.
+        assert summary["conformal_coverage_worst"][0] == pytest.approx(0.80)
+
+    def test_the_nominal_level_has_one_definition(self) -> None:
+        """The prose, the payload and the count of failing splits all read this.
+        Two copies of 0.20 would let a chapter promise a level nothing measured."""
+        from twair.models.forecast import CONFORMAL_ALPHA
+
+        assert pytest.approx(0.20) == CONFORMAL_ALPHA
+
+    def test_the_calibration_tail_comes_from_the_end_of_training(self) -> None:
+        """Not a random fifth. Split conformal assumes exchangeability, and the
+        least wrong calibration set for a time series is the one nearest the test
+        period — sampling uniformly would calibrate a 2025 band partly on 2016."""
+        import inspect
+
+        from twair.models import forecast as module
+
+        source = inspect.getsource(module._conformal_band)
+
+        assert 'sort("ts_local")' in source
+        assert "ordered[:cut]" in source and "ordered[cut:]" in source
+
+    def test_the_band_carries_the_rmse_of_the_model_it_belongs_to(self) -> None:
+        """The band is calibrated around a model trained on 80% of the training
+        set, not the headline model. Carrying its RMSE is what lets a reader see
+        the interval describes the forecast being published rather than a
+        materially different one."""
+        frame = pl.DataFrame([_score(conformal_band_rmse=8.1, model_rmse=8.0).as_dict()])
+
+        summary = summarise_scores(frame)
+
+        assert summary["conformal_band_rmse"][0] == pytest.approx(8.1)
+        assert summary["model_rmse"][0] == pytest.approx(8.0)
