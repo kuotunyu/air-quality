@@ -126,6 +126,53 @@ class TestTheWindowIsTheWholeDiscrimination:
         assert "first used at 0" in problems[0]
 
 
+class TestTheDistancesAreComputedRatherThanRecorded:
+    """The first version of this gate wrote them into a comment instead.
+
+    Seven of the thirteen were wrong on the day they were committed — measured
+    with a draft of the extractor rather than the one that shipped — and one term
+    was listed as unexplained while the page explained it 35 characters after
+    first use. None of that was catchable, because a comment is not checked by
+    anything. The numbers are recomputed every run now, so they cannot describe a
+    page that has changed underneath them.
+    """
+
+    def test_the_distance_is_signed_so_a_gloss_before_the_term_is_visible(self) -> None:
+        after = term()
+        assert gate.distance_for(after, "CBPF" + "填" * 6 + "描述條件機率") == 10
+        assert gate.distance_for(after, "描述條件機率" + "填" * 4 + "CBPF") == -10
+
+    def test_an_unexplained_term_has_no_distance_to_report(self) -> None:
+        entry = term(explains=None, why="沒有任何一章解釋它")
+
+        assert gate.distance_for(entry, "CBPF 是一張極座標圖") is None
+
+    def test_a_missing_string_yields_no_number_rather_than_a_wrong_one(self) -> None:
+        """`find` returns −1 for either side. Subtracting that produces a real
+        integer that would print as a plausible distance."""
+        assert gate.distance_for(term(), "描述條件機率 只有解釋") is None
+        assert gate.distance_for(term(), "CBPF 只有詞") is None
+
+    def test_every_explained_term_prints_its_own_measurement(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        path = glossary(
+            tmp_path, 160, [{"term": "CBPF", "route": "/sources/", "explains": "描述條件機率"}]
+        )
+        monkeypatch.setattr(gate, "GLOSSARY", path)
+        dist = tmp_path / "dist"
+        (dist / "sources").mkdir(parents=True)
+        (dist / "sources" / "index.html").write_text(
+            page("CBPF 描述條件機率，不識別污染來源"), encoding="utf-8"
+        )
+
+        assert gate.main(["check", str(dist)]) == 0
+        assert "/sources/ CBPF — 解釋在首次出現後 5 字" in capsys.readouterr().out
+
+
 class TestAGateThatFindsNothingMustNotReportSuccess:
     """−1 from `find` is the easiest failure in the file to read as a pass."""
 

@@ -10,21 +10,24 @@ question a machine can answer exactly: **is the explanation still there, next to
 the word it explains.**
 
 That question has teeth because the site already answers it well in most places
-and the failures cluster in one shape. Measured over the built pages:
+and the failures cluster in one shape. Every explained term is glossed within a
+few dozen characters of first use, and the nearest unexplained one is several
+hundred away — the run prints each distance, so the current values are always in
+the output rather than here. Calibration at `ab66b34` put the explained terms
+between 5 and 70 and the nearest gap at 366, with nothing in between.
 
-* 偵測極限 is glossed 4 characters after first use, CBPF at 5, skill at 6, R² and
-  安慰劑 at 11, rolling-origin at 15, split conformal at 28, 反事實 42 characters
-  *before*, climatology at 67. Nine terms, one habit.
-* `PM10` on `/methods/` is explained 1,379 characters after the case index names
-  it. `persistence` on `/forecast/` is 591 characters after the step list that
-  introduces it — while `climatology`, one word away in the same sentence, is
-  glossed in the figure caption and passes. `殘差` on `/space/` is 367.
+The failures are **terms introduced by an index, a legend or a chapter's own
+question list, ahead of the prose that defines them** — a structural consequence
+of a chapter growing a navigational layer above its argument, and exactly the
+class of defect a proofread misses because each screen looks fine on its own.
+`climatology` and `persistence` are named by the same legend of the same figure;
+the caption glosses one of them, so one passes and one does not.
 
-The failures are not sloppy sentences. They are **terms introduced by an index,
-a legend or a step list, ahead of the prose that defines them** — a structural
-consequence of a chapter growing a navigational layer above its argument, and
-exactly the class of defect a proofread misses because each screen looks fine on
-its own.
+The distances used to be listed here, per term. Seven of thirteen were wrong the
+day they were written, because they had been measured with a draft of the
+extractor rather than this one, and a comment cannot be checked by anything. That
+is why `distance_for` exists and why this paragraph names two numbers instead of
+thirteen.
 
 Nothing here judges whether an explanation is good. It checks that the string is
 present and close. `docs/working-rules.md` already draws that line around the two
@@ -246,6 +249,25 @@ def load_glossary(path: pathlib.Path | None = None) -> tuple[int, list[Term]]:
     return window, terms
 
 
+def distance_for(term: Term, text: str) -> int | None:
+    """Signed characters from the term's first use to its explanation.
+
+    Negative when the explanation comes first, which several do. `None` when
+    there is nothing to measure — no explanation recorded, or either string
+    absent, both of which `problems_for` reports on its own.
+
+    This exists so the numbers live in the output. The first version of this
+    gate printed only pass or fail and wrote the distances into a comment, where
+    seven of thirteen were wrong on the day they were committed: they had been
+    measured with a draft of the extractor rather than the one that ships. A
+    figure that is recomputed every run cannot drift from what it describes.
+    """
+    if term.explains is None:
+        return None
+    use, where = text.find(term.term), text.find(term.explains)
+    return None if use < 0 or where < 0 else where - use
+
+
 def problems_for(term: Term, text: str, window: int) -> list[str]:
     """What is wrong with one term on the page it belongs to, if anything."""
     use = text.find(term.term)
@@ -313,6 +335,11 @@ def main(argv: list[str]) -> int:
 
     print(f"routes read      : {len(pages)}")
     print(f"terms explained  : {len(explained)} (within {window} characters of first use)")
+    for term in explained:
+        gap = distance_for(term, pages[term.route]) if term.route in pages else None
+        if gap is not None:
+            side = "後" if gap >= 0 else "前"
+            print(f"  {term.label} — 解釋在首次出現{side} {abs(gap)} 字")
     print(f"terms unexplained: {len(unexplained)}")
     for term in unexplained:
         print(f"  待補 {term.label} — {term.why}")
