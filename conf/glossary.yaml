@@ -1,0 +1,118 @@
+# Technical terms the published site uses, and where it explains them.
+#
+# The six prose gates before this one all ask the same question — does a number
+# retyped into prose still equal the number that produced it. None of them asks
+# whether a reader can understand the sentence the number sits in. The site is
+# written for people who do not already know what a conformal interval is, and
+# `PLAN.md` Phase 8 keeps a non-expert reading deferred for want of a
+# participant, so nothing at all was watching the vocabulary.
+#
+# What a gate can decide mechanically is narrow but real: **a term the site has
+# committed to explaining must still carry that explanation, near the place a
+# reader first meets it.** It cannot decide whether the explanation is any good.
+# That is review, not regex — the same boundary `docs/working-rules.md` draws
+# around the two delegated claims in the site-prose gate.
+#
+# `window` is measured, not chosen. Every term the site currently explains well
+# puts its explanation within 67 characters of first use — 偵測極限 at 4, CBPF at
+# 5, skill at 6, R² and 安慰劑 at 11, rolling-origin at 15, split conformal at 28,
+# 反事實 at 42, climatology at 67. Every term it explains badly is at 367 or more:
+# 殘差 367, persistence 591, PM10 1,379. There is no case between 67 and 367, so
+# the threshold sits in an empty gap rather than against a boundary, and moving
+# it by 50 either way would change nothing. Distances are in characters of the
+# rendered `<main>` text, signed: negative means the explanation comes first.
+"window": 160
+
+# `explains` is a substring that must still appear on `route`, within `window`
+# characters of the term's first use there. Choose the shortest phrase that
+# actually carries the meaning — a longer quote is a longer hostage to rewording,
+# and rewording the sentence is allowed. If a gate failure is a reword rather
+# than a loss, the fix is to update the anchor here in the same commit.
+#
+# `explains: null` records a term used with no explanation anywhere on its route.
+# These are not exemptions and nothing is switched off for them: the gate still
+# requires the term to be present, so a stale entry is caught, and it prints
+# every one of them on every run. They are a measured deficit, listed so that it
+# is visible and countable rather than merely true. `why` says what is known.
+"terms":
+  # ── Chapter 4: the pattern the rest of the site should follow ──────────────
+  - "term": "CBPF"
+    "route": "/sources/"
+    "explains": "描述條件機率"
+
+  # ── Chapter 5 ─────────────────────────────────────────────────────────────
+  - "term": "偵測極限"
+    "route": "/detection/"
+    "explains": "分析方法也有偵測極限"
+  - "term": "安慰劑"
+    "route": "/detection/"
+    "explains": "沒有事件標記時"
+
+  # ── Chapter 6 ─────────────────────────────────────────────────────────────
+  - "term": "climatology"
+    "route": "/forecast/"
+    "explains": "它根本不看今天發生什麼事"
+  - "term": "rolling-origin"
+    "route": "/forecast/"
+    "explains": "過去訓練、未來測試"
+  - "term": "R²"
+    "route": "/forecast/"
+    "explains": "都是無單位的比例"
+  - "term": "skill"
+    "route": "/forecast/"
+    "explains": "都是無單位的比例"
+  - "term": "split conformal"
+    "route": "/forecast/"
+    "explains": "只用訓練期的前 80% 擬合"
+  # The chapter defines this one twice over — 「它用了 PM2.5 自己的前一個值」 and a
+  # definition card — but both land after the step list that names it, and the
+  # nearest gloss is 591 characters past first use. The figure caption does gloss
+  # climatology in place, which is why its neighbour passes and this does not.
+  - "term": "persistence"
+    "route": "/forecast/"
+    "explains": null
+    "why": "首次出現在圖 6.1 的步驟清單，最近的解釋在 591 字之後"
+
+  # ── Chapter 7 ─────────────────────────────────────────────────────────────
+  - "term": "反事實"
+    "route": "/health/"
+    "explains": "以什麼濃度作為比較基準"
+
+  # ── Chapter 1: the primary entry point from the homepage's 從這裡開始 ─────────
+  # `StartHere.astro` marks 先看全台趨勢 as its primary path, so this chapter is
+  # where the most readers arrive first, and it is the one that explains least.
+  - "term": "holdout"
+    "route": "/trend/"
+    "explains": null
+    "why": "全站只出現這一次，沒有任何一章解釋它"
+  - "term": "R²"
+    "route": "/trend/"
+    "explains": null
+    "why": "第六章有解釋，第一章沒有；而第一章是多數讀者的入口"
+
+  # ── Chapter 3: the most jargon-dense chapter on the site ───────────────────
+  - "term": "殘差"
+    "route": "/space/"
+    "explains": null
+    "why": "首次出現在圖 3.1 說明，最近的解釋在 367 字之後"
+  - "term": "虛無分布"
+    "route": "/space/"
+    "explains": null
+    "why": "與 排列檢定、knn(5)、X'e = 0 同段出現，整段沒有解釋"
+  - "term": "Moran"
+    "route": "/space/"
+    "explains": null
+    "why": "整章的核心統計量，章內沒有一句說它量的是什麼"
+  - "term": "silhouette"
+    "route": "/space/"
+    "explains": null
+    "why": "與 Voronoi、ensemble、ARI 同段出現，整段沒有解釋"
+
+  # ── Chapter 8 ─────────────────────────────────────────────────────────────
+  # The definition is exemplary — 「PM10 是直徑 10 微米以下的顆粒，PM2.5 是 2.5 微米
+  # 以下的，後者被前者包含」 — but it belongs to case 02, and the case index at the
+  # top of the chapter names PM10 1,379 characters earlier.
+  - "term": "PM10"
+    "route": "/methods/"
+    "explains": null
+    "why": "案例索引在解釋之前 1,379 字就先用了它"

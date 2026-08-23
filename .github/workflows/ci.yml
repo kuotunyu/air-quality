@@ -220,6 +220,22 @@ jobs:
         working-directory: web
         run: npm ci
 
+      # Every gate in this job until now has been stdlib-only Python or Node,
+      # and that was load-bearing rather than incidental: this job installs no
+      # Python, so a gate importing anything would run green on a developer
+      # machine — where `python3` happens to be an Anaconda build carrying
+      # PyYAML — and red here. The first gate that needs a dependency is the
+      # term gate below, so uv arrives with it. It runs `--no-project`, which
+      # keeps Polars, LightGBM and statsmodels out of a Node job that has no
+      # use for them.
+      - name: Install Astral uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          prune-cache: true
+
       # Before the build, because a type error is cheaper to read than a broken
       # page, and because this is the check AGENTS.md names by number.
       - name: Type Check (astro check)
@@ -245,6 +261,24 @@ jobs:
 
       - name: Every chapter opens with the shared publication structure
         run: python3 scripts/check_publication_structure.py
+
+      # The six prose gates in the other job all ask whether a number retyped
+      # into prose still equals the number that produced it. None asks whether
+      # the sentence around it can be read, and `PLAN.md` Phase 8 keeps the
+      # non-expert reading deferred for want of a participant — so the site's
+      # vocabulary had nothing watching it at all.
+      #
+      # This checks the one part of that a machine can decide: a term the site
+      # has committed to explaining still carries that explanation, near where a
+      # reader first meets it. It cannot judge whether the explanation is any
+      # good; that is review, and `docs/working-rules.md` already draws the line.
+      #
+      # It reads the built pages rather than the `.astro` sources, because what
+      # a reader meets is the render — and because the failures it was written
+      # for are terms introduced by an index, a legend or a step list that only
+      # exist in the composed page.
+      - name: Every technical term is still explained where a reader meets it
+        run: uv run --no-project --python 3.12 --with pyyaml python scripts/check_term_first_use.py
 
       # PRODUCT.md's accessibility section states four measured properties, and
       # the nineteen throwaway browser scripts that produced them were deleted
