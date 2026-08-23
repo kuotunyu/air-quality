@@ -1053,57 +1053,7 @@ def _export_forecast(root: Path) -> list[Path]:
                         ),
                     },
                 ],
-                "reading": [
-                    {
-                        "claim": "R² 掉三倍的同時，skill 沒有跟著掉",
-                        "detail": (
-                            "R² 從 0.859 掉到 0.289，而 skill 收在比起點更高的地方。"
-                            "R² 衡量的是「這個目標本來多好預測」，而 PM2.5 一小時後"
-                            "任何人都很好預測——包括一條說「跟現在一樣」的規則。"
-                            "skill 問的是不同的問題：模型有沒有加到東西。"
-                            "它不是單調上升的（1、6、24、48 小時分別是 +0.172、+0.237、"
-                            "+0.196、+0.315），但確實沒有隨 R² 一起崩，"
-                            "因為 persistence 衰退得比模型快。"
-                        ),
-                    },
-                    {
-                        "claim": "只看一條基準線，一定會高估模型",
-                        "detail": (
-                            "vs persistence 在 48 小時最高，單看這條會讀成「愈遠愈好」。"
-                            "但 vs climatology 在同一段從 +0.84 崩到 +0.17——"
-                            "兩天後模型已經大致退化成「這站、這個月、這個小時的平均」。"
-                            "在 persistence 已經輸給長期平均的地方贏過 persistence，不算成就。"
-                            "實用範圍大約到 24 小時。"
-                        ),
-                    },
-                    {
-                        "claim": "平均值會藏掉一個輸掉的分割——而且真的藏過一次",
-                        "detail": (
-                            "第一次回測時，16 個「期距 × 分割」格子裡有一個是 −0.111"
-                            "（6 小時、訓練資料最少的 rolling_1），四個期距的平均卻全是正的。"
-                            "這跟「R² 藏掉一個爛模型」是同一個錯，只是高了一層。"
-                            "現在這張表沒有負的格子，最差是 +0.080，仍在同一格——"
-                            "讓它變號的是修掉 features/lags.py 裡一個跟預測無關的洩漏"
-                            "（每個測站的前 167 小時帶著前一個測站的歷史）。"
-                            "所以最差分割照畫：第一次也沒有任何東西提醒過我們。"
-                        ),
-                    },
-                    {
-                        "claim": "6 小時仍是最不穩的期距，但當初那個負值是我們自己的 bug",
-                        "detail": (
-                            "6 小時的四個分割是 +0.080 到 +0.305，跨度 0.225，"
-                            "仍是四個期距裡最大的（1 小時 0.074、24 小時 0.139、48 小時 0.055）。"
-                            "但這一章原本寫的是「兩批獨立資料都說 6 小時會輸」——"
-                            "回測有一格 −0.111，互動 demo 的 6 小時 skill 是 −0.043、"
-                            "六個測站沒有一個明顯為正。兩批都翻面了："
-                            "同一個 demo 在修好洩漏後重跑，6 小時 skill 是 +0.256，"
-                            "六站全為正（+0.098 到 +0.384）。"
-                            "兩批資料確實指向同一件事，只是那件事是 features/lags.py 的 bug，"
-                            "不是大氣。留著這段，是因為「兩個獨立來源同意」"
-                            "在它們共用同一個特徵建構器時，並不構成獨立證據。"
-                        ),
-                    },
-                ],
+                "reading": _forecast_reading(horizons),
                 "leakage_note": (
                     "lag_k 在第 t 列存 t−k+1 的值，target 往反方向移一個期距。"
                     "兩個位移方向相反，那就是全部的安全性質。"
@@ -1535,6 +1485,151 @@ def _export_pitfalls(root: Path) -> list[Path]:
     if not tables:
         return []
     return [write_json(root / "pitfalls.json", {"tables": tables})]
+
+
+def _signed(value: float, places: int = 3) -> str:
+    """A signed figure in the site's typography.
+
+    U+2212 rather than a hyphen, matching the prose already in this module and
+    the chart labels it sits beside.
+    """
+    return f"{'−' if value < 0 else '+'}{abs(value):.{places}f}"
+
+
+_CHINESE_NUMERALS = ("零", "一", "兩", "三", "四", "五", "六", "七", "八", "九", "十")
+
+
+def _counted(value: int) -> str:
+    """A small count in the voice the chapters use for counts.
+
+    Measurements are Arabic here — 0.859, 24 小時 — and characterisations are
+    not: 「三步決定」, 「兩條基準線」, 「掉三倍」. Deriving the multiple from the data
+    and then printing it as `3` would have been correct and would have changed
+    the register of the sentence, so the mapping keeps the register while the
+    value stays measured. Anything past ten falls back to digits rather than
+    inventing 「十一」, which is not how the rest of the prose counts.
+    """
+    return _CHINESE_NUMERALS[value] if 0 <= value <= 10 else str(value)
+
+
+def _needed(row: dict[str, Any], field: str) -> float:
+    """One figure the prose is about to state, or a refusal to state it.
+
+    `_round` passes null through, and a sentence built on a withheld aggregate
+    would read as 「R² 從 None 掉到 0.289」. An export that cannot describe its own
+    table should say so rather than publish that.
+    """
+    value = row.get(field)
+    if value is None:
+        raise ValueError(f"forecast horizon {row.get('horizon')} has no {field} to describe")
+    return float(value)
+
+
+def _forecast_reading(horizons: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Chapter 6's 「how to read this」 rows, derived from the table they describe.
+
+    Every measured figure in these four paragraphs used to be typed by hand,
+    directly beside the loop that computes the same numbers — `0.859`, `0.289`,
+    the four skill values, `+0.84`, `+0.17`, `+0.080`, `+0.305`, `0.225`, and the
+    three other spreads. A mutation showed what that cost: moving the figures in
+    the payload's prose while leaving the chart data alone passed
+    `check_published_forecast` and `check_published_site_prose`, and failed
+    `check_publication_structure` with 「forecast reading row text changed」 — which
+    pins the text against being *edited*, not against being *wrong*. A re-run
+    moving the real numbers would leave these literals untouched, so the payload
+    and the checker's pinned copy would agree, and both would be stale.
+
+    Three claims are derived rather than fixed, for the same reason
+    `_deweather_caveat` chooses its clause and `bands.py` emits its crossover
+    note only when the crossover is real:
+
+    * which horizon is the least stable — the chapter says 6 hours because 6
+      hours has the widest spread across splits, not the other way round;
+    * how far R² falls, as a multiple;
+    * whether any split is still negative. 「現在這張表沒有負的格子」 is a claim
+      about the current table, and it was written when that became true.
+
+    What stays literal is the history: the first backtest's −0.111, the demo
+    figures before and after the `features/lags.py` leak, and the 167 hours of
+    the previous station that each station's rows carried. Those record a past
+    state, which is the one case `docs/working-rules.md` exempts by name.
+    """
+    if not horizons:
+        raise ValueError("no forecast horizons to describe")
+
+    first, last = horizons[0], horizons[-1]
+
+    def spread_of(row: dict[str, Any]) -> float:
+        values = [float(s["skill_persistence"]) for s in row["per_split"]]
+        return max(values) - min(values)
+
+    widest = max(horizons, key=spread_of)
+    widest_values = [float(s["skill_persistence"]) for s in widest["per_split"]]
+    others = [
+        "、".join(f"{h['horizon']} 小時 {spread_of(h):.3f}" for h in horizons if h is not widest)
+    ]
+    every_split = [float(s["skill_persistence"]) for h in horizons for s in h["per_split"]]
+    worst = min(every_split)
+    cells = sum(len(h["per_split"]) for h in horizons)
+
+    first_r2, last_r2 = _needed(first, "model_r2"), _needed(last, "model_r2")
+    fall = first_r2 / last_r2 if last_r2 else float("inf")
+    ladder = "、".join(_signed(_needed(h, "skill_persistence")) for h in horizons)
+    hours = "、".join(str(h["horizon"]) for h in horizons)
+    negative = "仍有負的格子" if worst < 0 else "沒有負的格子"
+
+    return [
+        {
+            "claim": f"R² 掉{_counted(round(fall))}倍的同時，skill 沒有跟著掉",
+            "detail": (
+                f"R² 從 {first_r2:.3f} 掉到 {last_r2:.3f}，而 skill 收在比起點更高的地方。"
+                "R² 衡量的是「這個目標本來多好預測」，而 PM2.5 一小時後"
+                "任何人都很好預測——包括一條說「跟現在一樣」的規則。"
+                "skill 問的是不同的問題：模型有沒有加到東西。"
+                f"它不是單調上升的（{hours} 小時分別是 {ladder}），"
+                "但確實沒有隨 R² 一起崩，因為 persistence 衰退得比模型快。"
+            ),
+        },
+        {
+            "claim": "只看一條基準線，一定會高估模型",
+            "detail": (
+                f"vs persistence 在 {last['horizon']} 小時最高，單看這條會讀成「愈遠愈好」。"
+                f"但 vs climatology 在同一段從 {_signed(_needed(first, 'skill_climatology'), 2)} 崩到 "
+                f"{_signed(_needed(last, 'skill_climatology'), 2)}——"
+                "兩天後模型已經大致退化成「這站、這個月、這個小時的平均」。"
+                "在 persistence 已經輸給長期平均的地方贏過 persistence，不算成就。"
+                "實用範圍大約到 24 小時。"
+            ),
+        },
+        {
+            "claim": "平均值會藏掉一個輸掉的分割——而且真的藏過一次",
+            "detail": (
+                f"第一次回測時，{cells} 個「期距 × 分割」格子裡有一個是 −0.111"
+                "（6 小時、訓練資料最少的 rolling_1），四個期距的平均卻全是正的。"
+                "這跟「R² 藏掉一個爛模型」是同一個錯，只是高了一層。"
+                f"現在這張表{negative}，最差是 {_signed(worst)}，仍在同一格——"
+                "讓它變號的是修掉 features/lags.py 裡一個跟預測無關的洩漏"
+                "（每個測站的前 167 小時帶著前一個測站的歷史）。"
+                "所以最差分割照畫：第一次也沒有任何東西提醒過我們。"
+            ),
+        },
+        {
+            "claim": f"{widest['horizon']} 小時仍是最不穩的期距，但當初那個負值是我們自己的 bug",
+            "detail": (
+                f"{widest['horizon']} 小時的四個分割是 {_signed(min(widest_values))} 到 "
+                f"{_signed(max(widest_values))}，跨度 {spread_of(widest):.3f}，"
+                f"仍是四個期距裡最大的（{others[0]}）。"
+                "但這一章原本寫的是「兩批獨立資料都說 6 小時會輸」——"
+                "回測有一格 −0.111，互動 demo 的 6 小時 skill 是 −0.043、"
+                "六個測站沒有一個明顯為正。兩批都翻面了："
+                "同一個 demo 在修好洩漏後重跑，6 小時 skill 是 +0.256，"
+                "六站全為正（+0.098 到 +0.384）。"
+                "兩批資料確實指向同一件事，只是那件事是 features/lags.py 的 bug，"
+                "不是大氣。留著這段，是因為「兩個獨立來源同意」在它們共用"
+                "同一個特徵建構器時，並不構成獨立證據。"
+            ),
+        },
+    ]
 
 
 def _deweather_caveat(median_holdout_r2: float | None) -> str:

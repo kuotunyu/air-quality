@@ -8,6 +8,7 @@ broken.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import date, timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ import polars as pl
 import pytest
 
 from twair import panels
+from twair.paths import REPO_ROOT
 from twair.viz import story
 
 
@@ -446,6 +448,125 @@ class TestTheDeweatheredSeries:
 
         assert series == []
         assert panel == {}
+
+
+class TestChapterSixReadsItsOwnTable:
+    """Four paragraphs that used to retype the table sitting beside them.
+
+    Every measured figure in chapter 6's 「how to read this」 rows — the two R²
+    values, the four skill values, the two climatology skills, the worst split,
+    the widest spread and the three narrower ones — was a literal in the same
+    function that computes them.
+
+    A mutation showed what that was worth: moving the numbers in the payload's
+    prose while leaving the chart data untouched passed
+    `check_published_forecast` and `check_published_site_prose`, and failed
+    `check_publication_structure` with 「forecast reading row text changed」. That
+    third gate pins the text against being *edited*, not against being *wrong* —
+    a re-run moving the real values would leave the literals alone, so the
+    payload and the pinned copy would agree and both would be stale.
+
+    The proof that the rewrite is faithful is
+    `test_the_rows_reproduce_the_published_prose_exactly`: the derived rows equal
+    the committed payload byte for byte, so this commit changed no sentence.
+    """
+
+    @staticmethod
+    def horizons() -> list[dict[str, Any]]:
+        payload = json.loads(
+            (REPO_ROOT / "web" / "public" / "data" / "story" / "forecast.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        return list(payload["horizons"])
+
+    def test_the_rows_reproduce_the_published_prose_exactly(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "web" / "public" / "data" / "story" / "forecast.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        assert story._forecast_reading(payload["horizons"]) == payload["reading"]
+
+    def test_the_least_stable_horizon_is_the_widest_one_not_the_named_one(self) -> None:
+        """The chapter says 6 hours because 6 hours has the widest spread across
+        splits. Said the other way round it would be a caption for a claim the
+        data had stopped making."""
+        rows = self.horizons()
+        for row in rows:
+            base = 0.30 if row["horizon"] == 24 else 0.20
+            row["per_split"] = [
+                {**s, "skill_persistence": base if i else 0.0}
+                for i, s in enumerate(row["per_split"])
+            ]
+
+        built = story._forecast_reading(rows)
+
+        assert "24 小時仍是最不穩的期距" in built[3]["claim"]
+        assert "6 小時仍是最不穩" not in built[3]["claim"]
+
+    def test_the_multiple_follows_the_two_r_squareds(self) -> None:
+        rows = self.horizons()
+        rows[0]["model_r2"], rows[-1]["model_r2"] = 0.8, 0.4
+
+        assert "R² 掉兩倍的同時" in story._forecast_reading(rows)[0]["claim"]
+
+    def test_the_multiple_keeps_the_register_of_a_characterisation(self) -> None:
+        """Measurements are Arabic here and characterisations are not. Deriving
+        the value and printing it as `3` would be correct and would change the
+        voice of the sentence."""
+        assert "R² 掉三倍" in story._forecast_reading(self.horizons())[0]["claim"]
+
+    def test_a_negative_split_is_not_described_as_absent(self) -> None:
+        """「現在這張表沒有負的格子」 is a claim about the current table."""
+        rows = self.horizons()
+        rows[1]["per_split"][0]["skill_persistence"] = -0.02
+
+        built = story._forecast_reading(rows)[2]["detail"]
+
+        assert "仍有負的格子" in built
+        assert "沒有負的格子" not in built
+        assert "最差是 −0.020" in built
+
+    def test_the_first_backtest_stays_where_it_is(self) -> None:
+        """−0.111 and the demo figures record a past state, which is the case
+        `docs/working-rules.md` exempts by name. Deriving them would destroy the
+        record and gain nothing."""
+        rows = self.horizons()
+        rows[1]["per_split"][0]["skill_persistence"] = 0.5
+
+        text = " ".join(r["detail"] for r in story._forecast_reading(rows))
+
+        assert "第一次回測時" in text and "−0.111" in text
+        assert "−0.043" in text and "+0.256" in text
+        assert "前 167 小時" in text
+
+    def test_the_cell_count_is_counted(self) -> None:
+        """「16 個格子」 is four horizons times four splits, and it was typed."""
+        rows = self.horizons()
+        for row in rows:
+            row["per_split"] = row["per_split"][:2]
+
+        assert "8 個「期距 × 分割」格子" in story._forecast_reading(rows)[2]["detail"]
+
+    def test_a_withheld_figure_refuses_rather_than_printing_none(self) -> None:
+        rows = self.horizons()
+        rows[0]["model_r2"] = None
+
+        with pytest.raises(ValueError, match="has no model_r2"):
+            story._forecast_reading(rows)
+
+    def test_no_horizons_is_not_an_empty_sentence(self) -> None:
+        with pytest.raises(ValueError, match="no forecast horizons"):
+            story._forecast_reading([])
+
+    @pytest.mark.parametrize(("value", "expected"), [(0.08, "+0.080"), (-0.111, "−0.111")])
+    def test_a_signed_figure_uses_the_minus_the_prose_uses(
+        self, value: float, expected: str
+    ) -> None:
+        """U+2212, not a hyphen — matching the chart labels it sits beside."""
+        assert story._signed(value) == expected
 
 
 class TestChapterOnesBoundaryParagraph:
