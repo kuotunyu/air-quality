@@ -80,7 +80,10 @@ D1–D11 是這個專案的骨架：**每個模組都應該可追溯到其中一
 - Repo: `kuotunyu/air-quality`
 - Python 套件: `twair`（**不隨專案改名**——那是 import 路徑與 CLI 名稱）
 - 網站名: **air-quality｜台灣空氣品質再分析**
-- HF Dataset: `steven0226/air-quality`（尚未上架）
+- HF Dataset: `steven0226/air-quality`（尚未上架。這個網址曾經寫在 `pyproject.toml`
+  的 `[project.urls]`，2026-08-23 移除——`[project.urls]` 會被 PyPI 專案頁渲染，而已
+  發布的版本不能修改、只能被新版本取代，所以不留一個解析不了的連結在那裡。**上架
+  的那個 commit 要把它加回去**）
 - HF Space: `steven0226/airlens-taiwan-forecast`（**已上線**，沿用建立時的名稱：
   改名會讓一個已公開、且被 README 與網站第五章連結的網址失效）
 - 授權: 程式碼 MIT；資料衍生物 CC BY 4.0（依政府資料開放授權條款第 1 版，須註明出處）
