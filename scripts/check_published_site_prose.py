@@ -341,6 +341,12 @@ def detection_truth() -> dict[str, float]:
                     "has the story projection stopped selecting it?"
                 )
             found[f"{station}_{suffix}"] = float(row[field])
+    # The drop the caveat above the table uses as its example — 古亭's own
+    # effect, which sat in this payload beside the prose that retyped it.
+    drop = by_station["古亭"].get("effect")
+    if drop is None:
+        raise SystemExit(f"{DETECTION.name} carries no effect for 古亭")
+    found["古亭_drop"] = abs(float(drop))
     return found
 
 
@@ -479,7 +485,17 @@ def health_truth() -> dict[str, float]:
                 "assumption nobody made"
             )
         ends.append(float(matched[0]["value"]))
-    return {"lower_counterfactual": ends[0], "upper_counterfactual": ends[1]}
+
+    # The widths the next paragraph quotes: the arithmetic of the two ranges the
+    # chapter already prints, rather than a remembered pair.
+    first = headline["first_range"]
+    last = headline["last_range"]
+    return {
+        "lower_counterfactual": ends[0],
+        "upper_counterfactual": ends[1],
+        "first_range_width": (first[1] - first[0]) * 100,
+        "last_range_width": (last[1] - last[0]) * 100,
+    }
 
 
 CLAIMS: tuple[tuple[Claim, str, str], ...] = (
@@ -670,6 +686,29 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
         ),
         "health",
         "lower_counterfactual",
+    ),
+    (
+        Claim(
+            "ChapterDetection.astro",
+            "illustrative drop",
+            r"所以看到某站「下降\s*([\d.]+)」",
+            2,
+            without_a_literal=r"所以看到某站「下降\s*"
+            + expression("{minus(Math.abs(urban[2].effect), 2)}"),
+        ),
+        "detection",
+        "古亭_drop",
+    ),
+    (
+        Claim(
+            "ChapterHealth.astro",
+            "headline range width",
+            r"絕對寬度</strong>幾乎沒動（(?:大約\s*)?([\d.]+)\s*到",
+            1,
+            without_a_literal=r"幾乎沒動（" + expression("{n(rangeWidths[0], 1)}"),
+        ),
+        "health",
+        "first_range_width",
     ),
     (
         Claim(

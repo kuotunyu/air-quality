@@ -550,8 +550,22 @@ class TestThePairingIsTheArgument:
         page throwing at build time with the reason buried in a stack trace."""
         truth = site_prose.detection_truth()
 
-        assert set(truth) == {"前金_pct", "左營_pct", "古亭_pct", "前金_z", "左營_z", "古亭_z"}
-        assert all(value < 0 for value in truth.values())
+        # Exact, not a superset: a key vanishing is the failure this holds
+        # against, so it is re-stated when one is added rather than loosened.
+        assert set(truth) == {
+            "前金_pct",
+            "左營_pct",
+            "古亭_pct",
+            "前金_z",
+            "左營_z",
+            "古亭_z",
+            "古亭_drop",
+        }
+        # Every effect is a fall, and the drop the caveat quotes is its magnitude.
+        assert all(value < 0 for key, value in truth.items() if key != "古亭_drop")
+        # A magnitude, so the prose can say 「下降 X」 without a sign. Pinning the
+        # value here would be the defect this whole file exists to remove.
+        assert truth["古亭_drop"] > 0
 
     def test_a_missing_station_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -903,7 +917,12 @@ class TestASentenceCanBeWrongAboutItsOwnCorrectNumbers:
     def test_the_range_ends_still_resolve_to_two_counterfactuals(self) -> None:
         truth = site_prose.health_truth()
 
-        assert set(truth) == {"lower_counterfactual", "upper_counterfactual"}
+        assert set(truth) == {
+            "lower_counterfactual",
+            "upper_counterfactual",
+            "first_range_width",
+            "last_range_width",
+        }
         # The narrower counterfactual gives the smaller attributable fraction, so
         # the range's first end is the higher concentration.
         assert truth["lower_counterfactual"] > truth["upper_counterfactual"]
@@ -947,3 +966,76 @@ class TestASentenceCanBeWrongAboutItsOwnCorrectNumbers:
         )
 
         assert claim.check(source, 5.9) == []
+
+
+class TestTheLastTwoTypedFiguresAreDerivedNow:
+    """The two the sweep left, closed the same way as the rest.
+
+    `ChapterDetection` used 「下降 0.96」 as an illustrative drop while 古亭's own
+    effect sat in the payload beside it at exactly that value — the one figure on
+    the site whose number was in reach of the prose retyping it.
+    `ChapterHealth` hedged 「大約 3.6 到 4.2 個百分點」 for a width that is the
+    arithmetic of two ranges the same chapter already prints; the hedge went with
+    the hand-typing, because a derived number does not need one.
+
+    What these hold is that both stay derived. A literal typed back in is caught
+    by the pattern; the accepted form names the expression, so interpolating a
+    different variable does not pass either.
+    """
+
+    @staticmethod
+    def claim_for(component: str, what: str) -> site_prose.Claim:
+        for claim, _, _ in site_prose.CLAIMS:
+            if claim.component == component and claim.what == what:
+                return claim
+        raise AssertionError(f"no shipped claim for {component} / {what}")
+
+    def test_a_typed_illustrative_drop_that_drifted_is_reported(self) -> None:
+        """A literal typed back in, against a re-run that moved 古亭's effect."""
+        claim = self.claim_for("ChapterDetection.astro", "illustrative drop")
+
+        problems = claim.check("所以看到某站「下降 0.55」時，真正該問的是", 0.96)
+
+        assert len(problems) == 1
+        assert "says 0.55" in problems[0]
+
+    def test_deleting_the_caveat_is_not_the_same_as_deriving_it(self) -> None:
+        """The sentence carries the chapter's point — that a small drop looks
+        like a finding until you see the placebo mean. Its absence must not read
+        as a fix."""
+        claim = self.claim_for("ChapterDetection.astro", "illustrative drop")
+
+        problems = claim.check("這一段不再拿任何一站當例子。", 0.96)
+
+        assert len(problems) == 1
+        assert "no longer matches" in problems[0]
+
+    def test_the_shipped_drop_is_derived(self) -> None:
+        claim = self.claim_for("ChapterDetection.astro", "illustrative drop")
+        source = site_prose.flat(
+            (site_prose.COMPONENTS / "ChapterDetection.astro").read_text(encoding="utf-8")
+        )
+
+        assert claim.check(source, 0.96) == []
+
+    def test_a_typed_interval_width_is_reported(self) -> None:
+        claim = self.claim_for("ChapterHealth.astro", "headline range width")
+
+        problems = claim.check("絕對寬度幾乎沒動（大約 3.6 到 4.2 個百分點）", 3.64)
+
+        assert len(problems) == 1
+
+    def test_the_shipped_widths_are_derived(self) -> None:
+        claim = self.claim_for("ChapterHealth.astro", "headline range width")
+        source = site_prose.flat(
+            (site_prose.COMPONENTS / "ChapterHealth.astro").read_text(encoding="utf-8")
+        )
+
+        assert claim.check(source, 3.64) == []
+
+    def test_the_widths_come_from_the_ranges_the_chapter_prints(self) -> None:
+        """The arithmetic itself, so the claim above is anchored to something."""
+        truth = site_prose.health_truth()
+
+        assert truth["first_range_width"] > 0
+        assert truth["last_range_width"] > truth["first_range_width"]

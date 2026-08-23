@@ -561,7 +561,7 @@ const estimandLabel = (kind: string) => {
   <div class="note caveat">
     <strong>安慰劑的均值幾乎從不是零，這件事本身就是重點。</strong>
     COVID 那個日曆窗口的安慰劑均值是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)} μg/m³——
-    模型在五到七月系統性高估。所以看到某站「下降 0.96」時，
+    模型在五到七月系統性高估。所以看到某站「下降 {minus(Math.abs(urban[2].effect), 2)}」時，
     真正該問的是：這個方法在未標記為該事件年份的對照窗口，平均也會給出多少？
     答案是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)}。
   </div>

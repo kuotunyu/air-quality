@@ -100,6 +100,19 @@ const rangeEnds = headline.last_range.map((target) => {
   return found;
 });
 
+/*
+ * How wide the headline range is at each end of the record.
+ *
+ * The sentence below said 「大約 3.6 到 4.2 個百分點」 by hand, next to a paragraph
+ * whose own figures are interpolated. It is the arithmetic of the two ranges the
+ * chapter already prints — first_range and last_range — so it is computed here
+ * rather than remembered, and the 「大約」 goes with it: a derived number does not
+ * need hedging.
+ */
+const rangeWidths = [headline.first_range, headline.last_range].map(
+  ([low, high]) => (high - low) * 100,
+);
+
 const allPaf = series.flatMap((s) => s.paf);
 const yPaf = linear([0, Math.max(...allPaf) * 1.1], [100, 0]);
 const xYear = linear([Math.min(...years), Math.max(...years)], [0, 100]);
@@ -342,7 +355,8 @@ const langOf = (s: string | null | undefined) =>
   <h2>假設佔估計值的比重隨濃度下降而上升</h2>
 
   <p>
-    上面那個範圍的<strong>絕對寬度</strong>幾乎沒動（大約 3.6 到 4.2 個百分點）。
+    上面那個範圍的<strong>絕對寬度</strong>幾乎沒動（{n(rangeWidths[0], 1)} 到
+    {" "}{n(rangeWidths[1], 1)} 個百分點）。
     但它佔估計值的<strong>比例</strong>幾乎翻了三倍。
   </p>
 
