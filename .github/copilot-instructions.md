@@ -175,6 +175,20 @@ Same passed/deselected result as the ordinary run, or something depends on
 data a fresh clone does not have.
 `paths.data_root()` reads the variable at call time, so this needs no fixture.
 
+> ⚠️ **`check_like_ci.py` cannot answer this question and never could.** It runs
+> every step CI runs, on a machine that has the data — so 「would these steps
+> pass in CI」 and 「would they pass for someone else」 are different questions and
+> it only answers the first. A change can be green through all of it and turn CI
+> red on push.
+>
+> This happened on 2026-08-24. Three new tests asserted on figures that
+> `src/twair/viz/story.py` derives from `data/outputs/m2_drivers/`, which is
+> present here and gitignored there, so the code took its documented
+> no-data branch and the assertions failed. The same commit had written that
+> branch and a test proving it works. **Run both commands before pushing a
+> commit that adds tests**, and build the frame a test needs rather than reading
+> one this machine happens to hold.
+
 ```bash
 uv run ruff check .
 ```
