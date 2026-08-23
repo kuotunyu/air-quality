@@ -463,19 +463,65 @@ class TestThePersistenceBaselineQuotesM2:
     exporter in the file already has with the module it describes.
     """
 
-    def test_it_states_what_m2_measured(self) -> None:
+    # The three splits M2 actually produced, and the four feature sets beside
+    # them. Written out here because `data/outputs/` is gitignored: the first
+    # version of these tests read the real file, passed on the machine that had
+    # run M2, and failed in CI — the trap `AGENTS.md` names, walked into while
+    # fixing a defect of the same family.
+    M2_ROLLING = (
+        ("persistence", "-", (0.914856, 0.903149, 0.880364)),
+        ("lightgbm", "full", (0.516, 0.534477, 0.520950)),
+        ("lightgbm", "full_raw_wind", (0.530, 0.541, 0.540324)),
+        ("lightgbm", "full_with_pm10", (0.778801, 0.782477, 0.754259)),
+        ("climatology", "-", (0.239743, 0.064776, 0.072773)),
+    )
+
+    @classmethod
+    def with_m2(cls, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Point the exporter at a scores frame in the real schema."""
+        rows = [
+            {
+                "feature_set": feature_set,
+                "model": model,
+                "split_kind": "rolling",
+                "split": f"rolling_{i + 1}",
+                "n": 1027243,
+                "rmse": 5.4,
+                "mae": 3.7,
+                "r2": r2,
+                "exceedance_f1": 0.85,
+            }
+            for model, feature_set, values in cls.M2_ROLLING
+            for i, r2 in enumerate(values)
+        ]
+        directory = tmp_path / "m2_drivers"
+        directory.mkdir(parents=True)
+        pl.DataFrame(rows).write_parquet(directory / "scores.parquet")
+        monkeypatch.setattr(story, "outputs_dir", lambda module: tmp_path / module)
+
+    def test_it_states_the_mean_across_the_splits(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """0.914856, 0.903149 and 0.880364 average to 0.899456 — 0.899, not the
+        0.900 the sentence used to carry."""
+        self.with_m2(tmp_path, monkeypatch)
+
         why = story._persistence_baseline_why()
 
-        assert "0.899" in why
-        assert "0.900" not in why, "the figure this replaced had drifted"
+        assert "R² 是 0.899" in why
+        assert "0.900" not in why
 
-    def test_the_explanatory_model_is_the_headline_one(self) -> None:
+    def test_the_explanatory_model_is_the_headline_one(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """`full_with_pm10` scores higher and is the leakage case chapter 8
         prices; `full_raw_wind` is the encoding diagnostic beside it. Taking a
         maximum over feature sets would quote one of those instead."""
+        self.with_m2(tmp_path, monkeypatch)
+
         why = story._persistence_baseline_why()
 
-        assert "0.524" in why
+        assert "所有解釋性模型的 0.524" in why
         assert "0.772" not in why and "0.537" not in why
 
     def test_a_missing_m2_says_less_rather_than_inventing_it(
@@ -491,7 +537,16 @@ class TestThePersistenceBaselineQuotesM2:
         assert "門檻" in why
         assert not any(ch.isdigit() for ch in why.replace("PM2.5", ""))
 
-    def test_the_payload_carries_what_the_builder_produces(self) -> None:
+    def test_the_published_sentence_is_one_this_builder_can_produce(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The committed payload against the code that now generates it.
+
+        Written against a frame rather than against `data/outputs/`, so it holds
+        in a clean checkout. It is the M2 figures that matter, not the file: the
+        means above are the ones that produced the published sentence.
+        """
+        self.with_m2(tmp_path, monkeypatch)
         payload = json.loads(
             (REPO_ROOT / "web" / "public" / "data" / "story" / "forecast.json").read_text(
                 encoding="utf-8"
