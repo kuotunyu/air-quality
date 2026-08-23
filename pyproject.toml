@@ -103,7 +103,6 @@ twair = "twair.cli:app"
 [project.urls]
 Homepage = "https://github.com/kuotunyu/air-quality"
 Repository = "https://github.com/kuotunyu/air-quality"
-Dataset = "https://huggingface.co/datasets/steven0226/air-quality"
 
 [build-system]
 requires = ["hatchling"]
