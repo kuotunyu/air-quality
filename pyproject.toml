@@ -157,6 +157,11 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
+# `spaces/forecast/` is a Hugging Face Space: a flat directory that runs as its
+# own program, so `bands` is a top-level import there and nowhere else. Naming
+# the path type-checks it properly instead of silencing it, which is the point —
+# nothing else in this repository checks that directory at all.
+mypy_path = "spaces/forecast"
 
 [[tool.mypy.overrides]]
 module = [
