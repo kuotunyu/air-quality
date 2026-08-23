@@ -450,6 +450,58 @@ class TestTheDeweatheredSeries:
         assert panel == {}
 
 
+class TestThePersistenceBaselineQuotesM2:
+    """The last typed measurement in this payload, and it had already drifted.
+
+    The sentence said the baseline's R² was 0.900 while `reports/01-core.md`'s
+    own generated table — same repository, same run — said 0.8995, which is 0.899
+    at the precision the sentence prints. One computed artefact and one typed
+    one, disagreeing about one number, with the website showing the typed one.
+
+    The figures belong to M2, so the exporter asks M2 rather than carrying a
+    copy. That is a cross-module read, and it is the same relation every other
+    exporter in the file already has with the module it describes.
+    """
+
+    def test_it_states_what_m2_measured(self) -> None:
+        why = story._persistence_baseline_why()
+
+        assert "0.899" in why
+        assert "0.900" not in why, "the figure this replaced had drifted"
+
+    def test_the_explanatory_model_is_the_headline_one(self) -> None:
+        """`full_with_pm10` scores higher and is the leakage case chapter 8
+        prices; `full_raw_wind` is the encoding diagnostic beside it. Taking a
+        maximum over feature sets would quote one of those instead."""
+        why = story._persistence_baseline_why()
+
+        assert "0.524" in why
+        assert "0.772" not in why and "0.537" not in why
+
+    def test_a_missing_m2_says_less_rather_than_inventing_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A claim about a measurement that does not exist is worse than an
+        unquantified one."""
+        monkeypatch.setattr(story, "outputs_dir", lambda module: tmp_path / module)
+
+        why = story._persistence_baseline_why()
+
+        assert "Phase 2 量到" not in why
+        assert "門檻" in why
+        assert not any(ch.isdigit() for ch in why.replace("PM2.5", ""))
+
+    def test_the_payload_carries_what_the_builder_produces(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "web" / "public" / "data" / "story" / "forecast.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        persistence = next(b for b in payload["baselines"] if b["name"] == "persistence")
+
+        assert persistence["why"] == story._persistence_baseline_why()
+
+
 class TestChapterSixReadsItsOwnTable:
     """Four paragraphs that used to retype the table sitting beside them.
 

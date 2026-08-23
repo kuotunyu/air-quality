@@ -1038,10 +1038,7 @@ def _export_forecast(root: Path) -> list[Path]:
                         "name": "persistence",
                         "label": "「跟現在一樣」",
                         "what": "把此刻的濃度直接當成 h 小時後的預測",
-                        "why": (
-                            "Phase 2 量到它的 R² 是 0.900，勝過所有解釋性模型的 0.524，"
-                            "因為它用了 PM2.5 自己的前一個值。它是要超越的門檻，不是比較對象。"
-                        ),
+                        "why": _persistence_baseline_why(),
                     },
                     {
                         "name": "climatology",
@@ -1485,6 +1482,55 @@ def _export_pitfalls(root: Path) -> list[Path]:
     if not tables:
         return []
     return [write_json(root / "pitfalls.json", {"tables": tables})]
+
+
+def _persistence_baseline_why() -> str:
+    """Why chapter 6 treats persistence as a threshold rather than a rival.
+
+    The two figures here are M2's, and they were typed. That was the last
+    hand-written measurement in this module's forecast payload, and by the time
+    it was read one of them had already drifted: the prose said the baseline's
+    R² was 0.900 while `reports/01-core.md`'s own generated table said 0.8995 —
+    0.899 at the precision the sentence prints. Two artefacts of one repository,
+    one computed and one typed, disagreeing about one number, with the website
+    showing the typed one.
+
+    Reading `m2_drivers` from the chapter-6 exporter is a cross-module read, and
+    it is the right one: the sentence is about what M2 measured, so it should ask
+    M2. Every other exporter in this file reads the module it describes.
+
+    Returns the sentence without figures when M2 has not run, because a claim
+    about a measurement that does not exist is worse than an unquantified one.
+    """
+    scores_path = outputs_dir("m2_drivers") / "scores.parquet"
+    if not scores_path.exists():
+        return (
+            "它用了 PM2.5 自己的前一個值，所以在短期距上很難被超過。"
+            "它是要超越的門檻，不是比較對象。"
+        )
+
+    rolling = pl.read_parquet(scores_path).filter(pl.col("split_kind") == "rolling")
+
+    def mean_r2(frame: pl.DataFrame) -> float | None:
+        return None if frame.is_empty() else opt_float(frame["r2"].mean())
+
+    baseline = mean_r2(rolling.filter(pl.col("model") == "persistence"))
+    # `full` and not the maximum over feature sets: `full_with_pm10` scores
+    # higher and is the leakage case chapter 8 prices, and `full_raw_wind` is the
+    # encoding diagnostic beside it. The headline explanatory model is `full`.
+    explanatory = mean_r2(
+        rolling.filter((pl.col("model") == "lightgbm") & (pl.col("feature_set") == "full"))
+    )
+    if baseline is None or explanatory is None:
+        return (
+            "它用了 PM2.5 自己的前一個值，所以在短期距上很難被超過。"
+            "它是要超越的門檻，不是比較對象。"
+        )
+
+    return (
+        f"Phase 2 量到它的 R² 是 {baseline:.3f}，勝過所有解釋性模型的 {explanatory:.3f}，"
+        "因為它用了 PM2.5 自己的前一個值。它是要超越的門檻，不是比較對象。"
+    )
 
 
 def _signed(value: float, places: int = 3) -> str:

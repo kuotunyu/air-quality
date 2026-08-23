@@ -193,7 +193,7 @@ the encoding helps everywhere.
 
 ### Persistence beats every explanatory model, and that is not a failure
 
-Persistence (this hour = last hour) reaches R² 0.900 against 0.524 for the best
+Persistence (this hour = last hour) reaches R² 0.899 against 0.524 for the best
 feature set, because it uses PM2.5's own lag while the models use only
 concurrent covariates and no PM2.5 history.
 
