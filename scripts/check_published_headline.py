@@ -53,6 +53,10 @@ SOURCES = {
     "PLAN.md": REPO_ROOT / "PLAN.md",
     "methodology.md": REPO_ROOT / "docs" / "methodology.md",
     "working-rules.md": REPO_ROOT / "docs" / "working-rules.md",
+    # Quotes the opening claim to tell a reader-test participant what the
+    # site is supposed to have conveyed. That makes it another hand-typed
+    # copy, so it is checked here rather than left to drift.
+    "reader-test.md": REPO_ROOT / "docs" / "reader-test.md",
 }
 
 
@@ -203,7 +207,7 @@ def build_claims() -> list[Claim]:
             r"降了\s*(\d+)%|fell\s*(?:by\s*)?(\d+)%",
             float(trend["drop_pct"]),
             0,
-            files=("README.md", "README.en.md"),
+            files=("README.md", "README.en.md", "reader-test.md"),
         ),
         Claim(
             "weather share of the fall",
@@ -211,7 +215,7 @@ def build_claims() -> list[Claim]:
             float(deweather["panel"]["weather_share_of_fall"]),
             0,
             scale=100.0,
-            files=("README.md", "README.en.md"),
+            files=("README.md", "README.en.md", "reader-test.md"),
         ),
         Claim(
             "median per-station share",

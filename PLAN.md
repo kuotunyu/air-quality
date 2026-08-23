@@ -705,7 +705,7 @@ persistence、climatology 與實際觀測。Tracked app 不含完整資料；mod
 - [x] **已取代**：CI、weekly freshness 與 Pages workflow 分工，排程只檢查而不 mutation；不以「每日自動 push 7 天」當品質證據
 - [x] 首頁與全 10 章上線，沒有 JavaScript 時仍保有主要敘事與圖表
 - [ ] **最後人工發布決定**：L0／L1 HF Dataset 本機 bundle 與載入 gate 已通過；正常工程收尾完成後，由 owner 決定上架或明確不發布。完整 L2 永不列入發布；HF Space 已公開且 tracked bundle 可重建
-- [ ] **延後人工驗收**：目前沒有合適的非本科參與者，因此 README／首頁試讀延後；automated quality gate 不能冒充使用者研究，這項延後不阻擋工程收尾
+- [ ] **延後人工驗收**：目前沒有合適的非本科參與者，因此 README／首頁試讀延後；automated quality gate 不能冒充使用者研究，這項延後不阻擋工程收尾。要跑的時候照 `docs/reader-test.md`：2–3 人、每人 30–45 分鐘、全程不解釋
 - [x] **已整合部署**：編輯式科學圖集 UI 已完成，並已整合至 `master`、部署於 GitHub Pages。此項沒有改動資料、分析或發布邊界。
 - [ ] **選配**：PyPI 發布；目前以 `uv sync` 與 repo CLI 重現，不阻擋網站／研究 release
 
