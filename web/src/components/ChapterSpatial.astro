@@ -244,7 +244,8 @@ const readingMap = [
           the column beside it printed three, so the same quantity appeared twice
           on one screen at two precisions. And `I =` followed by a newline
           collapsed against a negative value: the caption read 「I =-0.241」. */}
-      站均殘差的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。10 公里內同號相聚
+      站均<strong>殘差</strong>的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。
+      殘差是扣掉模型已經解釋掉的部分之後、每站每月還差多少。10 公里內同號相聚
       （I = +{correlogram[0].i.toFixed(3)}），100 公里外反號
       （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）——
       北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
@@ -274,7 +275,8 @@ const readingMap = [
         {network.unplaced.join("、")}仍無任何官方來源可定位，照實排除；
       </>
     )}
-    虛無分布一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
+    <strong>虛無分布</strong>——「如果空間上其實沒有結構，這個統計量會長成什麼樣」——
+    一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
     不可交換，所以不能用排列檢定），權重 {network.weights}。
   </p>
 
@@ -370,7 +372,8 @@ const readingMap = [
     結果兩面都有。時代的 {partition.groups} 組分區在「區內−區間相關差」上得
     +{n(partition.separation_r, 2)}，落在地理 ensemble 的{" "}
     <strong>{n(partition.pct_separation * 100, 1)} 百分位</strong>——分區確實載有
-    超出地理的資訊，不是任意劃定的。但它的 silhouette 只有 +{n(partition.silhouette, 2)}，
+    超出地理的資訊，不是任意劃定的。但它的 <strong>silhouette</strong>——每個測站
+    離自己這一區、比離最近的另一區近多少——只有 +{n(partition.silhouette, 2)}，
     而資料自己偏好的分群數是 <strong>k = {partition.best_k}</strong>
     （silhouette +{n(partition.best_k_silhouette, 2)}）：北部一群、南部一群，
     彼此反向共變——正是上面 correlogram 的偶極。官方分區數下的資料分群與官方劃法

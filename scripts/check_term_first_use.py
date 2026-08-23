@@ -9,19 +9,23 @@ cannot. But between "a proofread by a stranger" and "nothing" there is one
 question a machine can answer exactly: **is the explanation still there, next to
 the word it explains.**
 
-That question has teeth because the site already answers it well in most places
-and the failures cluster in one shape. Every explained term is glossed within a
-few dozen characters of first use, and the nearest unexplained one is several
-hundred away — the run prints each distance, so the current values are always in
-the output rather than here. Calibration at `ab66b34` put the explained terms
-between 5 and 70 and the nearest gap at 366, with nothing in between.
+That question had teeth because the site already answered it well in most places
+and the failures clustered in one shape. Calibration at `ab66b34` put the
+explained terms between 5 and 70 characters of first use and the nearest gap at
+366, with nothing in between. The run prints each distance, so the current values
+are always in the output rather than here.
 
-The failures are **terms introduced by an index, a legend or a chapter's own
-question list, ahead of the prose that defines them** — a structural consequence
-of a chapter growing a navigational layer above its argument, and exactly the
-class of defect a proofread misses because each screen looks fine on its own.
-`climatology` and `persistence` are named by the same legend of the same figure;
-the caption glosses one of them, so one passes and one does not.
+Every failure was a **term introduced by an index, a legend or a chapter's own
+question list, ahead of the prose that defines it** — a structural consequence of
+a chapter growing a navigational layer above its argument, and exactly the class
+of defect a proofread misses because each screen looks fine on its own.
+`climatology` and `persistence` were named by the same legend of the same figure
+and the caption glossed one of them, so one passed and one did not.
+
+All eight are explained now, so the gate holds rather than accuses. That is the
+ordinary state of a gate here and it is not the same as having nothing to say:
+the run reports where every explanation sits, and the first edit that moves one
+out of reach of its term will fail before a reader meets it.
 
 The distances used to be listed here, per term. Seven of thirteen were wrong the
 day they were written, because they had been measured with a draft of the
