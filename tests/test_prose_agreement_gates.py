@@ -33,12 +33,16 @@ import json
 from pathlib import Path
 
 import pytest
+from scripts import check_chapter_titles as chapter_titles
+from scripts import check_cjk_spacing as cjk_spacing
+from scripts import check_publication_structure as publication_structure
 from scripts import check_published_detection as detection
 from scripts import check_published_forecast as forecast
 from scripts import check_published_headline as headline
 from scripts import check_published_sarima as sarima
 from scripts import check_published_site_prose as site_prose
 from scripts import check_published_spatial as spatial
+from scripts import check_term_first_use as term_first_use
 
 
 class TestIntegersCompareExactly:
@@ -58,6 +62,40 @@ class TestIntegersCompareExactly:
         assert gate.agrees(0.156, 0.1555, 3)  # type: ignore[attr-defined]
         assert gate.agrees(0.155, 0.1555, 3)  # type: ignore[attr-defined]
         assert not gate.agrees(0.157, 0.1555, 3)  # type: ignore[attr-defined]
+
+
+class TestAGateMustNotCrashWhileReporting:
+    """Three gates document a relative path and crashed on one.
+
+    `python scripts/check_cjk_spacing.py web/dist` is the usage line in that
+    file's own docstring, and it raised `ValueError` from
+    `page.relative_to(ROOT)` — because `ROOT` is absolute and the argument was
+    not. CI never saw it: it passes no argument, so the default absolute path is
+    used every time.
+
+    Losing the report is worse than the path being ugly, which is why the
+    fallback prints the path as given rather than raising.
+    """
+
+    @pytest.mark.parametrize(
+        "gate",
+        [cjk_spacing, chapter_titles, publication_structure, term_first_use],
+    )
+    def test_a_path_outside_the_repository_is_printed_not_raised(
+        self, gate: object, tmp_path: Path
+    ) -> None:
+        outside = tmp_path / "dist" / "index.html"
+
+        assert gate.shown(outside) == outside.as_posix()  # type: ignore[attr-defined]
+
+    @pytest.mark.parametrize(
+        "gate",
+        [cjk_spacing, chapter_titles, publication_structure, term_first_use],
+    )
+    def test_a_path_inside_the_repository_stays_repo_relative(self, gate: object) -> None:
+        inside = gate.ROOT / "web" / "dist" / "index.html"  # type: ignore[attr-defined]
+
+        assert gate.shown(inside) == "web/dist/index.html"  # type: ignore[attr-defined]
 
 
 class TestTheM2TableIsReadFromTheReport:

@@ -90,6 +90,20 @@ MUST_KEEP = (
 )
 
 
+def shown(path: pathlib.Path) -> str:
+    """A path as a reader of the output can use it.
+
+    Repo-relative when it is inside the repo, absolute when it is not.
+    `relative_to` raises rather than falling back, and the usage line above
+    offers a relative argument — so `python scripts/check_cjk_spacing.py web/dist` crashed with a
+    `ValueError` while reporting, which is the worst moment to lose the report.
+    """
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def prose_of(html: str) -> str:
     """Everything a reader sees, with data, code and markup blanked out.
 
@@ -119,7 +133,7 @@ def main(argv: list[str]) -> int:
         stuck = WELDED.findall(prose)
         total += len(gaps)
         welded += len(stuck)
-        print(f"{len(gaps):>4} gap(s) {len(stuck):>4} welded  {page.relative_to(ROOT).as_posix()}")
+        print(f"{len(gaps):>4} gap(s) {len(stuck):>4} welded  {shown(page)}")
         for gap in gaps[:6]:
             print(f"           gap    {gap!r}")
         for one in stuck[:6]:

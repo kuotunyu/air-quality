@@ -80,6 +80,20 @@ TAG = re.compile(r"<[^>]+>")
 HAN = re.compile(r"[⺀-⿕一-鿿]")
 
 
+def shown(path: pathlib.Path) -> str:
+    """A path as a reader of the output can use it.
+
+    Repo-relative when it is inside the repo, absolute when it is not.
+    `relative_to` raises rather than falling back, and the usage line above
+    offers a relative argument — so `python scripts/check_chapter_titles.py web/dist` crashed with a
+    `ValueError` while reporting, which is the worst moment to lose the report.
+    """
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def chapters() -> list[tuple[int, str, str, str]]:
     """(n, slug, title) for every chapter, in document order."""
     # 2026-08-03 — the tuple description above predates the compact rail; `nav`
@@ -143,7 +157,7 @@ def main(argv: list[str]) -> int:
     for n, slug, nav, title in chapters():
         page = dist / slug / "index.html"
         if not page.exists():
-            missing.append(f"  ch.{n} {slug} — no {page.relative_to(ROOT).as_posix()}")
+            missing.append(f"  ch.{n} {slug} — no {shown(page)}")
             continue
 
         heading = h1_of(page)

@@ -217,6 +217,20 @@ process.stdout.write(JSON.stringify(hrefs.map((href) => {
 """
 
 
+def shown(path: pathlib.Path) -> str:
+    """A path as a reader of the output can use it.
+
+    Repo-relative when it is inside the repo, absolute when it is not.
+    `relative_to` raises rather than falling back, and the usage line above
+    offers a relative argument — so `python scripts/check_publication_structure.py web/dist` crashed with a
+    `ValueError` while reporting, which is the worst moment to lose the report.
+    """
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def _chapter_slugs_from_source(source: str) -> list[str]:
     if not TYPESCRIPT_COMPILER.exists():
         raise ValueError(
@@ -1253,9 +1267,9 @@ def _data_json_object(path: pathlib.Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{path.relative_to(ROOT).as_posix()} is unreadable: {exc}") from exc
+        raise ValueError(f"{shown(path)} is unreadable: {exc}") from exc
     if not isinstance(value, dict):
-        raise ValueError(f"{path.relative_to(ROOT).as_posix()} must contain an object")
+        raise ValueError(f"{shown(path)} must contain an object")
     return cast(dict[str, Any], value)
 
 
@@ -6259,7 +6273,7 @@ def main(argv: list[str]) -> int:
 
     home_page = dist / "index.html"
     if not home_page.exists():
-        home_failures = [f"missing {home_page.relative_to(ROOT).as_posix()}"]
+        home_failures = [f"missing {shown(home_page)}"]
     else:
         home_failures = home_failures_for(home_page)
     for failure in home_failures:
@@ -6267,7 +6281,7 @@ def main(argv: list[str]) -> int:
 
     not_found_page = dist / "404.html"
     if not not_found_page.exists():
-        not_found_failures = [f"missing {not_found_page.relative_to(ROOT).as_posix()}"]
+        not_found_failures = [f"missing {shown(not_found_page)}"]
     else:
         not_found_failures = heading_outline_failures_for_text(
             not_found_page.read_text(encoding="utf-8")
@@ -6280,7 +6294,7 @@ def main(argv: list[str]) -> int:
     for slug in slugs:
         page = dist / slug / "index.html"
         if not page.exists():
-            failures = [f"missing {page.relative_to(ROOT).as_posix()}"]
+            failures = [f"missing {shown(page)}"]
         else:
             html = page.read_text(encoding="utf-8")
             failures = failures_for_text(html, EXPECTED_THESIS_FRAGMENTS.get(slug, ()))
