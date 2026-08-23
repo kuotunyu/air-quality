@@ -17,7 +17,7 @@ from pathlib import Path
 import polars as pl
 
 from twair.paths import REPORTS_DIR, outputs_dir
-from twair.scalars import as_float
+from twair.scalars import as_float, opt_float
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +111,41 @@ NO + NO2 ≡ NOx 是恆等式，設計矩陣在捨入誤差之外是奇異的。
 
 {_table(ols, ["term", "coefficient", "std_error", "t", "p", "vif"])}
 """
+
+
+def _tree_wind_encoding_r2() -> tuple[float, float] | None:
+    """The gradient-boosted tree's R² with the raw bearing, and with sin/cos.
+
+    M3's prose states this pair and M2's table computes it, 126 lines apart in
+    one generated report. The prose was typed: 「R² 0.537 對 0.524」 beside a
+    table that prints 0.5371 from the same frame. `ChapterMethods.astro` is held
+    against the payload by `check_published_site_prose`, so the website copy was
+    safe and the report's own sentence was not.
+
+    Rolling splits only, matching the table the sentence sits under. `None` when
+    M2 has not run, so the sentence can drop its figures rather than state a
+    comparison nothing measured.
+    """
+    scores = _load("m2_drivers", "scores")
+    if scores is None:
+        return None
+    rolling = scores.filter((pl.col("split_kind") == "rolling") & (pl.col("model") == "lightgbm"))
+
+    def mean_r2(feature_set: str) -> float | None:
+        # `opt_float` and not `float`: an all-null column is a legitimate answer
+        # here — the sentence drops its figures — and a Polars aggregate's
+        # declared type is a union that `float` will not take.
+        subset = rolling.filter(pl.col("feature_set") == feature_set)
+        return None if subset.is_empty() else opt_float(subset["r2"].mean())
+
+    raw, encoded = mean_r2("full_raw_wind"), mean_r2("full")
+    return None if raw is None or encoded is None else (raw, encoded)
+
+
+def _encoding_gap() -> str:
+    """The parenthetical the sentence above carries, or nothing to carry."""
+    pair = _tree_wind_encoding_r2()
+    return "" if pair is None else f"（R² {pair[0]:.3f} 對 {pair[1]:.3f}）"
 
 
 def _m2_section() -> str:
@@ -288,7 +323,7 @@ def _m3_section() -> str:
             "#### 但要說清楚：這個問題只對線性模型致命",
             "",
             "M2 的比較產生了一個與預期相反、必須直說的結果：**梯度提升樹用原始方位角",
-            "反而略勝** sin/cos 編碼（R² 0.537 對 0.524）。樹可以對同一變數反覆切分，",
+            f"反而略勝** sin/cos 編碼{_encoding_gap()}。樹可以對同一變數反覆切分，",
             "把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎不造成損失。",
             "",
             "這並不能為線性處理解套——基準用的正是 Pearson 相關與 OLS。",

@@ -115,6 +115,98 @@ class TestLeakPricing:
         assert reporting._leak_comparison(rolling) == ""
 
 
+def _m2_scores(rows: list[tuple[str, str, tuple[float, ...]]]) -> pl.DataFrame:
+    """An M2 scores frame in the shape the analysis writes."""
+    return pl.DataFrame(
+        [
+            {
+                "feature_set": feature_set,
+                "model": model,
+                "split_kind": "rolling",
+                "split": f"rolling_{i + 1}",
+                "n": 1027243,
+                "rmse": 11.8,
+                "mae": 8.9,
+                "r2": r2,
+                "exceedance_f1": 0.65,
+            }
+            for model, feature_set, values in rows
+            for i, r2 in enumerate(values)
+        ]
+    )
+
+
+class TestTheWindEncodingPairIsRead:
+    """One generated report stated this pair and computed it, 126 lines apart.
+
+    M3's prose carried 「R² 0.537 對 0.524」 while M2's table printed 0.5371 from
+    the same frame. The website copy in `ChapterMethods.astro` is held against
+    the payload by `check_published_site_prose`; the report's own sentence had
+    nothing behind it.
+    """
+
+    def test_the_pair_is_the_mean_over_rolling_splits(self, outputs: Path) -> None:
+        _write(
+            outputs,
+            "m2_drivers",
+            "scores",
+            _m2_scores(
+                [
+                    ("lightgbm", "full_raw_wind", (0.530, 0.541, 0.5403231455193384)),
+                    ("lightgbm", "full", (0.516, 0.534477, 0.5209507241389499)),
+                ]
+            ),
+        )
+
+        assert reporting._encoding_gap() == "（R² 0.537 對 0.524）"
+
+    def test_the_leaky_feature_set_is_not_the_one_quoted(self, outputs: Path) -> None:
+        """`full_with_pm10` scores highest and is the leakage case M3 prices.
+        A maximum over feature sets would put it in this sentence."""
+        _write(
+            outputs,
+            "m2_drivers",
+            "scores",
+            _m2_scores(
+                [
+                    ("lightgbm", "full_raw_wind", (0.537, 0.537, 0.537)),
+                    ("lightgbm", "full", (0.524, 0.524, 0.524)),
+                    ("lightgbm", "full_with_pm10", (0.772, 0.772, 0.772)),
+                ]
+            ),
+        )
+
+        assert reporting._encoding_gap() == "（R² 0.537 對 0.524）"
+
+    def test_only_rolling_splits_count(self, outputs: Path) -> None:
+        """The sentence sits under the rolling table. Leave-one-station and
+        leave-one-year rows answer different questions."""
+        frame = _m2_scores(
+            [
+                ("lightgbm", "full_raw_wind", (0.537, 0.537, 0.537)),
+                ("lightgbm", "full", (0.524, 0.524, 0.524)),
+            ]
+        )
+        other = frame.with_columns(pl.lit("station").alias("split_kind"), pl.lit(0.1).alias("r2"))
+        _write(outputs, "m2_drivers", "scores", pl.concat([frame, other]))
+
+        assert reporting._encoding_gap() == "（R² 0.537 對 0.524）"
+
+    def test_a_missing_m2_drops_the_figures_rather_than_the_sentence(self, outputs: Path) -> None:
+        assert reporting._tree_wind_encoding_r2() is None
+        assert reporting._encoding_gap() == ""
+
+    def test_a_feature_set_that_is_gone_is_not_half_reported(self, outputs: Path) -> None:
+        _write(
+            outputs,
+            "m2_drivers",
+            "scores",
+            _m2_scores([("lightgbm", "full", (0.524, 0.524, 0.524))]),
+        )
+
+        assert reporting._tree_wind_encoding_r2() is None
+
+
 class TestNumbersComeFromFiles:
     def test_sample_size_is_read_not_hardcoded(self, outputs: Path) -> None:
         _write(
