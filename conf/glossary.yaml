@@ -44,10 +44,14 @@
 # every one of them on every run — a measured deficit, listed so that it is
 # visible and countable rather than merely true.
 #
-# **The list is empty.** It held eight terms when this gate was written and all
-# eight are explained on the page now. Reach for `null` when a term is used and
-# not explained and the explanation is not yours to write today; do not reach for
-# it to make a run go green.
+# **The list is empty.** It held eight terms when this gate was written. Seven
+# were closed by explaining the word on the page. The eighth was 殘差, and it was
+# closed by fixing the extractor instead: 圖 3.1's caption had explained it from
+# the start, and the gate was reading a correlogram's axis values as though they
+# were sentences a reader crosses. Reach for `null` when a term is used and not
+# explained and the explanation is not yours to write today; do not reach for it
+# to make a run go green, and check that the gate can see the page before
+# believing it about one.
 #
 # `why` is a claim about the page like any other — three of the first eight were
 # wrong, and each was wrong by naming the wrong element as the place of first
@@ -104,27 +108,25 @@
   - "term": "Moran"
     "route": "/space/"
     "explains": "同號相聚"
-  # The one entry the window cannot see, and it is the window that is wrong here
-  # rather than the page. 圖 3.1's caption defines 殘差 immediately after naming
-  # it, which is where a reader looking at the correlogram is — but the flattened
-  # text puts 259 characters between that and the term's first appearance in
-  # 「本章的三個問題」, because the correlogram's own axis values and per-band
-  # numbers lie in between. A reader scans those; they do not read them.
+  # Listed as unexplained from this gate's first commit, and the page was never
+  # what was wrong. 圖 3.1's caption defines 殘差 immediately after naming it,
+  # which is where a reader looking at the correlogram already is. The gate could
+  # not see that,
+  # because the flattened text ran the correlogram's eight band values and its
+  # axis ticks between the two and measured 259.
   #
-  # It cannot be moved higher. The chapter's opening clears PRODUCT.md's 「primary
-  # plot above 55vh」 rule by 13px at 1280×720, and one line of prose costs 37px,
-  # so a gloss above the figure pushes the evidence below the fold — measured,
-  # after `check_site_quality.mjs` failed on exactly that.
+  # Both of the fixes that would have closed it faster were tried and rejected on
+  # evidence. Moving the gloss above the figure pushes the primary plot below the
+  # fold: the chapter's opening clears PRODUCT.md's 55vh rule by 13px at
+  # 1280×720 and one line of prose costs 37px, and `check_site_quality.mjs`
+  # failed on exactly that. Widening the window would have been tuning a
+  # threshold until one case fitted.
   #
-  # Widening the window to admit this would be tuning a threshold to fit a case.
-  # The honest alternative — teaching `distance_for` to skip a plot's internals —
-  # is a change to the instrument, and it belongs in its own commit with its own
-  # evidence: measured across all 17 terms it moves 13 of them by zero, but it
-  # would lose 安慰劑, whose gloss sits inside a figure and outside its caption.
+  # The instrument was what was wrong. `FIGURE_PROSE` keeps a figure's words and
+  # drops its values, and this measures 122.
   - "term": "殘差"
     "route": "/space/"
-    "explains": null
-    "why": "解釋在圖 3.1 圖說，讀者看得到；但相關圖的資料標籤夾在中間，攤平後距離 259"
+    "explains": "扣掉模型已經解釋掉的部分"
   - "term": "虛無分布"
     "route": "/space/"
     "explains": "如果空間上其實沒有結構"

@@ -363,6 +363,104 @@ class TestTheTextIsWhatAReaderMeets:
         assert gate.rendered("<html><body><nav>偵測極限</nav></body></html>") == ""
 
 
+class TestAFigureContributesItsWordsNotItsValues:
+    """殘差 was carried as an unexplained term for a week on this arithmetic.
+
+    圖 3.1's caption defines it immediately after naming it, which is where a
+    reader looking at the correlogram already is. Between the term's first use in
+    the chapter's question list and that caption lay the plot — eight band
+    labels, eight values, three axis ticks — and flattening those measured 259
+    where the page a reader sees puts the two one glance apart. The entry
+    recorded a real number and a false conclusion, and the two fixes that would
+    have closed it faster were both wrong: a gloss above the figure pushes the
+    primary plot below the fold, and widening the window is tuning a threshold
+    until one case fits.
+    """
+
+    CORRELOGRAM = (
+        "<figure><div class='correlogram'>"
+        "<div class='corr-row'><span>0–10 km</span><span>+0.277</span></div>"
+        "<div class='corr-row'><span>100–150 km</span><span>−0.230</span></div>"
+        "<span class='axis'><span>−0.2</span><span>0</span><span>+0.2</span></span>"
+        "</div><figcaption>站均殘差的 Moran's I。殘差是扣掉模型已經解釋掉的部分。</figcaption></figure>"
+    )
+    PAGE = f"<main><p>殘差相依如何改變？</p>{CORRELOGRAM}<p>這個問題有數字可答。</p></main>"
+
+    def test_a_plots_values_are_scanned_rather_than_read(self) -> None:
+        assert gate.rendered(self.PAGE) == (
+            "殘差相依如何改變？ 站均殘差的 Moran's I。殘差是扣掉模型已經解釋掉的部分。 這個問題有數字可答。"
+        )
+
+    def test_reading_the_plot_is_what_put_the_caption_out_of_reach(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The failure path, run rather than described. Restoring the containers
+        a plot is built from is the behaviour this gate shipped with, and on the
+        same page it more than doubles the distance to the same caption."""
+        entry = term(term="殘差", route="/space/", explains="扣掉模型已經解釋掉的部分")
+
+        assert gate.distance_for(entry, gate.rendered(self.PAGE)) == 29
+
+        monkeypatch.setattr(gate, "FIGURE_PROSE", gate.FIGURE_PROSE | {"div", "span"})
+        assert gate.distance_for(entry, gate.rendered(self.PAGE)) == 70
+
+    def test_a_legend_is_still_where_a_reader_meets_the_word(self) -> None:
+        """圖 6.1's legend is a list and `persistence` is first used in it. A
+        reader who has to understand a legend to read the chart under it is the
+        defect this gate was built for, so dropping `<li>` with the rest of the
+        furniture would move that first use down into the prose, where the
+        explanation is next door and nothing looks wrong."""
+        html = (
+            "<main><figure><ul><li><span>模型</span></li><li><span>persistence</span></li></ul>"
+            "<figcaption>兩條基準線都是規則，說「下一小時就跟現在一樣」。</figcaption>"
+            "</figure></main>"
+        )
+        entry = term(term="persistence", route="/forecast/", explains="說「下一小時就跟現在一樣」")
+        text = gate.rendered(html)
+
+        assert text.startswith("模型 persistence")
+        assert gate.problems_for(entry, text, WINDOW) == []
+
+    def test_a_gloss_inside_a_list_item_survives(self) -> None:
+        """安慰劑's sits directly inside an `<li>` of 圖 5.1's reading steps —
+        inside the figure and outside its caption. Keeping only `<figcaption>`,
+        or `<p>` and `<figcaption>`, loses it outright and the gate then reports
+        an explanation as gone while a reader is looking at it."""
+        html = (
+            "<main><figure><div class='chart'><span>8.8</span></div>"
+            "<ol><li><strong>先看灰線</strong>：沒有事件標記時，同一程序仍會算出的差額。</li></ol>"
+            "</figure><p>安慰劑檢定就是這樣讀的。</p></main>"
+        )
+
+        assert gate.rendered(html) == (
+            "先看灰線：沒有事件標記時，同一程序仍會算出的差額。 安慰劑檢定就是這樣讀的。"
+        )
+
+    def test_a_paragraph_inside_a_figure_is_prose(self) -> None:
+        """圖 4.1's radius legend is glossed in a `<p>` beside the plot."""
+        html = "<main><figure><div><span>0.32</span></div><p>半徑＝風速分組</p></figure></main>"
+
+        assert gate.rendered(html) == "半徑＝風速分組"
+
+    def test_the_page_resumes_after_the_figure(self) -> None:
+        """Two figures in a row is the shape that would expose a counter which
+        never returns to zero: everything after the first one would vanish, and
+        the gate would report explanations as missing across whole chapters."""
+        html = (
+            "<main><figure><div><span>99</span></div></figure><p>中間的正文</p>"
+            "<figure><div><span>88</span></div></figure><p>後面的正文</p></main>"
+        )
+
+        assert gate.rendered(html) == "中間的正文 後面的正文"
+
+    def test_the_rule_is_scoped_to_figures(self) -> None:
+        """A `<div>` of numbers in running prose is text a reader meets. The
+        claim is about plots, not about tags."""
+        html = "<main><div><span>99</span> 不在圖裡</div></main>"
+
+        assert gate.rendered(html) == "99 不在圖裡"
+
+
 class TestTheRouteReachesTheRightFile:
     @pytest.mark.parametrize(
         ("route", "expected"),
@@ -433,6 +531,44 @@ class TestTheGateRunsEndToEnd:
     ) -> None:
         assert gate.main(["check", str(tmp_path / "nope")]) == 1
         assert "npm run build" in capsys.readouterr().err
+
+    def test_the_summary_does_not_claim_a_gloss_it_could_not_find(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A single 「N explained within 160 characters」 is false exactly when a
+        term has lost its gloss, which is the state the line is there to report.
+        `check_bold_stands_alone.py` carries the same repair for the same
+        reason."""
+        path = glossary(
+            tmp_path, 160, [{"term": "CBPF", "route": "/sources/", "explains": "描述條件機率"}]
+        )
+        monkeypatch.setattr(gate, "GLOSSARY", path)
+        dist = self.build(tmp_path, "CBPF 是一張極座標圖")
+
+        assert gate.main(["check", str(dist)]) == 1
+        out = capsys.readouterr().out
+        assert "terms explained  : 1 recorded in conf/glossary.yaml" in out
+        assert "found on the page: 0   within 160 characters: 0" in out
+
+    def test_a_gloss_out_of_reach_is_counted_as_found_and_not_as_near(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The other half: present on the page and too far to help. Collapsing
+        the two would report a drifted term as a missing one."""
+        path = glossary(
+            tmp_path, 160, [{"term": "CBPF", "route": "/sources/", "explains": "描述條件機率"}]
+        )
+        monkeypatch.setattr(gate, "GLOSSARY", path)
+        dist = self.build(tmp_path, "CBPF" + "填" * 200 + "描述條件機率")
+
+        assert gate.main(["check", str(dist)]) == 1
+        assert "found on the page: 1   within 160 characters: 0" in capsys.readouterr().out
 
     def test_the_open_gaps_are_printed_every_run(
         self,

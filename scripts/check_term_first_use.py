@@ -38,6 +38,15 @@ present and close. `docs/working-rules.md` already draws that line around the tw
 delegated claims in the site-prose gate: a regex can guarantee a caveat is
 present and can never guarantee it says the right thing.
 
+**Distance is measured in the text a reader reads, not in every character on the
+page.** A chart's axis ticks and band values are scanned, not read, and an
+earlier version of this gate counted them: 殘差 measured 259 characters from the
+caption that defines it because the correlogram lay between the two, and it was
+carried as an unexplained term on that arithmetic from this gate's first commit.
+`FIGURE_PROSE` below holds what a figure contributes and the census behind it.
+Widening the window instead would have been tuning a threshold until one case
+fitted.
+
 The gate reads `web/dist`, so it runs in the `web` job after `npm run build`,
 beside `check_publication_structure.py` and `check_cjk_spacing.py`, which read
 the built output for the same reason: what a reader meets is the rendered page,
@@ -106,6 +115,36 @@ INLINE = frozenset(
     }
 )
 
+# Inside a `<figure>`, these are the elements that carry sentences. A plot here
+# is `div` and `span` positioned by CSS — an axis tick, a band's value, a legend
+# row — and flattening those into the reading order builds a wall of digits
+# between a term and the caption explaining it. 圖 3.1 is the case that forced
+# this: the correlogram's eight bands and its axis labels sat between 殘差's
+# first use in the chapter's question list and the caption that defines it,
+# measuring 259 characters where the page a reader sees puts the two one glance
+# apart. Skipping them measures 122.
+#
+# The set is what this site's figures actually contain rather than a general list
+# of block tags. A census of every text node inside a `<figure>` on all eleven
+# routes found `div` 215 times (all of them plot values), `li` 70, `figcaption`
+# 34, `p` 3, and nothing else outside `<script>` and `<svg>`, both opaque already.
+#
+# `li` is the entry that had to be argued rather than read off, because most of
+# those 70 are legend rows — 圖 6.1's 模型 / persistence / climatology is a list —
+# and dropping it looks tidier. It is not. `persistence` is *first used* in that
+# legend, which is the defect this gate exists for, and 安慰劑's gloss sits
+# directly inside an `<li>` of 圖 5.1's reading steps. Measured across all
+# seventeen terms: `figcaption` alone and `p` + `figcaption` each lose that gloss
+# outright, and this set loses nothing while moving fourteen terms by zero.
+#
+# `check_bold_stands_alone.py` excludes a figure entirely, and the disagreement
+# is deliberate. It asks whether bold is a usable skim path, and inside a figure
+# bold is a guide label or a warning about an axis — 圖 3.2's caption bolds
+# 「刻度與上圖不同」, which is doing its job and would fail that gate's length
+# rule. This one asks whether the words explaining a term are near it, and a
+# caption's words are read. Same region, different questions.
+FIGURE_PROSE = frozenset({"p", "li", "figcaption"})
+
 
 class MainText(HTMLParser):
     """The rendered text of `<main>`, in the order a reader meets it.
@@ -113,13 +152,30 @@ class MainText(HTMLParser):
     `convert_charrefs` matters more than it looks: the page carries `&lt;` and
     `&gt;` in prose, and reading them literally turns 「&lt; 20 小時」 into a token
     that matches nothing a person ever sees.
+
+    A figure contributes its words and not its values, per `FIGURE_PROSE`. The
+    two counters are kept independently — `_prose` is incremented for every `p`,
+    `li` or `figcaption` anywhere, not only inside a figure — so that a tag which
+    opened outside one cannot leave the counter stuck. Both ways it can go wrong
+    are the safe direction: a `_prose` that never returns to zero degrades this
+    to the older behaviour of reading everything, and a `_figure` that never does
+    drops an explanation, which fails the gate rather than passing it.
     """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._depth = 0
         self._opaque = 0
+        self._figure = 0
+        self._prose = 0
         self._chunks: list[str] = []
+
+    @property
+    def _reading(self) -> bool:
+        """Whether text at this point is read rather than scanned."""
+        if not self._depth or self._opaque:
+            return False
+        return bool(self._prose) if self._figure else True
 
     def _boundary(self, tag: str) -> None:
         if self._depth and not self._opaque and tag not in INLINE:
@@ -130,6 +186,10 @@ class MainText(HTMLParser):
             self._depth += 1
         if tag in OPAQUE:
             self._opaque += 1
+        if tag == "figure":
+            self._figure += 1
+        if tag in FIGURE_PROSE:
+            self._prose += 1
         self._boundary(tag)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -137,13 +197,17 @@ class MainText(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         self._boundary(tag)
+        if tag in FIGURE_PROSE and self._prose:
+            self._prose -= 1
+        if tag == "figure" and self._figure:
+            self._figure -= 1
         if tag in OPAQUE and self._opaque:
             self._opaque -= 1
         if tag == "main" and self._depth:
             self._depth -= 1
 
     def handle_data(self, data: str) -> None:
-        if self._depth and not self._opaque:
+        if self._reading:
             self._chunks.append(data)
 
     @property
@@ -337,13 +401,21 @@ def main(argv: list[str]) -> int:
         if term.route in pages:
             problems.extend(problems_for(term, pages[term.route], window))
 
+    # Three numbers rather than one, because a single 「17 explained within 160
+    # characters」 is false exactly when a term has lost its gloss or drifted out
+    # of reach — the state the line exists to report. Each of these is true in
+    # every state, which is the same repair `check_bold_stands_alone.py` carries
+    # for its own summary.
+    distances = {t.label: distance_for(t, pages[t.route]) for t in explained if t.route in pages}
+    found = [t for t in explained if distances.get(t.label) is not None]
+    within = [t for t in found if abs(distances[t.label] or 0) <= window]
     print(f"routes read      : {len(pages)}")
-    print(f"terms explained  : {len(explained)} (within {window} characters of first use)")
-    for term in explained:
-        gap = distance_for(term, pages[term.route]) if term.route in pages else None
-        if gap is not None:
-            side = "後" if gap >= 0 else "前"
-            print(f"  {term.label} — 解釋在首次出現{side} {abs(gap)} 字")
+    print(f"terms explained  : {len(explained)} recorded in conf/glossary.yaml")
+    print(f"  found on the page: {len(found)}   within {window} characters: {len(within)}")
+    for term in found:
+        gap = distances[term.label] or 0
+        side = "後" if gap >= 0 else "前"
+        print(f"  {term.label} — 解釋在首次出現{side} {abs(gap)} 字")
     print(f"terms unexplained: {len(unexplained)}")
     for term in unexplained:
         print(f"  待補 {term.label} — {term.why}")

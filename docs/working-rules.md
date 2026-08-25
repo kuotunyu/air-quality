@@ -868,6 +868,28 @@ the current one.
 **After correcting a hand-typed figure, ask what would catch it next time.** If
 the answer is nothing, the work is half done.
 
+### A deferred item's stated cost is a prediction, not a finding
+
+`conf/glossary.yaml` carried 殘差 as an unexplained term because the comment
+beside it said the honest fix — teaching the extractor to skip a plot's
+internals — was worth doing only with one case handled: "measured across all 17
+terms it moves 13 of them by zero, but it would lose 安慰劑, whose gloss sits
+inside a figure and outside its caption." Both halves read as measurements. Only
+the first one was.
+
+The 13 came from a draft that dropped everything inside `<figure>` except the
+caption, and that draft does lose 安慰劑, whose gloss sits in an `<li>`. The
+design that shipped keeps `<p>`, `<li>` and `<figcaption>`: it loses nothing,
+moves fourteen terms by zero, and brings 殘差 from 259 characters to 122. The
+obstacle belonged to one abandoned draft and was recorded as a property of the
+idea.
+
+Deferring is usually right and always cheap. The expensive part is the sentence
+that justifies it, because that sentence is what the next person reads instead
+of re-deriving the problem, and a cost written in the past tense closes the
+question. **Name the draft a measurement was taken on, or the next reader
+inherits your dead end as a fact.**
+
 ### A hash of float64 output tests which machine CI got, not what the code does
 
 `ubuntu-latest` is a pool, not a machine: nothing guarantees two runs get the
