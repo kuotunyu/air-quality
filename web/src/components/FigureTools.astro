@@ -87,7 +87,10 @@
       bigger.dataset.figAct = "zoom";
       bigger.addEventListener("click", () => open(root, name, bigger));
 
-      const png = control("下載 PNG", name);
+      // 下載 on the face, 下載 PNG in the accessible name: two characters beside
+      // 放大 make a pair a reader takes in at a glance, and the format still has
+      // to be said to anyone who cannot see what arrives.
+      const png = control("下載", name, "下載 PNG");
       png.addEventListener("click", () => save(root, png, index));
 
       tools.append(bigger, png);
@@ -102,7 +105,7 @@
       (mount ?? root).append(tools);
     }
 
-    function control(label: string, name: string): HTMLButtonElement {
+    function control(label: string, name: string, spoken = label): HTMLButtonElement {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "fig-tool";
@@ -112,7 +115,7 @@
        * list of identical controls to anyone reading the buttons rather than
        * the page. The label says which figure it acts on.
        */
-      button.setAttribute("aria-label", `${label}：${name}`);
+      button.setAttribute("aria-label", `${spoken}：${name}`);
       return button;
     }
 
@@ -423,7 +426,7 @@
       button: HTMLButtonElement,
       index: number,
     ) {
-      const settled = button.textContent ?? "下載 PNG";
+      const settled = button.textContent ?? "下載";
       button.disabled = true;
       button.textContent = "產生中…";
       try {

@@ -15175,7 +15175,7 @@ async function main() {
           const exported = await evaluate(`(() => {
             const root = document.querySelector("main figure:has(.plot[data-readout])");
             const button = [...(root?.querySelectorAll(".fig-tool") ?? [])]
-              .find((item) => item.textContent?.trim() === "下載 PNG");
+              .find((item) => item.textContent?.trim() === "下載");
             if (!root || !button) return null;
             const outerBlockSize = (element) => {
               const style = getComputedStyle(element);
