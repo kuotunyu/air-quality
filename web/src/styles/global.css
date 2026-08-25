@@ -3286,6 +3286,67 @@ button:hover {
   margin-top: var(--space-1);
 }
 
+/*
+ * Where the two controls sit.
+ *
+ * Under the caption they were two blocks below the thing they act on, and the
+ * row they formed read as a third line of caption. They belong at the top right
+ * of the figure, level with 「圖 1.1」 and the question it answers.
+ *
+ * Out of flow, so the placement costs nothing. Given the header a third grid
+ * track instead, the toolbar takes about 190px from the title's own column and
+ * the title wraps to pay for it: measured, chapter 3 at 768 went from a 43px
+ * header to 86px and pushed its plot down 43px, against the 13px of clearance
+ * it has under PRODUCT.md's 55vh rule. At 375 the same track wrapped a title to
+ * seventeen lines and a 46px header became 775px.
+ *
+ * **This is a media query and it may not become a container query.** A container
+ * query needs `container-type` on an ancestor, and the ancestors available here
+ * are the ones carrying the bleed: `--room` is `calc((100cqw - ...) / 2)`, and
+ * `100cqw` resolves against the nearest container ancestor. Putting
+ * `container-type: inline-size` on `.evidence-figure` made its own width the
+ * input to its own bleed — measured at 1920, the header's inset fell from 176px
+ * to 82.5px, three chapters stopped returning to the reading spine, and
+ * `check_site_quality.mjs` failed six times. `.chart`'s fluid padding reads
+ * `cqw` for the same reason and would have moved too. Same shape as the x-axis
+ * tier bug recorded above: a breakpoint must not be denominated in something
+ * that moves with the thing it measures.
+ *
+ * 1080px comes from the space left to the right of the longest title with the
+ * toolbar hidden, against the 189px it occupies:
+ *
+ *     1280 → 圖 8.1 215px, 圖 8.2 277px     1000 → 180px
+ *     1150 → 277px                          900 → 161px
+ *     1050 → 222px                          768 →  49px
+ *
+ * 圖 8.2 at 1000 leaves 180px for a 189px toolbar, so the threshold sits above
+ * it. Below that the controls keep their place under the figure, which on a
+ * narrow screen is the only space going spare.
+ *
+ * `right: 0` is the CARD's right edge, not the caption's — where the figure
+ * bleeds wider than the reading measure the two differ by 85px, and the card is
+ * what these controls act on. `var(--bleed)` was tried and is not defined on
+ * this element, so the declaration was dropped whole and the toolbar fell back
+ * to its static left edge.
+ *
+ * The selector needs `.evidence-figure > figure >`: the zoom dialog moves the
+ * figure into `.fig-zoom-body`, where this stops matching and the toolbar
+ * returns to the flow instead of landing on the dialog's own close button.
+ */
+@media (min-width: 1080px) {
+  .evidence-figure {
+    position: relative;
+  }
+
+  .evidence-figure > figure > .fig-tools {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: auto;
+    margin-top: 0;
+  }
+}
+
 .fig-tool {
   /* 2026-08-03 — an exact 44px minimum quantised one 1/64px layout unit
      below the interaction floor in Linux Chrome while remaining 44px on

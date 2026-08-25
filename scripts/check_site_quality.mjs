@@ -8884,7 +8884,8 @@ const PROBE = `(() => {
   };
 
   const out = { nodes: 0, lowContrast: [], smallestFont: Infinity, smallestAnnotation: Infinity,
-    smallTargets: [], collisions: [], markCollisions: [], hyphenSigns: [], tableWraps: 0, tableScrollers: 0,
+    smallTargets: [], collisions: [], markCollisions: [], hyphenSigns: [], toolClashes: [],
+    tableWraps: 0, tableScrollers: 0,
     invalidTableScrollers: [], invalidTableRules: [], invalidChartText: [],
     invalidChartStrokes: [] };
   out.body = parseFloat(getComputedStyle(document.body).fontSize);
@@ -9059,6 +9060,50 @@ const PROBE = `(() => {
       out.hyphenSigns.push({
         text: text.slice(0, 14),
         strip: String(el.parentElement ? el.parentElement.className || "" : "").slice(0, 20),
+      });
+    }
+  }
+
+  // A figure's toolbar sits at its top right, and must not land on its title.
+  //
+  // Above 1080px the two controls are lifted out of flow into the figure's top
+  // right corner, level with the number and the question. What decides whether
+  // that is safe is the length of the title, which is prose and changes: the
+  // threshold was measured against the longest one on the site, and a longer one
+  // written later would slide underneath the toolbar with nothing to say so.
+  // Chapter 8's case titles were all rewritten the day before this check.
+  //
+  // Ink, not boxes. The title is a block that spans the header whatever it says,
+  // so its own rectangle always reaches the toolbar and would report a clash on
+  // every figure.
+  for (const section of document.querySelectorAll("main .evidence-figure")) {
+    const tools = section.querySelector(".fig-tools");
+    if (!tools) continue;
+    if (getComputedStyle(tools).position !== "absolute") continue;
+    const box = tools.getBoundingClientRect();
+    const card = section.getBoundingClientRect();
+    const label = (section.querySelector(".evidence-number") || {}).textContent || "?";
+    if (box.right > card.right + 1 || box.left < card.left - 1) {
+      out.toolClashes.push({figure: String(label).trim().slice(0, 10), why: "outside the card"});
+      continue;
+    }
+    let ink = 0;
+    for (const part of section.querySelectorAll(".evidence-header")) {
+      const wk = document.createTreeWalker(part, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = wk.nextNode())) {
+        if (!node.textContent.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.top < box.bottom && r.bottom > box.top) ink = Math.max(ink, r.right);
+        }
+      }
+    }
+    if (ink && box.left < ink + 8) {
+      out.toolClashes.push({
+        figure: String(label).trim().slice(0, 10),
+        why: "title ink reaches within " + Math.round(box.left - ink) + "px of the toolbar",
       });
     }
   }
@@ -12785,6 +12830,7 @@ async function main() {
     collisions: 0,
     markCollisions: 0,
     hyphenSigns: 0,
+    toolClashes: 0,
     readouts: 0,
     tableWraps: 0,
     tableScrollers: 0,
@@ -15101,6 +15147,14 @@ async function main() {
               `(minimum ${AXIS_LABEL_CLEARANCE_PX}px)`,
           );
         }
+        for (const bad of r.toolClashes) {
+          totals.toolClashes += 1;
+          failures.push(
+            `${route} @${width} ${theme}: ${bad.figure}'s toolbar ${bad.why} — the ` +
+              `1080px threshold in global.css was measured against the titles as ` +
+              `they were, and one of them has outgrown it`,
+          );
+        }
         for (const bad of r.hyphenSigns) {
           totals.hyphenSigns += 1;
           failures.push(
@@ -15744,6 +15798,7 @@ async function main() {
   console.log(`overlapping axis labels : ${totals.collisions}`);
   console.log(`overlapping fold marks  : ${totals.markCollisions}`);
   console.log(`hyphens used as minus   : ${totals.hyphenSigns}`);
+  console.log(`figure toolbar clashes  : ${totals.toolClashes}`);
   console.log(`readouts exercised : ${totals.readouts}`);
   console.log(`table wraps       : ${totals.tableWraps} (${totals.tableScrollers} intentional scrollers)`);
   console.log(`focus checks      : ${totals.focusChecks}`);

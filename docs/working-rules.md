@@ -558,6 +558,25 @@ take a pixel clamp — so it is sized for the narrowest plot the gate renders
 which share an x axis. A shorter line is cheaper than a line whose endpoint
 parts company with its own cloud.
 
+### `container-type` changes what an inherited custom property means
+
+`--bleed` is `clamp(0px, calc(var(--room) - 1.5rem), 8rem)` and `--room` is
+`calc((100cqw - ...) / 2)`. A custom property is substituted as tokens and
+resolved where it is **used**, so `100cqw` asks the nearest container ancestor of
+whichever element reads it — and adding `container-type: inline-size` anywhere in
+between silently changes the answer.
+
+Putting it on `.evidence-figure` to gate a toolbar made the section's own width
+the input to its own bleed. The symptom was three chapters' headings and captions
+no longer returning to the prose reading spine at 1920, six failures in
+`check_site_quality.mjs`, and nothing in the diff that mentioned margins.
+`.chart`'s fluid padding reads `cqw` for the same reason and would have moved
+too.
+
+**Before adding a container, grep for `cqw` in what it would enclose.** If a
+custom property defined outside is read inside, the container is a redefinition
+of that property, not a query scope.
+
 ### Astro's parser reads `<=` in a template expression as a fragment
 
 `{items.filter(x => x.v <= max).map(...)}` fails to compile with a confusing
