@@ -373,7 +373,16 @@ class TestRendering:
 
 @pytest.mark.slow
 def test_collect_status_runs_against_the_real_store() -> None:
-    """The whole thing, on real data — it is meant to be run without thinking."""
+    """The whole thing, on real data — it is meant to be run without thinking.
+
+    `collect_status` is written to survive a missing store, because that is what
+    someone cloning the repo sees, so on a machine without one this renders
+    「store: absent」 and passes while checking nothing its name claims. The two
+    assertions below are what make the name true: run without a store it fails,
+    which is the same answer its neighbours in `tests/test_stations.py` give.
+    """
     status = collect_status(count_rows=False)
 
+    assert status.store.exists, "no store here — this test has nothing to run against"
+    assert status.store.years, "the store is present but holds no year of observations"
     assert render(status)

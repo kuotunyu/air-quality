@@ -391,7 +391,12 @@ class TestStationGeography:
 
 @pytest.mark.slow
 class TestShippedZoneConfig:
-    """Scans the whole 341M-row store; deselect with -m 'not slow'."""
+    """Scans the whole 341M-row store; deselect with -m 'not slow'.
+
+    Run after an ingest, a rebuild, or an edit to `conf/stations.yaml` — the
+    three things that can put a station outside every zone. CI never runs this,
+    having no store, so it happens when somebody types the command.
+    """
 
     def test_every_station_resolves_to_a_zone(self) -> None:
         """No station may be left without one — a null zone breaks zone analysis."""
@@ -408,7 +413,11 @@ class TestShippedZoneConfig:
 
 @pytest.mark.slow
 def test_qc_report_counts_the_same_stations_as_the_station_table() -> None:
-    """Both must normalise names, or 台南 and 臺南 are counted as two stations."""
+    """Both must normalise names, or 台南 and 臺南 are counted as two stations.
+
+    Same trigger as the zone check above, and the same reason it cannot run in
+    CI: the disagreement it looks for only exists across the whole store.
+    """
     from twair.qc.report import station_lifecycle
     from twair.store.stations import build_station_table
 

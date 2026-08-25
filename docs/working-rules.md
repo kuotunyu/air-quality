@@ -1216,6 +1216,18 @@ surfaces somewhere less useful.
 - Tests that scan the whole 341M-row store are marked `@pytest.mark.slow` and
   excluded by default (`addopts` carries `-m 'not slow'`). Run them with
   `pytest -m slow`. Never run two full-store scans in one process — that OOMs.
+- **The trigger is a change to what the store holds or to how a station is
+  named**: an ingest, a rebuild, an edit to `conf/stations.yaml`, a station
+  geography refresh. Nothing else runs them — CI has no store, so all three have
+  run only where somebody typed the command. They are not a slower copy of the
+  suite. They are the only check that the station table and the QC report still
+  agree on how many stations exist, and name normalisation is exactly where that
+  goes wrong: 台南 and 臺南 counted separately is a real defect that every fast
+  test in the file would pass through.
+- **The marker names a precondition, not a duration.** Without a store
+  `build_station_table()` raises `FileNotFoundError: no observation Parquet
+  partitions under …`, so `pytest -m slow` on a fresh clone is a red run rather
+  than a slow one. That is the intended reading: there is nothing to check.
 
 The complete inventory is an equality gate, not a minimum:
 
