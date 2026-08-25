@@ -12,6 +12,22 @@ const { items } = Astro.props;
 if (items.length !== 3) {
   throw new Error(`ChapterReadingMap requires exactly three items; received ${items.length}`);
 }
+
+/**
+ * A question, split where it is allowed to break.
+ *
+ * CJK breaks between any two characters, so a question one character too wide
+ * for its column breaks wherever the line runs out — measured at 1440, 「固定測站
+ * 後，下降是否仍成立？」 broke after 「下」 and put 「降是否仍成立？」 on the second
+ * line, cutting 下降 in half. The reading break a person would make is the comma.
+ *
+ * Each clause is rendered as an atomic inline box, so the browser can only break
+ * between them. A clause that is somehow wider than the column still wraps
+ * inside itself rather than overflowing, which is why this is `inline-block` and
+ * not `white-space: nowrap`.
+ */
+const clauses = (question: string): string[] =>
+  question.split(/(?<=[，、；])/u).filter((part) => part.length > 0);
 ---
 
 <nav class="chapter-reading-map" aria-label="本章閱讀地圖" data-chapter-reading-map>
@@ -21,7 +37,9 @@ if (items.length !== 3) {
       items.map((item) => (
         <li>
           <a href={item.href} data-chapter-reading-link>
-            <span>{item.question}</span>
+            <span>
+              {clauses(item.question).map((part) => <b>{part}</b>)}
+            </span>
           </a>
         </li>
       ))
@@ -77,17 +95,21 @@ if (items.length !== 3) {
   }
 
   /*
-   * `text-wrap: balance` on the question, and the `<span>` exists to carry it.
+   * The clauses, and why they are boxes rather than text.
    *
-   * These are three questions in a 352px column and two of them take two lines.
-   * Left to the normal greedy break the first read 「固定測站後，下降是否仍成 /
-   * 立？」 — one character and a question mark alone on the second line, which is
-   * the shape a reader notices before the words. Balancing splits the two lines
-   * evenly instead. It applies to a block box, so it cannot go on the grid `<a>`
-   * whose text would be anonymous.
+   * `text-wrap: balance` was here and balanced the wrong thing: it made the two
+   * lines equal widths — 154px and 154px — by breaking after 「下」 and carrying
+   * 「降是否仍成立？」 down, which splits 下降 across lines. Even lines are not the
+   * goal; breaking where a reader would pause is.
+   *
+   * An `inline-block` is an atomic inline box, so a line can end between two of
+   * them and not inside one. The clauses come from `clauses()` above, split
+   * after each 「，」. `<b>` because it is the shortest element that carries no
+   * meaning of its own here — the weight comes from the rule below.
    */
-  .chapter-reading-map a span {
-    text-wrap: balance;
+  .chapter-reading-map a b {
+    display: inline-block;
+    font-weight: inherit;
   }
 
   /* The number is the same eyebrow as the label above it, one step quieter than

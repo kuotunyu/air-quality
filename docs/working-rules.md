@@ -1203,6 +1203,16 @@ pipeline — or capture `PIPESTATUS`. Pass full shas to `gh run list --commit`, 
 filter `--branch` output by `headSha` yourself. And a poll loop needs a distinct
 exit for "never reached a conclusion", separate from pass and from fail.
 
+**The dev server can serve a component's old CSS.** `npm run dev` on 4321 hot-
+reloads, and measuring a layout there is measuring what Vite currently holds, not
+what `npm run build` writes. Caught on 2026-08-25: a `.plot-note` rule was edited
+and `right` and `transform` took effect while `margin-top` kept its previous
+value, so the box measured 0px from the top of the plot and 16px from its side.
+The built CSS in `web/dist` had the new value all along, and `web-built` on 4322
+— the `preview` config in `.claude/launch.json` — measured 16px on both sides.
+**Measure geometry on 4322, not on 4321.** A `?v=` on the page URL busts the HTML
+and not the stylesheet it links.
+
 **A run that collected before your last edit cannot verify the tree you push.**
 pytest imports every module once, at collection, and the suite inside
 `check_like_ci.py` is one process behind a step that takes twelve of its

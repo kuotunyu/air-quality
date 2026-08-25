@@ -1965,15 +1965,27 @@ figure {
   max-width: var(--measure);
 }
 
+/*
+ * The figure's name is set at the title's size, and told apart by colour.
+ *
+ * It was `--text-xs` at 700 beside a `--text-xl` title — 20px against 33px on
+ * one line, with letter-spacing stretching it further, so the row read as two
+ * different kinds of type rather than one label and its heading. Matching the
+ * size makes the line a single register; the hierarchy comes from weight and
+ * ink, which is what tells a name from a question anyway.
+ *
+ * No letter-spacing at this size: 0.08em was buying separation for small caps
+ * and at 33px it only opens 「圖 1.1」 into three pieces.
+ */
 .evidence-number {
   margin: 0;
-  /* One step up from `--text-faint`: it is the figure's name, and beside a 33px
-     title at the faintest ink on the page it read as a caption fragment that
-     had drifted up. */
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-size: var(--text-xl);
+  font-weight: 400;
+  /* The title's line-height, not the body's. At 33px the inherited 1.7 makes a
+     56px line box against the title's 44.55, and the header row grows 11px —
+     which is height above the primary plot, and chapter 3 has 13px of it. */
+  line-height: 1.35;
   font-variant-numeric: tabular-nums;
 }
 
