@@ -857,9 +857,9 @@ METHOD_CASE_ROWS = (
     ("01", "月平均抹掉了六成的變異", "#method-case-01"),
     ("02", "拿 PM10 預測 PM2.5", "#method-case-02"),
     ("03", "把風向當成 0 到 360 的普通數字", "#method-case-03"),
-    ("04", "用常態檢定證明資料常態", "#method-case-04"),
-    ("05", "NO、NO₂、NOx 一起放進迴歸", "#method-case-05"),
-    ("06", "用 AIC/BIC 當作模型好壞的證據", "#method-case-06"),
+    ("04", "把及格標準調低，好讓資料通過檢定", "#method-case-04"),
+    ("05", "NO + NO₂ = NOx，三個一起放進模型", "#method-case-05"),
+    ("06", "只用模型學過的資料評斷它", "#method-case-06"),
     ("07", "用一句話處理掉所有缺漏值", "#method-case-07"),
 )
 METHOD_FIGURE_TITLES = (
@@ -4799,18 +4799,18 @@ def _run_preflight() -> None:
 <li><a data-method-case-link data-case="01" href="#method-case-01"><span aria-hidden="true">01</span><span>月平均抹掉了六成的變異</span></a></li>
 <li><a data-method-case-link data-case="02" href="#method-case-02"><span aria-hidden="true">02</span><span>拿 PM10 預測 PM2.5</span></a></li>
 <li><a data-method-case-link data-case="03" href="#method-case-03"><span aria-hidden="true">03</span><span>把風向當成 0 到 360 的普通數字</span></a></li>
-<li><a data-method-case-link data-case="04" href="#method-case-04"><span aria-hidden="true">04</span><span>用常態檢定證明資料常態</span></a></li>
-<li><a data-method-case-link data-case="05" href="#method-case-05"><span aria-hidden="true">05</span><span>NO、NO₂、NOx 一起放進迴歸</span></a></li>
-<li><a data-method-case-link data-case="06" href="#method-case-06"><span aria-hidden="true">06</span><span>用 AIC/BIC 當作模型好壞的證據</span></a></li>
+<li><a data-method-case-link data-case="04" href="#method-case-04"><span aria-hidden="true">04</span><span>把及格標準調低，好讓資料通過檢定</span></a></li>
+<li><a data-method-case-link data-case="05" href="#method-case-05"><span aria-hidden="true">05</span><span>NO + NO₂ = NOx，三個一起放進模型</span></a></li>
+<li><a data-method-case-link data-case="06" href="#method-case-06"><span aria-hidden="true">06</span><span>只用模型學過的資料評斷它</span></a></li>
 <li><a data-method-case-link data-case="07" href="#method-case-07"><span aria-hidden="true">07</span><span>用一句話處理掉所有缺漏值</span></a></li>
 </ol>
 </nav>
 <article class="mistake" id="method-case-01" data-method-case="01"><h2><span aria-hidden="true">01</span><span>月平均抹掉了六成的變異</span></h2><p id="evidence-8-1-title">月平均隱藏了多少逐時變異？</p></article>
 <article class="mistake" id="method-case-02" data-method-case="02"><h2><span aria-hidden="true">02</span><span>拿 PM10 預測 PM2.5</span></h2></article>
 <article class="mistake" id="method-case-03" data-method-case="03"><h2><span aria-hidden="true">03</span><span>把風向當成 0 到 360 的普通數字</span></h2></article>
-<article class="mistake" id="method-case-04" data-method-case="04"><h2><span aria-hidden="true">04</span><span>用常態檢定證明資料常態</span></h2></article>
-<article class="mistake" id="method-case-05" data-method-case="05"><h2><span aria-hidden="true">05</span><span>NO、NO₂、NOx 一起放進迴歸</span></h2></article>
-<article class="mistake" id="method-case-06" data-method-case="06"><h2><span aria-hidden="true">06</span><span>用 AIC/BIC 當作模型好壞的證據</span></h2></article>
+<article class="mistake" id="method-case-04" data-method-case="04"><h2><span aria-hidden="true">04</span><span>把及格標準調低，好讓資料通過檢定</span></h2></article>
+<article class="mistake" id="method-case-05" data-method-case="05"><h2><span aria-hidden="true">05</span><span>NO + NO₂ = NOx，三個一起放進模型</span></h2></article>
+<article class="mistake" id="method-case-06" data-method-case="06"><h2><span aria-hidden="true">06</span><span>只用模型學過的資料評斷它</span></h2></article>
 <article class="mistake" id="method-case-07" data-method-case="07"><h2><span aria-hidden="true">07</span><span>用一句話處理掉所有缺漏值</span></h2><p id="evidence-8-2-title">不同補值方法對不同缺口長度付出什麼代價？</p></article>
 <article class="mistake epilogue"><h2>兩項經全量資料否證的原始主張</h2></article>
 """
@@ -4842,7 +4842,7 @@ def _run_preflight() -> None:
         "missing link": (
             "methods case link inventory changed",
             valid_methods_index.replace(
-                '<li><a data-method-case-link data-case="04" href="#method-case-04"><span aria-hidden="true">04</span><span>用常態檢定證明資料常態</span></a></li>\n',
+                '<li><a data-method-case-link data-case="04" href="#method-case-04"><span aria-hidden="true">04</span><span>把及格標準調低，好讓資料通過檢定</span></a></li>\n',
                 "",
                 1,
             ),

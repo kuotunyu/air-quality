@@ -1849,9 +1849,9 @@ const METHOD_CASE_ROWS = [
   ["01", "月平均抹掉了六成的變異", "#method-case-01"],
   ["02", "拿 PM10 預測 PM2.5", "#method-case-02"],
   ["03", "把風向當成 0 到 360 的普通數字", "#method-case-03"],
-  ["04", "用常態檢定證明資料常態", "#method-case-04"],
-  ["05", "NO、NO₂、NOx 一起放進迴歸", "#method-case-05"],
-  ["06", "用 AIC/BIC 當作模型好壞的證據", "#method-case-06"],
+  ["04", "把及格標準調低，好讓資料通過檢定", "#method-case-04"],
+  ["05", "NO + NO₂ = NOx，三個一起放進模型", "#method-case-05"],
+  ["06", "只用模型學過的資料評斷它", "#method-case-06"],
   ["07", "用一句話處理掉所有缺漏值", "#method-case-07"],
 ];
 function dataMegabytes(value) {
