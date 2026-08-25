@@ -314,8 +314,8 @@ const taiwanAnnualGuide = (
   </p>
 
   <p>
-    所以這裡畫兩條線。<strong>全部測站</strong>是多數報導引用的數字；
-    <strong>固定樣本</strong>只保留 {balancedSince} 年以來每一年都有可比較資料的
+    所以這裡畫兩條線。全部測站是多數報導引用的數字；
+    固定樣本只保留 {balancedSince} 年以來每一年都有可比較資料的
     {" "}{balancedCount} 個測站，前後比的是同一批地方。
   </p>
 
@@ -390,9 +390,9 @@ const taiwanAnnualGuide = (
   </div>
 
   <p>
-    這個比例還可以用完全不同的方式再問一次。上面是<strong>全國面板的水準差</strong>；
+    這個比例還可以用完全不同的方式再問一次。上面是全國面板的水準差；
     另一種是對 {dw.n_significant} 個測站各自估斜率，再取「天氣佔比」的中位數——
-    那個答案是 <strong>{n(dw.median_weather_share * 100, 1)}%</strong>，
+    那個答案是 {n(dw.median_weather_share * 100, 1)}%，
     與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
     兩種聚合方式互相獨立，一致比任何單一數字更值得相信。
     跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%——
@@ -406,7 +406,7 @@ const taiwanAnnualGuide = (
       {dw.caveat}
     </p>
     <p>
-      另有一點需要說明：正規化後的序列在<strong>年內幾乎是平的</strong>，
+      另有一點需要說明：<strong>正規化後的序列在年內幾乎是平的</strong>，
       因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
       那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像繪圖錯誤。
     </p>

@@ -264,7 +264,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
 
     <p>
-      基準的方法是：取 2010–2017 年的<strong>月平均</strong>、12 個解釋變數、
+      基準的方法是：取 2010–2017 年的月平均、12 個解釋變數、
       Pearson 相關、逐步剔除的 OLS。這在當時是標準做法。
       本專案把它實際配適出來，面板是 6,771 個站月、72 個測站——
       這個數字是量出來的，不是引用來的。
@@ -272,13 +272,13 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p>
       下面每一張圖、每一個數字都是本專案用原始資料算出來的。
-      要比較的只有<strong>方法選擇</strong>：每一項都用同一份資料做兩次，
+      要比較的只有方法選擇：每一項都用同一份資料做兩次，
       一次用有缺陷的做法，一次用修正後的做法，然後看結論差多少。
     </p>
 
     <p>
       先說結論：有些選擇無關痛癢，有些讓整個模型的解釋力高估了三分之一。
-      這些不是誰特別粗心，而是<strong>整個世代的環境統計慣例</strong>——
+      這些不是誰特別粗心，而是整個世代的環境統計慣例——
       同一批做法在那個時期的期刊論文裡到處都是。
     </p>
 
@@ -292,7 +292,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <p>
       2010–2017 年逐時 PM2.5 的標準差是 {n(hourlySd)} μg/m³。
       壓成「每站每月一個值」之後只剩 {n(monthlySd)} μg/m³——
-      變異保留了 <strong>{n(retained * 100, 1)}%</strong>。
+      變異保留了 {n(retained * 100, 1)}%。
       在月平均上配適的模型無論怎麼調，能解釋的上限就是這剩下的四成。
     </p>
 
@@ -301,7 +301,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       保留率會掉到 {n(pooledRetained * 100, 1)}%（標準差 {n(pooledSd)} μg/m³）。
       那個數字曾經是本節的標題，但它不是這個基準做的事——
       基準保留了測站維度（本站同期資料為 7,269 個站月）。
-      兩者的差額幾乎剛好是<strong>測站之間</strong>的變異：
+      兩者的差額幾乎剛好是測站之間的變異：
       逐時變異中，月份解釋 {n(pooledRetained * 100, 1)}%，「測站 × 月份」解釋 {n(retained * 100, 1)}%。
       把後面那 20 個百分點也算到「月平均」頭上，是把空間的損失記在時間帳上。
     </p>
@@ -310,7 +310,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <strong>把話說準：日夜節律只是被丟掉的一小部分。</strong>
       日內振幅是 {n(diurnalPeak.mean - diurnalTrough.mean)} μg/m³，
       相對於 {n(hourlySd)} 的整體標準差並不大。
-      消失的大宗是<strong>逐日到綜觀尺度</strong>的變化——
+      消失的大宗是逐日到綜觀尺度的變化——
       境外傳輸的高濃度事件、鋒面過境、逆溫累積。
       一個 40 μg/m³ 的污染日和一個 10 μg/m³ 的乾淨日落在同一個月，
       月平均只留下 25，兩者都不見了。
@@ -378,7 +378,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
 
     <div class="note caveat">
-      <strong>{n((leakShare?.r2 as number) * 100, 1)}%</strong> ——
+      {n((leakShare?.r2 as number) * 100, 1)}% ——
       含 PM10 的模型有三分之一的解釋力，來自這個定義上的重疊。
       那個顯著性所支撐的就是這一部分。
     </div>
@@ -389,7 +389,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <h2><span class="num" aria-hidden="true">{METHOD_CASES[2].number}</span> <span>{METHOD_CASES[2].title}</span></h2>
 
     <p>
-      風向是<strong>圓形變數</strong>：359° 和 1° 相差 2 度，不是 358 度。
+      風向是圓形變數：359° 和 1° 相差 2 度，不是 358 度。
       把 WD_HR 直接丟進相關分析與迴歸，會得到很小的相關係數，
       於是結論寫成「風向與 PM2.5 無相關」。這個基準算出的是
       {" "}{n(windSummary.pearson_r_with_raw_bearing, 3)}，數量級一致。
@@ -405,7 +405,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </p>
 
     <p class="small">
-      風向採氣象慣例，指的是風<strong>來的方向</strong>。
+      風向採氣象慣例，指的是風來的方向。
       濃度最高的幾個扇區集中在西北到北，正是東北季風把大陸沿海的空氣
       沿著台灣海峽帶下來的方向；最低的在南方。
       這個模式一個線性係數表達不出來，因為它不是單調的。
@@ -448,13 +448,13 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <div class="note">
       <p>
         <strong>但這裡有個我原本猜錯的地方。</strong>
-        在 LightGBM 這類樹模型裡，原始方位角的表現<strong>反而略好</strong>
+        在 LightGBM 這類樹模型裡，原始方位角的表現反而略好
         （R² 0.537 對 0.524）——樹可以反覆切分同一個變數，
         把 0–360 切成任意多段，跨越 0°/360° 的不連續幾乎沒有代價。
       </p>
       <p>
         所以「sin/cos 編碼比較好」這句話必須帶著適用範圍：
-        在<strong>線性模型</strong>裡它是 {n(sinCos?.r2_relative_to_raw_bearing as number, 2)} 倍，
+        在線性模型裡它是 {n(sinCos?.r2_relative_to_raw_bearing as number, 2)} 倍，
         而這個基準用的正是線性模型（Pearson、OLS）。
         在樹模型裡它不重要。這個區分是我跑完才知道的，不是一開始就知道。
       </p>
@@ -471,13 +471,13 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </p>
 
     <p>
-      這裡有兩個獨立的問題。第一個是<strong>算術</strong>：
+      這裡有兩個獨立的問題。第一個是算術：
       p &lt; 0.001 在 α = 0.01 之下同樣被拒絕。調低 α 也無法使它不被拒絕。
     </p>
 
     <p>
       第二個更根本：<strong>樣本夠大時，常態檢定必然顯著</strong>。
-      下表是用<strong>已知真相</strong>的合成資料做的——
+      下表是用已知真相的合成資料做的——
       一組真的來自常態分布，一組有輕微偏態。
     </p>
 
@@ -524,7 +524,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p class="small">
       常見的處理方式是把拒絕標準從 α=0.05 降到 0.01。
-      <strong>那對這個問題無效</strong>——大樣本下 p 值遠小於 0.001，
+      那對這個問題無效——大樣本下 p 值遠小於 0.001，
       在 0.01 之下同樣被拒絕。改變的是門檻，不是資料的分布形狀。
     </p>
   </article>
@@ -619,7 +619,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     </div>
 
     <div class="note caveat">
-      落差 <strong>{n(optimism?.r2 as number, 3)}</strong> 的 R²，
+      落差 {n(optimism?.r2 as number, 3)} 的 R²，
       就是樣本內評估看不到的樂觀偏誤。這不是模型失效，
       是<strong>評估方式本身會系統性高估</strong>。
     </div>
@@ -632,7 +632,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <p>
       缺漏值常常被一句話處理掉：<strong>「以鄰近測站之資料代替」</strong>。
       沒有數量、沒有誤差估計、沒有敏感度分析，也沒有說哪一站借給了哪一站。
-      批評這句話很容易，所以這裡改成把它<strong>標上價格</strong>——
+      批評這句話很容易，所以這裡改成把它標上價格——
       同樣的做法實作出來，跟另外三種並排跑在同一批資料上。
     </p>
 
@@ -640,11 +640,11 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <strong>先問「缺漏長什麼形狀」，因為它決定了一切。</strong>
       {imputationEvidence.stations_measured} 個測站、{imputationEvidence.period} 年：
       單小時的缺口佔全部缺口的{" "}
-      <strong>{n(gapDist["1h"].share_of_gaps * 100, 1)}%</strong>，
+      {n(gapDist["1h"].share_of_gaps * 100, 1)}%，
       但只佔缺失時數的 {n(gapDist["1h"].share_of_missing_hours * 100, 1)}%；
       超過 48 小時的缺口只有 {gapDist[">48h"].gaps} 次（佔
       {" "}{n(gapDist[">48h"].share_of_gaps * 100, 1)}%），
-      卻佔了缺失時數的 <strong>{n(gapDist[">48h"].share_of_missing_hours * 100, 1)}%</strong>。
+      卻佔了缺失時數的 {n(gapDist[">48h"].share_of_missing_hours * 100, 1)}%。
       「缺了多少」有兩個答案而且方向相反——所以一個不附缺口長度分布的填補率，等於沒有說明。
     </div>
 
@@ -766,9 +766,9 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       </div>
       <Fragment slot="caption">
         平均絕對誤差（μg/m³），依被隱藏的缺口長度分。做法是把
-        {" "}{imputationEvidence.hidden.toLocaleString()} 筆<strong>真的存在</strong>的讀數藏起來，
+        {" "}{imputationEvidence.hidden.toLocaleString()} 筆真的存在的讀數藏起來，
         叫每個策略猜回來，再跟實際值比對。
-        隱藏的洞是<strong>成串的</strong>，長度抽自這批資料自己量到的缺口分布——
+        隱藏的洞是成串的，長度抽自這批資料自己量到的缺口分布——
         隨機遮蔽單一格會把每個洞都變成 1 小時，而那正是線性內插不可能失敗的情況。
       </Fragment>
     </EvidenceFigure>
@@ -796,7 +796,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <div class="note caveat">
       <p>
         <strong>兩件只有分桶才看得到的事。</strong>
-        第一，在<strong>完全相同</strong>的單小時缺口上，內插的誤差是
+        第一，在完全相同的單小時缺口上，內插的誤差是
         {" "}{n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
         {" "}{n(GAP_SERIES[2].values[0] as number, 2)}——
         最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
@@ -808,7 +808,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
         {" "}{n(GAP_SERIES[2].values[4] as number, 2)}。
         <strong>這並非穩健，而是相反</strong>——它代表這個方法不知道問題有多難：
         它會用同樣的自信填一次三週停機和一個一小時缺口，
-        而輸出裡沒有任何欄位區分這兩者。內插的行為相反，誤差隨缺口成長，然後它<strong>停下來</strong>。
+        而輸出裡沒有任何欄位區分這兩者。<strong>內插的行為相反：誤差隨缺口成長，然後它停下來。</strong>
       </p>
     </div>
 
@@ -816,7 +816,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <strong>有一個數字被算出來、然後被刪掉了。</strong>
       「換一種填補法，最後的結論會不會變？」在四種填補下重跑同一個模型，
       會得到四個不同的 R²，看起來可以直接讀——不能。
-      填補唯一改變的是<strong>不填就用不了的那些列</strong>，
+      填補唯一改變的是不填就用不了的那些列，
       所以每個策略是在不同的測試集上被評分的。
       要問得成立，得在策略之間固定評分集合、只讓訓練集合變動。
       <strong>一個有混淆的數字比沒有數字更糟</strong>，所以這裡沒有那個數字。
