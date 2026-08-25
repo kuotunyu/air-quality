@@ -1128,6 +1128,15 @@ pipeline — or capture `PIPESTATUS`. Pass full shas to `gh run list --commit`, 
 filter `--branch` output by `headSha` yourself. And a poll loop needs a distinct
 exit for "never reached a conclusion", separate from pass and from fail.
 
+**A run that collected before your last edit cannot verify the tree you push.**
+pytest imports every module once, at collection, and the suite inside
+`check_like_ci.py` is one process behind a step that takes twelve of its
+nineteen minutes. Edit a file while either is running and the green report
+describes a tree that no longer exists — indistinguishable, on screen, from a
+green report about the current one. Two twenty-minute runs went that way on
+2026-08-25. Let the tree settle before starting one, and if you edit after
+starting it, stop it rather than reading its result.
+
 Re-run the analysis, re-export, **then** run these — they compare prose against
 the payload, so an un-exported run makes them complain about the prose instead of
 the export.
