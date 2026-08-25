@@ -22,7 +22,20 @@ def test_the_site_quality_gate_self_tests_its_bounded_browser_protocol() -> None
         errors="replace",
         text=True,
         check=False,
-        timeout=5,
+        # 60s is a hang detector, not a speed assertion. The self-test spawns
+        # node against a path that does not exist and returns in 0.24s measured
+        # locally over three runs, so five seconds looked like a 20x margin —
+        # and CI still blew it on 7262edf, a commit whose entire diff was
+        # `<strong>` tags in one `.astro` file, which this test cannot reach
+        # because it never reads the built site.
+        #
+        # Same shape as the CDP timeout `ci.yml` raised from 15s to 45s for the
+        # same reason: a shared runner's cold start is not a property of the
+        # code. A real hang is unbounded, so a slower ceiling costs a minute
+        # once and stops training people to re-run red builds without reading
+        # them. Every other subprocess timeout in this repository is 10, 30,
+        # 120 or 300; five was the outlier.
+        timeout=60,
     )
 
     assert result.returncode == 0, result.stderr
