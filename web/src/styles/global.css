@@ -2776,11 +2776,17 @@ main {
   overflow: visible;
 }
 
+/*
+ * Not bold. The colour already carries the difference between a label and its
+ * value — `.chart-key li` paints the whole item in the series' own ink — and
+ * on top of that a numeric face at `--chart-label` (1rem–1.1rem, already the
+ * largest text on the card apart from the title) read as shouting rather than
+ * as a second column. Weight was doing a job colour already does.
+ */
 .key-value {
   margin-left: 0.5em;
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
 }
 
 /* A raised panel re-points the stripe at its own ground. Declared here rather

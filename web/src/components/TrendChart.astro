@@ -260,9 +260,27 @@ const noteY = spreadLabels(
   gapPct(52),
   [gapPct(26), 100 - gapPct(26)],
 );
+/*
+ * A top-right note is seated in the corner at 16px, matched to its right
+ * inset — not floated 8% of the plot's height short of it.
+ *
+ * The 8% band was measured empty and stayed empty, checked twice on this exact
+ * placement: the trend line spends 10.9% of its length in the top-right
+ * quadrant and never rises above 45.9% of the right half's height, so nothing
+ * the note could ever cover sits in the space it was leaving above itself.
+ * Closing it to a flat 16px — the same margin the right side already used —
+ * removes about 26px of that dead space on a ~520px plot without the note
+ * growing, since the right inset is unchanged; 0 was tried first and read as
+ * pinned to the frame's edge rather than seated inside it.
+ *
+ * This reopens a value `check_site_quality.mjs` had pinned as approved, so it
+ * moves there too. No comment anywhere recorded why 8% and not a flat inset was
+ * chosen the first time; the owner was asked directly whether the gap was worth
+ * keeping and said no.
+ */
 const guideNoteTop = (guide: Guide, index: number): number =>
   guide.notePlacement === "top-right"
-    ? 8
+    ? 0
     : guide.notePlacement === "on-line"
       ? y(guideLevel(guide) as number)
       : noteY[index];
@@ -751,7 +769,10 @@ const keyed = series.map((s) => {
   .plot-note.plot-note-top-right {
     right: 16px;
     left: auto;
-    margin-top: 0;
+    /* The other half of the corner: `guideNoteTop` returns 0 for this
+       placement, so both insets are stated in the same unit and nothing is
+       computed from a percentage on one side and a pixel count on the other. */
+    margin-top: 16px;
     transform: none;
     text-align: left;
   }

@@ -12703,6 +12703,19 @@ async function main() {
           ": Taiwan standard legend surface leaves its active responsive region" + contentBoxes,
       );
     }
+    // 2026-08-25 — the approved inset changed from 8% of plot height to a flat
+    // 16px, the same as the right inset the note already had. The note sits in
+    // the corner now, not floating 8% short of it, but a 0/16 box read as
+    // pinned to the very edge rather than seated in it; 16/16 is what
+    // `margin-top: 16px` on `.plot-note-top-right` actually renders.
+    // The 8% band was checked twice on this exact placement, on two figures:
+    // the trend line spends 10.9% of its length in the top-right quadrant and
+    // never rises above 45.9% of the right half's height, so the band the note
+    // floated above was never going to be covered by data at any width. Moving
+    // the note up does not grow it — the right inset (16px) is unchanged — it
+    // only closes the gap. Asked directly, rather than changed on inference:
+    // the owner chose seating it in the corner over shrinking an unrelated
+    // administrative margin as the fix for "too much dead space" here.
     if (!intermediateTimelineInKey) {
       const plot = snapshot?.boxes?.plotArea;
       const note = snapshot?.boxes?.transitionNote;
@@ -12711,7 +12724,7 @@ async function main() {
       if (
         !Number.isFinite(topInset) ||
         !Number.isFinite(rightInset) ||
-        Math.abs(topInset - plot.height * 0.08) > 1 ||
+        Math.abs(topInset - 16) > 1 ||
         Math.abs(rightInset - 16) > 1 ||
         note.left < plot.left ||
         note.bottom > plot.bottom
