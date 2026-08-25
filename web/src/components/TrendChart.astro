@@ -1,6 +1,7 @@
 ---
 import GuideAnnotationView from "./GuideAnnotation.astro";
 import {
+  axisNumber,
   gapPct,
   smoothPath,
   markInk,
@@ -446,7 +447,7 @@ const keyed = series.map((s) => {
           into a legend floated inside the plot, which on a wide chart put it
           830px from its own axis. The unit belongs to the scale. */}
       <span class="y-unit">{unit}</span>
-      {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{n(tick, 0)}</span>)}
+      {yTicks.map((tick) => <span style={`top:${n(y(tick), 3)}%`}>{axisNumber(n(tick, 0))}</span>)}
     </div>
 
     <div class="plot-area" data-primary-plot={primaryPlot || undefined}>

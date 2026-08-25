@@ -8884,7 +8884,7 @@ const PROBE = `(() => {
   };
 
   const out = { nodes: 0, lowContrast: [], smallestFont: Infinity, smallestAnnotation: Infinity,
-    smallTargets: [], collisions: [], markCollisions: [], tableWraps: 0, tableScrollers: 0,
+    smallTargets: [], collisions: [], markCollisions: [], hyphenSigns: [], tableWraps: 0, tableScrollers: 0,
     invalidTableScrollers: [], invalidTableRules: [], invalidChartText: [],
     invalidChartStrokes: [] };
   out.body = parseFloat(getComputedStyle(document.body).fontSize);
@@ -9033,6 +9033,33 @@ const PROBE = `(() => {
           });
         }
       }
+    }
+  }
+
+  // A negative axis label has to carry a minus sign, not a hyphen.
+  //
+  // The chart helpers n and nFixed emit U+002D, because they also build SVG path
+  // data and a d attribute cannot take a typographic minus. An axis that prints
+  // their output raw prints a hyphen. Measured in this site's numeric face at
+  // 24px: a digit is 12.94px, U+002D is 9.61px, U+2212 is 16.42px — the hyphen
+  // reads as a dash joined to the number rather than as its sign. Figure 3.1 put
+  // a full-width plus against a half-width hyphen at equal distances either side
+  // of a zero, and fixed it inline; axisNumber is that fix as a function, and
+  // this is what notices the next axis that forgets to call it.
+  //
+  // Leading only. Chapter 8's x axis reads 2-3h, 4-12h, 13-48h, where the hyphen
+  // is a range and not a sign.
+  for (const el of document.querySelectorAll(
+    "main .plot-x span, main .plot-y span, main .axis span, main .plot-keys span",
+  )) {
+    const cs = getComputedStyle(el);
+    if (cs.display === "none" || cs.visibility === "hidden") continue;
+    const text = el.textContent.trim();
+    if (/^-[0-9]/.test(text)) {
+      out.hyphenSigns.push({
+        text: text.slice(0, 14),
+        strip: String(el.parentElement ? el.parentElement.className || "" : "").slice(0, 20),
+      });
     }
   }
 
@@ -12757,6 +12784,7 @@ async function main() {
     annotationAt375: Infinity,
     collisions: 0,
     markCollisions: 0,
+    hyphenSigns: 0,
     readouts: 0,
     tableWraps: 0,
     tableScrollers: 0,
@@ -15073,6 +15101,14 @@ async function main() {
               `(minimum ${AXIS_LABEL_CLEARANCE_PX}px)`,
           );
         }
+        for (const bad of r.hyphenSigns) {
+          totals.hyphenSigns += 1;
+          failures.push(
+            `${route} @${width} ${theme}: axis label ${JSON.stringify(bad.text)} in ` +
+              `.${bad.strip} opens with a hyphen where a minus sign belongs — ` +
+              `wrap it in axisNumber()`,
+          );
+        }
         for (const bad of r.markCollisions) {
           totals.markCollisions += 1;
           failures.push(
@@ -15707,6 +15743,7 @@ async function main() {
   console.log(`smallest in-figure annotation @375 : ${totals.annotationAt375}px`);
   console.log(`overlapping axis labels : ${totals.collisions}`);
   console.log(`overlapping fold marks  : ${totals.markCollisions}`);
+  console.log(`hyphens used as minus   : ${totals.hyphenSigns}`);
   console.log(`readouts exercised : ${totals.readouts}`);
   console.log(`table wraps       : ${totals.tableWraps} (${totals.tableScrollers} intentional scrollers)`);
   console.log(`focus checks      : ${totals.focusChecks}`);

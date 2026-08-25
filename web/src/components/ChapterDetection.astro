@@ -12,7 +12,7 @@
  * of its own placebos. Without that cloud, -0.96 µg/m³ looks like a finding.
  */
 import detection from "../../public/data/story/detection-limit.json";
-import { linear, n, ticks } from "../lib/chart";
+import { axisNumber, linear, n, ticks } from "../lib/chart";
 import { href } from "../lib/chapters";
 import ChapterIntro from "./ChapterIntro.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
@@ -355,17 +355,17 @@ const estimandLabel = (kind: string) => {
                     ends of the same axis printed 「-11.4」 and 「8」 — one decimal
                     on the left and none on the right, on a pair a reader
                     compares. Both ends say the same precision. */}
-                <span style={`left:${n(s.x(s.dataLo), 3)}%`}>{s.dataLo.toFixed(1)}</span>
+                <span style={`left:${n(s.x(s.dataLo), 3)}%`}>{axisNumber(s.dataLo.toFixed(1))}</span>
                 {/* The round values between the ends, so a reader can place a
                     number rather than only the extremes. Zero keeps its own
                     span below — it is the reference, not a tick. */}
                 {s.marks
                   .filter((t) => t !== 0)
                   .map((t) => (
-                    <span class="strip-tick" style={`left:${n(s.x(t), 3)}%`}>{t}</span>
+                    <span class="strip-tick" style={`left:${n(s.x(t), 3)}%`}>{axisNumber(t)}</span>
                   ))}
                 <span style={`left:${n(zero, 3)}%`}>0</span>
-                <span style={`left:${n(s.x(s.dataHi), 3)}%`}>{s.dataHi.toFixed(1)}</span>
+                <span style={`left:${n(s.x(s.dataHi), 3)}%`}>{axisNumber(s.dataHi.toFixed(1))}</span>
               </div>
             </div>
           </div>

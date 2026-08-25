@@ -495,6 +495,29 @@ in `Base.astro`, and any cross-reference in prose. `astro check` will not catch
 a wrong number, but a nav entry pointing at a missing `id` shows up as an
 anchor that scrolls nowhere — worth checking in the browser after a reorder.
 
+### One formatter cannot serve both a machine and a reader
+
+`n()` and `nFixed()` round a number and return a string, and that string goes two
+places: into an SVG `d` attribute and onto an axis label. A `path` cannot be
+handed a typographic minus, so both emit U+002D — and every negative axis label
+on the site said 「-0.2」 while the values in the same figures said 「−0.241」.
+
+Measured in this site's numeric face at 24px: a digit is 12.94px, U+002D is
+9.61px, U+2212 is 16.42px. At that size the hyphen reads as a dash joined to the
+number rather than as its sign. `ChapterSpatial` had already found this and fixed
+it inline — 圖 3.1 put a full-width plus against a half-width hyphen at equal
+distances either side of a zero — but the fix stayed in one component while six
+other axes kept the hyphen.
+
+`axisNumber()` is that decision as a function, applied at every axis label site,
+and `check_site_quality.mjs` fails on any label that opens with a hyphen and a
+digit. Leading only: chapter 8's x axis reads 「2-3h」, 「4-12h」, 「13-48h」, where
+the hyphen is a range.
+
+**When a formatter's output has two audiences, give the reader their own.** The
+machine's needs are the harder constraint, so the shared function will always be
+written to those — and the reader's version will quietly never arrive.
+
 ### Inline series labels collide exactly where the finding is
 
 Chapter 6's whole point is that R² and skill converge at 48h, which put two

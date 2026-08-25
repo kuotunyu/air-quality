@@ -14,7 +14,7 @@
  */
 import forecast from "../../public/data/story/forecast.json";
 import { sarimaEvidence } from "../lib/data";
-import { linear, markInk, n, ticks, xLabelBucket, yGutter } from "../lib/chart";
+import { axisNumber, linear, markInk, n, ticks, xLabelBucket, yGutter } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
@@ -308,7 +308,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     />
 
         <div class="plot-y">
-          {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{n(t, 0)}</span>)}
+          {rmseTicks.map((t) => <span style={`top:${n(yRmse(t), 3)}%`}>{axisNumber(n(t, 0))}</span>)}
         </div>
 
         <div class="plot-area" data-primary-plot>
@@ -469,7 +469,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     />
 
         <div class="plot-y">
-          {metricTicks.map((t) => <span style={`top:${n(yMetric(t), 3)}%`}>{n(t, 1)}</span>)}
+          {metricTicks.map((t) => <span style={`top:${n(yMetric(t), 3)}%`}>{axisNumber(n(t, 1))}</span>)}
         </div>
 
         <div class="plot-area">
@@ -800,7 +800,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     />
 
         <div class="plot-y">
-          {sarTicks.map((t) => <span style={`top:${n(ySar(t), 3)}%`}>{n(t, 0)}</span>)}
+          {sarTicks.map((t) => <span style={`top:${n(ySar(t), 3)}%`}>{axisNumber(n(t, 0))}</span>)}
         </div>
 
         <div class="plot-area">

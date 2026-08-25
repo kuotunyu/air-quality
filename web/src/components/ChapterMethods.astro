@@ -12,7 +12,7 @@
  * the analysis it describes.
  */
 import { pitfallTables, imputationEvidence } from "../lib/data";
-import { linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, xLabelBucket, yGutter } from "../lib/chart";
+import { axisNumber, linePath, linear, markInk, n, nFixed, padded, smoothPath, ticks, xLabelBucket, yGutter } from "../lib/chart";
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 import ChapterIntro from "./ChapterIntro.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
@@ -200,7 +200,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
             />
 
             <div class="plot-y">
-              {dTicks.map((tick) => <span style={`top:${n(dy(tick), 3)}%`}>{n(tick, 0)}</span>)}
+              {dTicks.map((tick) => <span style={`top:${n(dy(tick), 3)}%`}>{axisNumber(n(tick, 0))}</span>)}
             </div>
 
             <div class="plot-area" data-primary-plot>
@@ -695,7 +695,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
             />
 
           <div class="plot-y">
-            {gTicks.map((tick) => <span style={`top:${n(gy(tick), 3)}%`}>{n(tick, 0)}</span>)}
+            {gTicks.map((tick) => <span style={`top:${n(gy(tick), 3)}%`}>{axisNumber(n(tick, 0))}</span>)}
           </div>
 
           <div class="plot-area">

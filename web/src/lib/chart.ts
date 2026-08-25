@@ -68,6 +68,29 @@ export function n(value: number, places = 1): string {
 }
 
 /**
+ * A number as a reader sees it on an axis: a minus sign, not a hyphen.
+ *
+ * `n` and `nFixed` emit U+002D because they also build SVG `d` attributes and a
+ * `path` cannot be handed a typographic minus. On a label set at 24px in tabular
+ * figures the two are not interchangeable. Measured in this site's numeric face:
+ * a digit is 12.94px, U+002D is 9.61px and U+2212 is 16.42px, so the hyphen
+ * reads as a dash attached to the number rather than as its sign.
+ *
+ * `ChapterSpatial` already decided this inline, and its note says why: 圖 3.1's
+ * axis put 「+0.2」 against 「-0.2」, a full-width plus beside a glyph half its
+ * width, at equal distances either side of a zero. This is that decision as a
+ * function, so the next axis to go negative does not have to rediscover it —
+ * chapter 6's y axis said 「-0.2」 two chapters after chapter 3 said 「−0.2」.
+ *
+ * Only a LEADING hyphen is replaced. Chapter 8's x axis reads 「2-3h」, 「4-12h」,
+ * 「13-48h」, where the hyphen is a range and not a sign.
+ */
+export function axisNumber(text: string | number): string {
+  const label = String(text);
+  return label.startsWith("-") ? `−${label.slice(1)}` : label;
+}
+
+/**
  * The same rounding, with the zeros kept.
  *
  * `n` trims trailing zeroes, which is right in prose, right on an axis label and

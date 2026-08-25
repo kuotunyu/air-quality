@@ -13,7 +13,7 @@
  * the correlogram before any single number, the controls after both.
  */
 import spatial from "../../public/data/story/spatial-structure.json";
-import { n, nFixed, ticks } from "../lib/chart";
+import { axisNumber, n, nFixed, ticks } from "../lib/chart";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
@@ -327,7 +327,7 @@ const readingMap = [
 
       <span class="axis" aria-hidden="true" style={`grid-row:${controls.length + 1}`}>
         {ctrlTicks.map((t) => (
-          <span class={t === 0 ? "zero-label" : undefined} style={`left:${n(pct(t), 3)}%`}>{n(t, 2)}</span>
+          <span class={t === 0 ? "zero-label" : undefined} style={`left:${n(pct(t), 3)}%`}>{axisNumber(n(t, 2))}</span>
         ))}
       </span>
     </div>

@@ -18,7 +18,7 @@
  * and that term would dominate the error while reading as the solid part.
  */
 import health from "../../public/data/story/health.json";
-import { linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter } from "../lib/chart";
+import { axisNumber, linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
@@ -265,7 +265,7 @@ const langOf = (s: string | null | undefined) =>
     />
 
         <div class="plot-y">
-          {pafTicks.map((t) => <span style={`top:${n(yPaf(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
+          {pafTicks.map((t) => <span style={`top:${n(yPaf(t), 3)}%`}>{axisNumber(n(t * 100, 0))}%</span>)}
         </div>
 
         <div class="plot-area" data-primary-plot>
@@ -389,7 +389,7 @@ const langOf = (s: string | null | undefined) =>
     />
 
         <div class="plot-y">
-          {shareTicks.map((t) => <span style={`top:${n(yShare(t), 3)}%`}>{n(t * 100, 0)}%</span>)}
+          {shareTicks.map((t) => <span style={`top:${n(yShare(t), 3)}%`}>{axisNumber(n(t * 100, 0))}%</span>)}
         </div>
 
         <div class="plot-area">
