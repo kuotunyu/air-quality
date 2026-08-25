@@ -502,6 +502,39 @@ end-of-line labels 5px apart at an 11.5px font. Convergence is what these
 charts are *for*, so the collision is not an edge case. `spreadLabels` pushes
 them to a 13px minimum; any new multi-series chart with inline labels needs it.
 
+### A position in percent against a size in pixels survives only one width
+
+`check_site_quality.mjs` already says this about axis labels: the marks are
+placed in percentages and the figure is fluid, so a strip that reads cleanly at
+1440 piles up at 375 with no number in the source changing. The mechanism has
+nothing to do with text.
+
+Figure 6.2 spread its four cross-validation folds across a band of 3.2% while a
+mark and its ring occupy 8.5 CSS px. Measured, pitch against that 8.5:
+
+| viewport | plot width | pitch | clear |
+|---|---|---|---|
+| 1280 | 935px | 9.97px | +1.47px |
+| 768 | 553px | 5.89px | −2.61px |
+| 375 | 214px | 2.28px | −6.22px, 88 overlapping pairs |
+
+It worked above a plot width of 797px and nowhere else — one of the three widths
+the gate renders, and not the one a reader arriving from a message is on. The
+figure exists to say the four folds disagree, so the width at which they stop
+being four marks is the width at which it stops making its argument. Nothing was
+watching, because every gate that reads the built site reads its **text**.
+
+**Pick one unit for a spacing and its contents.** A pixel band under a pixel
+mark holds everywhere; a percent band under a percent mark would too. Mixing
+them puts the failure at whichever width nobody opened.
+
+The inset that keeps the end clouds inside the frame has to stay a percentage,
+because `xAt` places the SVG line as well as the marks and a `viewBox` cannot
+take a pixel clamp — so it is sized for the narrowest plot the gate renders
+(10%, holding 19.25px at 214px) and shared by all three figures on the page,
+which share an x axis. A shorter line is cheaper than a line whose endpoint
+parts company with its own cloud.
+
 ### Astro's parser reads `<=` in a template expression as a fragment
 
 `{items.filter(x => x.v <= max).map(...)}` fails to compile with a confusing

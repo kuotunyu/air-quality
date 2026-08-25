@@ -8884,7 +8884,7 @@ const PROBE = `(() => {
   };
 
   const out = { nodes: 0, lowContrast: [], smallestFont: Infinity, smallestAnnotation: Infinity,
-    smallTargets: [], collisions: [], tableWraps: 0, tableScrollers: 0,
+    smallTargets: [], collisions: [], markCollisions: [], tableWraps: 0, tableScrollers: 0,
     invalidTableScrollers: [], invalidTableRules: [], invalidChartText: [],
     invalidChartStrokes: [] };
   out.body = parseFloat(getComputedStyle(document.body).fontSize);
@@ -8985,6 +8985,51 @@ const PROBE = `(() => {
             a: marks[i].text.slice(0, 14),
             b: marks[j].text.slice(0, 14),
             px: +clearance.toFixed(1),
+          });
+        }
+      }
+    }
+  }
+
+  // Data marks pile up the same way, and nothing was watching them.
+  //
+  // The note above is written about axis labels, but the mechanism it describes
+  // is not specific to text: a position in percent against a size in pixels
+  // reads cleanly at one width and collapses at another, with no number in the
+  // source changing. Figure 6.2 spread its four cross-validation folds across a
+  // band of 3.2% while a mark and its ring occupy 8.5 CSS px, so the pitch went
+  // 9.97px at 1280, 5.89 at 768 and 2.28 at 375 — where 88 pairs overlapped and
+  // four folds read as one mark. That figure exists to say the four folds
+  // disagree, so the width at which they stop being four marks is the width at
+  // which it stops making its argument.
+  //
+  // Same series only, compared by rendered colour. Two series landing on one
+  // pixel is two models agreeing, which is the finding rather than a defect,
+  // and a horizon's summary mark is meant to sit among its own folds.
+  for (const figure of document.querySelectorAll("main figure")) {
+    const marks = [];
+    for (const el of figure.querySelectorAll(".plot-pt.fold")) {
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      marks.push({ colour: cs.color, r });
+    }
+    const label = figure.closest("section")
+      ? (figure.closest("section").querySelector(".evidence-number") || {}).textContent || "?"
+      : "?";
+    for (let i = 0; i < marks.length; i += 1) {
+      for (let j = i + 1; j < marks.length; j += 1) {
+        if (marks[i].colour !== marks[j].colour) continue;
+        const a = marks[i].r;
+        const b = marks[j].r;
+        const dx = Math.abs(a.left - b.left);
+        const dy = Math.abs(a.top - b.top);
+        if (dx < a.width && dy < a.height) {
+          out.markCollisions.push({
+            figure: String(label).trim().slice(0, 10),
+            dx: +dx.toFixed(1),
+            w: +a.width.toFixed(1),
           });
         }
       }
@@ -12711,6 +12756,7 @@ async function main() {
     smallestAt1440: Infinity,
     annotationAt375: Infinity,
     collisions: 0,
+    markCollisions: 0,
     readouts: 0,
     tableWraps: 0,
     tableScrollers: 0,
@@ -15027,6 +15073,14 @@ async function main() {
               `(minimum ${AXIS_LABEL_CLEARANCE_PX}px)`,
           );
         }
+        for (const bad of r.markCollisions) {
+          totals.markCollisions += 1;
+          failures.push(
+            `${route} @${width} ${theme}: ${bad.figure} draws two marks of one ` +
+              `series ${bad.dx}px apart against a ${bad.w}px mark — the folds it ` +
+              `exists to separate render as one`,
+          );
+        }
         if (route === "/trend/" && width === 375 && theme === "light") {
           const exported = await evaluate(`(() => {
             const root = document.querySelector("main figure:has(.plot[data-readout])");
@@ -15652,6 +15706,7 @@ async function main() {
   console.log(`smallest type    : ${totals.smallestAt375}px @375, ${totals.smallestAt1440}px @1440`);
   console.log(`smallest in-figure annotation @375 : ${totals.annotationAt375}px`);
   console.log(`overlapping axis labels : ${totals.collisions}`);
+  console.log(`overlapping fold marks  : ${totals.markCollisions}`);
   console.log(`readouts exercised : ${totals.readouts}`);
   console.log(`table wraps       : ${totals.tableWraps} (${totals.tableScrollers} intentional scrollers)`);
   console.log(`focus checks      : ${totals.focusChecks}`);

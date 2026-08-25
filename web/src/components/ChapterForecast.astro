@@ -64,32 +64,54 @@ const baselines = forecast.baselines as {
 // lays it out. Labels are HTML over the same box, so they never inherit the
 // stretch that the marks do.
 /*
- * Where one split sits inside its horizon's cloud, in percent of plot width.
+ * Where one split sits inside its horizon's cloud — in PIXELS, not percent.
  *
- * Half the band each side of the tick, so the cloud stays centred on the
- * horizon it belongs to and never reads as a different x.
+ * The band used to be 3.2% of the plot width, and a mark is 6px wide with a
+ * 1.25px ring on each side. A percentage band against a pixel mark means the
+ * spacing collapses as the page narrows, and the figure's stated purpose is to
+ * let four marks be four marks. Measured, pitch against the 8.5px a mark
+ * occupies:
+ *
+ *     1280   plot 935px   pitch 9.97px   +1.47px clear
+ *      768   plot 553px   pitch 5.89px   −2.61px, marks touch
+ *      375   plot 214px   pitch 2.28px   −6.22px, 88 overlapping pairs
+ *
+ * It worked above a plot width of 797px and nowhere else — one of the three
+ * widths `check_site_quality.mjs` renders, and not the one a reader arriving
+ * from a message is on. A pitch in pixels holds at every width, and 10px is
+ * what 1280 already drew, so the desktop rendering is the one being kept.
  */
-const FOLD_BAND = 3.2;
+const FOLD_PITCH = 10;
+const spreadPx = (k: number, count: number) =>
+  count > 1 ? (k - (count - 1) / 2) * FOLD_PITCH : 0;
 
 /*
- * The categorical scale is inset by half that band, so no category sits ON the
- * frame.
+ * The categorical scale is inset so no cloud crosses the frame.
  *
  * Spreading the four splits about each horizon is right; doing it at x = 0 and
  * x = 100 puts half of each end cloud outside the box. Measured at 1440 on
  * figure 2: the 1h marks landed at −13.2, −4.4, +4.4 and +13.2px from the plot's
  * left edge and the 48h marks at 809.6 to 836.0 against an 822.8px plot — 12 of
  * the 48 marks with their centres outside the plotting rectangle, two of four
- * splits for all three series at both ends. An inset costs a little width and
- * keeps every mark inside the frame that gives it meaning.
+ * splits for all three series at both ends.
+ *
+ * Half a band plus half a mark is 15 + 4.25 = 19.25px, and the narrowest plot
+ * this site is checked at is 214px, so the inset has to be at least 9.0% to
+ * hold a pixel band. 10% carries it with room. That is wider than the 1.6% it
+ * replaces and it costs drawing width — at 1280 the lines span 767px instead of
+ * 905px — but the inset has to be a percentage: `xAt` places the SVG line as
+ * well as the marks, an SVG `viewBox` cannot take a pixel clamp, and a line
+ * whose endpoint parts company with its own cloud is worse than a shorter line.
+ *
+ * All three figures on this page share it deliberately. They share an x axis of
+ * the same four horizons, so an inset sized for one and not the others would
+ * put the same tick in three places down one page.
  */
-const X_INSET = FOLD_BAND / 2;
+const X_INSET = 10;
 const xAt = (index: number) =>
   horizons.length === 1
     ? 50
     : X_INSET + (index / (horizons.length - 1)) * (100 - 2 * X_INSET);
-const spreadAt = (k: number, count: number) =>
-  count > 1 ? (k / (count - 1) - 0.5) * FOLD_BAND : 0;
 
 const path = (values: number[], y: (v: number) => number) =>
   values.map((v, i) => `${i ? "L" : "M"}${n(xAt(i), 2)} ${n(y(v), 2)}`).join(" ");
@@ -495,7 +517,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
                 values.map((v, k) => (
                   <span
                     class="plot-pt fold"
-                    style={`left:${n(xAt(i) + spreadAt(k, values.length), 3)}%;top:${n(yMetric(v), 3)}%;color:${s.colour}`}
+                    style={`left:calc(${n(xAt(i), 3)}% + ${n(spreadPx(k, values.length), 2)}px);top:${n(yMetric(v), 3)}%;color:${s.colour}`}
                     title={`${s.label} @ ${horizons[i].horizon}h・分割 ${k + 1}：${n(v, 3)}`}
                   />
                 )),
@@ -957,6 +979,21 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
         "what"
         "why";
     }
+  }
+
+  /*
+   * The end labels centre on their own ticks here, against the global rule.
+   *
+   * `global.css` pulls the first and last x label inside the frame — `transform:
+   * none` and `translateX(-100%)` — because a chart whose first tick sits at
+   * 1.6% would hang a centred label off its own edge. This chapter's scale is
+   * inset by 10% to hold a pixel-wide fold band, so there is room, and the
+   * global rule now moves a label away from the tick it names: measured at 768,
+   * 「1h」 sat at 70.9px against a node at 58.1px. Centred, they agree.
+   */
+  .plot-x span:first-child,
+  .plot-x span:last-child {
+    transform: translateX(-50%);
   }
 
   /*
