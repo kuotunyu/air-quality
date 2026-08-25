@@ -3312,16 +3312,24 @@ button:hover {
  * tier bug recorded above: a breakpoint must not be denominated in something
  * that moves with the thing it measures.
  *
- * 1080px comes from the space left to the right of the longest title with the
- * toolbar hidden, against the 189px it occupies:
+ * 1120px comes from the space left to the right of the longest title with the
+ * toolbar hidden, against the 216px the two buttons occupy:
  *
- *     1280 → 圖 8.1 215px, 圖 8.2 277px     1000 → 180px
- *     1150 → 277px                          900 → 161px
- *     1050 → 222px                          768 →  49px
+ *     1280 → 277px      1120 → 258px      1080 → 229px      1000 → 180px
  *
- * 圖 8.2 at 1000 leaves 180px for a 189px toolbar, so the threshold sits above
- * it. Below that the controls keep their place under the figure, which on a
- * narrow screen is the only space going spare.
+ * It was 1080 while the controls were borderless and 189px wide, which left 13px
+ * of air. Thirteen is not a margin: the axis-label tier above records a layout
+ * that measured clean locally and overlapped by 2.3px in CI's font. 1120 leaves
+ * 42px. Below it the controls keep their place under the figure, which on a
+ * narrow screen is the only space going spare — at that width they cost about
+ * 62px of height instead of 33, which is what a button that looks pressable
+ * costs when it is in the flow.
+ *
+ * A figure inside `.two-up` is excluded whatever the window is doing. It shares
+ * its row with a companion panel, so its card is 719px rather than the reading
+ * measure, and at 1280 that leaves its header 215px — less than the toolbar. The
+ * exclusion is on the layout, not on the figure, so the next two-up figure
+ * inherits it.
  *
  * `right: 0` is the CARD's right edge, not the caption's — where the figure
  * bleeds wider than the reading measure the two differ by 85px, and the card is
@@ -3333,7 +3341,7 @@ button:hover {
  * figure into `.fig-zoom-body`, where this stops matching and the toolbar
  * returns to the flow instead of landing on the dialog's own close button.
  */
-@media (min-width: 1080px) {
+@media (min-width: 1120px) {
   .evidence-figure {
     position: relative;
   }
@@ -3345,27 +3353,40 @@ button:hover {
     width: auto;
     margin-top: 0;
   }
+
+  .two-up .evidence-figure > figure > .fig-tools {
+    position: static;
+    margin-top: var(--space-1);
+  }
 }
 
+/*
+ * These are buttons, and they look like the other buttons on this site.
+ *
+ * They used to strip the box off: transparent background, transparent border,
+ * `--text-faint`, and a box only on hover. That was the right answer to the
+ * problem they had then. Sitting under the caption in `--text-muted` at
+ * `--text-sm` they were the exact colour and size of the `figcaption` above
+ * them, so two framed boxes read as a third line of caption, and a page with
+ * three figures spent 207px on them.
+ *
+ * **Both halves of that reasoning were about being under the caption.** They are
+ * not any more — above 1080px they sit out of flow in the figure's top right
+ * corner, where nothing else is a control, boxes cost no height at all, and the
+ * only thing next to them is a title they must not be mistaken for. A control
+ * with no border, no fill and the faintest ink on the page is not something a
+ * reader tries to press.
+ *
+ * So: no declarations of their own beyond the interaction floor. `button` in
+ * this stylesheet already carries `--bg-raised`, a hairline border, a 7px radius
+ * and a hover that darkens the edge — the same treatment as 關閉 inside the
+ * dialog 放大 opens, which is the button a reader meets immediately after.
+ */
 .fig-tool {
   /* 2026-08-03 — an exact 44px minimum quantised one 1/64px layout unit
      below the interaction floor in Linux Chrome while remaining 44px on
      Windows Chrome. One CSS pixel of reserve keeps both renderers above it. */
   min-height: 45px;
-  padding: 0.2rem 0.5rem;
-  color: var(--text-faint);
-  background: transparent;
-  border-color: transparent;
-  transition:
-    color 120ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 120ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.fig-tool:hover,
-.fig-tool:focus-visible {
-  color: var(--text);
-  background: var(--bg-sunken);
-  border-color: transparent;
 }
 
 /* Holds the gap in the page while the figure is in the dialog, so nothing
