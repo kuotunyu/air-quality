@@ -1,0 +1,75 @@
+# Bold in running prose has to earn it.
+#
+# Three non-expert readers read the site on 2026-08-24 and all three named
+# chapter 3 as where they disengaged. The third said what happened next:
+# 「後面的 Moran's I、LISA、Voronoi 分割、silhouette、ARI…我主要看粗體結論」.
+#
+# They did not leave. They fell back to skimming the bold, which is a reasonable
+# thing for a reader to do and which the site made useless: sixteen bold
+# passages in that chapter, ten of them bare terms. Read as a skim path it was a
+# list of nouns, not an argument — which is the same reader's other remark,
+# 「有些名詞我知道大概在做什麼，但當下並沒有真正跟完推理」.
+#
+# The rule that came out of it: **a bold passage must say something true and
+# useful when read on its own.** 「殘差」 does not. 「沒有任何單站足以擔負「熱點」
+# 之名」 does. Across the site that took thirty-eight short in-paragraph bolds
+# down to the ten listed here.
+#
+# `min_chars` is a proxy and an imperfect one. It catches the common failure —
+# a term, a number, a label — because those are short. It cannot catch a long
+# bare noun phrase, and nothing mechanical can: 「每月殘差的平均莫蘭指數」 would
+# pass on length and still say nothing. That is the same boundary
+# `docs/working-rules.md` draws around the site-prose gate's two delegated
+# claims. A regex can require that emphasis be substantial; only a reader can
+# say whether it carries a claim.
+"min_chars": 12
+
+# What the gate does not look at, and why each is out of scope rather than
+# forgiven:
+#
+# * **inside `<figure>`** — a chart's guide labels are data, not emphasis.
+#   「WHO 年均指引 5」 bolds the value of a reference line. Counting those as
+#   prose is what made an earlier report call chapter 1 the worst offender at
+#   74% when it is 54%, and put the wrong two chapters at the top of a plan.
+# * **outside `<p>`** — `<li><a><strong>基準優勢</strong><p>…</p></a></li>` is a
+#   card title doing a heading's job. All eighteen of those on the site are
+#   deliberate wayfinding: 誤差／基準優勢／計算代價, 比較基準／暴露反應函數／
+#   暴露人口, 選一個問題／在瀏覽器內執行／讀結果與限制.
+# * **inside `.cbpf-nojs`** — the no-JavaScript fallback, which a reader running
+#   JavaScript never sees. It is a second rendering, not the prose path.
+
+# Each of these is under `min_chars` and stands alone anyway. A short claim is
+# not the same thing as a short label, and the difference is the whole point of
+# the rule, so they are listed one by one rather than covered by a lower
+# threshold that would also readmit 「比例」 and 「速率」.
+"allow":
+  - "route": "/"
+    "text": "5 個測站未繪出"
+    "why": "五個無座標測站是一項發現，不是備註；讀者一整段跳過了它所在的小字"
+  - "route": "/trend/"
+    "text": "那個交叉點就是答案。"
+    "why": "指向圖上的一個位置，掃到就知道該往哪看"
+  - "route": "/trend/"
+    "text": "不是直接量測排放"
+    "why": "整章最重要的界線：正規化移除的是模型看得見的氣象，不是排放"
+  - "route": "/space/"
+    "text": "留一站是樂觀上界"
+    "why": "留一站交叉驗證量到的是近重複點之間的內插，讀成一般化能力會高估"
+  - "route": "/detection/"
+    "text": "分析方法也有偵測極限。"
+    "why": "這一章的命題本身"
+  - "route": "/detection/"
+    "text": "噪音底線高於訊號。"
+    "why": "非偵測的理由，一句話"
+  - "route": "/health/"
+    "text": "差了將近一倍"
+    "why": "兩個反事實基準之間的落差，是這一章要讀者記住的量級"
+  - "route": "/methods/"
+    "text": "看不到樣本外的表現"
+    "why": "AIC/BIC 那個案例的結論"
+  - "route": "/methods/"
+    "text": "這並非穩健，而是相反"
+    "why": "鄰站填補在長短缺口上都給同樣的自信，那不是穩健"
+  - "route": "/data/"
+    "text": "這是未解的來源歧異。"
+    "why": "萬里的停測公告與年度封存值互相矛盾，本專案報告這件事而不裁決它"

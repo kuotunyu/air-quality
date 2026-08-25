@@ -280,6 +280,20 @@ jobs:
       - name: Every technical term is still explained where a reader meets it
         run: uv run --no-project --python 3.12 --with pyyaml python scripts/check_term_first_use.py
 
+      # The non-expert reading `PLAN.md` Phase 8 had deferred finally happened on
+      # 2026-08-24, and all three participants named chapter 3 as where they
+      # disengaged. The third said what they did instead of leaving —
+      # 「我主要看粗體結論」 — and that path was ten bare nouns mixed with four
+      # conclusions, so it led nowhere.
+      #
+      # This holds the repair: emphasis in running prose has to say something
+      # on its own. It is deliberately narrow — a chart's guide labels are data,
+      # a card title is a heading, the no-JavaScript fallback is a second
+      # rendering — and it cannot judge a long bare noun phrase. That part is
+      # review, the same boundary `docs/working-rules.md` draws elsewhere.
+      - name: Emphasis in prose says something on its own
+        run: uv run --no-project --python 3.12 --with pyyaml python scripts/check_bold_stands_alone.py
+
       # PRODUCT.md's accessibility section states four measured properties, and
       # the nineteen throwaway browser scripts that produced them were deleted
       # on purpose — .gitignore says so in prose. So the one regression that
