@@ -185,7 +185,7 @@ const zhDate = (value: string) => {
 
     <dt>原始觀測</dt>
     <dd>
-      權利仍屬<strong>中華民國環境部</strong>，本專案不主張任何權利。
+      權利仍屬中華民國環境部，本專案不主張任何權利。
       地圖的縣市界線來自內政部國土測繪中心，依政府資料開放授權條款第 1 版。
     </dd>
   </dl>
@@ -214,9 +214,9 @@ const zhDate = (value: string) => {
             <a href={wanliPm25Conflict.source_url}>環境部公告</a>記載萬里測站自
             <time datetime={wanliPm25Conflict.effective_from}>{zhDate(wanliPm25Conflict.effective_from)}</time>
             起停止更新；但同一機關發布的 2025 年度封存檔，在該時間點之後仍有
-            <strong>{integer.format(wanliPm25Conflict.rows_at_or_after_event)}</strong> 筆 PM2.5 列，
-            其中 <strong>{integer.format(wanliPm25Conflict.numeric_rows_at_or_after_event)}</strong> 筆有數值、
-            <strong>{integer.format(wanliPm25Conflict.null_rows_at_or_after_event)}</strong> 筆保留為 null，
+            {" "}{integer.format(wanliPm25Conflict.rows_at_or_after_event)} 筆 PM2.5 列，
+            其中 {integer.format(wanliPm25Conflict.numeric_rows_at_or_after_event)} 筆有數值、
+            {integer.format(wanliPm25Conflict.null_rows_at_or_after_event)} 筆保留為 null，
             最晚到 {wanliPm25Conflict.last_post_event_ts?.replace("T", " ")}。
           </p>
           <p>

@@ -238,7 +238,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 <section id="forecast" class="page">
   <ChapterIntro slug="forecast">
   <p class="lede">
-    這一章量的是<strong>往前看</strong>能走多遠還算有用。
+    這一章量的是往前看能走多遠還算有用。
   </p>
   </ChapterIntro>
 
@@ -373,7 +373,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
   </nav>
 
   <p>
-    上一章量的是<strong>回頭看</strong>能分辨多小的效應。兩章問的是同一種問題：
+    上一章量的是回頭看能分辨多小的效應。兩章問的是同一種問題：
     這個方法在什麼地方停止提供資訊？
   </p>
 
@@ -609,7 +609,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     點預測不會說它有多確定。這裡的區間用 <strong>split conformal</strong> 產生：
     在每個切分裡，模型只用訓練期的前 80% 擬合，剩下最靠近測試期的一段拿來量
     絕對殘差，取修正後的分位數當半寬。
-    校準集取<strong>尾段而不是隨機抽</strong>——共形假設校準與測試可交換，
+    <strong>校準集取尾段而不是隨機抽</strong>——共形假設校準與測試可交換，
     而逐時 PM2.5 不是；隨機抽會讓 2025 年的區間有一部分校準在 2016 年上。
   </p>
 
@@ -673,7 +673,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
   <p class="small">{forecast.leakage_note}</p>
 
   <p class="small">
-    測試用的序列<strong>值就是自己的小時編號</strong>，所以位移錯方向會表現成一個
+    <strong>測試用的序列值就是自己的小時編號</strong>，所以位移錯方向會表現成一個
     精確的算術事實，而不是一個「好得可疑」的分數。
     另外在真實資料上查過一次：沒有任何特徵在超過 30% 的列上等於目標值，
     相關係數的排序也符合物理預期
@@ -685,14 +685,14 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 
   <p class="lede">
     SARIMA 常被以「太麻煩、不實用」為由略過。問題從來不是這個結論，
-    而是<strong>它通常不附任何數字</strong>——那句話可以是工程判斷，
+    而是它通常不附任何數字——那句話可以是工程判斷，
     也可以是個人偏好，讀者無法分辨是哪一種。
     一個附了秒數的表格只能是前者。
   </p>
 
   <p>
-    所以這裡量兩件互相獨立的事：<strong>那個不便值多少</strong>，
-    以及<strong>它買到了什麼</strong>。
+    所以這裡量兩件互相獨立的事：那個不便值多少，
+    以及它買到了什麼。
     固定階數 {sar.order}、{sar.stations} 個測站 × {sar.splits} 個 rolling-origin 分割、
     每 {sar.origin_stride_hours} 小時一個預測原點。
     {sar.fits.converged}/{sar.fits.total} 次擬合全部收斂，

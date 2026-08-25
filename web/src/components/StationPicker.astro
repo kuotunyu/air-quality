@@ -251,7 +251,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     knows the number changed has to be able to see which one this is.
   */}
   <p class="note" data-station-standard-note>
-    這一欄用的是<strong>現行</strong>標準（{n(guidelines.taiwan_daily)} μg/m³），
+    這一欄用的是現行標準（{n(guidelines.taiwan_daily)} μg/m³），
     每一站、每一年都同一把尺——{TW_PM25_TIGHTENED} 年 9 月 30 日之前，日均標準是
     {" "}{TW_PM25_DAILY_BEFORE} μg/m³，而 {TW_PM25_ADDED} 年之前 PM2.5 根本不在
     空氣品質標準裡。卡片顯示的是各站最近一個完整年份，而各站的「最近」不同年
@@ -259,8 +259,8 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     這一欄就會變成一個分母會變、卻不說的數字。
     {/* 「線——不是」 stays on one source line: a newline inside a text node
         renders as a space, and this site sets an in-sentence 「——」 tight. */}
-    所以它問的是<strong>暴露</strong>——有幾天的空氣超過我們現在認為可接受的線——不是那一年有沒有違規。
-    第一章的年均標準則是<strong>逐年</strong>畫的：
+    所以它問的是暴露——有幾天的空氣超過我們現在認為可接受的線——不是那一年有沒有違規。
+    第一章的年均標準則是逐年畫的：
     那裡的橫軸就是時間，法規改了本來就該看得見，{TW_PM25_ADDED} 年以前也就沒有線。
   </p>
 

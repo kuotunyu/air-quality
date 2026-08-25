@@ -315,7 +315,7 @@ const langOf = (s: string | null | undefined) =>
   </p>
 
   <p>
-    報的是<strong>可歸因比例</strong>（attributable fraction），不是人數。
+    報的是可歸因比例（attributable fraction），不是人數。
     比例只需要濃度和一條反應函數；人數還要乘上人口與基礎死亡率，
     而這個專案只有測站觀測，沒有人口資料。
     那一項會是誤差最大的來源，卻剛好看起來像整句話裡最紮實的部分。
@@ -347,7 +347,7 @@ const langOf = (s: string | null | undefined) =>
         {" "}{n(headline.last_range[1] * 100, 1)}%，
         <strong>差了將近一倍</strong>，而唯一的差別是把 {rangeEnds[0].value} 還是
         {" "}{rangeEnds[1].value} μg/m³ 當作比較基準——這是上圖 {series.length} 條
-        假設線的<strong>兩個極端</strong>，落差來自方法選擇，不是來自資料。
+        假設線的兩個極端，落差來自方法選擇，不是來自資料。
       </p>
     </section>
   </div>
@@ -355,9 +355,9 @@ const langOf = (s: string | null | undefined) =>
   <h2>假設佔估計值的比重隨濃度下降而上升</h2>
 
   <p>
-    上面那個範圍的<strong>絕對寬度</strong>幾乎沒動（{n(rangeWidths[0], 1)} 到
+    上面那個範圍的絕對寬度幾乎沒動（{n(rangeWidths[0], 1)} 到
     {" "}{n(rangeWidths[1], 1)} 個百分點）。
-    但它佔估計值的<strong>比例</strong>幾乎翻了三倍。
+    但它佔估計值的比例幾乎翻了三倍。
   </p>
 
   <EvidenceFigure number="7.2" title="比較基準造成的落差佔估計值多少？">
