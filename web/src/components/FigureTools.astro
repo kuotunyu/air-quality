@@ -54,6 +54,10 @@
    */
   const ROOTS = "main figure, main .map-wrap";
 
+  /* The least a trend plot may be, in the dialog as on the page: the lower end
+     of the 320–520px band `check_site_quality.mjs` holds figure 1.1 to. */
+  const MIN_PLOT_H = 320;
+
   /*
    * Everything runs inside one function taking the four elements as arguments,
    * rather than under an `if` that has already proved them non-null. A function
@@ -72,6 +76,8 @@
     let held: {
       root: HTMLElement;
       slot: HTMLElement;
+      /* Parked in the dialog head while open; put back before the figure is. */
+      tools: HTMLElement | null;
       plots: { el: HTMLElement; height: string }[];
       /* Whoever opened it, so the keyboard has somewhere to come back to. */
       opener: HTMLElement | null;
@@ -159,8 +165,24 @@
       root.replaceWith(slot);
       stage.replaceChildren(root);
       plate.textContent = name;
+      /*
+       * The figure's toolbar joins the dialog's own controls while it is open.
+       *
+       * 放大 is hidden in here — it would reopen what is open — so the row is
+       * one button holding 45px of the stage, and the stage is what this dialog
+       * is short of: at 1600x900 it has 682px of content height for figures that
+       * want 700 and more. Beside 關閉 it costs the figure nothing and sits where
+       * a reader already looks for this dialog's controls.
+       *
+       * Moved rather than positioned: `.fig-tools` lives in `.fig-zoom-body`,
+       * which is the head's SIBLING, so no `position: relative` on the head can
+       * make it the containing block — tried, and the toolbar landed on top of
+       * 關閉 at every size.
+       */
+      const tools = root.querySelector<HTMLElement>(".fig-tools");
+      if (tools && shut) shut.before(tools);
       dialog.showModal();
-      held = { root, slot, plots: grow(root), opener };
+      held = { root, slot, tools, plots: grow(root), opener };
     }
 
     /*
@@ -170,7 +192,20 @@
      * the box, so a wider box already redraws at the new width and the x axis
      * un-thins itself (see the container queries on `.plot-x`). Height has to be
      * asked for. The factor is measured after the move, so it is the real ratio
-     * rather than a guess, and it never goes below 1 — the control says 放大.
+     * rather than a guess.
+     *
+     * It used to be floored at 1, on the argument that the control says 放大.
+     * That kept the promise about the plot and broke it about the figure:
+     * measured at 1600x900, where the dialog's stage is 739px tall, all three of
+     * chapter 1's figures came out taller than it — 900, 810 and 1144 — so
+     * 放大 handed the reader a scrollbar and the same plot they already had.
+     * A reader who asks to see a figure whole should get it whole.
+     *
+     * So the factor fits rather than only enlarges, and `MIN_PLOT_H` stops it
+     * fitting a plot into uselessness: 320px is the floor `check_site_quality`
+     * already holds figure 1.1's plot to on the page, so it is the same number
+     * this site has already decided is the least a trend plot can be. A figure
+     * that still does not fit at that floor scrolls, and says so by scrolling.
      *
      * The height is read off `.plot-area` rather than out of `--plot-h`.
      * `--plot-h` is now unset on every chart on the site — a plot derives its
@@ -185,20 +220,48 @@
         el,
         height: el.style.getPropertyValue("--plot-h"),
       }));
-      const marks = plots.reduce(
+      /*
+       * Measured on `.plot-area`, because that is what `--plot-h` sets.
+       *
+       * It used to divide by the height of `.plot`, which is the drawing box
+       * plus the x axis and the band reserved above it for the unit label. The
+       * factor was therefore applied to a smaller box than it had been solved
+       * for, and the figure came up short of fitting by exactly the chrome the
+       * two measurements differ by — 80px on figure 1.1 at 1600x900, 163 on
+       * 1.3. Solving and applying against the same box makes the new figure
+       * height `rest + room`, which is the stage.
+       */
+      const areas = plots
+        .map((el) => el.querySelector<HTMLElement>(".plot-area"))
+        .filter((el): el is HTMLElement => el != null);
+      const marks = areas.reduce(
         (sum, el) => sum + el.getBoundingClientRect().height,
         0,
       );
       if (marks <= 0) return kept;
 
+      /*
+       * The stage's CONTENT height, not its `clientHeight`.
+       *
+       * `clientHeight` includes padding, and this stage carries 22px above and
+       * 35.2px below. Solving against it fitted the figure to the padding box
+       * and left the padding itself overflowing: figure and stage both measured
+       * 739px and the scrollbar was still 57px long, which is exactly the two
+       * paddings.
+       */
+      const stageStyle = getComputedStyle(stage);
+      const stageRoom = stage.clientHeight -
+        parseFloat(stageStyle.paddingTop || "0") -
+        parseFloat(stageStyle.paddingBottom || "0");
       const rest = root.getBoundingClientRect().height - marks;
-      const room = stage.clientHeight - rest;
-      const factor = Math.min(Math.max(room / marks, 1), 3);
+      const room = stageRoom - rest;
+      const factor = Math.min(room / marks, 3);
       kept.forEach(({ el }) => {
         const area = el.querySelector<HTMLElement>(".plot-area");
         const now = area?.getBoundingClientRect().height ?? 0;
         if (now > 0) {
-          el.style.setProperty("--plot-h", `${Math.round(now * factor)}px`);
+          const target = Math.max(Math.round(now * factor), MIN_PLOT_H);
+          el.style.setProperty("--plot-h", `${target}px`);
         }
       });
       return kept;
@@ -219,12 +282,15 @@
      */
     function restore() {
       if (!held) return;
-      const { root, slot, plots, opener } = held;
+      const { root, slot, tools, plots, opener } = held;
       held = null;
       plots.forEach(({ el, height }) => {
         if (height) el.style.setProperty("--plot-h", height);
         else el.style.removeProperty("--plot-h");
       });
+      /* Back into the figure before it goes back into the page, so the toolbar
+         travels with it and `opener?.focus()` below still finds its button. */
+      if (tools) root.append(tools);
       slot.replaceWith(root);
       /*
        * Back to the button that opened it.
@@ -361,6 +427,31 @@
         )
         .forEach((el) => el.remove());
       copy.style.margin = "0";
+
+      /*
+       * The switches are pinned to what the reader actually left them at.
+       *
+       * `cloneNode` copies attributes, and a checkbox the reader has clicked
+       * has a `checked` PROPERTY that no longer matches its `checked`
+       * attribute. The export is serialised with `XMLSerializer`, which writes
+       * attributes — so a figure filtered down to two zones on screen came out
+       * of 下載 with all eight drawn and all eight pills lit, because the
+       * generated `:has(… :not(:checked))` rules found every box checked in the
+       * copy. The image has to be the figure that was on the screen.
+       *
+       * Walked in parallel over both trees rather than matched by `id`: the
+       * clone is not in the document, so `getElementById` cannot reach it, and
+       * a clone of a subtree containing duplicate ids would resolve the wrong
+       * one anyway.
+       */
+      const liveBoxes = root.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+      const copiedBoxes = copy.querySelectorAll<HTMLInputElement>("input[type=checkbox]");
+      liveBoxes.forEach((box, i) => {
+        const twin = copiedBoxes[i];
+        if (!twin) return;
+        if (box.checked) twin.setAttribute("checked", "");
+        else twin.removeAttribute("checked");
+      });
 
       const host = document.createElement("div");
       host.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");

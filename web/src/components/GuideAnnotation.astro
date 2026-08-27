@@ -120,9 +120,16 @@ const { annotation, fallback, layout = "stacked", fromMark, fromInk, toMark, toI
     }
   }
 
+  /*
+   * Not bold. It names the card; it is not the thing being read off it.
+   *
+   * The card carried four weights above 400 — this title at 650, 15 at 750, the
+   * arrow at 700 and 12 at 800 — which is four claims of emphasis in a box whose
+   * whole job is to say one number is current and another is superseded. Weight
+   * only encodes that if it is spent on the number, so it is spent there.
+   */
   .guide-title {
     color: var(--text-muted);
-    font-weight: 650;
   }
 
   .guide-row {
@@ -152,10 +159,11 @@ const { annotation, fallback, layout = "stacked", fromMark, fromInk, toMark, toI
     font-size: 0.86em;
   }
 
+  /* A glyph, not a word: 1.18em already makes it legible and the weight was
+     buying nothing an arrow needed. */
   .guide-arrow {
     color: var(--text);
     font-size: 1.18em;
-    font-weight: 700;
     line-height: 1;
     text-align: center;
   }
@@ -169,17 +177,32 @@ const { annotation, fallback, layout = "stacked", fromMark, fromInk, toMark, toI
     border-radius: 0.28em;
     font-size: 1.08em;
     font-variant-numeric: tabular-nums;
-    font-weight: 750;
+    /* Stated, not inherited from `<strong>`. Dropping the declaration left the
+       browser's own 700 in place, which is the same bold by another route. */
+    font-weight: 700;
     line-height: 1.05;
   }
 
+  /*
+   * The superseded value is not bold and the current one is, because that
+   * difference is the card's finding.
+   *
+   * Both were bold before — 750 against 800, a distinction no reader resolves —
+   * so the card showed two equally emphatic numbers and left "which one applies
+   * today" to the words beside them. 15 stopped applying on 2024.09.30; 12 is
+   * what the line is measured against now, and it is the only number here that
+   * earns weight.
+   */
+  /* The superseded value carries no weight at all. It stopped applying on
+     2024.09.30, and a number that does not apply should not be competing with
+     the one that does. */
   .guide-value-old {
     color: var(--guide-old-ink);
+    font-weight: 400;
   }
 
   .guide-value-current {
     color: var(--guide-current-ink);
-    font-weight: 800;
   }
 
   .guide-transition .guide-value {

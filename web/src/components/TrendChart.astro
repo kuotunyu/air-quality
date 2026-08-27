@@ -93,6 +93,22 @@ interface Props {
    * cannot.
    */
   notesAt?: "left" | "right";
+  /*
+   * Turns the key row into a filter over its own series.
+   *
+   * Passing this changes nothing about what is drawn — every series ships
+   * checked, so the figure a reader arrives at is the figure that was there
+   * before — and adds a switch per series. `id` has to be unique on the page
+   * because the generated rules below are keyed on it; `label` names the group
+   * for a screen reader.
+   *
+   * The mechanism is a checkbox and `:has()`, with no script anywhere in the
+   * path, for the reason recorded on the chapter rail in `Base.astro`: a
+   * control that needs JavaScript to work is a control that some readers get
+   * as decoration. The one thing that does need script is the crosshair
+   * readout, which is script already — see `PlotReadout.astro`.
+   */
+  pick?: { id: string; label: string };
 }
 
 const {
@@ -106,6 +122,7 @@ const {
   legend = true,
   notesAt = "right",
   primaryPlot = false,
+  pick,
 } = Astro.props;
 
 // Everything below is in percent of the plot box, not pixels. The box has no
@@ -347,28 +364,178 @@ const keyed = series.map((s) => {
   }
   return { ...s, last, emphasis: emphasisFor(s) };
 });
+
+/*
+ * One rule per series, written here because CSS cannot ask "is the switch that
+ * shares my index unchecked".
+ *
+ * `:has()` is anchored on `.chart` and not on `:root`: the switch ids are
+ * unique, so a bare `:root:has(#id-3:not(:checked)) .plot-line` would dim the
+ * fourth line of every chart on the page. Anchored on the ancestor both the
+ * switch and the line share, only the chart that owns the switch matches.
+ *
+ * It emits `is:inline` so it stays next to the markup it was generated from
+ * rather than being scoped and hoisted — and so `stylesheetText()` in
+ * `FigureTools.astro` picks it up from `document.styleSheets`, which is what
+ * keeps a filtered figure filtered in its PNG.
+ */
+const pickCss = pick
+  ? series
+      .map(
+        (_, i) =>
+          `.chart:has(#${pick.id}-${i}:not(:checked)) .plot-line[data-series-index="${i}"]` +
+          `{opacity:var(--pick-off-alpha);stroke-width:var(--pick-off-weight)}`,
+      )
+      .join("\n")
+  : "";
 ---
 
-<div class:list={["chart", { crowded: series.length > 2 }]} data-guide-count={visibleGuides.length}>
+<div
+  class:list={["chart", { crowded: series.length > 2, "chart-picked": Boolean(pick) }]}
+  data-guide-count={visibleGuides.length}
+>
   {/*
-    The key row is a sibling of `.plot`, so it cannot read `.plot`'s container
-    query — and it has to swap at the same width the pills do. `.chart` is the
-    box both of them live in, so it is the one to ask.
+    Two rows now, because they are two different kinds of thing.
+
+    The switches are controls and sit outside the frame; the reference line is
+    part of the drawing and sits inside it, directly above the plot it is drawn
+    on. They shared one row until they were separated, and the dashed entry sat
+    between two switches with no box around it — which read as a switch that had
+    failed to render rather than as a legend.
+
+    A chart with no picker is unchanged: one row, inside the frame, exactly
+    where it has always been.
   */}
   {
-    legend && series.length > 1 && (
-      <ul class="chart-key">
-        {keyed.map((s) => (
-          <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
-            <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
-              <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour}
-                stroke-width={s.emphasis === "primary" ? "3" : s.emphasis === "comparison" ? "2.25" : "2.5"}
-                stroke-linecap="round" stroke-dasharray={s.dash} />
+    legend && series.length > 1 && pick && (
+      <form class="key-form" data-series-picker>
+        <style is:inline set:html={pickCss} />
+        {/*
+          Above the control, not in the caption.
+
+          The caption said this and the caption is under the figure — which is
+          the wrong side of a chart to learn that the thing above it can be
+          pressed. It says what the press DOES as well as that it can be
+          pressed: a reader who tries one and sees the line still there, in
+          pale ink, would otherwise read that as the control not working.
+        */}
+        <div class="key-filter-bar">
+          <div class="key-filter-badge" aria-hidden="true">
+            <svg class="key-filter-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1.5 3.5h13M3.5 8h9M6 12.5h4" />
             </svg>
-            <span class="key-name">{s.label}</span>
-            <span class="key-value">{s.last == null ? "—" : n(s.last, 1)}</span>
+            <span>互動篩選</span>
+          </div>
+          <p class="key-hint">勾選想比較的空品區，沒勾的線會留在圖上，以淡色對照。</p>
+        </div>
+        <ul class="chart-key chart-key-picker" role="group" aria-label={pick.label}>
+          {keyed.map((s, i) => (
+            <li class="key-pick" style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
+              {/*
+                The input is moved off-screen, not `display: none`.
+
+                A checkbox that is `display: none` is out of the accessibility
+                tree and out of the tab order, so the pill would be a thing only
+                a mouse could reach — and `:checked` would still drive the CSS,
+                which makes it exactly the class of control this site's station
+                picker has a paragraph about: one that looks like it works.
+              */}
+              <input
+                type="checkbox"
+                class="key-switch"
+                id={`${pick.id}-${i}`}
+                checked
+                data-series-switch
+                data-series-index={i}
+              />
+              <label class="key-pill" for={`${pick.id}-${i}`}>
+                {/*
+                  A drawn box, because a tinted chip is a convention and a
+                  ticked box is not one — it is the thing itself.
+
+                  It is `aria-hidden` and purely visual: the real checkbox is
+                  one element away and already tells a screen reader everything
+                  this draws. And it is neutral, never the series colour, so
+                  the two marks on a chip answer two different questions —
+                  the box says whether it is on, the rule says which line it is.
+                */}
+                <span class="key-box" aria-hidden="true" />
+                <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+                  <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour}
+                    stroke-width={s.emphasis === "primary" ? "3" : s.emphasis === "comparison" ? "2.25" : "2.5"}
+                    stroke-linecap="round" stroke-dasharray={s.dash} />
+                </svg>
+                <span class="key-name">{s.label}</span>
+                <span class="key-value">{s.last == null ? "—" : n(s.last, 1)}</span>
+              </label>
+            </li>
+          ))}
+          {/*
+            Only on screen once something is off.
+
+            A permanent 「全部顯示」 in a row where everything is already shown
+            is a control whose only honest state is "nothing to do", and it
+            would cost the row a slot at every width for a reader who never
+            touches the switches. `:has()` puts it there the moment it has work
+            — which is also why the default figure, the one the gate measures
+            and the one a PNG exports, is dimensionally unchanged.
+          */}
+          <li class="key-reset-item">
+            <button type="reset" class="key-reset">
+              <svg class="key-reset-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9L2 6.5M2 2.5v4h4" />
+              </svg>
+              <span>全部顯示</span>
+            </button>
           </li>
-        ))}
+        </ul>
+        {/*
+          Its own live region, for the same reason chapter 2's picker has one:
+          a screen reader announces the checkbox that changed and nothing about
+          what the change did to the chart. This says how many series are left.
+        */}
+        <p class="visually-hidden" role="status" aria-live="polite" data-pick-say />
+      </form>
+    )
+  }
+
+  {/*
+    The frame is drawn around the PLOT, not around the whole chart.
+
+    Only so that a chart whose key row is a control can put that row outside the
+    frame — controls belong beside a figure, not inside its drawing surface, and
+    a reader scanning for something to press does not look inside a picture.
+    `.chart` still generates the box, still carries `container-type`, and is
+    still the width everything is measured against; on a figure with no picker
+    it also still carries the frame, so nothing else on the site moves.
+
+    The frame moved here rather than onto `.plot` itself for one reason:
+    `.plot` is the containing block for every `.plot-note`, and those resolve
+    against its PADDING box. Giving it padding would have moved every annotation
+    on every chart on the site.
+  */}
+  <div class="plot-card">
+  {/*
+    Inside the frame, because this row describes the drawing rather than acting
+    on it. On a chart with no picker it is the whole key and this is where the
+    key has always been; on one with a picker it is only the reference lines,
+    the switches having moved out.
+  */}
+  {
+    legend && series.length > 1 && (!pick || visibleGuides.length > 0) && (
+      <ul class="chart-key">
+        {!pick &&
+          keyed.map((s) => (
+            <li style={`--mark:${s.colour};--mark-ink:${markInk(s.colour)}`}>
+              <svg class="key-mark" viewBox="0 0 22 8" aria-hidden="true">
+                <line x1="1" y1="4" x2="21" y2="4" stroke={s.colour}
+                  stroke-width={s.emphasis === "primary" ? "3" : s.emphasis === "comparison" ? "2.25" : "2.5"}
+                  stroke-linecap="round" stroke-dasharray={s.dash} />
+              </svg>
+              <span class="key-name">{s.label}</span>
+              <span class="key-value">{s.last == null ? "—" : n(s.last, 1)}</span>
+            </li>
+          ))}
         {/*
           The reference lines, for the width where their pills cannot be drawn.
           
@@ -432,7 +599,6 @@ const keyed = series.map((s) => {
       </ul>
     )
   }
-
   <div
     class="plot"
     data-readout
@@ -571,9 +737,10 @@ const keyed = series.map((s) => {
         />
 
         {
-          keyed.map((s) => (
+          keyed.map((s, i) => (
             <path
               d={smoothPath(s.values, x, y)}
+              data-series-index={i}
               class:list={[
                 "plot-line",
                 {
@@ -703,9 +870,75 @@ const keyed = series.map((s) => {
       </div>
     )
   }
+  </div>
 </div>
 
+<script>
+  /*
+   * Everything visible about this control is CSS — see the generated `:has()`
+   * rules and the `.key-pill` block. What is left needs a script and could not
+   * have been done without one, so it is all enhancement: a form that must
+   * never navigate, a count for a screen reader, and somewhere for focus to go
+   * when the button under it is taken away.
+   */
+  for (const form of document.querySelectorAll<HTMLFormElement>("form[data-series-picker]")) {
+    const say = form.querySelector<HTMLElement>("[data-pick-say]");
+    const switches = Array.from(form.querySelectorAll<HTMLInputElement>(".key-switch"));
+    if (switches.length === 0) continue;
+
+    /*
+     * A `<form>` with no `action` submits to the current URL and reloads the
+     * page. Nothing in this row should ever navigate, and the row exists at
+     * all because `type="reset"` is how a reader without JavaScript gets
+     * everything back in one press.
+     */
+    form.addEventListener("submit", (event) => event.preventDefault());
+
+    const nameOf = (input: HTMLInputElement) =>
+      input.nextElementSibling?.querySelector(".key-name")?.textContent?.trim() ?? "";
+
+    const announce = () => {
+      if (!say) return;
+      const on = switches.filter((input) => input.checked);
+      say.textContent =
+        on.length === switches.length
+          ? `顯示全部 ${switches.length} 條`
+          : on.length === 0
+            ? "沒有選取任何一條，全部淡化顯示"
+            : `顯示 ${on.length} 條：${on.map(nameOf).filter(Boolean).join("、")}`;
+    };
+
+    form.addEventListener("change", announce);
+
+    /*
+     * `reset` fires before the controls are restored, and restoring them fires
+     * no `change` of its own — so the count has to be taken on the next frame
+     * or it reports the state the reader just left.
+     *
+     * Focus moves because the button is about to stop existing: the row hides
+     * it again the moment nothing is switched off, and a reader who pressed it
+     * with the keyboard would be returned to `<body>`, at the top of the
+     * document, several screens above the chart they were reading.
+     */
+    form.addEventListener("reset", () => {
+      const hadFocus = document.activeElement?.classList.contains("key-reset");
+      requestAnimationFrame(() => {
+        announce();
+        if (hadFocus) switches[0].focus();
+      });
+    });
+  }
+</script>
+
 <style>
+  /* See `--plot-cap` on `.plot`: registered so the `em` in its value is resolved
+     at the declaring element and inherited as a computed length. */
+  @property --plot-cap {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 0px;
+  }
+
   .chart {
     container-name: trend-chart;
   }
@@ -756,8 +989,19 @@ const keyed = series.map((s) => {
     border-radius: 0.55rem;
   }
 
+  /*
+   * The bottom of its approved range, not the top.
+   *
+   * The card is a reference note: it names two dashed lines that are already
+   * told apart by colour on the plot. It was `clamp(1.2rem, 1.08rem + 0.4vw,
+   * 1.4rem)`, so on a desktop it reached 1.4rem and set its values at 34.5px
+   * against a y axis of 24.2 — the note about the data larger than the data's
+   * own labels. A flat 1.2rem keeps it inside the range
+   * `check_site_quality.mjs` approves (rootSize x 1.2 to x 1.4) and stops it
+   * growing past the chart it annotates.
+   */
   .plot-note.plot-note-transition {
-    font-size: clamp(1.2rem, 1.08rem + 0.4vw, 1.4rem);
+    font-size: 1.2rem;
   }
 
   .plot-note.note-left {
@@ -766,13 +1010,24 @@ const keyed = series.map((s) => {
     text-align: left;
   }
 
+  /*
+   * The top-right note is lifted out of the plot and into the band above it.
+   *
+   * That band is `--plot-cap`: room for the unit label and half the topmost
+   * tick, and on this figure both of those live in the leftmost 107px. To the
+   * right of them it is empty at every width, and the note was sitting a full
+   * band below it with the plot's own top-right corner empty as well — two
+   * stacked empty regions where the data has none, because the line falls.
+   *
+   * It cannot collide with the key row: that row ends at the plot's border box
+   * and this starts 16px below it. It cannot collide with the unit either — the
+   * note is never left of x=600 at any width where it renders here, and the unit
+   * ends at 107.
+   */
   .plot-note.plot-note-top-right {
     right: 16px;
     left: auto;
-    /* The other half of the corner: `guideNoteTop` returns 0 for this
-       placement, so both insets are stated in the same unit and nothing is
-       computed from a percentage on one side and a pixel count on the other. */
-    margin-top: 16px;
+    margin-top: calc(16px - var(--plot-cap));
     transform: none;
     text-align: left;
   }
@@ -859,7 +1114,16 @@ const keyed = series.map((s) => {
    * against rather than a number chosen once.
    */
   .plot {
-    padding-top: calc(1.05em + var(--chart-tick) * 0.95);
+    /*
+     * Named, and registered as a length below, because two rules depend on it:
+     * this padding, and the top-right note that is lifted back into the band it
+     * reserves. A plain custom property would carry the `em` as a token and
+     * resolve it against whichever element read it — the note's font is larger
+     * than the plot's, so it would lift by more than the padding is. `@property`
+     * with `syntax: "<length>"` computes it here and inherits the result.
+     */
+    --plot-cap: calc(1.05em + var(--chart-tick) * 0.95);
+    padding-top: var(--plot-cap);
   }
 
   /* The unit. Anchored to the gutter's LEFT edge and allowed to run right into
@@ -912,12 +1176,27 @@ const keyed = series.map((s) => {
     display: none;
   }
 
+  /*
+   * A transition card in the key row takes the row's right edge and a 23rem
+   * register, whichever is narrower.
+   *
+   * This used to hang off `key-guide-force-key`, i.e. off one figure declaring
+   * it would live in the key at every width. It belongs to the position, not to
+   * the figure: any card that has swapped into the key row is the widest thing
+   * in it, and left at its content width it sat mid-row with the series names
+   * on one side and a gap on the other. Both figures reach this state now, at
+   * the widths where the corner cannot hold the card.
+   */
+  .chart-key .key-guide-transition,
   .chart-key .key-guide-force-key {
-    display: list-item;
     box-sizing: border-box;
     inline-size: min(23rem, 100%);
     margin-inline-start: auto;
     container-type: inline-size;
+  }
+
+  .chart-key .key-guide-force-key {
+    display: list-item;
   }
 
   .chart-key .key-guide-transition {
@@ -1035,5 +1314,416 @@ const keyed = series.map((s) => {
   .unit {
     color: var(--text-faint);
     font-family: var(--font-numeric);
+  }
+
+  /*
+   * ---------- the key row as a filter ----------
+   *
+   * The row was already eight names, eight colours and eight numbers. Adding a
+   * separate strip of buttons underneath it would have printed those eight
+   * names twice — the duplication the reference-line pills were introduced to
+   * remove — so the legend IS the control. Nothing new is named; the thing that
+   * already identified a line is now the thing that switches it.
+   *
+   * How a switched-off line is drawn, and the one place to tune it. Dimmed and
+   * thinned rather than removed, which is the choice the figure's own question
+   * makes for us: 「各空品區的長期趨勢是否一致？」 is a question about the eight
+   * together, and a reader who has picked two still needs to see them against
+   * the other six. Same reading as the reference site's 「灰色為其他五都，供對照」.
+   *
+   * Hue is kept, not drained to grey. At 0.16 the line is a ghost either way,
+   * and keeping it means the six in the background stay individually
+   * traceable — drained, the離島 crossing in 2015 becomes an unreadable knot.
+   */
+  .chart {
+    --pick-off-alpha: 0.16;
+    --pick-off-weight: 1.6;
+  }
+
+  .plot-line {
+    transition:
+      opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      stroke-width 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .plot-line {
+      transition: none;
+    }
+  }
+
+  /*
+   * ---------- the control steps outside the frame ----------
+   *
+   * Asked for, and right: a row of things to press does not belong on a
+   * figure's drawing surface. Inside the card it read as part of the picture —
+   * the same grey ground as the plot, inset by the card's own padding, sitting
+   * where the data sits. Outside it, on the page's ground and flush with the
+   * figure's left edge, it reads as what it is.
+   *
+   * Only charts that were given a picker move. `.chart` still generates the
+   * box and still carries `container-type`, so every measurement and every
+   * container query on this component is unchanged; the frame simply moved one
+   * level in, onto `.plot-card`.
+   */
+  .chart-picked {
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background-color: transparent;
+  }
+
+  .chart-picked > .plot-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    /* The same declaration `.chart` carries in global.css. `3.2cqw` still
+       resolves against `.chart`, which is still the container and still the
+       same width, so the plot inside is the width it always was. */
+    padding: var(--space-3) clamp(0.6rem, 3.2cqw, var(--space-4));
+    background-color: var(--bg-sunken);
+  }
+
+  .key-form {
+    margin: 0 0 var(--space-3);
+  }
+
+  .key-filter-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin: 0 0 var(--space-2);
+  }
+
+  .key-filter-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 8%, var(--bg-raised));
+    border: 1px solid color-mix(in oklab, var(--accent) 25%, var(--line));
+    padding: 0.18rem 0.6rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+    user-select: none;
+  }
+
+  .key-filter-icon {
+    flex: none;
+  }
+
+  /* Sized like the site's other notes, not like a caption: a reader has to
+     see it before they look at the chart, and 「點下面的名字」 is useless
+     after. */
+  .key-hint {
+    margin: 0;
+    max-width: var(--measure);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  .chart-key-picker {
+    gap: 0.45rem 0.55rem;
+  }
+
+  /* The hanging indent on `.chart-key li` is for a run of text that wraps under
+     its own label. A pill is a box; it has nothing to hang. */
+  .key-pick,
+  .key-reset-item {
+    padding-left: 0;
+    text-indent: 0;
+    display: flex;
+  }
+
+  /*
+   * Off-screen, not `display: none`.
+   *
+   * `display: none` takes a checkbox out of the accessibility tree AND out of
+   * the tab order, which would leave the pill reachable only by mouse while
+   * `:checked` went on driving the CSS — a control that works for some readers
+   * and is decoration for the rest. Clipped, it keeps both, and the visible
+   * state is carried by the pill it labels.
+   */
+  .key-switch {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /*
+   * The capsule hugs its own text, and only grows to a finger at the widths
+   * where growing is free.
+   *
+   * Measured on this figure at 375, where the card is 329px and the key text is
+   * 22.15px: a pill is 164–198px wide, so the row holds exactly one and the
+   * eight of them are eight rows however they are styled. The flat legend that
+   * was there is 219px tall; at a 45px floor the same eight rows are 417px —
+   * 198px of extra scrolling above a 340px plot, on the screen that has the
+   * least of both.
+   *
+   * So the floor is applied where the row wraps to three or fewer lines and it
+   * costs ~18px a line instead of ~25px an item. 640px is where a third pill
+   * fits (3 × 198 + 2 × 24). Below that the pill is still a pill — hairline,
+   * capsule, tinted when on — just the height of the words in it.
+   *
+   * px and not `rem` in the query, for the reason recorded on the thinning
+   * tiers in `global.css`: `rem` resolves against this site's fluid root, so a
+   * `40rem` threshold is a different number at every viewport.
+   */
+  .key-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 0;
+    padding-block: 0.3em;
+    padding-inline: 0.7em;
+    line-height: 1.2;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--bg-raised);
+    color: var(--mark-ink, var(--text-muted));
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    transition:
+      transform 120ms ease,
+      box-shadow 140ms ease,
+      background-color 140ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 140ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 140ms ease;
+  }
+
+  /*
+   * On is raised; off is flat. Hue is the smaller half of that.
+   *
+   * The pill's ground is `--bg-raised` against a card that is a step darker, so
+   * the state is legible before any colour is involved — which is the half that
+   * survives being colour-blind, being printed, and being eight different hues
+   * at once. The series' own colour is then washed in at 6% so the pill and the
+   * line it switches read as one object.
+   *
+   * It was 10% and the row came out as eight pastel blocks competing with the
+   * chart under it. The ink on top is `--mark-ink`, solved against the CARD, so
+   * a heavier tint also moves the ground out from under a contrast figure that
+   * is already measured.
+   */
+  .key-switch:checked + .key-pill {
+    background: color-mix(in oklab, var(--mark) 6%, var(--bg-raised));
+    border-color: color-mix(in oklab, var(--mark) 35%, var(--line));
+    box-shadow: 0 1px 3px color-mix(in oklab, var(--mark) 14%, rgba(0, 0, 0, 0.04));
+  }
+
+  /*
+   * Off is a flat pill with neutral ink — never faint ink.
+   *
+   * `--text-faint` was the obvious choice and is the wrong one: every text node
+   * on this site is walked against an APCA Lc 60 floor, and a switched-off pill
+   * is still text a reader has to read to switch it back on. The state is
+   * carried by the face and the mark, which are not held to a text threshold.
+   */
+  .key-switch:not(:checked) + .key-pill {
+    background: var(--bg-sunken);
+    border-color: var(--line);
+    color: var(--text-muted);
+    opacity: 0.6;
+    box-shadow: none;
+  }
+
+  /* The swatch is the one part that may go grey: it is not text, and it is the
+     fastest read of which lines are on. A presentation attribute loses to any
+     CSS rule, so the `stroke` on the `<line>` needs no `!important`. */
+  .key-switch:not(:checked) + .key-pill .key-mark line {
+    stroke: var(--rule);
+  }
+
+  .key-switch:not(:checked) + .key-pill .key-value {
+    color: var(--text-faint);
+  }
+
+  /*
+   * The tick.
+   *
+   * A tinted chip is a convention — it means "selected" to someone who already
+   * knows the pattern, and means "coloured" to everyone else. A ticked box is
+   * not a convention; it is the control itself, and it is the one mark on a
+   * page that nobody has to be told the meaning of. The row is meant to be
+   * recognised as switches before it is read, and this is what does that.
+   *
+   * Neutral, never the series colour. Two marks sit on a chip and they answer
+   * two different questions: the box says whether the line is on, the rule says
+   * which line it is. Painting the box in the series hue would have made the
+   * chip say the same thing twice and the state nothing at all.
+   */
+  .key-box {
+    flex: none;
+    inline-size: 1.05em;
+    block-size: 1.05em;
+    border-radius: 4px;
+    border: 1.5px solid var(--text-faint);
+    background: var(--bg-raised);
+    position: relative;
+    transition: background-color 140ms ease, border-color 140ms ease;
+  }
+
+  /*
+   * `--text` against `--bg-raised`, which are opposite ends of the ramp in both
+   * themes — dark box with a light tick in light, light box with a dark tick in
+   * dark. `--accent` was tried first and is wrong in exactly one place: in dark
+   * it is a blue close enough to `--bg-raised` that the tick drawn on it
+   * disappears.
+   */
+  .key-switch:checked + .key-pill .key-box {
+    background: var(--text);
+    border-color: var(--text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+
+  /* Drawn, not set. A `content: "✓"` depends on whichever installed font
+     happens to carry U+2713, and it sits differently in each of them; two
+     borders and a rotation are the same shape everywhere. Sized in `em` so it
+     follows the box, which follows the text. */
+  .key-switch:checked + .key-pill .key-box::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 6%;
+    inset-inline-start: 30%;
+    inline-size: 28%;
+    block-size: 56%;
+    border: solid var(--bg-raised);
+    border-width: 0 1.8px 1.8px 0;
+    transform: rotate(42deg);
+  }
+
+  .key-pill .key-mark {
+    display: inline-block;
+    vertical-align: middle;
+    width: 1.25em;
+    height: 0.5em;
+    margin: 0;
+    overflow: visible;
+  }
+
+  .key-pill .key-name {
+    font-weight: 500;
+  }
+
+  .key-switch:checked + .key-pill .key-value {
+    font-weight: 600;
+    color: var(--mark-ink, var(--text));
+  }
+
+  /* Interactive hover states give immediate tactile feedback that these are clickable switches. */
+  .key-switch:checked + .key-pill:hover {
+    transform: translateY(-1px);
+    background: color-mix(in oklab, var(--mark) 10%, var(--bg-raised));
+    border-color: color-mix(in oklab, var(--mark) 55%, var(--line));
+    box-shadow: 0 3px 7px rgba(0, 0, 0, 0.08);
+  }
+
+  .key-switch:not(:checked) + .key-pill:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+    border-color: var(--text-faint);
+    background: var(--bg-raised);
+  }
+
+  .key-pill:active {
+    transform: translateY(0);
+  }
+
+  /* The ring belongs on what the reader can see. The input carries focus and is
+     one clipped pixel wide, so the global `input:focus-visible` outline would
+     be drawn inside the clip. */
+  .key-switch:focus-visible + .key-pill {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  /* On screen only when it has something to undo — see the note beside the
+     markup. `display: flex` and not `list-item`, matching `.key-pick`. */
+  .key-reset-item {
+    display: none;
+  }
+
+  .key-form:has(.key-switch:not(:checked)) .key-reset-item {
+    display: flex;
+  }
+
+  /* Flat, like a switched-off pill, and for the same reason: the raised face in
+     this row means "this series is on". Left on the base `button` ground it was
+     the brightest object in the row — a secondary control outshouting the two
+     series a reader had just chosen. */
+  /*
+   * The one control here that is a `<button>`, so it keeps the 44px floor at
+   * every width — and takes a row of its own where a pill beside it would be
+   * 10px shorter. It is on screen only in the filtered state, which is the
+   * state a reader is in when they want it, so the row costs nothing the rest
+   * of the time.
+   */
+  .key-reset {
+    min-height: 45px;
+    padding-inline: 0.9em;
+    border-radius: 7px;
+    border: 1px dashed var(--line-strong, var(--text-faint));
+    font-size: inherit;
+    color: var(--text-muted);
+    background: var(--bg-raised);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    transition: transform 120ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+
+  .key-reset:hover {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 8%, var(--bg-raised));
+  }
+
+  .key-reset:active {
+    transform: translateY(0);
+  }
+
+  .key-reset-icon {
+    flex: none;
+  }
+
+  @container trend-chart (max-width: 639.99px) {
+    .key-reset-item {
+      flex: 1 0 100%;
+    }
+
+    .key-form:has(.key-switch:not(:checked)) .key-reset-item {
+      display: block;
+    }
+
+    .key-reset {
+      width: 100%;
+    }
+  }
+
+  @container trend-chart (min-width: 640px) {
+    .key-pill {
+      min-height: 45px;
+      padding-inline: 0.8em;
+    }
+
+    /* To the far end of whichever line it lands on. It is the only thing in the
+       row that acts on the whole row rather than on one series, and left in
+       sequence it sat between 台灣年均標準 and the row's edge, reading as a
+       ninth zone. */
+    .key-reset-item {
+      margin-inline-start: auto;
+    }
   }
 </style>

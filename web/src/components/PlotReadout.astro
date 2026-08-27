@@ -157,6 +157,32 @@
 
     let at: number | null = null;
 
+    /*
+     * Which series the reader has left on, read off the switches rather than
+     * held here.
+     *
+     * The picker is CSS — see the `pick` prop in `TrendChart.astro` — so there
+     * is no state for this to subscribe to and nothing to keep in step; the
+     * checkboxes ARE the state, and asking them at read time is the only
+     * version that cannot drift from what is drawn.
+     *
+     * A chart with no picker answers `true` for every index, which is what the
+     * other ten figures on this site need.
+     *
+     * It matters more than it looks. The crosshair lists every series at the
+     * year under the pointer, and left alone it would go on listing all eight
+     * zones over a chart showing two — a panel confidently describing a figure
+     * that is not on the screen, which is the failure chapter 2's picker has a
+     * paragraph about.
+     */
+    const switches = Array.from(
+      plot.closest(".chart")?.querySelectorAll<HTMLInputElement>("[data-series-switch]") ?? [],
+    );
+    const shown = (k: number) => {
+      const box = switches.find((input) => Number(input.dataset.seriesIndex) === k);
+      return box == null || box.checked;
+    };
+
     const fmt = (v: number | null) =>
       v == null || !Number.isFinite(v)
         ? "無資料"
@@ -173,7 +199,7 @@
       data.series.forEach((s, k) => {
         const v = s.values[i];
         const dot = dots[k];
-        if (v == null || !Number.isFinite(v)) {
+        if (v == null || !Number.isFinite(v) || !shown(k)) {
           dot.hidden = true;
           return;
         }
@@ -211,6 +237,7 @@
       say.textContent =
         `${data.x[i]}：` +
         data.series
+          .filter((_, k) => shown(k))
           .map((s) => `${s.label} ${fmt(s.values[i])}`)
           .join("，") +
         (data.unit ? `（${data.unit}）` : "");
@@ -224,7 +251,7 @@
     }
 
     function rows(i: number) {
-      return data.series.map((s) => {
+      return data.series.filter((_, k) => shown(k)).map((s) => {
         const row = document.createElement("p");
         row.className = "readout-row";
         row.style.setProperty("--mark", s.colour);
@@ -293,6 +320,30 @@
        opacity and content without moving the chart or the material below it. */
     panel.replaceChildren(head(data.x[last]), ...rows(last));
     plot.dataset.reading = "false";
+
+    /*
+     * A switch thrown under a live crosshair has to take the panel with it.
+     *
+     * `at` is cleared first because `show` returns early on the index it is
+     * already at — the year has not changed, only the list of series has, and
+     * without that the panel would keep the row it was just told to drop.
+     *
+     * The `reset` listener is not redundant: restoring a form's controls fires
+     * no `change` on any of them, so 全部顯示 would put six lines back on the
+     * plot and leave the panel listing two. It runs on the next frame for the
+     * same reason the count in `TrendChart.astro` does — at `reset` time the
+     * checkboxes still hold the state the reader is leaving.
+     */
+    const repaint = () => {
+      const held = at;
+      at = null;
+      if (held == null) panel.replaceChildren(head(data.x[last]), ...rows(last));
+      else show(held);
+    };
+    for (const box of switches) box.addEventListener("change", repaint);
+    switches[0]
+      ?.closest("form")
+      ?.addEventListener("reset", () => requestAnimationFrame(repaint));
 
     function clear() {
       at = null;

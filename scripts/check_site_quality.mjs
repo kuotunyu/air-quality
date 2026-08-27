@@ -11872,11 +11872,30 @@ async function main() {
           ).length,
         0,
       );
+      // Two of these three are anchored to the data and one is not.
+      //
+      // startNote names a point on the line and whoPlotNote names a level drawn
+      // across it: both mean nothing outside the box whose coordinates place
+      // them, so the drawing box is their boundary. The transition card is a
+      // legend — notePlacement "top-right" puts it in a corner by fiat, not by
+      // any value — and it is allowed the band .plot reserves above its drawing
+      // box, which on this figure holds the unit label in its leftmost 107px and
+      // nothing at all to the right of that. It stays bounded: the key row ends
+      // where .plot begins, and seriesOcclusionCount below still requires it to
+      // cover zero sampled points of any line.
+      const plotElementBox = firstPlot?.getBoundingClientRect();
+      const outsideBounds = (box, bounds) => !bounds ||
+        box.left < bounds.left - 1 || box.right > bounds.right + 1 ||
+        box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1;
+      const dataAnchoredBoxes = [startNote, whoPlotNote]
+        .filter(visible)
+        .map((note) => note.getBoundingClientRect());
+      const transitionBoxes = [transitionNote]
+        .filter(visible)
+        .map((note) => note.getBoundingClientRect());
       const plotBoundaryViolationCount = plotBox
-        ? plotAnnotationBoxes.filter((box) =>
-            box.left < plotBox.left - 1 || box.right > plotBox.right + 1 ||
-            box.top < plotBox.top - 1 || box.bottom > plotBox.bottom + 1,
-          ).length
+        ? dataAnchoredBoxes.filter((box) => outsideBounds(box, plotBox)).length +
+          transitionBoxes.filter((box) => outsideBounds(box, plotElementBox)).length
         : plotAnnotationBoxes.length;
       const seriesOcclusionCount = seriesOcclusionBoxes.reduce(
         (annotationTotal, annotationBox) =>
@@ -12049,7 +12068,8 @@ async function main() {
         text: [transition?.textContent, who?.textContent]
           .filter(Boolean).join(" ").replace(/\\s+/g, " ").trim(),
         boxes: {
-          chart: rect(chart), plotArea: rect(plotArea), transitionNote: rect(transitionNote),
+          chart: rect(chart), plotArea: rect(plotArea), plot: rect(firstPlot),
+          transitionNote: rect(transitionNote),
           transition: rect(transition), who: rect(who), old: rect(oldValue),
           change: rect(change), current: rect(currentValue), startMarker: rect(startMarker),
           startNote: rect(startNote),
@@ -12225,7 +12245,16 @@ async function main() {
           Number.isFinite(copies.chartContentWidth) &&
           Number.isFinite(copies.rootSize) &&
           copies.chartContentWidth > 888 && copies.chartContentWidth <= copies.rootSize * 40;
-        const expectedKey = index === 1 || copies.chartContentWidth <= 888 || enlargedTextNeedsKey;
+        // 2026-08-26 — both figures now follow one rule: the corner where there
+        // is room for it, the key row where there is not. Figure 1.2 used to
+        // carry `index === 1` here and sit in the key row at every width, which
+        // cost it a 101px key row against 1.1's 37 and started its drawing box
+        // 64px lower, on a chapter whose primary evidence has to clear 55vh.
+        // Nothing recorded why the two differed. Measured before changing it:
+        // the corner card covers 0 of 400 sampled points on either series at
+        // 1120, 1280, 1440 and 1920, and the occlusion check below still holds
+        // it to that at every width this gate renders.
+        const expectedKey = copies.chartContentWidth <= 888 || enlargedTextNeedsKey;
         if (
           copies.transitionPlotVisible !== (expectedKey ? 0 : 1) ||
           copies.transitionKeyVisible !== (expectedKey ? 1 : 0)
@@ -12235,8 +12264,10 @@ async function main() {
               " transition legend is in the wrong chart region" + contentBoxes,
           );
         }
+        // Only while it is in the key row. In the corner it is over the plot by
+        // design, and `transitionSeriesOcclusionCount` is what bounds it there.
         if (
-          index === 1 &&
+          index === 1 && expectedKey &&
           (copies.transitionOverlapsPlot || copies.transitionSeriesOcclusionCount !== 0)
         ) {
           problems.push(
@@ -12675,9 +12706,12 @@ async function main() {
       transition?.titleText === "台灣 PM2.5 年均標準" &&
       transition?.fromText === "2012.05.14 起生效 15" &&
       transition?.changeText === "2024.09.30 調降";
+    // `.plot`, not `.plot-area`: the transition card is a legend rather than a
+    // data-anchored annotation, and it is seated in the band `.plot` reserves
+    // above its drawing box. See the boundary split in the snapshot above.
     const activeSurfaceContainer = intermediateTimelineInKey
       ? snapshot?.boxes?.chart
-      : snapshot?.boxes?.plotArea;
+      : snapshot?.boxes?.plot;
     const activeSurfaceBox = activeSurface?.box;
     const activeSurfaceIsContained =
       activeSurfaceBox && activeSurfaceContainer &&
@@ -12703,24 +12737,28 @@ async function main() {
           ": Taiwan standard legend surface leaves its active responsive region" + contentBoxes,
       );
     }
-    // 2026-08-25 — the approved inset changed from 8% of plot height to a flat
-    // 16px, the same as the right inset the note already had. The note sits in
-    // the corner now, not floating 8% short of it, but a 0/16 box read as
-    // pinned to the very edge rather than seated in it; 16/16 is what
-    // `margin-top: 16px` on `.plot-note-top-right` actually renders.
-    // The 8% band was checked twice on this exact placement, on two figures:
-    // the trend line spends 10.9% of its length in the top-right quadrant and
-    // never rises above 45.9% of the right half's height, so the band the note
-    // floated above was never going to be covered by data at any width. Moving
-    // the note up does not grow it — the right inset (16px) is unchanged — it
-    // only closes the gap. Asked directly, rather than changed on inference:
-    // the owner chose seating it in the corner over shrinking an unrelated
-    // administrative margin as the fix for "too much dead space" here.
+    // 2026-08-26 — the approved inset is 16px from `.plot`'s own top, which is a
+    // full `--plot-cap` above the drawing box.
+    //
+    // It was 8% of the plot's height below that box, then 16px below it. Both
+    // left the whole band above the note empty, on a figure whose line falls
+    // away from that corner and never enters it: 0 of 500 sampled line points
+    // land inside the note at 1120–1920. The band is the room `.plot` reserves
+    // for the unit label and half the topmost tick, and on this figure both of
+    // those live in the leftmost 107px, so its right-hand side is empty by
+    // construction. The note now sits in it.
+    //
+    // Asserted against `.plot` rather than as a number, because the lift is
+    // `calc(16px - var(--plot-cap))` cancelling a padding of `var(--plot-cap)`
+    // — this checks the result the two produce together, so neither can drift
+    // without the other. It cannot reach the key row, which ends at `.plot`'s
+    // border box, 16px above where the note starts.
     if (!intermediateTimelineInKey) {
-      const plot = snapshot?.boxes?.plotArea;
+      const plot = snapshot?.boxes?.plot;
+      const drawing = snapshot?.boxes?.plotArea;
       const note = snapshot?.boxes?.transitionNote;
       const topInset = plot && note ? note.top - plot.top : NaN;
-      const rightInset = plot && note ? plot.right - note.right : NaN;
+      const rightInset = drawing && note ? drawing.right - note.right : NaN;
       if (
         !Number.isFinite(topInset) ||
         !Number.isFinite(rightInset) ||
@@ -15185,6 +15223,108 @@ async function main() {
           );
         }
         if (route === "/trend/" && width === 375 && theme === "light") {
+          const pickerState = await evaluate(`(async () => {
+            const chart = [...document.querySelectorAll("main .evidence-figure")][2];
+            const switches = [...(chart?.querySelectorAll("[data-series-switch]") ?? [])];
+            const pills = [...(chart?.querySelectorAll(".key-pill") ?? [])];
+            const paths = [...(chart?.querySelectorAll("path.plot-line") ?? [])];
+            const reset = chart?.querySelector(".key-reset") ?? null;
+            const plot = chart?.querySelector(".plot") ?? null;
+            const visible = (element) => {
+              if (!element) return false;
+              const style = getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              return style.display !== "none" && style.visibility !== "hidden" &&
+                rect.width > 0 && rect.height > 0;
+            };
+            const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+            if (!chart || switches.length !== 8 || pills.length !== 8 || paths.length !== 8 || !reset || !plot) {
+              return null;
+            }
+            pills[0].click();
+            pills[1].click();
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            plot.focus();
+            const filtered = {
+              checked: switches.filter((input) => input.checked).length,
+              opacities: paths.slice(0, 2).map((path) => Number(getComputedStyle(path).opacity)),
+              rows: chart.querySelectorAll(".readout-row").length,
+              resetVisible: visible(reset),
+              announcement: chart.querySelector("[data-pick-say]")?.textContent ?? "",
+            };
+            reset.focus();
+            reset.click();
+            await frame();
+            await frame();
+            const restored = {
+              checked: switches.filter((input) => input.checked).length,
+              rows: chart.querySelectorAll(".readout-row").length,
+              resetVisible: visible(reset),
+              focusReturned: document.activeElement === switches[0],
+            };
+            return { filtered, restored };
+          })()`);
+          if (
+            pickerState?.filtered?.checked !== 6 ||
+            pickerState.filtered.opacities.some((opacity) => Math.abs(opacity - 0.16) > 0.01) ||
+            pickerState.filtered.rows !== 6 ||
+            !pickerState.filtered.resetVisible ||
+            !pickerState.filtered.announcement.includes("顯示 6 條") ||
+            pickerState.restored.checked !== 8 ||
+            pickerState.restored.rows !== 8 ||
+            pickerState.restored.resetVisible ||
+            !pickerState.restored.focusReturned
+          ) {
+            failures.push(
+              `/trend/ @375 light: air-zone picker and readout did not round-trip ` +
+                JSON.stringify(pickerState),
+            );
+          }
+          const zoomTools = await evaluate(`(() => {
+            const root = document.querySelector("main figure:has(.plot[data-readout])");
+            const enlarge = [...(root?.querySelectorAll(".fig-tool") ?? [])]
+              .find((item) => item.textContent?.trim() === "放大");
+            const visible = (element) => {
+              if (!element) return false;
+              const style = getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              return style.display !== "none" && style.visibility !== "hidden" &&
+                rect.width > 0 && rect.height > 0;
+            };
+            if (!root || !enlarge) return null;
+            enlarge.click();
+            const dialog = document.querySelector(".fig-zoom");
+            const toolbar = dialog?.querySelector(".fig-tools") ?? null;
+            const download = [...(toolbar?.querySelectorAll(".fig-tool") ?? [])]
+              .find((item) => item.textContent?.trim() === "下載");
+            const plotArea = dialog?.querySelector(".plot-area") ?? null;
+            const openState = {
+              open: Boolean(dialog?.open),
+              toolbarParent: toolbar?.parentElement?.className ?? "",
+              enlargeVisible: visible(enlarge),
+              downloadVisible: visible(download),
+              plotHeight: plotArea?.getBoundingClientRect().height ?? 0,
+            };
+            dialog?.querySelector(".fig-shut")?.click();
+            return {
+              ...openState,
+              restoredToolbarParent: toolbar?.parentElement?.tagName.toLowerCase() ?? "",
+              restoredFocus: document.activeElement === enlarge,
+            };
+          })()`);
+          if (
+            !zoomTools?.open ||
+            zoomTools.toolbarParent !== "fig-zoom-head" ||
+            zoomTools.enlargeVisible ||
+            !zoomTools.downloadVisible ||
+            zoomTools.plotHeight + CSS_PX_SERIALIZATION_EPSILON < 320 ||
+            zoomTools.restoredToolbarParent !== "figure" ||
+            !zoomTools.restoredFocus
+          ) {
+            failures.push(
+              `/trend/ @375 light: enlarged figure tools changed ${JSON.stringify(zoomTools)}`,
+            );
+          }
           const exported = await evaluate(`(() => {
             const root = document.querySelector("main figure:has(.plot[data-readout])");
             const button = [...(root?.querySelectorAll(".fig-tool") ?? [])]

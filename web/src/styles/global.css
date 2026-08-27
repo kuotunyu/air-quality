@@ -1980,7 +1980,9 @@ figure {
 .evidence-number {
   margin: 0;
   color: var(--text-faint);
-  font-size: var(--text-xl);
+  /* Tracks `.evidence-title` — the point of matching sizes was that the row
+     reads as one register, so a change to one is a change to both. */
+  font-size: 1.35rem;
   font-weight: 400;
   /* The title's line-height, not the body's. At 33px the inherited 1.7 makes a
      56px line box against the title's 44.55, and the header row grows 11px —
@@ -1992,7 +1994,15 @@ figure {
 .evidence-title {
   margin: 0;
   color: var(--text);
-  font-size: var(--text-xl);
+  /*
+   * A step down from `--text-xl`, not onto `--text-lg`.
+   *
+   * `--text-xl` is 1.5rem and `--text-lg` is 1.2rem — a 20% drop, which puts the
+   * figure's question at the same size as body copy and loses the line's job as
+   * a heading. 1.35rem sits between them: 29.7px against the 33px it was at
+   * 1440, a shade under a tenth smaller, which is what was asked for.
+   */
+  font-size: 1.35rem;
   font-weight: 650;
   line-height: 1.35;
   text-wrap: balance;
@@ -3508,6 +3518,15 @@ button:hover {
   border-bottom: 1px solid var(--line-soft);
 }
 
+/* The figure's toolbar is moved in here while the dialog is open — see the note
+   in `open()`. `auto` on the start edge keeps it against 關閉 rather than
+   letting `space-between` strand it in the middle of the row. */
+.fig-zoom-head .fig-tools {
+  width: auto;
+  margin: 0;
+  margin-inline-start: auto;
+}
+
 .fig-zoom-name {
   margin: 0;
   min-width: 0;
@@ -3532,7 +3551,7 @@ button:hover {
 
 /* 放大 inside the enlarged view would do nothing; 下載 PNG still does, and now
    at the larger size, which is a reason to open this before saving. */
-.fig-zoom-body [data-fig-act="zoom"] {
+.fig-zoom [data-fig-act="zoom"] {
   display: none;
 }
 
