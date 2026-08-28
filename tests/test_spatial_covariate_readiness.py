@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 import math
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
@@ -1833,3 +1835,405 @@ def test_frozen_inputs_reject_a_file_changed_during_identity_validation(
 
     with pytest.raises(RuntimeError, match="changed while it was read"):
         load_frozen_inputs(tmp_path, config)
+
+
+def _result_assembly_fixture(tmp_path: Path) -> tuple[FrozenInputs, dict[str, pl.DataFrame]]:
+    covariates, support, baseline_folds = _model_fixture()
+    stations = (
+        covariates.select("station_name", "lon", "lat")
+        .unique()
+        .with_columns(pl.lit("一般站").alias("station_type_official"))
+        .select(*SPATIAL_BASELINE_TABLE_SCHEMAS["stations"])
+        .cast(pl.Schema(SPATIAL_BASELINE_TABLE_SCHEMAS["stations"]))
+    )
+    panel = (
+        covariates.select(
+            "station_name",
+            pl.lit("一般站").alias("station_type_official"),
+            "lon",
+            "lat",
+            "month",
+            pl.lit("PM2.5").alias("pollutant"),
+            pl.col("PM2.5").alias("mean"),
+            (pl.col("target_state") == "observed").alias("meets_threshold"),
+            "target_state",
+        )
+        .select(*SPATIAL_BASELINE_TABLE_SCHEMAS["panel"])
+        .cast(pl.Schema(SPATIAL_BASELINE_TABLE_SCHEMAS["panel"]))
+    )
+    config = _config()
+    folds = build_covariate_fold_ledger(covariates, support, baseline_folds, config)
+    prediction_rows: list[dict[str, object]] = []
+    offsets = {"idw2": 1.0, "covariate_gbm": 0.5, "covariate_gbm_idw2": 0.25}
+    for fold in folds.iter_rows(named=True):
+        eligible = fold["fold_state"] == "eligible"
+        for method, offset in offsets.items():
+            observed = fold["observed"]
+            prediction_rows.append(
+                {
+                    **fold,
+                    "method": method,
+                    "predicted": float(observed) + offset
+                    if eligible and observed is not None
+                    else None,
+                    "prediction_state": "scored" if eligible else str(fold["fold_state"]),
+                    "failure_type": None,
+                    "error": offset if eligible else None,
+                }
+            )
+    predictions = pl.DataFrame(prediction_rows, schema=readiness._COVARIATE_PREDICTION_SCHEMA)
+    scores = score_readiness_predictions(predictions, config)
+    paired_deltas = paired_readiness_deltas(predictions, config)
+    input_path = tmp_path / "inputs" / "source.bin"
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    input_path.write_bytes(b"a")
+    inputs = FrozenInputs(
+        stations=stations,
+        panel=panel,
+        support=support,
+        baseline_folds=baseline_folds,
+        input_files=(InputFile(path=input_path, bytes=1, sha256=sha256(b"a").hexdigest()),),
+        baseline_generation_sha256=BASELINE_GENERATION,
+        station_inventory_generation_sha256=INVENTORY_GENERATION,
+    )
+    return inputs, {
+        "covariates": covariates,
+        "folds": folds,
+        "predictions": predictions,
+        "scores": scores,
+        "paired_deltas": paired_deltas,
+    }
+
+
+def _run_result_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    generated_at: str = "2026-08-28T00:00:00+00:00",
+    input_payload: bytes = b"a",
+    minimum_distance_km: float = 0.1,
+    mutate_table: tuple[str, str, object] | None = None,
+) -> Any:
+    inputs, frames = _result_assembly_fixture(tmp_path)
+    input_path = inputs.input_files[0].path
+    input_path.write_bytes(input_payload)
+    inputs = replace(
+        inputs,
+        input_files=(
+            InputFile(
+                path=input_path,
+                bytes=len(input_payload),
+                sha256=sha256(input_payload).hexdigest(),
+            ),
+        ),
+    )
+    if mutate_table is not None:
+        table, column, value = mutate_table
+        frames[table] = frames[table].with_columns(
+            pl.when(pl.int_range(pl.len()) == 0)
+            .then(pl.lit(value))
+            .otherwise(pl.col(column))
+            .alias(column)
+        )
+    monkeypatch.setattr(readiness, "load_frozen_inputs", lambda *_args, **_kwargs: inputs)
+    monkeypatch.setattr(
+        readiness, "assemble_covariates", lambda *_args, **_kwargs: frames["covariates"]
+    )
+    monkeypatch.setattr(
+        readiness, "build_covariate_fold_ledger", lambda *_args, **_kwargs: frames["folds"]
+    )
+    monkeypatch.setattr(
+        readiness, "predict_readiness_methods", lambda *_args, **_kwargs: frames["predictions"]
+    )
+    monkeypatch.setattr(
+        readiness, "score_readiness_predictions", lambda *_args, **_kwargs: frames["scores"]
+    )
+    monkeypatch.setattr(
+        readiness, "paired_readiness_deltas", lambda *_args, **_kwargs: frames["paired_deltas"]
+    )
+    monkeypatch.setattr(readiness, "git_state", lambda: ("f" * 40, False), raising=False)
+    return readiness.run_spatial_covariate_readiness(
+        data_root=tmp_path,
+        config=replace(_config(), minimum_distance_km=minimum_distance_km),
+        generated_at=generated_at,
+    )
+
+
+def test_result_assembly_normalizes_tables_and_builds_the_manifest_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+
+    assert isinstance(result, readiness.CovariateReadinessResult)
+    assert list(result.manifest) == [
+        "schema_version",
+        "analysis",
+        "config",
+        "inputs",
+        "baseline_generation_sha256",
+        "station_inventory_generation_sha256",
+        "tables",
+        "gate",
+        "claim_boundary",
+        "identity_scope",
+        "git_sha",
+        "git_dirty",
+        "generated_at",
+        "complete",
+        "generation_sha256",
+    ]
+    assert result.manifest["complete"] is False
+    assert result.manifest["baseline_generation_sha256"] == BASELINE_GENERATION
+    assert result.manifest["station_inventory_generation_sha256"] == INVENTORY_GENERATION
+    assert result.manifest["identity_scope"] == (
+        "float-bearing output hashes and generation identity record one run; "
+        "they are not cross-hardware identities"
+    )
+    assert result.summary["feeds_web"] is False
+    assert result.summary["limitations"] == list(COVARIATE_READINESS_LIMITATIONS)
+    for table, identity in result.manifest["tables"].items():
+        assert identity["rows"] == getattr(result, table).height
+        assert identity["schema"] == {
+            column: str(dtype) for column, dtype in getattr(result, table).schema.items()
+        }
+
+
+def test_generation_identity_binds_input_bytes_and_normalized_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _run_result_fixture(tmp_path, monkeypatch)
+    changed_input = _run_result_fixture(tmp_path, monkeypatch, input_payload=b"b")
+    changed_config = _run_result_fixture(tmp_path, monkeypatch, minimum_distance_km=0.2)
+
+    assert first.manifest["generation_sha256"] != changed_input.manifest["generation_sha256"]
+    assert first.manifest["generation_sha256"] != changed_config.manifest["generation_sha256"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        ("folds", "train_stations", ["different-station"]),
+        ("predictions", "predicted", 999.0),
+        ("scores", "station_clustered_mae", 999.0),
+    ],
+)
+def test_generation_identity_binds_fold_membership_predictions_and_scores(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: tuple[str, str, object],
+) -> None:
+    first = _run_result_fixture(tmp_path, monkeypatch)
+    changed = _run_result_fixture(tmp_path, monkeypatch, mutate_table=mutation)
+
+    assert first.manifest["generation_sha256"] != changed.manifest["generation_sha256"]
+
+
+def test_generation_identity_excludes_generated_at_complete_and_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _run_result_fixture(tmp_path, monkeypatch)
+    later = _run_result_fixture(
+        tmp_path,
+        monkeypatch,
+        generated_at="2026-08-29T00:00:00+00:00",
+    )
+    mutated_envelope = {
+        **first.manifest,
+        "generated_at": "2099-01-01T00:00:00+00:00",
+        "complete": True,
+        "generation_sha256": "0" * 64,
+    }
+
+    assert first.manifest["generation_sha256"] == later.manifest["generation_sha256"]
+    assert (
+        readiness._canonical_hash(readiness._manifest_identity(mutated_envelope))
+        == first.manifest["generation_sha256"]
+    )
+
+
+def test_writer_persists_exact_inventory_and_reuses_only_identical_generation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    output_root = tmp_path / "output"
+
+    first = readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
+    second = readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
+
+    assert first == second
+    generation = first["manifest"].parent
+    assert {path.name for path in generation.iterdir()} == {
+        "stations.parquet",
+        "panel.parquet",
+        "covariates.parquet",
+        "folds.parquet",
+        "predictions.parquet",
+        "scores.parquet",
+        "paired_deltas.parquet",
+        "summary.json",
+        "manifest.json",
+    }
+    first["scores"].write_bytes(first["scores"].read_bytes() + b"corrupt")
+    with pytest.raises(RuntimeError, match="existing generation"):
+        readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
+
+
+def test_writer_rejects_an_unexpected_existing_generation_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    written = readiness.write_spatial_covariate_readiness_result(
+        result, output_root=tmp_path / "output"
+    )
+    unexpected = written["manifest"].parent / "unexpected.txt"
+    unexpected.write_text("not reviewed", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="existing generation"):
+        readiness.write_spatial_covariate_readiness_result(result, output_root=tmp_path / "output")
+
+    assert unexpected.read_text(encoding="utf-8") == "not reviewed"
+
+
+def test_atomic_writer_removes_only_its_exact_validated_staging_after_interruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    generations = tmp_path / "output" / "generations"
+    generations.mkdir(parents=True)
+    foreign_stage = generations / ".spatial-covariate-readiness.staging-foreign"
+    foreign_stage.mkdir()
+    foreign_sentinel = foreign_stage / "keep.txt"
+    foreign_sentinel.write_text("keep", encoding="utf-8")
+    root_sentinel = tmp_path / "output" / "keep.txt"
+    root_sentinel.write_text("keep-root", encoding="utf-8")
+    original_write_parquet = pl.DataFrame.write_parquet
+    calls = 0
+
+    def interrupt_after_first_member(
+        self: pl.DataFrame, file: str | Path, *args: Any, **kwargs: Any
+    ) -> None:
+        nonlocal calls
+        original_write_parquet(self, file, *args, **kwargs)
+        calls += 1
+        if calls == 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(pl.DataFrame, "write_parquet", interrupt_after_first_member)
+
+    with pytest.raises(KeyboardInterrupt):
+        readiness.write_spatial_covariate_readiness_result(result, output_root=tmp_path / "output")
+
+    assert root_sentinel.read_text(encoding="utf-8") == "keep-root"
+    assert foreign_sentinel.read_text(encoding="utf-8") == "keep"
+    assert generations.is_dir()
+    assert [
+        path
+        for path in generations.glob(".spatial-covariate-readiness.staging-*")
+        if path != foreign_stage
+    ] == []
+
+
+def test_failed_atomic_promotion_preserves_the_interrupted_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    original_replace = Path.replace
+
+    def promote_then_report_failure(self: Path, target: Path) -> Path:
+        promoted = original_replace(self, target)
+        if self.name.startswith(".spatial-covariate-readiness.staging-"):
+            raise OSError("simulated post-rename failure")
+        return promoted
+
+    monkeypatch.setattr(Path, "replace", promote_then_report_failure)
+
+    with pytest.raises(OSError, match="post-rename failure"):
+        readiness.write_spatial_covariate_readiness_result(result, output_root=tmp_path / "output")
+
+    generations = [
+        path
+        for path in (tmp_path / "output" / "generations").iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    ]
+    assert len(generations) == 1
+    manifest_path = generations[0] / "manifest.json"
+    interrupted = manifest_path.read_bytes()
+    assert json.loads(interrupted.decode("utf-8"))["complete"] is False
+
+    monkeypatch.setattr(Path, "replace", original_replace)
+    with pytest.raises(RuntimeError, match="existing generation"):
+        readiness.write_spatial_covariate_readiness_result(result, output_root=tmp_path / "output")
+    assert manifest_path.read_bytes() == interrupted
+
+
+def test_complete_true_appears_only_in_the_final_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    observed_before_promotion: list[bool] = []
+    original_replace = Path.replace
+
+    def observe_promotion(self: Path, target: Path) -> Path:
+        if self.name.startswith(".spatial-covariate-readiness.staging-"):
+            staged_manifest = json.loads((self / "manifest.json").read_text(encoding="utf-8"))
+            observed_before_promotion.append(bool(staged_manifest["complete"]))
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", observe_promotion)
+    written = readiness.write_spatial_covariate_readiness_result(
+        result, output_root=tmp_path / "output"
+    )
+    persisted = json.loads(written["manifest"].read_text(encoding="utf-8"))
+
+    assert observed_before_promotion == [False]
+    assert result.manifest["complete"] is False
+    assert persisted["complete"] is True
+    assert written["manifest"].parent.name == persisted["generation_sha256"]
+
+
+def test_writer_rejects_a_symlinked_or_reparse_generations_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    generations = tmp_path / "output" / "generations"
+    generations.mkdir(parents=True)
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: path == generations or real_is_symlink(path),
+    )
+
+    with pytest.raises(RuntimeError, match=r"reparse|linked"):
+        readiness.write_spatial_covariate_readiness_result(result, output_root=tmp_path / "output")
+
+    assert generations.is_dir()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows junction contract")
+def test_writer_rejects_an_ancestor_junction_before_creating_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "linked-ancestor"
+    completed = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(linked), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        pytest.skip("directory junctions are unavailable")
+
+    with pytest.raises(RuntimeError, match=r"reparse|linked"):
+        readiness.write_spatial_covariate_readiness_result(
+            result,
+            output_root=linked / "new" / "output",
+        )
+
+    assert linked.is_junction()
+    assert list(outside.iterdir()) == []

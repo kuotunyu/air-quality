@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import re
+import shutil
+import stat
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import polars as pl
@@ -22,14 +27,20 @@ from twair.analysis.spatial_surface_baseline import (
     predict_target,
 )
 from twair.config import ConfigError, load_conf
+from twair.paths import outputs_dir
+from twair.provenance import git_state
 
 __all__ = [
     "COVARIATE_MODEL_FEATURES",
     "COVARIATE_READINESS_EVALUATIONS",
     "COVARIATE_READINESS_LIMITATIONS",
+    "COVARIATE_READINESS_MEMBER_NAMES",
     "COVARIATE_READINESS_METHODS",
+    "COVARIATE_READINESS_TABLE_ORDER",
+    "COVARIATE_READINESS_TABLE_SCHEMAS",
     "CovariatePrediction",
     "CovariateReadinessConfig",
+    "CovariateReadinessResult",
     "FrozenInputs",
     "InputFile",
     "aggregate_era5_monthly",
@@ -43,7 +54,9 @@ __all__ = [
     "paired_readiness_deltas",
     "pivot_satellite_monthly",
     "predict_readiness_methods",
+    "run_spatial_covariate_readiness",
     "score_readiness_predictions",
+    "write_spatial_covariate_readiness_result",
 ]
 
 
@@ -55,6 +68,11 @@ COVARIATE_READINESS_LIMITATIONS = (
     "not publication of a map",
     "no prediction interval, support mask, population-weighted ambient concentration "
     "or personal-exposure result",
+)
+COVARIATE_READINESS_SCHEMA_VERSION = 1
+_RUN_RECORD_IDENTITY_SCOPE = (
+    "float-bearing output hashes and generation identity record one run; "
+    "they are not cross-hardware identities"
 )
 COVARIATE_MODEL_FEATURES = (
     "x_m",
@@ -215,6 +233,35 @@ _READINESS_DELTA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "paired_state": pl.String,
 }
 _READINESS_CELL_KEY = ("evaluation", "training_period", "train_year", "target_year")
+COVARIATE_READINESS_TABLE_SCHEMAS = {
+    "stations": SPATIAL_BASELINE_TABLE_SCHEMAS["stations"],
+    "panel": SPATIAL_BASELINE_TABLE_SCHEMAS["panel"],
+    "covariates": _COVARIATE_SCHEMA,
+    "folds": _COVARIATE_LEDGER_SCHEMA,
+    "predictions": _COVARIATE_PREDICTION_SCHEMA,
+    "scores": _READINESS_SCORE_SCHEMA,
+    "paired_deltas": _READINESS_DELTA_SCHEMA,
+}
+COVARIATE_READINESS_TABLE_ORDER = {
+    "stations": ("station_name",),
+    "panel": ("station_name", "month"),
+    "covariates": ("station_name", "month"),
+    "folds": _COVARIATE_TARGET_KEY,
+    "predictions": (*_COVARIATE_TARGET_KEY, "method"),
+    "scores": (*_READINESS_CELL_KEY, "method"),
+    "paired_deltas": (*_READINESS_CELL_KEY, "method"),
+}
+COVARIATE_READINESS_MEMBER_NAMES = (
+    "stations.parquet",
+    "panel.parquet",
+    "covariates.parquet",
+    "folds.parquet",
+    "predictions.parquet",
+    "scores.parquet",
+    "paired_deltas.parquet",
+    "summary.json",
+    "manifest.json",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,6 +303,19 @@ class CovariatePrediction:
     value: float | None
     state: str
     failure_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CovariateReadinessResult:
+    stations: pl.DataFrame
+    panel: pl.DataFrame
+    covariates: pl.DataFrame
+    folds: pl.DataFrame
+    predictions: pl.DataFrame
+    scores: pl.DataFrame
+    paired_deltas: pl.DataFrame
+    summary: dict[str, Any]
+    manifest: dict[str, Any]
 
 
 def aggregate_era5_monthly(frame: pl.DataFrame, *, years: tuple[int, int]) -> pl.DataFrame:
@@ -2055,3 +2115,486 @@ def load_frozen_inputs(data_root: Path, config: CovariateReadinessConfig) -> Fro
         baseline_generation_sha256=config.baseline_generation_sha256,
         station_inventory_generation_sha256=config.station_inventory_generation_sha256,
     )
+
+
+def _normalized_config(config: CovariateReadinessConfig) -> dict[str, object]:
+    candidates = [method for method in config.methods if method != config.comparator]
+    return {
+        "schema_version": COVARIATE_READINESS_SCHEMA_VERSION,
+        "analysis": {
+            "years": list(config.years),
+            "baseline_generation_sha256": config.baseline_generation_sha256,
+            "station_inventory_generation_sha256": config.station_inventory_generation_sha256,
+            "minimum_train_stations": config.minimum_train_stations,
+        },
+        "methods": {
+            "comparator": config.comparator,
+            "candidates": candidates,
+            "idw_power": config.idw_power,
+            "minimum_distance_km": config.minimum_distance_km,
+            "model": {
+                "n_estimators": config.model.n_estimators,
+                "learning_rate": config.model.learning_rate,
+                "num_leaves": config.model.num_leaves,
+                "min_child_samples": config.model.min_child_samples,
+                "n_jobs": config.model.n_jobs,
+                "seed": config.model.seed,
+            },
+        },
+        "validation": {
+            "evaluations": list(config.evaluations),
+            "bootstrap_draws": config.bootstrap_draws,
+            "bootstrap_seed": config.bootstrap_seed,
+        },
+    }
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _canonical_hash(value: object) -> str:
+    return sha256(_canonical_json_bytes(value)).hexdigest()
+
+
+def _normalized_table(name: str, frame: pl.DataFrame) -> pl.DataFrame:
+    schema = COVARIATE_READINESS_TABLE_SCHEMAS[name]
+    if set(frame.columns) != set(schema):
+        raise RuntimeError(f"spatial covariate readiness {name} columns changed")
+    return (
+        frame.select(*schema)
+        .cast(pl.Schema(schema), strict=True)
+        .sort(*COVARIATE_READINESS_TABLE_ORDER[name])
+    )
+
+
+def _table_scalar(value: object) -> object:
+    if isinstance(value, date):
+        return {"date": value.isoformat()}
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return {"float": "nan"}
+        return {"float": "positive_infinity" if value > 0 else "negative_infinity"}
+    if isinstance(value, (list, tuple)):
+        return [_table_scalar(item) for item in value]
+    return value
+
+
+def _table_identity(name: str, frame: pl.DataFrame) -> dict[str, object]:
+    normalized = _normalized_table(name, frame)
+    payload = _canonical_json_bytes(
+        {
+            "schema": [[column, str(dtype)] for column, dtype in normalized.schema.items()],
+            "order": list(COVARIATE_READINESS_TABLE_ORDER[name]),
+            "rows": [[_table_scalar(value) for value in row] for row in normalized.iter_rows()],
+        }
+    )
+    return {
+        "rows": normalized.height,
+        "bytes": len(payload),
+        "sha256": sha256(payload).hexdigest(),
+        "schema": {column: str(dtype) for column, dtype in normalized.schema.items()},
+        "order": list(COVARIATE_READINESS_TABLE_ORDER[name]),
+    }
+
+
+def _manifest_identity(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"generated_at", "complete", "generation_sha256"}
+    }
+
+
+def _input_manifest(inputs: FrozenInputs, *, data_root: Path) -> list[dict[str, object]]:
+    try:
+        root = data_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("spatial covariate readiness data root is unreadable") from exc
+    identities: list[dict[str, object]] = []
+    for expected in inputs.input_files:
+        try:
+            path = expected.path.resolve(strict=True)
+            relative = path.relative_to(root)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("spatial covariate readiness input is outside data root") from exc
+        observed = _input_file(path, label="spatial covariate readiness bound input")
+        if observed.bytes != expected.bytes or observed.sha256 != expected.sha256:
+            raise RuntimeError("spatial covariate readiness input changed before result assembly")
+        identities.append(
+            {
+                "path": relative.as_posix(),
+                "bytes": observed.bytes,
+                "sha256": observed.sha256,
+            }
+        )
+    return sorted(identities, key=lambda value: str(value["path"]))
+
+
+def run_spatial_covariate_readiness(
+    *,
+    data_root: Path,
+    config: CovariateReadinessConfig | None = None,
+    generated_at: str | None = None,
+) -> CovariateReadinessResult:
+    """Run the fixed gate and assemble its canonical run record."""
+    reviewed = config if config is not None else load_spatial_covariate_readiness_config()
+    inputs = load_frozen_inputs(data_root, reviewed)
+    covariates = assemble_covariates(inputs, reviewed)
+    folds = build_covariate_fold_ledger(
+        covariates,
+        inputs.support,
+        inputs.baseline_folds,
+        reviewed,
+    )
+    predictions = predict_readiness_methods(covariates, folds, reviewed)
+    scores = score_readiness_predictions(predictions, reviewed)
+    paired_deltas = paired_readiness_deltas(predictions, reviewed)
+    gate = decide_covariate_gate(scores, paired_deltas, reviewed)
+    frames = {
+        "stations": inputs.stations,
+        "panel": inputs.panel,
+        "covariates": covariates,
+        "folds": folds,
+        "predictions": predictions,
+        "scores": scores,
+        "paired_deltas": paired_deltas,
+    }
+    normalized = {name: _normalized_table(name, frame) for name, frame in frames.items()}
+    tables = {name: _table_identity(name, frame) for name, frame in normalized.items()}
+    claim_boundary = {
+        "feeds_web": False,
+        "limitations": list(COVARIATE_READINESS_LIMITATIONS),
+    }
+    summary: dict[str, Any] = {
+        "analysis": "spatial_covariate_readiness",
+        "baseline_generation_sha256": inputs.baseline_generation_sha256,
+        "station_inventory_generation_sha256": inputs.station_inventory_generation_sha256,
+        "output_rows": {name: frame.height for name, frame in normalized.items()},
+        "gate": gate,
+        **claim_boundary,
+    }
+    git_sha, git_dirty = git_state()
+    identity: dict[str, Any] = {
+        "schema_version": COVARIATE_READINESS_SCHEMA_VERSION,
+        "analysis": "spatial_covariate_readiness",
+        "config": _normalized_config(reviewed),
+        "inputs": _input_manifest(inputs, data_root=data_root),
+        "baseline_generation_sha256": inputs.baseline_generation_sha256,
+        "station_inventory_generation_sha256": inputs.station_inventory_generation_sha256,
+        "tables": tables,
+        "gate": gate,
+        "claim_boundary": claim_boundary,
+        "identity_scope": _RUN_RECORD_IDENTITY_SCOPE,
+        "git_sha": git_sha,
+        "git_dirty": git_dirty,
+    }
+    manifest = {
+        **identity,
+        "generated_at": generated_at
+        if generated_at is not None
+        else datetime.now(UTC).isoformat(timespec="seconds"),
+        "complete": False,
+        "generation_sha256": _canonical_hash(identity),
+    }
+    return CovariateReadinessResult(
+        stations=normalized["stations"],
+        panel=normalized["panel"],
+        covariates=normalized["covariates"],
+        folds=normalized["folds"],
+        predictions=normalized["predictions"],
+        scores=normalized["scores"],
+        paired_deltas=normalized["paired_deltas"],
+        summary=summary,
+        manifest=manifest,
+    )
+
+
+def _result_frames(result: CovariateReadinessResult) -> dict[str, pl.DataFrame]:
+    return {
+        name: _normalized_table(name, getattr(result, name))
+        for name in COVARIATE_READINESS_TABLE_SCHEMAS
+    }
+
+
+def _expected_summary(frames: dict[str, pl.DataFrame], identity: dict[str, Any]) -> dict[str, Any]:
+    raw_config = identity.get("config")
+    if not isinstance(raw_config, dict):
+        raise RuntimeError("spatial covariate readiness manifest config changed")
+    try:
+        config = load_spatial_covariate_readiness_config(raw_config)
+    except ConfigError as exc:
+        raise RuntimeError("spatial covariate readiness manifest config changed") from exc
+    if (
+        identity.get("schema_version") != COVARIATE_READINESS_SCHEMA_VERSION
+        or identity.get("analysis") != "spatial_covariate_readiness"
+        or identity.get("baseline_generation_sha256") != config.baseline_generation_sha256
+        or identity.get("station_inventory_generation_sha256")
+        != config.station_inventory_generation_sha256
+        or identity.get("identity_scope") != _RUN_RECORD_IDENTITY_SCOPE
+    ):
+        raise RuntimeError("spatial covariate readiness manifest provenance changed")
+    gate = decide_covariate_gate(frames["scores"], frames["paired_deltas"], config)
+    if identity.get("gate") != gate:
+        raise RuntimeError("spatial covariate readiness manifest gate changed")
+    claim_boundary = {
+        "feeds_web": False,
+        "limitations": list(COVARIATE_READINESS_LIMITATIONS),
+    }
+    if identity.get("claim_boundary") != claim_boundary:
+        raise RuntimeError("spatial covariate readiness manifest claim boundary changed")
+    return {
+        "analysis": "spatial_covariate_readiness",
+        "baseline_generation_sha256": config.baseline_generation_sha256,
+        "station_inventory_generation_sha256": config.station_inventory_generation_sha256,
+        "output_rows": {name: frame.height for name, frame in frames.items()},
+        "gate": gate,
+        **claim_boundary,
+    }
+
+
+def _path_exists(path: Path) -> bool:
+    return os.path.lexists(path)
+
+
+def _is_link_or_reparse(path: Path) -> bool:
+    try:
+        attributes = int(getattr(path.lstat(), "st_file_attributes", 0))
+    except OSError:
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    return (
+        path.is_symlink()
+        or (is_junction is not None and is_junction())
+        or bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    )
+
+
+def _validated_directory(path: Path, *, label: str) -> Path:
+    absolute = path.absolute()
+    try:
+        resolved = absolute.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(f"{label} is unreadable") from exc
+    if _is_link_or_reparse(absolute) or not absolute.is_dir() or resolved != absolute:
+        raise RuntimeError(f"{label} is linked, reparse-point, or outside")
+    return absolute
+
+
+def _ensure_directory(path: Path, *, label: str) -> Path:
+    if _path_exists(path):
+        return _validated_directory(path, label=label)
+    path.mkdir()
+    return _validated_directory(path, label=label)
+
+
+def _prepare_output_root(path: Path) -> Path:
+    absolute = path.absolute()
+    for component in (*reversed(absolute.parents), absolute):
+        if _path_exists(component):
+            _validated_directory(
+                component,
+                label="spatial covariate readiness output root ancestor",
+            )
+            continue
+        component.mkdir()
+        _validated_directory(
+            component,
+            label="spatial covariate readiness output root component",
+        )
+    return _validated_directory(absolute, label="spatial covariate readiness output root")
+
+
+def _validate_generation_inventory(directory: Path, *, label: str) -> tuple[Path, ...]:
+    validated = _validated_directory(directory, label=label)
+    try:
+        entries = tuple(validated.iterdir())
+    except OSError as exc:
+        raise RuntimeError(f"{label} is unreadable") from exc
+    if {entry.name for entry in entries} != set(COVARIATE_READINESS_MEMBER_NAMES):
+        raise RuntimeError(f"{label} has an unexpected member inventory")
+    for entry in entries:
+        try:
+            resolved = entry.resolve(strict=True)
+            links = entry.stat().st_nlink
+        except OSError as exc:
+            raise RuntimeError(f"{label} member is unreadable: {entry.name}") from exc
+        if (
+            _is_link_or_reparse(entry)
+            or not entry.is_file()
+            or resolved.parent != validated
+            or links != 1
+        ):
+            raise RuntimeError(f"{label} member is linked or reparse-point: {entry.name}")
+    return entries
+
+
+def _observed_file_identity(path: Path) -> dict[str, object]:
+    payload = path.read_bytes()
+    return {"bytes": len(payload), "sha256": sha256(payload).hexdigest()}
+
+
+def _write_canonical_json(path: Path, value: object) -> None:
+    path.write_bytes(_canonical_json_bytes(value))
+
+
+def _sync_file(path: Path) -> None:
+    with path.open("r+b") as handle:
+        os.fsync(handle.fileno())
+
+
+def _written_paths(directory: Path) -> dict[str, Path]:
+    return {
+        **{name: directory / f"{name}.parquet" for name in COVARIATE_READINESS_TABLE_SCHEMAS},
+        "summary": directory / "summary.json",
+        "manifest": directory / "manifest.json",
+    }
+
+
+def _validate_existing_generation(
+    destination: Path,
+    *,
+    staged: Path,
+    expected_identity: dict[str, Any],
+) -> dict[str, Path]:
+    try:
+        _validate_generation_inventory(destination, label="existing generation")
+        manifest_path = destination / "manifest.json"
+        payload = manifest_path.read_bytes()
+        manifest = json.loads(payload.decode("utf-8"))
+        if not isinstance(manifest, dict) or payload != _canonical_json_bytes(manifest):
+            raise RuntimeError("manifest is not canonical")
+        if (
+            manifest.get("complete") is not True
+            or manifest.get("generation_sha256") != destination.name
+            or _manifest_identity(manifest) != expected_identity
+            or _canonical_hash(expected_identity) != destination.name
+        ):
+            raise RuntimeError("manifest identity differs")
+        members = manifest.get("members")
+        expected_members = set(COVARIATE_READINESS_MEMBER_NAMES[:-1])
+        if not isinstance(members, dict) or set(members) != expected_members:
+            raise RuntimeError("manifest member identities differ")
+        for name in COVARIATE_READINESS_MEMBER_NAMES[:-1]:
+            existing = destination / name
+            if _observed_file_identity(existing) != members[name]:
+                raise RuntimeError(f"member checksum differs: {name}")
+            if existing.read_bytes() != (staged / name).read_bytes():
+                raise RuntimeError(f"member bytes differ: {name}")
+    except (KeyError, OSError, UnicodeError, json.JSONDecodeError, RuntimeError) as exc:
+        raise RuntimeError(f"existing generation is not reusable: {exc}") from exc
+    return _written_paths(destination)
+
+
+def _remove_invocation_staging(staged: Path, *, generations: Path, token: str) -> None:
+    if not _path_exists(staged):
+        return
+    expected_name = f".spatial-covariate-readiness.staging-{token}"
+    if staged.name != expected_name or staged.absolute().parent != generations:
+        return
+    try:
+        validated_generations = _validated_directory(
+            generations,
+            label="spatial covariate readiness generations directory",
+        )
+        validated = _validated_directory(
+            staged,
+            label="spatial covariate readiness staging directory",
+        )
+    except RuntimeError:
+        return
+    if validated.parent == validated_generations and validated.name == expected_name:
+        shutil.rmtree(validated)
+
+
+def write_spatial_covariate_readiness_result(
+    result: CovariateReadinessResult,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, Path]:
+    """Persist a canonical run record through a validated atomic promotion."""
+    frames = _result_frames(result)
+    expected_tables = {name: _table_identity(name, frame) for name, frame in frames.items()}
+    provisional_identity = _manifest_identity(result.manifest)
+    if (
+        result.manifest.get("complete") is not False
+        or result.manifest.get("generation_sha256") != _canonical_hash(provisional_identity)
+        or provisional_identity.get("tables") != expected_tables
+    ):
+        raise RuntimeError("spatial covariate readiness prepared result identity changed")
+    if result.summary != _expected_summary(frames, provisional_identity):
+        raise RuntimeError("spatial covariate readiness prepared result summary changed")
+    selected_root = (
+        output_root.absolute()
+        if output_root is not None
+        else outputs_dir("spatial_covariate_readiness").absolute()
+    )
+    root = _prepare_output_root(selected_root)
+    generations = _ensure_directory(
+        root / "generations",
+        label="spatial covariate readiness generations directory",
+    )
+    token = uuid4().hex
+    staged = generations / f".spatial-covariate-readiness.staging-{token}"
+    staged.mkdir()
+    _validated_directory(staged, label="spatial covariate readiness staging directory")
+    try:
+        for name, frame in frames.items():
+            member = staged / f"{name}.parquet"
+            frame.write_parquet(member)
+            _sync_file(member)
+        summary_path = staged / "summary.json"
+        _write_canonical_json(summary_path, result.summary)
+        _sync_file(summary_path)
+        members = {
+            name: _observed_file_identity(staged / name)
+            for name in COVARIATE_READINESS_MEMBER_NAMES[:-1]
+        }
+        final_identity = {**provisional_identity, "members": members}
+        generation = _canonical_hash(final_identity)
+        destination = generations / generation
+        incomplete_manifest = {
+            **final_identity,
+            "generated_at": result.manifest["generated_at"],
+            "complete": False,
+            "generation_sha256": generation,
+        }
+        staged_manifest = staged / "manifest.json"
+        _write_canonical_json(staged_manifest, incomplete_manifest)
+        _sync_file(staged_manifest)
+        _validate_generation_inventory(
+            staged,
+            label="spatial covariate readiness staging generation",
+        )
+        if _path_exists(destination):
+            return _validate_existing_generation(
+                destination,
+                staged=staged,
+                expected_identity=final_identity,
+            )
+        try:
+            staged.replace(destination)
+        except FileExistsError:
+            return _validate_existing_generation(
+                destination,
+                staged=staged,
+                expected_identity=final_identity,
+            )
+        complete_manifest = {**incomplete_manifest, "complete": True}
+        complete_staging = destination / f".manifest.complete-{token}.json"
+        _write_canonical_json(complete_staging, complete_manifest)
+        _sync_file(complete_staging)
+        complete_staging.replace(destination / "manifest.json")
+        _validate_generation_inventory(
+            destination,
+            label="spatial covariate readiness final generation",
+        )
+        return _written_paths(destination)
+    finally:
+        _remove_invocation_staging(staged, generations=generations, token=token)
