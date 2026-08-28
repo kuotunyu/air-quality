@@ -775,10 +775,16 @@ def score_predictions(
             intended_rows = [row for row in method_rows if row["fold_state"] == "eligible"]
             intended_keys = {_prediction_key(row) for row in intended_rows}
             scored_rows = [row for row in intended_rows if _finite_error(row)]
-            n_intended = len(intended_rows)
+            n_intended = len(expected_keys)
             n_scored = len(scored_rows)
             n_failed = n_intended - n_scored
-            n_stations_intended = len({str(row["target_station"]) for row in intended_rows})
+            n_stations_intended = len(
+                {
+                    str(row["target_station"])
+                    for row in cell_rows
+                    if _prediction_key(row) in expected_keys
+                }
+            )
             n_stations_scored = len({str(row["target_station"]) for row in scored_rows})
             if not expected_keys:
                 score_state = "no_eligible_targets"
@@ -791,7 +797,7 @@ def score_predictions(
             mae: float | None = None
             rmse: float | None = None
             bias: float | None = None
-            if score_state == "complete":
+            if score_state != "missing_intended_predictions" and scored_rows:
                 per_station: list[tuple[float, float, float]] = []
                 for station in sorted({str(row["target_station"]) for row in scored_rows}):
                     errors = np.asarray(
@@ -947,6 +953,30 @@ def _single_gate_row(
     return matches.row(0, named=True)
 
 
+def _complete_score_row(row: dict[str, Any] | None) -> bool:
+    if row is None:
+        return False
+    try:
+        counts_are_complete = (
+            int(row["n_intended"]) > 0
+            and int(row["n_intended"]) == int(row["n_scored"])
+            and int(row["n_failed"]) == 0
+            and int(row["n_stations_intended"]) > 0
+            and int(row["n_stations_intended"]) == int(row["n_stations_scored"])
+        )
+        metrics_are_finite = all(
+            value is not None and math.isfinite(float(value))
+            for value in (
+                row["station_clustered_mae"],
+                row["station_clustered_rmse"],
+                row["station_clustered_bias"],
+            )
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    return row["score_state"] == "complete" and counts_are_complete and metrics_are_finite
+
+
 def decide_baseline_gate(
     scores: pl.DataFrame, deltas: pl.DataFrame, config: SpatialSurfaceBaselineConfig
 ) -> dict[str, Any]:
@@ -962,16 +992,28 @@ def decide_baseline_gate(
         for evaluation in primary_evaluations:
             for year in config.required_years:
                 score = _single_gate_row(scores, evaluation=evaluation, year=year, method=method)
+                baseline_score = _single_gate_row(
+                    scores,
+                    evaluation=evaluation,
+                    year=year,
+                    method=config.comparison_method,
+                )
                 delta = _single_gate_row(deltas, evaluation=evaluation, year=year, method=method)
                 if (
                     score is None
+                    or baseline_score is None
                     or delta is None
-                    or int(score["n_intended"]) == 0
-                    or int(score["n_intended"]) != int(score["n_scored"])
-                    or int(score["n_failed"]) != 0
-                    or score["score_state"] != "complete"
+                    or not _complete_score_row(score)
+                    or not _complete_score_row(baseline_score)
+                ):
+                    primary_complete = False
+                    continue
+                if (
+                    int(score["n_intended"]) != int(baseline_score["n_intended"])
+                    or int(score["n_stations_intended"])
+                    != int(baseline_score["n_stations_intended"])
                     or delta["comparison_method"] != config.comparison_method
-                    or int(delta["n_stations"]) == 0
+                    or int(delta["n_stations"]) != int(score["n_stations_intended"])
                     or delta["paired_state"] != "complete"
                     or delta["median_station_mae_delta"] is None
                     or not math.isfinite(float(delta["median_station_mae_delta"]))
@@ -983,12 +1025,7 @@ def decide_baseline_gate(
             cluster_score = _single_gate_row(
                 scores, evaluation="spatial_cluster", year=year, method=method
             )
-            if (
-                cluster_score is None
-                or cluster_score["score_state"] != "complete"
-                or cluster_score["station_clustered_mae"] is None
-                or not math.isfinite(float(cluster_score["station_clustered_mae"]))
-            ):
+            if not _complete_score_row(cluster_score):
                 cluster_complete = False
         if primary_complete and cluster_complete:
             qualifying.append(method)

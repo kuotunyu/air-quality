@@ -837,6 +837,29 @@ def test_scores_report_intended_scored_and_failed_denominators() -> None:
     assert row["n_stations_intended"] == 3
     assert row["n_stations_scored"] == 3
     assert row["score_state"] == "incomplete_predictions"
+    assert row["station_clustered_mae"] == 1.0
+    assert row["station_clustered_rmse"] == 1.0
+    assert row["station_clustered_bias"] == 1.0
+
+
+def test_scores_missing_method_row_uses_the_common_eligible_denominator() -> None:
+    predictions = prediction_fixture().filter(
+        ~(
+            (pl.col("method") == "idw2")
+            & (pl.col("target_station") == "s02")
+            & (pl.col("month") == date(2024, 4, 1))
+        )
+    )
+
+    scores = score_predictions(predictions, _config())
+    row = scores.filter(pl.col("method") == "idw2").row(0, named=True)
+
+    assert row["n_intended"] == 12
+    assert row["n_scored"] == 11
+    assert row["n_failed"] == 1
+    assert row["n_stations_intended"] == 3
+    assert row["n_stations_scored"] == 3
+    assert row["score_state"] == "missing_intended_predictions"
     assert row["station_clustered_mae"] is None
 
 
@@ -873,6 +896,54 @@ def test_gate_requires_one_complete_method_to_beat_station_mean_everywhere() -> 
 @pytest.mark.parametrize("mutation", ["missing_prediction", "loses_2024_40km", "loses_2025_20km"])
 def test_gate_fails_closed_on_incomplete_or_inconsistent_evidence(mutation: str) -> None:
     scores, deltas = gate_fixture(mutation=mutation)
+
+    assert decide_baseline_gate(scores, deltas, _config())["state"] == "stop"
+
+
+def test_gate_requires_a_complete_station_mean_score_for_every_primary_cell() -> None:
+    scores, deltas = gate_fixture(winner="idw2")
+    scores = scores.with_columns(
+        pl.when(
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("year") == 2024)
+            & (pl.col("method") == "station_mean")
+        )
+        .then(pl.lit(11))
+        .otherwise(pl.col("n_scored"))
+        .alias("n_scored"),
+        pl.when(
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("year") == 2024)
+            & (pl.col("method") == "station_mean")
+        )
+        .then(pl.lit(1))
+        .otherwise(pl.col("n_failed"))
+        .alias("n_failed"),
+        pl.when(
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("year") == 2024)
+            & (pl.col("method") == "station_mean")
+        )
+        .then(pl.lit("incomplete_predictions"))
+        .otherwise(pl.col("score_state"))
+        .alias("score_state"),
+    )
+
+    assert decide_baseline_gate(scores, deltas, _config())["state"] == "stop"
+
+
+def test_gate_requires_paired_delta_station_count_to_match_the_score_denominator() -> None:
+    scores, deltas = gate_fixture(winner="idw2")
+    deltas = deltas.with_columns(
+        pl.when(
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("year") == 2024)
+            & (pl.col("method") == "idw2")
+        )
+        .then(pl.lit(1))
+        .otherwise(pl.col("n_stations"))
+        .alias("n_stations")
+    )
 
     assert decide_baseline_gate(scores, deltas, _config())["state"] == "stop"
 
