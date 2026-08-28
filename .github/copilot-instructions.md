@@ -1,11 +1,10 @@
-<!-- MIRROR OF AGENTS.md — edit both together, or neither. -->
 <!-- GitHub Copilot reads this file automatically for repository custom instructions. -->
 
 # Rules for coding agents
 
-> 這是短版規則的唯一來源；版本庫中的另一份短版規則是它的**產生物**。
-> 改這一份，然後跑 `uv run python scripts/mirror_agents.py`，絕不手改副本。
-> CI 會用 `--check` 驗，所以忘記重生是紅燈而不是兩個入口讀到不同規則。
+> This is the repository's sole tracked short-rule source.
+> CI gate inventory lives in `.github/workflows/ci.yml`; durable reasoning lives
+> in `docs/working-rules.md` and the relevant public technical documents.
 
 Read this before changing anything. It is short on purpose.
 
@@ -311,14 +310,14 @@ Windows; PowerShell here-strings break, and apostrophes in `-m` truncate).
 
 | Question | File |
 |---|---|
-| What must I read before changing anything? | `AGENTS.md` |
+| What must I read before changing anything? | `.github/copilot-instructions.md` |
 | What are the stable, hard-won rules? | `docs/working-rules.md` |
 | What is actually on disk now? | `uv run twair status` |
 | What stable decisions are portable? | The relevant public technical docs |
 | What local handoff or progress context exists? | `.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md`, when present |
 | What identity may appear in history? | `conf/project.yaml` |
-| What is the overall plan? | `PLAN.md` |
-| What design claims does CI verify the site against? | `PRODUCT.md` — **not an inert design doc.** `ci.yml`, `scripts/check_palette.py` and `scripts/check_site_quality.mjs` re-derive its stated numbers and fail when they stop holding. Editing or deleting it changes what CI enforces. |
+| What is the public release boundary? | The phase table in `README.md` / `README.en.md` |
+| What design claims does CI verify the site against? | The executable contracts in `scripts/check_palette.py` and `scripts/check_site_quality.mjs`, run by `.github/workflows/ci.yml` |
 | Why is the archive parsing so complicated? | `docs/archive-formats.md` |
 | What are the known data-quality properties? | `docs/data-quality.md` |
 | What is the licensing position? | `docs/legal.md` |

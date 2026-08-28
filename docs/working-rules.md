@@ -6,9 +6,10 @@
 > real time to find, the commands, the testing conventions, and the
 > portable return path that keeps measured state and public docs in sync.
 >
-> `AGENTS.md` is the short version. This is the long one.
+> `.github/copilot-instructions.md` is the short version. This is the long one.
 >
-> When returning: read `AGENTS.md`, read this file, run `uv run twair status`,
+> When returning: read `.github/copilot-instructions.md`, read this file, run
+> `uv run twair status`,
 > and consult the relevant public technical docs. Ignored
 > `.superpowers/project-memory/HANDOFF.md` and `PROGRESS.md` may add local
 > context when present; their absence in a fresh clone is expected.
@@ -1466,22 +1467,11 @@ it is whether verifying the result requires re-deriving the answer. Mechanical
 type corrections are suitable when mypy verifies them; prose explaining a
 scientific design choice is not.
 
-`AGENTS.md` is the source for the two tracked short-rule entries; never edit
-the generated copy. Regenerate it:
-
-```bash
-uv run python scripts/mirror_agents.py
-```
-
-CI runs the same script with `--check`, so a forgotten regeneration is a red
-build rather than two entry points reading different rules.
-
-The old one-liner wrote the copy with `newline="\n"` while `AGENTS.md` is
-checked out CRLF, so `diff` reported all 224 lines as different *immediately
-after regenerating* — the contents were identical the whole time. That is worse
-than no check: a comparison that always fails teaches you to stop running it,
-and then real drift looks exactly like the noise you have been ignoring. The
-script copies the source's bytes verbatim so byte equality is the right test.
+`.github/copilot-instructions.md` is the repository's sole tracked short-rule
+source. Keep it concise and point durable reasoning here instead of duplicating
+this document. The authoritative completion-gate inventory is
+`.github/workflows/ci.yml`; `scripts/check_like_ci.py` reads that workflow so a
+local completion run and CI execute the same list.
 
 Never delegate: anything touching null semantics, QC flag meaning, statistical
 method choice, existing comments and docstrings, or prose that makes a claim.
@@ -1511,8 +1501,8 @@ smell.
 
 Each commit that adds or changes a result:
 
-1. Run every completion gate in `AGENTS.md`; partial test or lint paths are not
-   substitutes for the repository gates.
+1. Run `uv run python scripts/check_like_ci.py`; partial test or lint paths are
+   not substitutes for the repository gates in `.github/workflows/ci.yml`.
 2. Update the affected **`docs/*.md`**. If a measurement contradicts something
    already written, correct it in place — never leave both versions standing.
 3. Tick the phase boxes in **`README.md`** / `PLAN.md` if a phase moved.

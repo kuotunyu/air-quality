@@ -31,6 +31,18 @@ def test_the_real_workflow_still_parses_into_steps() -> None:
         assert all(isinstance(name, str) and command for name, command, _ in found)
 
 
+def test_tracked_short_rules_have_one_canonical_source() -> None:
+    workflow = runner.WORKFLOW.read_text(encoding="utf-8")
+    instructions = (REPO_ROOT / ".github" / "copilot-instructions.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert not (REPO_ROOT / "scripts" / "mirror_agents.py").exists()
+    assert "mirror_agents.py" not in workflow
+    assert "MIRROR OF" not in instructions
+    assert "sole tracked short-rule source" in instructions
+
+
 def test_every_setup_step_named_for_skipping_exists_in_the_workflow() -> None:
     """A renamed setup step would otherwise be run as if it were a gate — or,
     worse, a stale name here would silently protect nothing."""
