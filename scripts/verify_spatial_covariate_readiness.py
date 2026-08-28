@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import stat
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -22,6 +23,10 @@ from twair.analysis.spatial_covariate_readiness import (
     COVARIATE_READINESS_METHODS,
     COVARIATE_READINESS_TABLE_ORDER,
     COVARIATE_READINESS_TABLE_SCHEMAS,
+)
+from twair.analysis.spatial_surface_baseline import (
+    SPATIAL_BASELINE_MEMBER_NAMES,
+    SPATIAL_BASELINE_TABLE_SCHEMAS,
 )
 
 _SCHEMA_VERSION = 1
@@ -47,6 +52,32 @@ _RULE = (
     "complete predictions and median station MAE delta < 0 versus idw2 "
     "in 2024/2025 same-year 20/40 km and all 2024-to-2025 joint cells"
 )
+_MANIFEST_KEYS = {
+    "schema_version",
+    "analysis",
+    "config",
+    "inputs",
+    "baseline_generation_sha256",
+    "station_inventory_generation_sha256",
+    "tables",
+    "gate",
+    "claim_boundary",
+    "identity_scope",
+    "git_sha",
+    "git_dirty",
+    "members",
+    "generated_at",
+    "complete",
+    "generation_sha256",
+}
+_GIT_SHA = re.compile(r"[0-9a-f]{40}")
+_FAILURE_TYPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_BASELINE_MEMBERS = (
+    "stations.parquet",
+    "panel.parquet",
+    "support.parquet",
+    "folds.parquet",
+)
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -61,6 +92,14 @@ def _canonical_json_bytes(value: object) -> bytes:
 
 def _canonical_hash(value: object) -> str:
     return sha256(_canonical_json_bytes(value)).hexdigest()
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
+def _strict_json(payload: bytes) -> object:
+    return json.loads(payload.decode("utf-8"), parse_constant=_reject_json_constant)
 
 
 def _is_link_or_reparse(path: Path) -> bool:
@@ -229,11 +268,32 @@ def _config_problems(manifest: dict[str, Any]) -> list[str]:
 def _input_problems(directory: Path, manifest: dict[str, Any]) -> list[str]:
     inputs = manifest.get("inputs")
     if not isinstance(inputs, list) or not inputs:
-        return ["bound input identities are missing"]
+        return ["bound input role inventory is missing"]
     if len(directory.parents) < 4:
         return ["bound input identity root cannot be resolved from generation path"]
     data_root = directory.parents[3]
     problems: list[str] = []
+    expected_paths = {
+        f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/manifest.json",
+        *(
+            f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/{member}"
+            for member in _BASELINE_MEMBERS
+        ),
+        *(
+            "interim/era5/generations/"
+            f"{_INVENTORY_GENERATION}/year={year}/era5_station_hour.parquet"
+            for year in (2023, 2024, 2025)
+        ),
+        *(
+            f"outputs/m8_satellite/generations/{_INVENTORY_GENERATION}/year={year}/panel.parquet"
+            for year in (2024, 2025)
+        ),
+    }
+    observed_paths = {
+        str(item.get("path")) for item in inputs if isinstance(item, dict) and "path" in item
+    }
+    if len(inputs) != len(expected_paths) or observed_paths != expected_paths:
+        problems.append("bound input role inventory differs from the exact ten-file contract")
     seen: set[str] = set()
     for item in inputs:
         if not isinstance(item, dict) or set(item) != {"path", "bytes", "sha256"}:
@@ -268,6 +328,93 @@ def _input_problems(directory: Path, manifest: dict[str, Any]) -> list[str]:
     return problems
 
 
+def _baseline_authority_problems(
+    directory: Path, generation_frames: dict[str, pl.DataFrame]
+) -> list[str]:
+    """Compare the emitted cohort and fold authorization with the frozen baseline."""
+    data_root = directory.parents[3]
+    baseline = (
+        data_root / "outputs" / "spatial_surface_baseline" / "generations" / _BASELINE_GENERATION
+    )
+    manifest_path = baseline / "manifest.json"
+    problems: list[str] = []
+    try:
+        manifest_payload = manifest_path.read_bytes()
+        manifest_value = _strict_json(manifest_payload)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return ["frozen baseline manifest is unreadable or contains non-finite JSON"]
+    if not isinstance(manifest_value, dict):
+        return ["frozen baseline manifest is not a JSON object"]
+    baseline_manifest: dict[str, Any] = manifest_value
+    if (
+        baseline_manifest.get("complete") is not True
+        or baseline_manifest.get("generation_sha256") != _BASELINE_GENERATION
+        or baseline_manifest.get("inventory_generation_sha256") != _INVENTORY_GENERATION
+    ):
+        problems.append("frozen baseline manifest identity differs from the reviewed inputs")
+    members = baseline_manifest.get("members")
+    if not isinstance(members, dict) or set(members) != set(SPATIAL_BASELINE_MEMBER_NAMES[:-1]):
+        problems.append("frozen baseline member identity inventory differs from the contract")
+        members = {}
+    baseline_frames: dict[str, pl.DataFrame] = {}
+    for member in _BASELINE_MEMBERS:
+        name = member.removesuffix(".parquet")
+        path = baseline / member
+        try:
+            observed_identity = _file_identity(path)
+            frame = pl.read_parquet(path)
+        except (OSError, pl.exceptions.PolarsError):
+            problems.append(f"frozen baseline member is unreadable: {member}")
+            continue
+        if members.get(member) != observed_identity:
+            problems.append(f"frozen baseline member identity differs: {member}")
+        expected_schema = SPATIAL_BASELINE_TABLE_SCHEMAS[name]
+        if frame.schema != pl.Schema(expected_schema):
+            problems.append(f"frozen baseline {name} schema differs from its contract")
+            continue
+        baseline_frames[name] = frame
+    if set(baseline_frames) != {"stations", "panel", "support", "folds"}:
+        return problems
+    baseline_stations = baseline_frames["stations"].sort("station_name")
+    baseline_panel = baseline_frames["panel"].sort("station_name", "month")
+    generation_stations = generation_frames["stations"].sort("station_name")
+    generation_panel = generation_frames["panel"].sort("station_name", "month")
+    if not _frames_equal(baseline_stations, generation_stations) or not _frames_equal(
+        baseline_panel, generation_panel
+    ):
+        problems.append("generation stations or panel differ from the frozen baseline cohort")
+    support_by_station = {
+        str(row["station_name"]): row for row in baseline_frames["support"].to_dicts()
+    }
+    for row in generation_frames["covariates"].to_dicts():
+        support = support_by_station.get(str(row["station_name"]))
+        if support is None or not (
+            _values_equal(row["x_m"], support["x_m"]) and _values_equal(row["y_m"], support["y_m"])
+        ):
+            problems.append("generation projected coordinates differ from frozen baseline support")
+            break
+    authorization: dict[tuple[str, str], set[str]] = {}
+    clusters: dict[str, set[int]] = {}
+    for row in baseline_frames["folds"].to_dicts():
+        key = (str(row["evaluation"]), str(row["target_station"]))
+        authorization.setdefault(key, set()).update(str(value) for value in row["train_stations"])
+        clusters.setdefault(str(row["target_station"]), set()).add(int(row["target_cluster"]))
+    if any(len(values) != 1 for values in clusters.values()):
+        problems.append("frozen baseline target cluster membership is inconsistent")
+    for row in generation_frames["folds"].to_dicts():
+        key = (str(row["evaluation"]), str(row["target_station"]))
+        expected = authorization.get(key)
+        observed = {str(value) for value in row["train_stations"]}
+        cluster = clusters.get(str(row["target_station"]), set())
+        if expected is None or observed != expected:
+            problems.append("generation fold differs from baseline training authorization")
+            break
+        if cluster != {int(row["target_cluster"])}:
+            problems.append("generation target cluster differs from the frozen baseline fold")
+            break
+    return problems
+
+
 def _table_contract_problems(
     frames: dict[str, pl.DataFrame], manifest: dict[str, Any]
 ) -> list[str]:
@@ -287,6 +434,25 @@ def _table_contract_problems(
             continue
         if tables.get(name) != identity:
             problems.append(f"{name} logical table identity differs from manifest")
+    return problems
+
+
+def _manifest_envelope_problems(manifest: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    if set(manifest) != _MANIFEST_KEYS:
+        problems.append("manifest envelope has missing or unexpected top-level fields")
+    git_sha = manifest.get("git_sha")
+    if not isinstance(git_sha, str) or _GIT_SHA.fullmatch(git_sha) is None:
+        problems.append("manifest envelope git_sha is not a full lowercase Git SHA")
+    if not isinstance(manifest.get("git_dirty"), bool):
+        problems.append("manifest envelope git_dirty is not Boolean")
+    generated_at = manifest.get("generated_at")
+    try:
+        timestamp = datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else None
+    except ValueError:
+        timestamp = None
+    if timestamp is None or timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        problems.append("manifest envelope generated_at is not a timezone-aware ISO timestamp")
     return problems
 
 
@@ -467,8 +633,14 @@ def _validate_prediction_row(row: dict[str, Any], problems: list[str]) -> None:
     predicted = row["predicted"]
     error = row["error"]
     if row["fold_state"] != "eligible":
-        if row["prediction_state"] == "scored" or predicted is not None or error is not None:
+        if (
+            row["prediction_state"] != row["fold_state"]
+            or row["failure_type"] is not None
+            or predicted is not None
+            or error is not None
+        ):
             problems.append("withheld target or other unscored fold was changed to scored")
+            problems.append("prediction failure contract differs from the fold-derived state")
         return
     if row["prediction_state"] == "scored":
         observed = row["observed"]
@@ -492,8 +664,36 @@ def _validate_prediction_row(row: dict[str, Any], problems: list[str]) -> None:
             valid = False
         if not valid:
             problems.append("prediction error arithmetic differs from predicted minus observed")
-    elif predicted is not None or error is not None:
-        problems.append("failed prediction carries a predicted value or error")
+        return
+    valid_failures = {
+        "idw2": {"duplicate_coordinate", "non_finite_prediction"},
+        "covariate_gbm": {
+            "estimator_failed",
+            "wrong_prediction_length",
+            "non_finite_prediction",
+        },
+        "covariate_gbm_idw2": {
+            "duplicate_coordinate",
+            "estimator_failed",
+            "wrong_prediction_length",
+            "non_finite_prediction",
+            "insufficient_residual_stations",
+        },
+    }
+    state = str(row["prediction_state"])
+    failure_type = row["failure_type"]
+    valid_failure_type = (
+        state == "estimator_failed"
+        and isinstance(failure_type, str)
+        and _FAILURE_TYPE.fullmatch(failure_type) is not None
+    ) or (state != "estimator_failed" and failure_type is None)
+    if (
+        state not in valid_failures.get(str(row["method"]), set())
+        or not valid_failure_type
+        or predicted is not None
+        or error is not None
+    ):
+        problems.append("prediction failure contract has an arbitrary state, type, or value")
 
 
 def _finite_prediction(row: dict[str, Any] | None) -> bool:
@@ -802,15 +1002,21 @@ def verify_generation(path: Path) -> list[str]:
         return problems
     try:
         manifest_payload = manifest_path.read_bytes()
-        manifest_value = json.loads(manifest_payload.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        problems.append(f"manifest is unreadable: {type(exc).__name__}")
+        manifest_value = _strict_json(manifest_payload)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        problems.append(f"manifest is unreadable or contains non-finite JSON: {type(exc).__name__}")
         return problems
     if not isinstance(manifest_value, dict):
         return [*problems, "manifest is not a JSON object"]
     manifest: dict[str, Any] = manifest_value
-    if manifest_payload != _canonical_json_bytes(manifest):
+    try:
+        canonical_manifest = _canonical_json_bytes(manifest)
+    except (TypeError, ValueError) as exc:
+        problems.append(f"manifest contains malformed or non-finite JSON: {type(exc).__name__}")
+        return problems
+    if manifest_payload != canonical_manifest:
         problems.append("manifest is not canonical JSON")
+    problems.extend(_manifest_envelope_problems(manifest))
     if manifest.get("complete") is not True:
         problems.append("manifest is not marked complete")
     generation_sha = manifest.get("generation_sha256")
@@ -819,7 +1025,11 @@ def verify_generation(path: Path) -> list[str]:
         for key, value in manifest.items()
         if key not in {"generated_at", "complete", "generation_sha256"}
     }
-    recomputed_generation = _canonical_hash(identity)
+    try:
+        recomputed_generation = _canonical_hash(identity)
+    except (TypeError, ValueError) as exc:
+        problems.append(f"manifest identity cannot be recomputed: {type(exc).__name__}")
+        return problems
     if generation_sha != recomputed_generation or directory.name != recomputed_generation:
         problems.append("generation directory identity differs from manifest identity")
     problems.extend(_config_problems(manifest))
@@ -854,19 +1064,28 @@ def verify_generation(path: Path) -> list[str]:
     if set(frames) != set(_TABLE_NAMES):
         return problems
     problems.extend(_table_contract_problems(frames, manifest))
+    try:
+        problems.extend(_baseline_authority_problems(directory, frames))
+    except (KeyError, TypeError, ValueError, OverflowError, pl.exceptions.PolarsError) as exc:
+        problems.append(f"frozen baseline comparison cannot be completed: {type(exc).__name__}")
     summary_path = directory / "summary.json"
     if not summary_path.is_file():
         return problems
     try:
         summary_payload = summary_path.read_bytes()
-        summary_value = json.loads(summary_payload.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        problems.append(f"summary is unreadable: {type(exc).__name__}")
+        summary_value = _strict_json(summary_payload)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        problems.append(f"summary is unreadable or contains non-finite JSON: {type(exc).__name__}")
         return problems
     if not isinstance(summary_value, dict):
         return [*problems, "summary is not a JSON object"]
     summary: dict[str, Any] = summary_value
-    if summary_payload != _canonical_json_bytes(summary):
+    try:
+        canonical_summary = _canonical_json_bytes(summary)
+    except (TypeError, ValueError) as exc:
+        problems.append(f"summary contains malformed or non-finite JSON: {type(exc).__name__}")
+        return problems
+    if summary_payload != canonical_summary:
         problems.append("summary is not canonical JSON")
     try:
         problems.extend(_semantic_problems(frames, manifest, summary))

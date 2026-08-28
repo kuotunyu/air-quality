@@ -23,6 +23,10 @@ from twair.analysis.spatial_covariate_readiness import (
     InputFile,
     load_spatial_covariate_readiness_config,
 )
+from twair.analysis.spatial_surface_baseline import (
+    SPATIAL_BASELINE_MEMBER_NAMES,
+    SPATIAL_BASELINE_TABLE_SCHEMAS,
+)
 
 BASELINE_GENERATION = "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f"
 INVENTORY_GENERATION = "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
@@ -149,6 +153,61 @@ def _synthetic_frames() -> dict[str, pl.DataFrame]:
     covariates = pl.DataFrame(
         covariate_rows, schema=COVARIATE_READINESS_TABLE_SCHEMAS["covariates"]
     )
+    support = pl.DataFrame(
+        [
+            {
+                "station_name": station,
+                "nearest_station": station_names[(index + 1) % len(station_names)],
+                "nearest_station_km": 10.0,
+                "stations_within_20km": 1,
+                "stations_within_40km": 2,
+                "x_m": (coordinates[0] - 120.0) * 100_000.0,
+                "y_m": 0.0,
+            }
+            for index, (station, coordinates) in enumerate(station_values.items())
+        ],
+        schema=SPATIAL_BASELINE_TABLE_SCHEMAS["support"],
+    )
+    authorized = {
+        (evaluation, station): sorted(
+            candidate for candidate in station_names if candidate != station
+        )[:8]
+        for evaluation in ("buffer_20km", "buffer_40km", "spatial_cluster")
+        for station in station_names
+    }
+    baseline_fold_rows: list[dict[str, object]] = []
+    for evaluation in ("buffer_20km", "buffer_40km", "spatial_cluster"):
+        for row in panel.iter_rows(named=True):
+            station = str(row["station_name"])
+            month = row["month"]
+            train_stations = [
+                candidate
+                for candidate in authorized[(evaluation, station)]
+                if targets[(candidate, month)] is not None
+            ]
+            baseline_fold_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "fold_id": f"{evaluation}:{station}",
+                    "year": month.year,
+                    "month": month,
+                    "target_station": station,
+                    "target_cluster": station_names.index(station),
+                    "target_state": row["target_state"],
+                    "observed": row["mean"],
+                    "train_stations": train_stations,
+                    "n_train": len(train_stations),
+                    "fold_state": (
+                        "eligible"
+                        if row["target_state"] == "observed"
+                        else "unscored_target_withheld"
+                    ),
+                    "fold_reason": None if row["target_state"] == "observed" else "target_withheld",
+                }
+            )
+    baseline_folds = pl.DataFrame(
+        baseline_fold_rows, schema=SPATIAL_BASELINE_TABLE_SCHEMAS["folds"]
+    )
     fold_rows: list[dict[str, object]] = []
     for evaluation in ("buffer_20km", "buffer_40km", "spatial_cluster"):
         for (station, month), observed in targets.items():
@@ -156,11 +215,10 @@ def _synthetic_frames() -> dict[str, pl.DataFrame]:
             if month.year == 2025:
                 periods.append(("2024_to_2025", 2024, 2025))
             for training_period, train_year, target_year in periods:
-                train_stations = sorted(
-                    candidate
-                    for candidate in station_values
-                    if candidate != station
-                    and targets[(candidate, date(train_year, 1, 1))] is not None
+                train_stations = authorized[(evaluation, station)]
+                model_train_rows = sum(
+                    targets[(candidate, date(train_year, 1, 1))] is not None
+                    for candidate in train_stations
                 )
                 target_state = "observed" if observed is not None else "withheld"
                 fold_rows.append(
@@ -176,8 +234,8 @@ def _synthetic_frames() -> dict[str, pl.DataFrame]:
                         "observed": observed,
                         "train_stations": train_stations,
                         "n_train_stations": len(train_stations),
-                        "n_model_train_rows": len(train_stations),
-                        "n_same_month_train_rows": len(train_stations),
+                        "n_model_train_rows": model_train_rows,
+                        "n_same_month_train_rows": model_train_rows,
                         "fold_state": (
                             "eligible" if observed is not None else "unscored_target_withheld"
                         ),
@@ -210,6 +268,8 @@ def _synthetic_frames() -> dict[str, pl.DataFrame]:
     return {
         "stations": stations,
         "panel": panel,
+        "support": support,
+        "baseline_folds": baseline_folds,
         "covariates": covariates,
         "folds": folds,
         "predictions": predictions,
@@ -221,20 +281,87 @@ def _synthetic_frames() -> dict[str, pl.DataFrame]:
 @pytest.fixture
 def generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     frames = _synthetic_frames()
-    source = tmp_path / "inputs" / "source.bin"
-    source.parent.mkdir()
-    source.write_bytes(b"frozen-input")
+    baseline = (
+        tmp_path / "outputs" / "spatial_surface_baseline" / "generations" / BASELINE_GENERATION
+    )
+    baseline.mkdir(parents=True)
+    baseline_frames = {
+        "stations": frames["stations"],
+        "panel": frames["panel"],
+        "support": frames["support"],
+        "folds": frames["baseline_folds"],
+    }
+    for name, frame in baseline_frames.items():
+        frame.write_parquet(baseline / f"{name}.parquet")
+    baseline_members = {
+        f"{name}.parquet": {
+            "bytes": (baseline / f"{name}.parquet").stat().st_size,
+            "sha256": sha256((baseline / f"{name}.parquet").read_bytes()).hexdigest(),
+        }
+        for name in baseline_frames
+    }
+    baseline_members.update(
+        {
+            member: {"bytes": 1, "sha256": "0" * 64}
+            for member in SPATIAL_BASELINE_MEMBER_NAMES[:-1]
+            if member not in baseline_members
+        }
+    )
+    baseline_manifest = baseline / "manifest.json"
+    baseline_manifest.write_bytes(
+        _canonical_json(
+            {
+                "complete": True,
+                "generation_sha256": BASELINE_GENERATION,
+                "inventory_generation_sha256": INVENTORY_GENERATION,
+                "members": baseline_members,
+            }
+        )
+    )
+    external: list[Path] = []
+    for year in (2023, 2024, 2025):
+        path = (
+            tmp_path
+            / "interim"
+            / "era5"
+            / "generations"
+            / INVENTORY_GENERATION
+            / f"year={year}"
+            / "era5_station_hour.parquet"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"era5-{year}".encode())
+        external.append(path)
+    for year in (2024, 2025):
+        path = (
+            tmp_path
+            / "outputs"
+            / "m8_satellite"
+            / "generations"
+            / INVENTORY_GENERATION
+            / f"year={year}"
+            / "panel.parquet"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"satellite-{year}".encode())
+        external.append(path)
+    input_paths = [
+        baseline_manifest,
+        *(baseline / f"{name}.parquet" for name in baseline_frames),
+        *external,
+    ]
     inputs = FrozenInputs(
         stations=frames["stations"],
         panel=frames["panel"],
-        support=pl.DataFrame(),
-        baseline_folds=pl.DataFrame(),
-        input_files=(
+        support=frames["support"],
+        baseline_folds=frames["baseline_folds"],
+        input_files=tuple(
             InputFile(
-                path=source,
-                bytes=source.stat().st_size,
-                sha256=sha256(source.read_bytes()).hexdigest(),
-            ),
+                path=path,
+                bytes=path.stat().st_size,
+                sha256=sha256(path.read_bytes()).hexdigest(),
+            )
+            for path in input_paths
         ),
         baseline_generation_sha256=BASELINE_GENERATION,
         station_inventory_generation_sha256=INVENTORY_GENERATION,
@@ -305,6 +432,18 @@ def _rewrite_table(generation: Path, table: str, rows: list[dict[str, Any]]) -> 
     return _resign_generation(generation, table)
 
 
+def _refresh_member_identity(generation: Path, member: str) -> Path:
+    manifest_path = generation / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload = (generation / member).read_bytes()
+    manifest["members"][member] = {
+        "bytes": len(payload),
+        "sha256": sha256(payload).hexdigest(),
+    }
+    manifest_path.write_bytes(_canonical_json(manifest))
+    return _resign_generation(generation)
+
+
 def _assert_problem(generation: Path, relationship: str) -> None:
     problems = verify_generation(generation)
     assert problems
@@ -313,6 +452,62 @@ def _assert_problem(generation: Path, relationship: str) -> None:
 
 def test_a_complete_generation_passes_independent_verification(generation: Path) -> None:
     assert verify_generation(generation) == []
+
+
+def test_resigned_output_coordinates_must_match_the_frozen_baseline(generation: Path) -> None:
+    station_rows = pl.read_parquet(generation / "stations.parquet").to_dicts()
+    target = station_rows[0]["station_name"]
+    station_rows[0]["lon"] = float(station_rows[0]["lon"]) + 1.0
+    panel_rows = pl.read_parquet(generation / "panel.parquet").to_dicts()
+    covariate_rows = pl.read_parquet(generation / "covariates.parquet").to_dicts()
+    for row in panel_rows:
+        if row["station_name"] == target:
+            row["lon"] = float(row["lon"]) + 1.0
+    for row in covariate_rows:
+        if row["station_name"] == target:
+            row["lon"] = float(row["lon"]) + 1.0
+    generation = _rewrite_table(generation, "stations", station_rows)
+    generation = _rewrite_table(generation, "panel", panel_rows)
+    generation = _rewrite_table(generation, "covariates", covariate_rows)
+
+    _assert_problem(generation, "frozen baseline cohort")
+
+
+def test_resigned_training_membership_must_match_baseline_authorization(generation: Path) -> None:
+    fold_rows = pl.read_parquet(generation / "folds.parquet").to_dicts()
+    station_names = set(pl.read_parquet(generation / "stations.parquet")["station_name"])
+    target = next(row for row in fold_rows if row["train_year"] == 2024)
+    key = tuple(target[column] for column in TARGET_KEY)
+    unauthorized = next(
+        station
+        for station in station_names
+        if station != target["target_station"] and station not in target["train_stations"]
+    )
+    target["train_stations"] = sorted([*target["train_stations"][1:], unauthorized])
+    prediction_rows = pl.read_parquet(generation / "predictions.parquet").to_dicts()
+    for row in prediction_rows:
+        if tuple(row[column] for column in TARGET_KEY) == key:
+            row["train_stations"] = target["train_stations"]
+    generation = _rewrite_table(generation, "folds", fold_rows)
+    generation = _rewrite_table(generation, "predictions", prediction_rows)
+
+    _assert_problem(generation, "baseline training authorization")
+
+
+@pytest.mark.parametrize("mutation", ["missing", "replaced"])
+def test_bound_input_inventory_requires_all_ten_exact_roles(
+    generation: Path, mutation: str
+) -> None:
+    manifest_path = generation / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if mutation == "missing":
+        manifest["inputs"].pop()
+    else:
+        manifest["inputs"][-1] = copy.deepcopy(manifest["inputs"][-2])
+    manifest_path.write_bytes(_canonical_json(manifest))
+    mutated = _resign_generation(generation)
+
+    _assert_problem(mutated, "bound input role inventory")
 
 
 @pytest.mark.parametrize("member", ["scores.parquet", "unexpected.txt"])
@@ -431,6 +626,50 @@ def test_withheld_target_changed_to_scored_is_rejected(generation: Path) -> None
     _assert_problem(mutated, "withheld target")
 
 
+def test_noneligible_prediction_cannot_use_an_arbitrary_state(generation: Path) -> None:
+    rows = pl.read_parquet(generation / "predictions.parquet").to_dicts()
+    withheld = next(row for row in rows if row["target_state"] == "withheld")
+    withheld["prediction_state"] = "banana"
+    mutated = _rewrite_table(generation, "predictions", rows)
+    _assert_problem(mutated, "prediction failure contract")
+
+
+def test_eligible_prediction_cannot_use_an_arbitrary_failed_state(generation: Path) -> None:
+    rows = pl.read_parquet(generation / "predictions.parquet").to_dicts()
+    failed = next(row for row in rows if row["prediction_state"] == "scored")
+    failed["predicted"] = None
+    failed["error"] = None
+    failed["prediction_state"] = "banana"
+    mutated = _rewrite_table(generation, "predictions", rows)
+    _assert_problem(mutated, "prediction failure contract")
+
+
+def test_failed_prediction_rejects_an_arbitrary_failure_type(generation: Path) -> None:
+    rows = pl.read_parquet(generation / "predictions.parquet").to_dicts()
+    failed = next(row for row in rows if row["prediction_state"] == "scored")
+    failed["predicted"] = None
+    failed["error"] = None
+    failed["prediction_state"] = "wrong_prediction_length"
+    failed["failure_type"] = "banana"
+    mutated = _rewrite_table(generation, "predictions", rows)
+    _assert_problem(mutated, "prediction failure contract")
+
+
+def test_estimator_failure_requires_an_exception_class(generation: Path) -> None:
+    rows = pl.read_parquet(generation / "predictions.parquet").to_dicts()
+    failed = next(
+        row
+        for row in rows
+        if row["method"] == "covariate_gbm" and row["prediction_state"] == "scored"
+    )
+    failed["predicted"] = None
+    failed["error"] = None
+    failed["prediction_state"] = "estimator_failed"
+    failed["failure_type"] = None
+    mutated = _rewrite_table(generation, "predictions", rows)
+    _assert_problem(mutated, "prediction failure contract")
+
+
 def test_bound_input_hash_is_recomputed(generation: Path) -> None:
     manifest_path = generation / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -453,6 +692,73 @@ def test_generation_directory_name_must_match_identity(generation: Path) -> None
     renamed = generation.with_name("0" * 64)
     generation.rename(renamed)
     _assert_problem(renamed, "directory identity")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("unexpected", "field"),
+        ("git_sha", "ABC"),
+        ("git_dirty", "false"),
+        ("generated_at", "not-a-timestamp"),
+    ],
+)
+def test_manifest_envelope_and_git_provenance_are_exact(
+    generation: Path, field: str, value: object
+) -> None:
+    manifest_path = generation / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest[field] = value
+    manifest_path.write_bytes(_canonical_json(manifest))
+    mutated = _resign_generation(generation) if field != "generated_at" else generation
+    _assert_problem(mutated, "manifest envelope")
+
+
+def test_manifest_rejects_a_missing_required_provenance_field(generation: Path) -> None:
+    manifest_path = generation / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["git_sha"]
+    manifest_path.write_bytes(_canonical_json(manifest))
+    mutated = _resign_generation(generation)
+    _assert_problem(mutated, "manifest envelope")
+
+
+@pytest.mark.parametrize(
+    ("member", "needle", "replacement"),
+    [
+        ("manifest.json", b'"git_dirty":false', b'"git_dirty":NaN'),
+        ("summary.json", b'"feeds_web":false', b'"feeds_web":Infinity'),
+    ],
+)
+def test_non_finite_json_fails_closed_without_an_exception(
+    generation: Path, member: str, needle: bytes, replacement: bytes
+) -> None:
+    path = generation / member
+    payload = path.read_bytes()
+    assert needle in payload
+    path.write_bytes(payload.replace(needle, replacement))
+
+    problems = verify_generation(generation)
+
+    assert problems
+    assert any("non-finite JSON" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("mutation", ["corrupt", "schema"])
+def test_malformed_parquet_fails_closed_without_an_exception(
+    generation: Path, mutation: str
+) -> None:
+    path = generation / "panel.parquet"
+    if mutation == "corrupt":
+        path.write_bytes(b"not parquet")
+    else:
+        pl.read_parquet(path).drop("target_state").write_parquet(path)
+    mutated = _refresh_member_identity(generation, "panel.parquet")
+
+    problems = verify_generation(mutated)
+
+    assert problems
+    assert any("panel" in problem for problem in problems)
 
 
 @pytest.mark.parametrize("mutation", ["limitation", "feeds_web"])
