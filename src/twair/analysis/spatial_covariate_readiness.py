@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from datetime import date
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,11 @@ __all__ = [
 
 COVARIATE_READINESS_METHODS = ("idw2", "covariate_gbm", "covariate_gbm_idw2")
 COVARIATE_READINESS_EVALUATIONS = ("buffer_20km", "buffer_40km", "spatial_cluster")
+_BASELINE_MEMBER_NAMES = ("stations.parquet", "panel.parquet", "support.parquet", "folds.parquet")
+_REVIEWED_STATION_COUNT = 59
+_REVIEWED_PANEL_KEY_COUNT = 1416
+_REVIEWED_OBSERVED_COUNT = 1415
+_REVIEWED_WITHHELD_KEY = ("新營", date(2025, 5, 1))
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _EXPECTED_MODEL = ModelConfig(
     n_estimators=200,
@@ -332,6 +338,10 @@ def _validate_baseline_tables(
         ("evaluation", "year", "month", "target_station"),
         label="fold target keys",
     )
+    if selected_stations.height != _REVIEWED_STATION_COUNT:
+        raise RuntimeError("spatial covariate baseline station count changed")
+    if selected_panel.height != _REVIEWED_PANEL_KEY_COUNT:
+        raise RuntimeError("spatial covariate baseline panel key count changed")
     station_names = set(selected_stations["station_name"].to_list())
     support_names = set(selected_support["station_name"].to_list())
     panel_names = set(selected_panel["station_name"].to_list())
@@ -349,6 +359,10 @@ def _validate_baseline_tables(
         raise RuntimeError("spatial covariate baseline target states must be observed and withheld")
     observed = selected_panel.filter(pl.col("target_state") == "observed")
     withheld = selected_panel.filter(pl.col("target_state") == "withheld")
+    if withheld.height != 1:
+        raise RuntimeError("spatial covariate baseline withheld count changed")
+    if observed.height != _REVIEWED_OBSERVED_COUNT:
+        raise RuntimeError("spatial covariate baseline observed count changed")
     if (
         observed.filter(
             pl.col("mean").is_null() | ~pl.col("mean").is_finite() | ~pl.col("meets_threshold")
@@ -356,6 +370,8 @@ def _validate_baseline_tables(
         or withheld.filter(pl.col("mean").is_not_null() | pl.col("meets_threshold")).height
     ):
         raise RuntimeError("spatial covariate baseline target-state values changed")
+    if withheld.select("station_name", "month", "mean").rows() != [(*_REVIEWED_WITHHELD_KEY, None)]:
+        raise RuntimeError("spatial covariate baseline withheld identity changed")
     expected_target_states = pl.DataFrame(
         {"evaluation": list(COVARIATE_READINESS_EVALUATIONS)}, schema={"evaluation": pl.String}
     ).join(
@@ -379,6 +395,22 @@ def _validate_baseline_tables(
     ):
         raise RuntimeError("spatial covariate baseline target-state counts or fold keys changed")
     return selected_stations, selected_panel, selected_support, selected_folds
+
+
+def _validate_manifest_member_identities(
+    manifest: dict[str, Any], identities: list[InputFile]
+) -> None:
+    members = manifest.get("members")
+    if not isinstance(members, dict):
+        raise RuntimeError("spatial covariate baseline manifest member identities are missing")
+    if tuple(identity.path.name for identity in identities) != _BASELINE_MEMBER_NAMES:
+        raise RuntimeError("spatial covariate baseline member paths changed")
+    for identity in identities:
+        expected = members.get(identity.path.name)
+        if expected != {"bytes": identity.bytes, "sha256": identity.sha256}:
+            raise RuntimeError(
+                f"spatial covariate baseline manifest member identity changed: {identity.path.name}"
+            )
 
 
 def load_frozen_inputs(data_root: Path, config: CovariateReadinessConfig) -> FrozenInputs:
@@ -421,6 +453,7 @@ def load_frozen_inputs(data_root: Path, config: CovariateReadinessConfig) -> Fro
         frame, identity = _read_parquet_stable(path, label=f"spatial covariate baseline {name}")
         frames[name] = frame
         files.append(identity)
+    _validate_manifest_member_identities(manifest, files[1:])
     stations, panel, support, baseline_folds = _validate_baseline_tables(
         frames["stations"], frames["panel"], frames["support"], frames["folds"]
     )

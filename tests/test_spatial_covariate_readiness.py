@@ -154,41 +154,64 @@ def _baseline_directory(root: Path) -> Path:
     return root / "outputs" / "spatial_surface_baseline" / "generations" / BASELINE_GENERATION
 
 
-def _write_baseline_fixture(root: Path) -> list[Path]:
+def _write_baseline_fixture(
+    root: Path,
+    *,
+    station_count: int = 59,
+    omitted_panel_key: tuple[str, date] | None = None,
+    withheld_key: tuple[str, date] = ("新營", date(2025, 5, 1)),
+    extra_withheld: tuple[str, date] | None = None,
+) -> list[Path]:
     directory = _baseline_directory(root)
     directory.mkdir(parents=True)
+    station_names = [*(f"station-{index:02d}" for index in range(station_count - 1)), "新營"]
+    months = [date(year, month, 1) for year in (2024, 2025) for month in range(1, 13)]
     stations = pl.DataFrame(
         {
-            "station_name": ["alpha", "beta"],
-            "station_type_official": ["一般站", "背景站"],
-            "lon": [121.0, 121.1],
-            "lat": [24.0, 24.1],
+            "station_name": station_names,
+            "station_type_official": ["一般站"] * station_count,
+            "lon": [120.0 + index * 0.01 for index in range(station_count)],
+            "lat": [23.0 + index * 0.01 for index in range(station_count)],
         },
         schema=SPATIAL_BASELINE_TABLE_SCHEMAS["stations"],
     )
+    panel_rows: list[dict[str, object]] = []
+    for station_index, station_name in enumerate(station_names):
+        for month in months:
+            if (station_name, month) == omitted_panel_key:
+                continue
+            withheld = (station_name, month) == withheld_key or (
+                station_name,
+                month,
+            ) == extra_withheld
+            panel_rows.append(
+                {
+                    "station_name": station_name,
+                    "station_type_official": "一般站",
+                    "lon": 120.0 + station_index * 0.01,
+                    "lat": 23.0 + station_index * 0.01,
+                    "month": month,
+                    "pollutant": "PM2.5",
+                    "mean": None if withheld else float(10 + station_index + month.month),
+                    "meets_threshold": not withheld,
+                    "target_state": "withheld" if withheld else "observed",
+                }
+            )
     panel = pl.DataFrame(
-        {
-            "station_name": ["alpha", "alpha", "beta", "beta"],
-            "station_type_official": ["一般站", "一般站", "背景站", "背景站"],
-            "lon": [121.0, 121.0, 121.1, 121.1],
-            "lat": [24.0, 24.0, 24.1, 24.1],
-            "month": [date(2024, 1, 1), date(2025, 1, 1), date(2024, 1, 1), date(2025, 1, 1)],
-            "pollutant": ["PM2.5"] * 4,
-            "mean": [10.0, 11.0, 12.0, None],
-            "meets_threshold": [True, True, True, False],
-            "target_state": ["observed", "observed", "observed", "withheld"],
-        },
+        panel_rows,
         schema=SPATIAL_BASELINE_TABLE_SCHEMAS["panel"],
     )
     support = pl.DataFrame(
         {
-            "station_name": ["alpha", "beta"],
-            "nearest_station": ["beta", "alpha"],
-            "nearest_station_km": [15.0, 15.0],
-            "stations_within_20km": [1, 1],
-            "stations_within_40km": [1, 1],
-            "x_m": [100.0, 200.0],
-            "y_m": [300.0, 400.0],
+            "station_name": station_names,
+            "nearest_station": [
+                station_names[(index + 1) % station_count] for index in range(station_count)
+            ],
+            "nearest_station_km": [1.0] * station_count,
+            "stations_within_20km": [station_count - 1] * station_count,
+            "stations_within_40km": [station_count - 1] * station_count,
+            "x_m": [100.0 + index for index in range(station_count)],
+            "y_m": [300.0 + index for index in range(station_count)],
         },
         schema=SPATIAL_BASELINE_TABLE_SCHEMAS["support"],
     )
@@ -204,11 +227,11 @@ def _write_baseline_fixture(root: Path) -> list[Path]:
                     "year": row["month"].year,
                     "month": row["month"],
                     "target_station": station_name,
-                    "target_cluster": 0 if station_name == "alpha" else 1,
+                    "target_cluster": station_names.index(station_name) % 5,
                     "target_state": target_state,
                     "observed": row["mean"],
-                    "train_stations": ["beta"] if station_name == "alpha" else ["alpha"],
-                    "n_train": 1,
+                    "train_stations": [name for name in station_names if name != station_name],
+                    "n_train": station_count - 1,
                     "fold_state": (
                         "eligible" if target_state == "observed" else "unscored_target_withheld"
                     ),
@@ -219,6 +242,7 @@ def _write_baseline_fixture(root: Path) -> list[Path]:
     frames = {"stations": stations, "panel": panel, "support": support, "folds": folds}
     for name, frame in frames.items():
         frame.write_parquet(directory / f"{name}.parquet")
+    member_paths = [directory / f"{name}.parquet" for name in frames]
     manifest_path = directory / "manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -226,6 +250,10 @@ def _write_baseline_fixture(root: Path) -> list[Path]:
                 "complete": True,
                 "generation_sha256": BASELINE_GENERATION,
                 "inventory_generation_sha256": INVENTORY_GENERATION,
+                "members": {
+                    path.name: {"bytes": path.stat().st_size, "sha256": _identity(path).sha256}
+                    for path in member_paths
+                },
             }
         ),
         encoding="utf-8",
@@ -269,8 +297,30 @@ def _identity(path: Path) -> InputFile:
     return InputFile(path=path, bytes=len(payload), sha256=sha256(payload).hexdigest())
 
 
-def _write_frozen_fixture(root: Path) -> tuple[CovariateReadinessConfig, list[Path]]:
-    baseline = _write_baseline_fixture(root)
+def _refresh_manifest_member_identity(root: Path, member: str) -> None:
+    directory = _baseline_directory(root)
+    manifest_path = directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    identity = _identity(directory / member)
+    manifest["members"][member] = {"bytes": identity.bytes, "sha256": identity.sha256}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _write_frozen_fixture(
+    root: Path,
+    *,
+    station_count: int = 59,
+    omitted_panel_key: tuple[str, date] | None = None,
+    withheld_key: tuple[str, date] = ("新營", date(2025, 5, 1)),
+    extra_withheld: tuple[str, date] | None = None,
+) -> tuple[CovariateReadinessConfig, list[Path]]:
+    baseline = _write_baseline_fixture(
+        root,
+        station_count=station_count,
+        omitted_panel_key=omitted_panel_key,
+        withheld_key=withheld_key,
+        extra_withheld=extra_withheld,
+    )
     external = _write_external_inputs(root)
     return _config(), [*baseline, *external]
 
@@ -280,24 +330,15 @@ def test_frozen_inputs_return_sorted_baseline_tables_and_exact_identities(tmp_pa
 
     inputs = load_frozen_inputs(tmp_path, config)
 
-    assert inputs.stations["station_name"].to_list() == ["alpha", "beta"]
-    assert inputs.panel.select("station_name", "month").rows() == [
-        ("alpha", date(2024, 1, 1)),
-        ("alpha", date(2025, 1, 1)),
-        ("beta", date(2024, 1, 1)),
-        ("beta", date(2025, 1, 1)),
-    ]
-    assert inputs.support["station_name"].to_list() == ["alpha", "beta"]
-    assert (
-        inputs.baseline_folds.filter(pl.col("evaluation") == "buffer_20km")
-        .select("target_station", "month")
-        .rows()
-    ) == [
-        ("alpha", date(2024, 1, 1)),
-        ("beta", date(2024, 1, 1)),
-        ("alpha", date(2025, 1, 1)),
-        ("beta", date(2025, 1, 1)),
-    ]
+    assert inputs.stations.height == 59
+    assert inputs.stations["station_name"].to_list()[-1] == "新營"
+    assert inputs.panel.height == 1416
+    assert inputs.support.height == 59
+    assert inputs.baseline_folds.height == 3 * 1416
+    assert inputs.panel.filter(pl.col("target_state") == "observed").height == 1415
+    assert inputs.panel.filter(pl.col("target_state") == "withheld").select(
+        "station_name", "month", "mean"
+    ).rows() == [("新營", date(2025, 5, 1), None)]
     assert inputs.input_files == tuple(_identity(path) for path in expected_paths)
     assert inputs.baseline_generation_sha256 == BASELINE_GENERATION
     assert inputs.station_inventory_generation_sha256 == INVENTORY_GENERATION
@@ -349,8 +390,26 @@ def test_frozen_inputs_reject_an_unexpected_baseline_table_schema(tmp_path: Path
     config, _ = _write_frozen_fixture(tmp_path)
     panel_path = _baseline_directory(tmp_path) / "panel.parquet"
     pl.read_parquet(panel_path).drop("target_state").write_parquet(panel_path)
+    _refresh_manifest_member_identity(tmp_path, "panel.parquet")
 
     with pytest.raises(RuntimeError, match="panel schema"):
+        load_frozen_inputs(tmp_path, config)
+
+
+def test_frozen_inputs_reject_a_baseline_member_that_differs_from_its_manifest_identity(
+    tmp_path: Path,
+) -> None:
+    config, _ = _write_frozen_fixture(tmp_path)
+    panel_path = _baseline_directory(tmp_path) / "panel.parquet"
+    panel = pl.read_parquet(panel_path).with_columns(
+        pl.when(pl.col("target_state") == "observed")
+        .then(pl.col("mean") + 0.25)
+        .otherwise(pl.col("mean"))
+        .alias("mean")
+    )
+    panel.write_parquet(panel_path)
+
+    with pytest.raises(RuntimeError, match="manifest member identity"):
         load_frozen_inputs(tmp_path, config)
 
 
@@ -359,6 +418,7 @@ def test_frozen_inputs_reject_duplicate_station_month_keys(tmp_path: Path) -> No
     panel_path = _baseline_directory(tmp_path) / "panel.parquet"
     panel = pl.read_parquet(panel_path)
     pl.concat([panel, panel.head(1)]).write_parquet(panel_path)
+    _refresh_manifest_member_identity(tmp_path, "panel.parquet")
 
     with pytest.raises(RuntimeError, match="duplicate station-month"):
         load_frozen_inputs(tmp_path, config)
@@ -370,12 +430,13 @@ def test_frozen_inputs_reject_a_panel_station_missing_from_stations_or_support(
     config, _ = _write_frozen_fixture(tmp_path)
     panel_path = _baseline_directory(tmp_path) / "panel.parquet"
     panel = pl.read_parquet(panel_path).with_columns(
-        pl.when(pl.col("station_name") == "beta")
+        pl.when(pl.col("station_name") == "station-01")
         .then(pl.lit("gamma"))
         .otherwise(pl.col("station_name"))
         .alias("station_name")
     )
     panel.write_parquet(panel_path)
+    _refresh_manifest_member_identity(tmp_path, "panel.parquet")
 
     with pytest.raises(RuntimeError, match="station set"):
         load_frozen_inputs(tmp_path, config)
@@ -385,36 +446,68 @@ def test_frozen_inputs_reject_target_states_outside_observed_and_withheld(tmp_pa
     config, _ = _write_frozen_fixture(tmp_path)
     panel_path = _baseline_directory(tmp_path) / "panel.parquet"
     panel = pl.read_parquet(panel_path).with_columns(
-        pl.when(pl.col("station_name") == "alpha")
+        pl.when(pl.col("station_name") == "新營")
         .then(pl.lit("source_row_absent"))
         .otherwise(pl.col("target_state"))
         .alias("target_state")
     )
     panel.write_parquet(panel_path)
+    _refresh_manifest_member_identity(tmp_path, "panel.parquet")
 
     with pytest.raises(RuntimeError, match="target states"):
         load_frozen_inputs(tmp_path, config)
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("station_count", "station count"),
+        ("panel_key_count", "panel key count"),
+        ("withheld_count", "withheld count"),
+    ],
+)
+def test_frozen_inputs_reject_wrong_reviewed_cohort_counts(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    if mutation == "station_count":
+        config, _ = _write_frozen_fixture(tmp_path, station_count=58)
+    elif mutation == "panel_key_count":
+        config, _ = _write_frozen_fixture(
+            tmp_path, omitted_panel_key=("station-00", date(2024, 1, 1))
+        )
+    else:
+        assert mutation == "withheld_count"
+        config, _ = _write_frozen_fixture(tmp_path, extra_withheld=("station-00", date(2024, 1, 1)))
+
+    with pytest.raises(RuntimeError, match=message):
+        load_frozen_inputs(tmp_path, config)
+
+
+@pytest.mark.parametrize(
+    "withheld_key",
+    [("station-00", date(2025, 5, 1)), ("新營", date(2025, 4, 1))],
+)
+def test_frozen_inputs_reject_an_unreviewed_withheld_identity(
+    tmp_path: Path, withheld_key: tuple[str, date]
+) -> None:
+    config, _ = _write_frozen_fixture(tmp_path, withheld_key=withheld_key)
+
+    with pytest.raises(RuntimeError, match="withheld identity"):
+        load_frozen_inputs(tmp_path, config)
+
+
 def test_frozen_inputs_reject_target_state_counts_that_differ_from_folds(tmp_path: Path) -> None:
     config, _ = _write_frozen_fixture(tmp_path)
-    panel_path = _baseline_directory(tmp_path) / "panel.parquet"
-    changed = (pl.col("station_name") == "alpha") & (pl.col("month") == date(2025, 1, 1))
-    panel = pl.read_parquet(panel_path).with_columns(
-        pl.when(changed)
-        .then(pl.lit(None, dtype=pl.Float64))
-        .otherwise(pl.col("mean"))
-        .alias("mean"),
-        pl.when(changed)
-        .then(pl.lit(False))
-        .otherwise(pl.col("meets_threshold"))
-        .alias("meets_threshold"),
+    folds_path = _baseline_directory(tmp_path) / "folds.parquet"
+    changed = (pl.col("target_station") == "station-00") & (pl.col("month") == date(2025, 1, 1))
+    folds = pl.read_parquet(folds_path).with_columns(
         pl.when(changed)
         .then(pl.lit("withheld"))
         .otherwise(pl.col("target_state"))
         .alias("target_state"),
     )
-    panel.write_parquet(panel_path)
+    folds.write_parquet(folds_path)
+    _refresh_manifest_member_identity(tmp_path, "folds.parquet")
 
     with pytest.raises(RuntimeError, match="target-state counts"):
         load_frozen_inputs(tmp_path, config)
