@@ -236,8 +236,8 @@ The `probe sources` utility parses the live airtw annual catalogue, resolves cur
 ## Project Status
 
 For the measured state of the store and outputs, run `uv run twair status`.
-The roadmap is in [PLAN.md](PLAN.md); durable evidence and decisions live in
-the relevant public [technical docs](docs/).
+The table below owns the public release boundary and next directions; durable
+evidence and decisions live in the relevant public [technical docs](docs/).
 
 | Phase | Current delivery | Disposition |
 |---|---|---|
@@ -251,7 +251,10 @@ the relevant public [technical docs](docs/).
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Release closeout: normal engineering and the editorial UI implementation are complete, integrated into `master`, and deployed to GitHub Pages. The L0/L1 HF Dataset publish-or-not decision remains last and owner-controlled; the external-reader trial is deferred and non-blocking; PyPI is optional. |
 
-The original blueprint and every superseded/deferred disposition remain in [PLAN.md](PLAN.md).
+Implemented engineering decisions live in
+[docs/working-rules.md](docs/working-rules.md); current data and method evidence
+live in [docs/data-sources.md](docs/data-sources.md) and
+[docs/methodology.md](docs/methodology.md).
 
 ---
 

@@ -686,7 +686,7 @@ def build_spatial_report() -> Path:
 
 > 由 `uv run twair report spatial` 產生於 {generated}。
 > 本報告採 Markdown，與 `reports/01-core.md` 使用同一套公開報告契約；repo 不使用
-> Quarto 工具鏈。這項交付取代了早期 `.qmd` 藍圖，判定記在 [PLAN.md](../PLAN.md) 的 Phase 5。
+> Quarto 工具鏈。這項交付取代了早期 `.qmd` 藍圖；目前判定見 [README.md](../README.md) 的 Phase 5。
 >
 {_quote(_spatial_header())}
 > 方法推導見 [docs/methodology.md](../docs/methodology.md) 的 D7 節。

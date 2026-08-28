@@ -7,8 +7,8 @@ named field in `web/public/data/story/sarima.json`, the committed export and the
 only copy CI can see. Only the copying stood between them.
 
 Built after the same shape had already been found twice — M9's backtest table had
-rotted in two of four copies, and M6's had gone stale in `methodology.md` and
-`PLAN.md` within a day of a re-run.
+rotted in two of four copies, and M6's had gone stale in `methodology.md` and a
+second hand-typed planning surface within a day of a re-run.
 
 **The timing figures are machine-dependent** and must never be read as a property
 of the method. Checking them here is still right: this compares prose against the

@@ -198,8 +198,8 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       open.
 
       The checkbox is the whole mobile mechanism, and it is deliberate: no
-      script, so the rail works when JavaScript does not, which PRODUCT.md
-      requires. Below 80rem it is a drawer with a labelled button; above, the
+      script, so the rail works when JavaScript does not, which the executable
+      site contract requires. Below 80rem it is a drawer with a labelled button; above, the
       button is gone and the list is just there.
     */}
     <input id="rail" type="checkbox" class="rail-switch" />
@@ -813,8 +813,8 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
          * name `""`, a 1x1 box at the origin, no focus ring anywhere on screen,
          * and Space does nothing. A screen reader announces an unnamed checkbox
          * immediately after 「跳到主要內容」; everyone else loses the focus ring
-         * for one press. It is the same defect PRODUCT.md #42 fixed for the
-         * skip link, one stop further along.
+         * for one press. It is the same defect previously fixed for the skip
+         * link, one stop further along.
          *
          * Safe because every rule that reads `:checked` — the drawer transform
          * and the veil — lives inside `@media (max-width: 79.999rem)`, so none

@@ -4,8 +4,8 @@
 it finds. If the workflow ever changes shape — a restructure, a different key, a
 job template — the extraction could quietly yield nothing, print
 「ran 0 step(s); 0 failed」 and exit 0. A green result from doing no work is the
-same defect the prose gates shipped with, and the reason `AGENTS.md` points at
-this script means it would be believed.
+same defect the prose gates shipped with, and the contributor instructions point
+at this script, so the result would be believed.
 """
 
 from __future__ import annotations
@@ -33,12 +33,11 @@ def test_the_real_workflow_still_parses_into_steps() -> None:
 
 def test_tracked_short_rules_have_one_canonical_source() -> None:
     workflow = runner.WORKFLOW.read_text(encoding="utf-8")
-    instructions = (REPO_ROOT / ".github" / "copilot-instructions.md").read_text(
-        encoding="utf-8"
-    )
+    instructions = (REPO_ROOT / ".github" / "copilot-instructions.md").read_text(encoding="utf-8")
+    retired_script = "mirror_" + "agents.py"
 
-    assert not (REPO_ROOT / "scripts" / "mirror_agents.py").exists()
-    assert "mirror_agents.py" not in workflow
+    assert not (REPO_ROOT / "scripts" / retired_script).exists()
+    assert retired_script not in workflow
     assert "MIRROR OF" not in instructions
     assert "sole tracked short-rule source" in instructions
 

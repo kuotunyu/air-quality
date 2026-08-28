@@ -501,7 +501,7 @@ def main() -> int:
 
     This returned None, so the exit code was 0 whatever it found — including a
     shipped palette failing a gate. That made it a report rather than a check,
-    and nothing ran it: the numbers in PRODUCT.md's palette section had drifted
+    and nothing ran it: the numbers in the published palette notes had drifted
     from what this file computes and no one had noticed, because noticing
     required someone to run it and read the output by eye.
 

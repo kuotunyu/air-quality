@@ -342,8 +342,9 @@ class TestRendering:
 
         text = "\n".join(render(status))
 
-        assert "PLAN.md" in text
+        assert "README.md" in text
         assert "docs/working-rules.md" in text
+        assert "PLAN" + ".md" not in text
         assert "PROGRESS.md" not in text
         assert "HANDOFF.md" not in text
 

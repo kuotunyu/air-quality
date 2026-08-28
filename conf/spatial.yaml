@@ -118,8 +118,8 @@
 
 "field":
   "variogram_candidates": ["spherical", "hole-effect"]
-  # 5 km, not the 1 km PLAN.md asks for. Two real stations fall inside one 1 km
-  # cell at the dense end of the network while the sparse end has no station
+  # 5 km, not the rejected 1 km output target. Two real stations fall inside one
+  # 1 km cell at the dense end of the network while the sparse end has no station
   # within 60 km, so a 1 km cell asserts a resolution the network cannot deliver.
   # The spacing behind that is measured on every run rather than typed here:
   # `station_coverage.parquet` carries `km_nearest_neighbour` per station.
@@ -142,7 +142,7 @@
 #     conf/, so M6 computes no population-weighted exposure. Weighting stations
 #     by something already in this repository would quietly reverse the refusal
 #     analysis/health.py already makes: a station mean is not an exposure.
-#     PLAN.md:485 lists it; it stays unticked with this reason beside it.
+#     The README release boundary keeps it deferred with this reason.
 #
 #   no "land_mask" — the only committed boundary geometry is a TypeScript module
 #     covering the main island (web/src/lib/taiwan.ts), and its GML source is

@@ -1,7 +1,7 @@
 """Bold in running prose is a skim path, and it has to lead somewhere.
 
-Three non-expert readers read the site on 2026-08-24 — the reading `PLAN.md`
-Phase 8 had deferred for want of participants — and all three named chapter 3 as
+Three non-expert readers read the site on 2026-08-24 — the reading documented in
+`docs/reader-test.md` had been deferred for want of participants — and all three named chapter 3 as
 where they disengaged. The third described what they did next rather than
 leaving: 「後面的 Moran's I、LISA、Voronoi 分割、silhouette、ARI…我主要看粗體結論」.
 

@@ -4,7 +4,7 @@ The module compares each hour against the median and MAD of its own
 (station, year, month, hour-of-day) cell rather than against a centred rolling
 window. That is the only statistical choice in it, and its docstring states
 three numbers as the reason. Two of those came from a design review rather than
-from a run in this repository, and AGENTS.md red line 3 says a number in a
+from a run in this repository, and contributor-rule red line 3 says a number in a
 docstring must come from actually running something. This is that something.
 
     uv run python scripts/compare_outlier_baselines.py

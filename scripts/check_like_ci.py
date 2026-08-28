@@ -1,11 +1,11 @@
 """Run what CI runs, in CI's order, from CI's own file.
 
-`AGENTS.md` used to list the gates to run before calling a task done. It listed
-six; CI runs seventeen. An agent following it could finish every check it named
+The former short-rule checklist used to list the gates to run before calling a
+task done. It listed six; CI runs seventeen. An agent following it could finish every check it named
 and still turn the build red — which happened twice on 2026-08-18, once on a
 missing Astro type and once on a prose gate nobody had thought to run locally.
 
-Copying the list into `AGENTS.md` would only move the problem: two lists, one of
+Copying the list into contributor instructions would only move the problem: two lists, one of
 them quietly behind. So this reads `.github/workflows/ci.yml` and executes the
 `run:` steps it finds. There is exactly one list of gates in this repository and
 it is the workflow.

@@ -466,7 +466,7 @@ class TestThePersistenceBaselineQuotesM2:
     # The three splits M2 actually produced, and the four feature sets beside
     # them. Written out here because `data/outputs/` is gitignored: the first
     # version of these tests read the real file, passed on the machine that had
-    # run M2, and failed in CI — the trap `AGENTS.md` names, walked into while
+    # run M2, and failed in CI — the trap the short contributor rules name, walked into while
     # fixing a defect of the same family.
     M2_ROLLING = (
         ("persistence", "-", (0.914856, 0.903149, 0.880364)),

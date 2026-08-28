@@ -5,9 +5,9 @@
 # fresh in June and stale in July. In the PR gate it would eventually turn every
 # pull request red for a condition no pull request can fix, because clearing it
 # means running ingest, build, aggregate and export locally against 341 million
-# rows. The cheapest way to merge would become deleting the check, and AGENTS.md
-# already names that failure mode: a green obtained by switching the check off
-# is worse than a red one.
+# rows. The cheapest way to merge would become deleting the check, and the short
+# contributor rules already name that failure mode: a green obtained by
+# switching the check off is worse than a red one.
 #
 # Scheduled runs only fire from the default branch.
 # Scheduled workflows also run only from the default branch, and GitHub disables

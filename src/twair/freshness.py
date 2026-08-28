@@ -1,6 +1,6 @@
 """How far behind upstream the published data is.
 
-PLAN.md asked for a daily job that fetches increments, re-runs QC, rebuilds the
+The original blueprint asked for a daily job that fetches increments, re-runs QC, rebuilds the
 Parquet store and redeploys. That cannot be built here, and the reason is
 already written down in `.github/workflows/pages.yml`: **CI has no copy of the
 341-million-row store.** A workflow that claimed to refresh it would either

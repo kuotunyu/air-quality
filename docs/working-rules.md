@@ -24,8 +24,9 @@ The point is **not** "same analysis, newer tools". It is:
 > correcting it changes the conclusion.
 
 The flawed arm is fitted here, by `analysis/baseline.py`, so both arms are real.
-Every module should be traceable to a row of `PLAN.md`'s D1–D11 table. If a
-piece of work does not map to one, ask whether it belongs.
+Every module should be traceable to one of `docs/methodology.md`'s D1–D11
+sections or a named release phase in the README. If a piece of work does not map
+to one, ask whether it belongs.
 
 ## The governing principle
 
@@ -312,9 +313,10 @@ the loss is silent — every test still passes, because nothing depended on it.
 
 **Before removing any tracked file for being unreferenced, read its docstring.**
 If it records a measurement that something else relies on, it is load-bearing at
-the level this project actually cares about. The same trap caught `PRODUCT.md`
-in the same pass, from the other direction: 52 KB of prose that looks inert and
-is re-derived by three CI gates.
+the level this project actually cares about. The same trap caught the former
+design notes in the same pass, from the other direction: prose that looked inert
+was actually re-derived by three CI gates. Those executable gates now own the
+contract directly.
 
 ### `.env` points at a partial copy, and nothing says which store you are reading
 
@@ -889,9 +891,9 @@ drift clock. Make the module emit it and have the prose point at the output, as
 `station_correlation_raw` and `km_nearest_neighbour` now do.
 
 **When a re-run changes an output, the hand-typed copies are part of the change.**
-Re-running M6 with one more station moved numbers that `docs/methodology.md` and
-`PLAN.md` had retyped, and the report and website regenerated while those two did
-not. Grep the distinctive values — `git grep "0.348"`, `git grep "24/96"` — before
+Re-running M6 with one more station moved numbers that two prose surfaces had
+retyped, and the report and website regenerated while those copies did not.
+Grep the distinctive values — `git grep "0.348"`, `git grep "24/96"` — before
 calling such a change finished.
 
 ### Prose is generated in three places, and the third is the one nobody checks
@@ -1060,7 +1062,7 @@ can look finished and still be red. It also had 4 mypy errors.
 fresh in June and stale in July, so in the PR gate it would eventually turn
 every pull request red for a condition no pull request can fix — clearing it
 means hours of local ingest against 341M rows. The cheapest way to merge would
-become deleting the check, which is the failure `AGENTS.md` names.
+become deleting the check, which is the failure the short contributor rules name.
 
 It lives in `.github/workflows/freshness.yml`, weekly. Not monthly: GitHub
 disables scheduled workflows after 60 days of repository inactivity, and this
@@ -1122,7 +1124,7 @@ than `data/outputs/`: the payload is the only copy CI can see.
 
 ```bash
 uv run python scripts/check_published_forecast.py   # M9, four files
-uv run python scripts/check_published_spatial.py    # M6, methodology.md + PLAN.md
+uv run python scripts/check_published_spatial.py    # M6, methodology.md + payload
 uv run python scripts/check_published_headline.py   # the first screen, six files
 uv run python scripts/check_published_sarima.py     # D10's three tables
 uv run python scripts/check_published_detection.py  # D8's table, and its reading
@@ -1409,8 +1411,8 @@ Rules for any text touching this:
 The chapter is titled 「事件效應的偵測極限」 — deliberately the same concept
 the data already uses one level down, where `ND` marks a reading below the
 instrument's detection limit. The instrument has one for concentration; the
-method has one for effects, and this chapter measures it. PLAN.md carries the
-full drafting note.
+method has one for effects, and this chapter measures it. The claim-boundary
+checks and `docs/methodology.md` keep the full interpretation enforceable.
 
 ## Protected identities — settled, and not negotiable
 
@@ -1505,7 +1507,7 @@ Each commit that adds or changes a result:
    not substitutes for the repository gates in `.github/workflows/ci.yml`.
 2. Update the affected **`docs/*.md`**. If a measurement contradicts something
    already written, correct it in place — never leave both versions standing.
-3. Tick the phase boxes in **`README.md`** / `PLAN.md` if a phase moved.
+3. Update the phase table in **`README.md`** / **`README.en.md`** if a phase moved.
 4. Add any new reusable gotcha to **this document** — see below for what
    qualifies.
 5. Keep transient progress in ignored `.superpowers/project-memory/HANDOFF.md`

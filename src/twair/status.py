@@ -1,11 +1,12 @@
 """``twair status`` — the portable return path, measured instead of remembered.
 
-Public technical documentation keeps durable reasoning and ``PLAN.md`` keeps
-the roadmap. Ignored local project memory may add context on one machine, but
-is never required by a fresh clone. Prose can drift: an analysis gets re-run
-and the export does not, while a note saying the site is current stays
-true-*looking* forever. This reports what is actually on disk: which stages
-exist, when each last ran, and which are older than the thing they derive from.
+Public technical documentation keeps durable reasoning and the bilingual README
+keeps the release boundary. Ignored local project memory may add context on one
+machine, but is never required by a fresh clone. Prose can drift: an analysis
+gets re-run and the export does not, while a note saying the site is current
+stays true-*looking* forever. This reports what is actually on disk: which
+stages exist, when each last ran, and which are older than the thing they derive
+from.
 
 The dependency chain is one line long:
 
@@ -427,7 +428,7 @@ def render(status: Status) -> list[str]:
     lines.append("NEXT")
     if not steps:
         lines.append(
-            "  nothing the filesystem knows about — see PLAN.md for roadmap "
+            "  nothing the filesystem knows about — see README.md for the release boundary "
             "and docs/working-rules.md for durable decisions"
         )
     for step in steps:

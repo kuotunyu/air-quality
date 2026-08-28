@@ -26,7 +26,7 @@ opaque. Both would have made this gate report on text no reader ever sees.
 
 **No test here may require `web/dist`.** Most of `data/` and all of the built
 site are gitignored, so a test that reads them passes on the machine that built
-them and fails for everyone else — the trap `AGENTS.md` names. The pages below
+them and fails for everyone else — the trap the short contributor rules name. The pages below
 are written out by hand for that reason.
 """
 

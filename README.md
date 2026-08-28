@@ -157,8 +157,8 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 
 ## 專案狀態
 
-目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。後續方向見
-[PLAN.md](PLAN.md)；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
+目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
+與後續方向見下表；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
 
 | 階段 | 目前交付 | 交付判定 |
 |---|---|---|
@@ -172,9 +172,10 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
 | Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 發布收尾：正常工程與編輯式科學圖集 UI 已完成，並已整合至 `master`、部署於 GitHub Pages。L0／L1 HF Dataset 仍留到最後由 owner 決定上架或明確不發布；非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |
 
-完整計畫見 [PLAN.md](PLAN.md)。磁碟上的實際狀態用 `uv run twair status` 看——
-這份表寫的是 release 邊界；那個指令量的是本機事實。原始 blueprint 與每項
-「已取代／延後」的理由都保留在 [PLAN.md](PLAN.md)。
+磁碟上的實際狀態用 `uv run twair status` 看——這份表寫的是 release 邊界；
+那個指令量的是本機事實。已實作的工程取捨見
+[docs/working-rules.md](docs/working-rules.md)，資料與方法的現行證據分別見
+[docs/data-sources.md](docs/data-sources.md) 與 [docs/methodology.md](docs/methodology.md)。
 
 ## 網站
 

@@ -2,7 +2,7 @@
 
 > 由 `uv run twair report spatial` 產生於 2026-08-17T19:07:39+00:00。
 > 本報告採 Markdown，與 `reports/01-core.md` 使用同一套公開報告契約；repo 不使用
-> Quarto 工具鏈。這項交付取代了早期 `.qmd` 藍圖，判定記在 [PLAN.md](../PLAN.md) 的 Phase 5。
+> Quarto 工具鏈。這項交付取代了早期 `.qmd` 藍圖；目前判定見 [README.md](../README.md) 的 Phase 5。
 >
 > 所有數字由 `uv run twair analyze m6` 產出（seed 12345、
 > 999 次模擬虛無、knn(5)、BH 校正），

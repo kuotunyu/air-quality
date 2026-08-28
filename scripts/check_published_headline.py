@@ -2,8 +2,8 @@
 
 「降了 60%」, 「43%」, 「42.2%」, 「2.55 倍」 and 「32.1%」 are the most-read figures
 this project publishes — the opening sentence of both READMEs — and they also
-appear in `PLAN.md`, `docs/methodology.md`, `docs/working-rules.md` and the
-generated `reports/01-core.md`. Only the last of those regenerates from the data.
+appear in `docs/methodology.md`, `docs/working-rules.md` and the generated
+`reports/01-core.md`. Only the last of those regenerates from the data.
 
 `tests/test_public_readmes.py` pins them as literal strings, which catches a
 deletion or a reword. It cannot catch drift: when the analysis moves, the test
@@ -50,7 +50,6 @@ ROLLING_HEADING = "### 滾動原點驗證"
 SOURCES = {
     "README.md": REPO_ROOT / "README.md",
     "README.en.md": REPO_ROOT / "README.en.md",
-    "PLAN.md": REPO_ROOT / "PLAN.md",
     "methodology.md": REPO_ROOT / "docs" / "methodology.md",
     "working-rules.md": REPO_ROOT / "docs" / "working-rules.md",
     # Quotes the opening claim to tell a reader-test participant what the
@@ -230,7 +229,7 @@ def build_claims() -> list[Claim]:
             r"([\d.]+)%\s*的\s*R²|([\d.]+)% of the leaking model|貢獻率高達\s*\*{0,2}([\d.]+)%",
             leak_share,
             1,
-            files=("README.md", "README.en.md", "PLAN.md", "methodology.md"),
+            files=("README.md", "README.en.md", "methodology.md"),
         ),
         # methodology.md's D8 table, the four numbers the normalisation rests on.
         # Every one is a field in the payload, so there is no arithmetic to get
@@ -332,7 +331,7 @@ def build_claims() -> list[Claim]:
             r"原始方位角的\s*\*{0,2}([\d.]+)\s*倍|效能提升達\s*\*{0,2}([\d.]+)\s*倍",
             encoded_r2 / raw_r2,
             2,
-            files=("README.md", "PLAN.md", "methodology.md"),
+            files=("README.md", "methodology.md"),
         ),
     ]
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from twair.paths import REPO_ROOT
 
 
@@ -10,6 +12,12 @@ def _readmes() -> tuple[str, str]:
         (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
         (REPO_ROOT / "README.en.md").read_text(encoding="utf-8"),
     )
+
+
+def test_public_contract_tests_do_not_require_deleted_internal_docs() -> None:
+    deleted_name = "PLAN" + ".md"
+
+    assert deleted_name not in Path(__file__).read_text(encoding="utf-8")
 
 
 def test_both_readmes_distinguish_delivered_era5_robustness_from_deferred_calibration() -> None:
@@ -30,10 +38,9 @@ def test_both_readmes_distinguish_delivered_era5_robustness_from_deferred_calibr
 
 def test_public_docs_record_measured_era5_value_without_reframing_the_published_m4() -> None:
     zh, en = _readmes()
-    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
 
-    for text in (zh, plan, sources):
+    for text in (zh, sources):
         assert "674,520 筆 station-hour" in text
         assert "六個來源變數皆為 0 個 null" in text
         assert "632,760 筆" in text
@@ -61,11 +68,9 @@ def test_public_satellite_docs_record_measured_held_out_and_multiyear_value_with
     None
 ):
     zh, en = _readmes()
-    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
     zh_prose = " ".join(zh.split())
     en_prose = " ".join(en.split())
-    plan_prose = " ".join(plan.split())
     sources_prose = " ".join(sources.split())
 
     assert "S5P 與 MAIAC 來源取得 Stage A 已交付" in zh
@@ -80,13 +85,11 @@ def test_public_satellite_docs_record_measured_held_out_and_multiyear_value_with
     assert "analysis and fusion remain deferred" not in en
     assert "batch acquisition and calibration remain" not in en
     assert "analysis, MAIAC, and fusion remain deferred" not in en
-    assert "77 站 S5P／MAIAC generation 已完成" in plan
-    assert "MAIAC 851／924、S5P NO₂ 919／924、S5P SO₂ 920／924" in plan
     assert "77 站 immutable generation 已完成" in sources
     assert "851（92.1%）" in sources
     assert "919（99.5%）" in sources
     assert "920（99.6%）" in sources
-    for text in (zh, plan, sources):
+    for text in (zh, sources):
         assert "851 筆共同完整站月、76 站、12 個月份" in text
         assert "3／4、9／10、37／40" in text
         assert "49／54" in text
@@ -129,12 +132,8 @@ def test_public_satellite_docs_record_measured_held_out_and_multiyear_value_with
     assert "baseline 只含月份週期與測站經緯度" in sources
     assert "不支持因果、衛星 PM2.5 校正、融合場" in sources
     assert "或 M4 replacement" in sources
-    assert "10 個 air-zone-aware held-station fold" in plan
-    assert "10 個 air-zone-aware 測站" not in plan
-    assert "combined all-satellite feature set 在多數 2025 held-out folds 顯示增量預測資訊" in plan
-    assert "實際 batch 尚未送出" not in plan
     assert "S5P 查詢同樣尚未執行" not in sources
-    for text in (zh, en, plan, sources):
+    for text in (zh, en, sources):
         assert "848 / 851 common complete station-months" in text
         assert "2024_to_2025" in text
         assert "2025_to_2024" in text
@@ -176,20 +175,6 @@ def test_public_satellite_docs_record_measured_held_out_and_multiyear_value_with
         "station and year were both held out, the forward direction improved in 10/10, 10/10, 9/10, 6/10 folds and the reverse in 10/10, 10/10, 9/10, 7/10"
         in en_prose
     )
-    assert "baseline／candidate 均配對相同 test rows" in plan_prose
-    assert "同年度 replication 改善數為 3/4, 4/4, 3/4, 3/4 與 3/4, 3/4, 2/4, 1/4" in plan_prose
-    assert (
-        "future-year `2024_to_2025` 是 forward: improve / improve / improve / improve（all-satellite −0.378 µg/m³ / +0.057 R²）"
-        in plan_prose
-    )
-    assert (
-        "`2025_to_2024` 是反向複驗，不是預測過去，為 reverse: improve / improve / worsen / worsen （all-satellite −0.179 µg/m³ / +0.024 R²）"
-        in plan_prose
-    )
-    assert (
-        "同時留出測站與年份的改善數分別為 10/10, 10/10, 9/10, 6/10 與 10/10, 10/10, 9/10, 7/10"
-        in plan_prose
-    )
     assert "每一個 candidate 都與 baseline 配對完全相同的 train/test rows" in sources_prose
     assert (
         "同年度 quarter replication 在 2024 同時改善 RMSE 與 R² 的 fold 數為 3/4, 4/4, 3/4, 3/4，2025 為 3/4, 3/4, 2/4, 1/4"
@@ -226,12 +211,10 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_rea
     None
 ):
     zh, en = _readmes()
-    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
     methodology = (REPO_ROOT / "docs" / "methodology.md").read_text(encoding="utf-8")
     zh_prose = " ".join(zh.split())
     en_prose = " ".join(en.split())
-    plan_prose = " ".join(plan.split())
     sources_prose = " ".join(sources.split())
     methodology_prose = " ".join(methodology.split())
 
@@ -243,13 +226,12 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_rea
     assert "validated calibration 與融合仍延後" in zh_prose
     assert "validated calibration and fusion remain deferred" in en_prose
 
-    for text in (plan_prose, sources_prose):
-        assert "10,999 筆站點清冊" in text
-        assert "75／93 個預期日別變數檔案存在" in text
-        assert "18 個缺席" in text
-        assert "不能解讀為感測器回報完整率" in text
+    assert "10,999 筆站點清冊" in sources_prose
+    assert "75／93 個預期日別變數檔案存在" in sources_prose
+    assert "18 個缺席" in sources_prose
+    assert "不能解讀為感測器回報完整率" in sources_prose
 
-    for text in (plan_prose, sources_prose, methodology_prose):
+    for text in (sources_prose, methodology_prose):
         assert "282,581 筆 primary-radius device-hour" in text
         assert "271,138 筆" in text
         assert "470 個裝置" in text
@@ -271,7 +253,7 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_rea
     assert "https://history.colife.org.tw/" in sources
     assert "https://ci.taiwan.gov.tw/dsp/Views/dataset/air.aspx" in sources
     assert "觀測 ZIP 尚未下載" not in " ".join(
-        (zh_prose, en_prose, plan_prose, sources_prose, methodology_prose)
+        (zh_prose, en_prose, sources_prose, methodology_prose)
     )
 
     assert "微型感測器 2025 全年 readiness audit 已交付" in zh_prose
@@ -287,7 +269,7 @@ def test_public_docs_distinguish_measured_micro_sensor_prediction_and_annual_rea
     assert "5 of 29 folds scorable" in en_prose
     assert "held-quarter and joint station-quarter are not estimable" in en_prose
 
-    annual_details = (plan_prose, sources_prose, methodology_prose)
+    annual_details = (sources_prose, methodology_prose)
     for text in annual_details:
         assert "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb" in text
         assert "365 日日曆" in text
@@ -321,12 +303,11 @@ def test_public_docs_publish_the_verified_satellite_context_limit_without_callin
     None
 ):
     zh, en = _readmes()
-    plan = (REPO_ROOT / "PLAN.md").read_text(encoding="utf-8")
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
     methodology = (REPO_ROOT / "docs" / "methodology.md").read_text(encoding="utf-8")
     zh_prose = " ".join(zh.split())
     en_prose = " ".join(en.split())
-    detailed = tuple(" ".join(text.split()) for text in (plan, sources, methodology))
+    detailed = tuple(" ".join(text.split()) for text in (sources, methodology))
 
     assert "一月 reference-station satellite-context predictive-value limit 已交付" in zh_prose
     assert (

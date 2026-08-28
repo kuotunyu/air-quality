@@ -1,19 +1,17 @@
-"""M6's numbers are retyped in two prose files. Do they still agree?
+"""Do M6's numbers in public prose still agree with the payload?
 
 `data/outputs/m6_spatial/` is the measurement, `reports/03-spatial.md` regenerates
 from it, and `web/public/data/story/spatial-structure.json` is the committed
-export — the only copy CI can see, because `data/` is gitignored. Two more files
-retype the same figures for readers who are not looking at the chart:
+export — the only copy CI can see, because `data/` is gitignored. The public
+methodology retypes the same figures for readers who are not looking at the chart:
 
 * ``docs/methodology.md`` — the D7 section's control table, correlogram endpoints,
   LISA counts and partition statistics
-* ``PLAN.md`` — the D7 row and the Phase 5 acceptance line
 
-Nothing connected them. On 2026-08-18 M6's network went from 60 stations to 61,
-the report and the website regenerated with the run, and those two files kept
-saying 0.157, 60 站, 8 站, +0.035 and +0.625 — for a day, in the same commit that
-was fixing a different instance of exactly this. This gate is that commit's
-lesson made mechanical.
+Nothing connected the hand-typed methodology to the payload. On 2026-08-18 M6's
+network went from 60 stations to 61; the report and website regenerated with the
+run while prose copies kept saying 0.157, 60 站, 8 站, +0.035 and +0.625 for a
+day. This gate is that failure's lesson made mechanical.
 
 Comparison is at the precision each file prints, with one unit of the last place
 as tolerance, because the payload is itself rounded on export: a file printing
@@ -35,7 +33,6 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PAYLOAD = REPO_ROOT / "web" / "public" / "data" / "story" / "spatial-structure.json"
 METHODOLOGY = REPO_ROOT / "docs" / "methodology.md"
-PLAN = REPO_ROOT / "PLAN.md"
 
 # U+2212 MINUS SIGN reads better in prose and does not parse as a hyphen.
 MINUS = {"−": "-", "–": "-"}
@@ -156,49 +153,6 @@ def check_lisa(text: str, where: str, payload: dict[str, Any]) -> list[str]:
     return problems
 
 
-# LISA BH 後 0/61
-_LISA_RATIO = re.compile(r"LISA\s*BH\s*後\s*(\d+)/(\d+)")
-
-
-def check_lisa_ratio(text: str, where: str, payload: dict[str, Any]) -> list[str]:
-    lisa = payload["lisa"]
-    match = _LISA_RATIO.search(text)
-    if match is None:
-        return [f"{where}  no 「LISA BH 後 n/m」 line matched — rewritten or removed?"]
-    problems = []
-    for what, quoted, actual in (
-        ("LISA BH significant", float(match.group(1)), float(lisa["significant_bh"])),
-        ("LISA stations", float(match.group(2)), float(lisa["stations"])),
-    ):
-        problem = compare(where, what, quoted, actual, None)
-        if problem:
-            problems.append(problem)
-    return problems
-
-
-# 每月殘差 I 0.156→0.064
-_I_RANGE = re.compile(r"每月殘差\s*I\s*([\d.]+)\s*[→\-–>]+\s*([\d.]+)")
-
-
-def check_i_range(text: str, where: str, payload: dict[str, Any]) -> list[str]:
-    by_name = {row["control"]: row for row in payload["controls"]}
-    match = _I_RANGE.search(text)
-    if match is None:
-        return [f"{where}  no 「每月殘差 I a→b」 claim matched — rewritten or removed?"]
-    problems = []
-    for what, quoted, key in (
-        ("pooled mean I", num(match.group(1)), "pooled"),
-        ("within-zone mean I", num(match.group(2)), "within_zone_separate_fits"),
-    ):
-        row = by_name.get(key)
-        if row is None:
-            continue
-        problem = compare(where, what, quoted, float(row["mean_i"]), 3)
-        if problem:
-            problems.append(problem)
-    return problems
-
-
 # 但 silhouette 僅 +0.026，資料偏好 **k=2**（北群/南群，silhouette +0.620）
 _SILHOUETTE = re.compile(
     r"silhouette\s*僅\s*([+\-−][\d.]+).{0,40}?k=(\d+).{0,40}?silhouette\s*([+\-−][\d.]+)",
@@ -281,7 +235,6 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     payload = truth()
     methodology = METHODOLOGY.read_text(encoding="utf-8")
-    plan = PLAN.read_text(encoding="utf-8")
 
     problems = [
         *check_control_table(methodology, payload),
@@ -289,8 +242,6 @@ def main() -> int:
         *check_surviving_bands(methodology, payload),
         *check_lisa(methodology, "methodology.md", payload),
         *check_partition(methodology, payload),
-        *check_i_range(plan, "PLAN.md       ", payload),
-        *check_lisa_ratio(plan, "PLAN.md       ", payload),
     ]
 
     print(

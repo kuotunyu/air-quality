@@ -1,6 +1,6 @@
 ﻿# air-quality ── 台灣空氣品質再分析方法論
 
-> 本文件詳細說明 **air-quality** 專案所採用的統計與統計學、機器學習在資料工程上的修正方法。本文件旨在逐項解析 11 項結構性的方法缺陷（標記為 D1–D11），並說明在 [PLAN.md](../PLAN.md) 規劃中如何進行嚴謹的資料工程與多變量分析校正。
+> 本文件詳細說明 **air-quality** 專案所採用的統計與統計學、機器學習在資料工程上的修正方法。本文件逐項解析 11 項結構性的方法缺陷（標記為 D1–D11），並記錄實作中的嚴謹資料工程與多變量分析校正。
 > 本專案實作程式碼已全數在 [src/twair/analysis/baseline.py](../src/twair/analysis/baseline.py)、[src/twair/analysis/pitfalls.py](../src/twair/analysis/pitfalls.py) 與 [src/twair/analysis/drivers.py](../src/twair/analysis/drivers.py) 中建立完成。
 
 ---

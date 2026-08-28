@@ -1,7 +1,7 @@
 /**
- * Re-derive the design claims PRODUCT.md makes, and fail if they stop holding.
+ * Re-derive the executable site design contract, and fail if it stops holding.
  *
- * PRODUCT.md's accessibility section originally stated four measured properties:
+ * The measured accessibility contract originally stated four properties:
  *
  *   * every text node clears APCA Lc 60 in both themes — and records that the
  *     dark theme once had 26 nodes below it, the worst at 47.3;
@@ -16,7 +16,7 @@
  * verifier is a claim that will drift, and this project's whole argument is
  * that its numbers are re-derivable.
  *
- * PRODUCT.md's 2026-08-04 current-state rule supersedes those old size and
+ * The 2026-08-04 current-state measurement supersedes those old size and
  * shell measurements. The final built site records 20.1375px root/body,
  * 18.3251px smallest visible text and 19.1306px smallest in-figure annotation
  * at 375px; the corresponding 1440px values are 22px, 20.02px and 20.9px.
@@ -41,7 +41,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 
-// ── what PRODUCT.md claims ───────────────────────────────────────────────────
+// ── executable site design contract ─────────────────────────────────────────
 
 const ROUTES = [
   "/",
@@ -177,7 +177,7 @@ const MIN_LC = 60;
 /**
  * Two floors, because the project's rule is about a RELATIONSHIP, not a size.
  *
- * PRODUCT.md's principle is 「一張圖的註記不該是整份文件裡最小的字」 — a chart's
+ * The design principle is 「一張圖的註記不該是整份文件裡最小的字」 — a chart's
  * annotation must not be the smallest type in the document — and it records the
  * annotations having once been 17px against a body of 21. Measured now at 375:
  * `.plot-x` and `.plot-y` are **24px**, comfortably above the 20.73px body, so
@@ -195,8 +195,8 @@ const MIN_LC = 60;
  * measured 24 on one route and generalised from it). The relation is what the
  * principle actually says, and it cannot be wrong by a couple of pixels.
  *
- * PRODUCT.md said the smallest type was 18.7px at 375. It is not, and this is
- * the check that would have said so — 0.84rem against a 20.725px root is 17.41,
+ * A retired design note said the smallest type was 18.7px at 375. It is not,
+ * and this is the check that would have said so — 0.84rem against a 20.725px root is 17.41,
  * and no width makes it 18.7. The line is corrected there.
  */
 /**
@@ -4815,7 +4815,6 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
   const m7Surfaces = [
     "src/twair/models/deploy.py",
     "src/twair/status.py",
-    "PLAN.md",
     "README.md",
     "README.en.md",
     "spaces/forecast/app.py",
@@ -4838,7 +4837,6 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
     affirmativeRejects: {
       "src/twair/models/deploy.py": M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
       "src/twair/status.py": M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
-      "PLAN.md": CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
       "README.md": CJK_M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
       "README.en.md": M7_AFFIRMATIVE_ATTRIBUTION_REJECTS,
       "spaces/forecast/app.py": CJK_M7_SPACE_AFFIRMATIVE_SOURCE_REJECTS,
@@ -4868,21 +4866,6 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
           patterns: [
             ...ENGLISH_OBSERVED_WIND_PATTERNS,
             ...ENGLISH_SOURCE_BOUNDARY_PATTERNS,
-          ],
-        },
-      ],
-      "PLAN.md": [
-        {
-          claim: { start: "#### M7 ", end: "**後續風險**" },
-          description: "M7 observed high-value wind pattern and attribution boundary",
-          patterns: [
-            /高值時段/u,
-            /風速/u,
-            /風向/u,
-            /不識別來源身分/u,
-            /位置/u,
-            /傳輸距離/u,
-            /貢獻/u,
           ],
         },
       ],
@@ -5060,7 +5043,6 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
     surfaces: [
       "src/twair/features/chem.py",
       "docs/methodology.md",
-      "PLAN.md",
       "tests/test_drivers.py",
     ],
     retired: [
@@ -5071,7 +5053,6 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
     affirmativeRejects: {
       "src/twair/features/chem.py": PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
       "docs/methodology.md": CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
-      "PLAN.md": CJK_PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
       "tests/test_drivers.py": PM_RATIO_AFFIRMATIVE_ATTRIBUTION_REJECTS,
     },
     required: {
@@ -5103,18 +5084,6 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
             /擴散/u,
             /排放清冊/u,
           ],
-        },
-      ],
-      "PLAN.md": [
-        {
-          claim: { start: "| D2 |", end: "| D3 |" },
-          description: "D2 PM ratio composition and nonunique-source boundary",
-          patterns: [/PM2\.5\/PM10/u, /粒徑組成指標/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
-        },
-        {
-          claim: { start: "#### M7 ", end: "**後續風險**" },
-          description: "M7 PM ratio cross-check and nonunique-source boundary",
-          patterns: [/PM2\.5\/PM10/u, /組成觀測對照/u, /篩選來源假說/u, /不能唯一辨識或量化來源/u],
         },
       ],
       "tests/test_drivers.py": [

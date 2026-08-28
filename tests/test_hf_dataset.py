@@ -211,7 +211,7 @@ def _built_bundle(tmp_path: Path) -> Path:
 # what somebody running `load_dataset` can actually obtain, because the dataset
 # card's YAML is a *claim* about exactly that and nothing had ever executed it.
 # A card can be well-formed, satisfy the structural assertions above, and still
-# not load — and `PLAN.md` names this gate as the precondition for deciding on
+# not load — and the README release boundary makes this gate a precondition for deciding on
 # publication, so it has to exist before that decision, not after.
 #
 # A local directory path needs no network; `cache_dir` keeps the developer's

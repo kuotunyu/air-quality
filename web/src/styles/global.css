@@ -3343,7 +3343,7 @@ button:hover {
  * track instead, the toolbar takes about 190px from the title's own column and
  * the title wraps to pay for it: measured, chapter 3 at 768 went from a 43px
  * header to 86px and pushed its plot down 43px, against the 13px of clearance
- * it has under PRODUCT.md's 55vh rule. At 375 the same track wrapped a title to
+ * it has under the executable 55vh gate. At 375 the same track wrapped a title to
  * seventeen lines and a 46px header became 775px.
  *
  * **This is a media query and it may not become a container query.** A container

@@ -3,7 +3,7 @@
 Six prose gates come before this one and all six ask the same question: does a
 number retyped into prose still equal the number that produced it. None of them
 asks whether the sentence around the number can be read. That was deliberate for
-a while — `PLAN.md` Phase 8 keeps a non-expert reading deferred for want of a
+a while — the README Phase 8 boundary keeps a non-expert reading deferred for want of a
 participant, and an automated gate cannot stand in for user research. It still
 cannot. But between "a proofread by a stranger" and "nothing" there is one
 question a machine can answer exactly: **is the explanation still there, next to

@@ -1,6 +1,6 @@
 """Separate a short isolated excursion from a network-wide episode.
 
-PLAN.md section 1.2 item 4 asks for one thing:
+The original D1 QC brief asks for one thing:
 
     區分「儀器尖峰」與「真實污染事件」：單站尖峰但鄰站無反應 + 持續 <2h → 可疑；
     多站同步上升 → 真實事件（沙塵/境外傳輸）

@@ -98,8 +98,8 @@ jobs:
         run: uv run python scripts/check_python_package.py
 
       # The palette's published numbers are solved by this file, and nothing
-      # ran it — so PRODUCT.md quoted two dark-theme figures it does not
-      # produce. It also used to exit 0 whatever it found; it now fails when a
+      # ran it — so the published palette notes quoted two dark-theme figures
+      # it does not produce. It also used to exit 0 whatever it found; it now fails when a
       # SHIPPED palette fails, and still prints the rejected candidates, which
       # are supposed to fail and are the argument for what shipped.
       - name: The shipped palettes still clear their own gates
@@ -138,12 +138,10 @@ jobs:
       - name: The forecast numbers in prose match the ones on the chart
         run: uv run python scripts/check_published_forecast.py
 
-      # M6's figures are retyped in docs/methodology.md and PLAN.md for readers
-      # who are not looking at the chart. Adding one station to the network moved
-      # them; the report and the website regenerated with the run and those two
-      # files did not, staying wrong for a day — inside the very commit that was
-      # fixing a different instance of the same thing. Same shape as the check
-      # above, against the committed spatial payload.
+      # M6's figures are retyped in docs/methodology.md for readers who are not
+      # looking at the chart. Adding one station to the network moved them; the
+      # report and website regenerated while the hand-typed prose stayed wrong
+      # for a day. Same shape as the check above, against the committed payload.
       - name: The spatial numbers in prose match the published payload
         run: uv run python scripts/check_published_spatial.py
 
@@ -190,8 +188,9 @@ jobs:
   # `pages.yml` builds the site, but only `on: push` — so a pull request that
   # broke the Astro build, or reintroduced the mid-sentence spaces in Chinese
   # that check_cjk_spacing.py exists to catch, was green until it had already
-  # landed. And `astro check` ran in no workflow at all, although AGENTS.md
-  # requires it to print 0 errors: `astro build` does not type-check, so
+  # landed. And `astro check` ran in no workflow at all, although the repository
+  # completion contract requires it to print 0 errors: `astro build` does not
+  # type-check, so
   # web/src — 40 files — had no automated verification of any kind.
   #
   # Split from the Python job rather than bolted onto it so the two report
@@ -231,7 +230,7 @@ jobs:
           prune-cache: true
 
       # Before the build, because a type error is cheaper to read than a broken
-      # page, and because this is the check AGENTS.md names by number.
+      # page, and because this is the check the short contributor rules require.
       - name: Type Check (astro check)
         working-directory: web
         run: npx astro check
@@ -258,8 +257,8 @@ jobs:
 
       # The six prose gates in the other job all ask whether a number retyped
       # into prose still equals the number that produced it. None asks whether
-      # the sentence around it can be read, and `PLAN.md` Phase 8 keeps the
-      # non-expert reading deferred for want of a participant — so the site's
+      # the sentence around it can be read, and the README Phase 8 boundary keeps
+      # the non-expert reading deferred for want of a participant — so the site's
       # vocabulary had nothing watching it at all.
       #
       # This checks the one part of that a machine can decide: a term the site
@@ -274,8 +273,8 @@ jobs:
       - name: Every technical term is still explained where a reader meets it
         run: uv run --no-project --python 3.12 --with pyyaml python scripts/check_term_first_use.py
 
-      # The non-expert reading `PLAN.md` Phase 8 had deferred finally happened on
-      # 2026-08-24, and all three participants named chapter 3 as where they
+      # The non-expert reading documented in docs/reader-test.md finally
+      # happened on 2026-08-24, and all three participants named chapter 3 as where they
       # disengaged. The third said what they did instead of leaving —
       # 「我主要看粗體結論」 — and that path was ten bare nouns mixed with four
       # conclusions, so it led nowhere.
@@ -288,7 +287,7 @@ jobs:
       - name: Emphasis in prose says something on its own
         run: uv run --no-project --python 3.12 --with pyyaml python scripts/check_bold_stands_alone.py
 
-      # PRODUCT.md's accessibility section states four measured properties, and
+      # The measured accessibility contract states four properties, and
       # the nineteen throwaway browser scripts that produced them were deleted
       # on purpose — .gitignore says so in prose. So the one regression that
       # section documents, 26 dark-mode nodes under APCA Lc 60, was a class of
@@ -307,5 +306,5 @@ jobs:
       # minutes, so a genuine "Chrome is broken" failure surfacing 30s later
       # costs nothing, while a flake trains people to re-run red builds without
       # reading them.
-      - name: The site still holds the design numbers PRODUCT.md publishes
+      - name: The site still holds its executable design contract
         run: node scripts/check_site_quality.mjs --cdp-timeout-ms 45000

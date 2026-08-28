@@ -147,8 +147,8 @@ def test_the_sdist_rejects_an_unlisted_root_file(tmp_path: Path) -> None:
             "src/twair/__init__.py": b"",
             "src/twair/py.typed": b"",
             "conf/qc.yaml": expected["qc.yaml"],
-            "PLAN.md": b"repository-only plan\n",
+            "private-notes.md": b"repository-only notes\n",
         },
     )
 
-    assert sdist_problems(sdist, expected) == ["sdist contains unlisted path PLAN.md"]
+    assert sdist_problems(sdist, expected) == ["sdist contains unlisted path private-notes.md"]

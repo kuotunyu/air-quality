@@ -4,7 +4,7 @@
 # retyped into prose still equal the number that produced it. None of them asks
 # whether a reader can understand the sentence the number sits in. The site is
 # written for people who do not already know what a conformal interval is, and
-# `PLAN.md` Phase 8 keeps a non-expert reading deferred for want of a
+# the README Phase 8 boundary keeps a non-expert reading deferred for want of a
 # participant, so nothing at all was watching the vocabulary.
 #
 # What a gate can decide mechanically is narrow but real: **a term the site has
@@ -117,7 +117,7 @@
   #
   # Both of the fixes that would have closed it faster were tried and rejected on
   # evidence. Moving the gloss above the figure pushes the primary plot below the
-  # fold: the chapter's opening clears PRODUCT.md's 55vh rule by 13px at
+  # fold: the chapter's opening clears the executable 55vh gate by 13px at
   # 1280×720 and one line of prose costs 37px, and `check_site_quality.mjs`
   # failed on exactly that. Widening the window would have been tuning a
   # threshold until one case fitted.

@@ -1599,7 +1599,7 @@ def partition_agreement(
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Score the era partition against geography-only nulls and Ward's tree.
 
-    PLAN.md predicted the official zoning is 「很可能不合理」 and called that a
+    The original blueprint predicted the official zoning is 「很可能不合理」 and called that a
     good finding. A prediction that cannot fail is not a finding, so both
     directions are live: the partition's percentile in the Voronoi ensemble says
     whether it beats geography-alone, and the Ward sweep over ``k_grid`` says
