@@ -1335,13 +1335,52 @@ def _assert_spatial_covariate_readiness_boundary(section: str) -> None:
     for claim in required:
         assert claim in folded
 
+    semantic_relationships = (
+        (
+            r"(?:the frozen cohort has|凍結 cohort [有為]|目標 ledger 有)"
+            r".{0,10}(?<!\d)59(?!\d).{0,30}(?<!\d)1,416(?!\d)"
+            r".{0,60}2024[–-]2025.{0,60}(?<!\d)1,415(?!\d)"
+            r".{0,30}`observed`.{0,80}(?:xinying in may 2025|新營 2025-05)"
+            r".{0,50}`withheld`"
+        ),
+        (
+            r"(?:the complete method domain is|比較的完整 method domain 是|"
+            r"method domain 只有|模型比較固定為) `covariate_gbm`[、,]"
+            r" ?`covariate_gbm_idw2`.{0,25}comparator `idw2`"
+        ),
+        (
+            r"(?:same-year 2024 has|同年 2024.{0,20}(?:都是|是)) "
+            r"708 / 708 / 0 intended / scored / failed.{0,45}"
+            r"(?:same-year 2025|同年 2025).{0,20}`2024_to_2025`.{0,25}"
+            r"707 / 707 / 0"
+        ),
+    )
+    for pattern in semantic_relationships:
+        assert re.search(pattern, folded) is not None
+
+    score_header = (
+        "| cell | station-clustered mae: gbm / gbm+idw² / idw² | "
+        "paired median station mae delta [2.5%, 97.5%]: gbm / gbm+idw² |"
+    )
+    score_header_zh = score_header.replace("mae: ", "mae：").replace("97.5%]: ", "97.5%]：")
+    assert score_header in folded or score_header_zh in folded
+
+    assert folded.count("qualifying methods:") == 1
+    assert folded.count("verdict:") == 1
+
     forbidden_claims = (
         r"\bconcentration surface generated\b",
         r"\b(?:produced|generated|contains?|provides?) (?:a )?concentration surface\b",
-        r"\b1 km map\b",
+        r"\b(?:is|was) (?!not\b)(?:a )?concentration surface\b",
+        r"\b(?:is|was) (?!not\b)(?:a )?1[- ]km map\b",
         r"\bpopulation exposure (?:is |was )?(?:a )?(?:result|generated|estimated)\b",
+        r"(?<!not )\bproduces? population[- ]exposure estimates?\b",
         r"\bcalibrated (?:uncertainty|prediction intervals?)\b",
+        r"\buncertainty is calibrated\b",
         r"\b(?:fusion (?:result|product)|fuses? satellite and ground data)\b",
+        r"\b(?:is|was) (?!not\b)(?:a )?satellite[- ]ground fusion model\b",
+        r"\bqualifying methods:(?!\s*none\b)\s*[^.;；|]+",
+        r"\b(?:overall\s+)?verdict:\s*`?go`?\b",
     )
     for pattern in forbidden_claims:
         assert re.search(pattern, folded) is None
@@ -1429,3 +1468,86 @@ def test_spatial_covariate_readiness_boundary_rejects_measured_evidence_drift(
         _assert_spatial_covariate_readiness_boundary(
             section.replace(protected_claim, "[drifted]", 1)
         )
+
+
+def _english_spatial_covariate_readiness_section() -> str:
+    return _spatial_covariate_readiness_section(
+        (REPO_ROOT / "README.en.md").read_text(encoding="utf-8")
+    )
+
+
+@pytest.mark.parametrize(
+    ("original", "mutation"),
+    (
+        (
+            "The frozen cohort has 59 stations and 1,416 station-month keys across 2024–2025:",
+            "The frozen cohort has 95 stations and 1,400 station-month keys across 2024–2025:",
+        ),
+        (
+            "1,415 are `observed`, while Xinying in May 2025 remains explicitly `withheld`.",
+            "1,415 are `observed`.",
+        ),
+        (
+            "same-year 2024 has 708 / 708 / 0 intended / scored / failed rows; "
+            "same-year 2025 and `2024_to_2025` each have 707 / 707 / 0.",
+            "same-year 2024 has 707 / 707 / 0 intended / scored / failed rows; "
+            "same-year 2025 and `2024_to_2025` each have 708 / 708 / 0.",
+        ),
+        (
+            "Station-clustered MAE: GBM / GBM+IDW² / IDW²",
+            "Station-clustered MAE: IDW² / GBM+IDW² / GBM",
+        ),
+        (
+            "Paired median station MAE delta [2.5%, 97.5%]: GBM / GBM+IDW²",
+            "Paired median station MAE delta [2.5%, 97.5%]: GBM+IDW² / GBM",
+        ),
+        ("verdict: `stop`", "verdict: `stop`. Qualifying methods: covariate_gbm"),
+        ("verdict: `stop`", "verdict: `stop`. Overall verdict: go"),
+    ),
+)
+def test_spatial_covariate_readiness_boundary_rejects_false_semantic_rebindings(
+    original: str,
+    mutation: str,
+) -> None:
+    section = " ".join(_english_spatial_covariate_readiness_section().split())
+    assert original in section
+
+    with pytest.raises(AssertionError):
+        _assert_spatial_covariate_readiness_boundary(section.replace(original, mutation, 1))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "The output is a concentration surface.",
+        "This is a 1-km map.",
+        "The model produces population-exposure estimates.",
+        "The uncertainty is calibrated.",
+        "This is a satellite-ground fusion model.",
+    ),
+)
+def test_spatial_covariate_readiness_boundary_rejects_formal_positive_claim_mutations(
+    mutation: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        _assert_spatial_covariate_readiness_boundary(
+            f"{_english_spatial_covariate_readiness_section()} {mutation}"
+        )
+
+
+@pytest.mark.parametrize(
+    "explicit_negation",
+    (
+        "The output is not a concentration surface.",
+        "This is not a 1-km map.",
+        "The model does not produce population-exposure estimates.",
+        "The uncertainty is not calibrated.",
+        "This is not a satellite-ground fusion model.",
+    ),
+)
+def test_spatial_covariate_readiness_boundary_allows_explicit_negations(
+    explicit_negation: str,
+) -> None:
+    _assert_spatial_covariate_readiness_boundary(
+        f"{_english_spatial_covariate_readiness_section()} {explicit_negation}"
+    )
