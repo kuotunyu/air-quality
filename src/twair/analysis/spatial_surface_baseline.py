@@ -230,7 +230,10 @@ def _validated_stations(
     if frame.schema["station_type_official"] != pl.String:
         raise RuntimeError("spatial surface station types must use String values")
     generation = station_inventory_generation(frame)
-    selected = frame.select(*_STATION_COLUMNS).filter(
+    normalized = frame.select("station_name", "station_type_official").join(
+        generation.stations, on="station_name", how="left"
+    )
+    selected = normalized.filter(
         pl.col("station_type_official").is_in(config.station_types)
         & ~pl.col("station_name").is_in(config.excluded_stations)
     )

@@ -159,6 +159,22 @@ def test_partial_coordinates_are_rejected(tmp_path: Path) -> None:
         load_surface_inputs(root, _config())
 
 
+def test_parseable_string_coordinates_return_as_canonical_float64(tmp_path: Path) -> None:
+    root = write_surface_fixture(tmp_path)
+    stations = pl.read_parquet(_stations_path(root)).with_columns(
+        pl.col("lon").cast(pl.String),
+        pl.col("lat").cast(pl.String),
+    )
+    stations.write_parquet(_stations_path(root))
+
+    inputs = load_surface_inputs(root, _config())
+
+    assert inputs.stations.schema["lon"] == pl.Float64
+    assert inputs.stations.schema["lat"] == pl.Float64
+    assert inputs.stations["lon"].to_list() == [121.3, 121.1, 121.2]
+    assert inputs.stations["lat"].to_list() == [24.3, 24.1, 24.2]
+
+
 @pytest.mark.parametrize("invalid_coordinate", [float("nan"), 150.0])
 def test_non_finite_or_outside_taiwan_coordinates_are_rejected(
     tmp_path: Path, invalid_coordinate: float
