@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -24,7 +25,7 @@ from twair.analysis.spatial_surface_baseline import (
     load_surface_inputs,
     predict_target,
 )
-from twair.config import ConfigError
+from twair.config import ConfigError, load_conf
 
 
 def _config(*, spatial_folds: int = 3) -> SpatialSurfaceBaselineConfig:
@@ -577,3 +578,75 @@ def test_duplicate_coordinates_fail_and_kriging_predictor_uses_fold_local_geogra
         "scored",
         "scored",
     ]
+
+
+def test_predictors_reject_unrecognized_configured_methods_without_constructing_kriging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid = deepcopy(load_conf("spatial_surface_baseline"))
+    invalid["validation"]["methods"][-1] = "kriging_sphericl"
+    invalid["gate"]["comparison_method"] = "kriging_sphericl"
+    train = pl.DataFrame(
+        {
+            "station_name": ["near"],
+            "lat": [23.0],
+            "lon": [120.1],
+            "mean": [10.0],
+        }
+    )
+    malformed = replace(
+        _config(),
+        methods=("kriging_sphericl",),
+        comparison_method="kriging_sphericl",
+    )
+
+    with pytest.raises(ConfigError, match="methods"):
+        load_spatial_surface_baseline_config(invalid)
+    monkeypatch.setattr(
+        spatial_surface_baseline,
+        "OrdinaryKriging",
+        lambda *_args, **_kwargs: pytest.fail("unrecognized methods must fail before kriging"),
+    )
+    with pytest.raises(ValueError, match="not supported"):
+        predict_target(train, {"lat": 23.0, "lon": 120.0}, "kriging_sphericl", malformed)
+
+
+def test_evaluation_schema_stays_complete_for_success_failure_and_unscored_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected_schema = {
+        "evaluation": pl.String,
+        "fold_id": pl.String,
+        "year": pl.Int64,
+        "month": pl.Date,
+        "target_station": pl.String,
+        "target_cluster": pl.Int64,
+        "target_state": pl.String,
+        "observed": pl.Float64,
+        "train_stations": pl.List(pl.String),
+        "n_train": pl.Int64,
+        "fold_state": pl.String,
+        "fold_reason": pl.String,
+        "method": pl.String,
+        "predicted": pl.Float64,
+        "kriging_sd": pl.Float64,
+        "prediction_state": pl.String,
+        "failure_type": pl.String,
+        "error": pl.Float64,
+    }
+    inputs = synthetic_surface_inputs(12, 1)
+    eligible = synthetic_fold_ledger().head(1)
+    unscored = synthetic_fold_ledger().filter(pl.col("fold_state") != "eligible")
+    successful = evaluate_baselines(inputs, eligible, _config())
+
+    monkeypatch.setattr(
+        OrdinaryKriging,
+        "execute",
+        lambda *_a, **_k: (_ for _ in ()).throw(ValueError("bad fit")),
+    )
+    failed = evaluate_baselines(inputs, eligible, _config())
+    retained_unscored = evaluate_baselines(inputs, unscored, _config())
+
+    assert successful.schema == expected_schema
+    assert failed.schema == expected_schema
+    assert retained_unscored.schema == expected_schema

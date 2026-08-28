@@ -36,6 +36,33 @@ __all__ = [
 
 _STATION_COLUMNS = ("station_name", "station_type_official", "lon", "lat")
 _MONTHLY_COLUMNS = ("station_name", "pollutant", "month", "mean", "meets_threshold")
+_SUPPORTED_METHODS = (
+    "station_mean",
+    "nearest",
+    "idw2",
+    "kriging_spherical",
+    "kriging_hole_effect",
+)
+_PREDICTION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "fold_id": pl.String,
+    "year": pl.Int64,
+    "month": pl.Date,
+    "target_station": pl.String,
+    "target_cluster": pl.Int64,
+    "target_state": pl.String,
+    "observed": pl.Float64,
+    "train_stations": pl.List(pl.String),
+    "n_train": pl.Int64,
+    "fold_state": pl.String,
+    "fold_reason": pl.String,
+    "method": pl.String,
+    "predicted": pl.Float64,
+    "kriging_sd": pl.Float64,
+    "prediction_state": pl.String,
+    "failure_type": pl.String,
+    "error": pl.Float64,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +199,10 @@ def load_spatial_surface_baseline_config(
     methods = _strings(
         validation.get("methods"), path="spatial_surface_baseline.validation.methods"
     )
+    if methods != _SUPPORTED_METHODS:
+        raise ConfigError(
+            "spatial_surface_baseline.validation.methods must be the fixed supported methods"
+        )
     comparison_method = gate.get("comparison_method")
     if not isinstance(comparison_method, str) or comparison_method not in methods:
         raise ConfigError(
@@ -549,8 +580,8 @@ def predict_target(
     method: str,
     config: SpatialSurfaceBaselineConfig,
 ) -> Prediction:
-    if method not in config.methods:
-        raise ValueError(f"spatial surface method is not configured: {method}")
+    if method not in _SUPPORTED_METHODS or method not in config.methods:
+        raise ValueError(f"spatial surface method is not supported: {method}")
     distances_km = _projected_distances_km(train, target, config)
     if np.any(distances_km == 0.0):
         return Prediction(
@@ -567,7 +598,12 @@ def predict_target(
     if method == "idw2":
         weights = 1.0 / np.maximum(distances_km, config.minimum_distance_km) ** config.idw_power
         return _finite_prediction(float(weights @ values / weights.sum()))
-    variogram_model = "hole-effect" if method == "kriging_hole_effect" else "spherical"
+    if method == "kriging_spherical":
+        variogram_model = "spherical"
+    elif method == "kriging_hole_effect":
+        variogram_model = "hole-effect"
+    else:
+        raise ValueError(f"spatial surface method is not supported: {method}")
     try:
         model = OrdinaryKriging(
             np.asarray(train["lon"].to_numpy(), dtype=float),
@@ -665,4 +701,4 @@ def evaluate_baselines(
                     ),
                 }
             )
-    return pl.DataFrame(rows)
+    return pl.DataFrame(rows, schema=_PREDICTION_SCHEMA)
