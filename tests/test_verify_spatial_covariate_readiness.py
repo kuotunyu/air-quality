@@ -9,11 +9,12 @@ import subprocess
 import sys
 from datetime import date
 from hashlib import sha256
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import polars as pl
 import pytest
+import scripts.verify_spatial_covariate_readiness as verifier
 from scripts.verify_spatial_covariate_readiness import verify_generation
 
 import twair.analysis.spatial_covariate_readiness as readiness
@@ -40,13 +41,15 @@ TARGET_KEY = (
 )
 
 
-def _config() -> readiness.CovariateReadinessConfig:
+def _config(
+    baseline_generation: str = BASELINE_GENERATION,
+) -> readiness.CovariateReadinessConfig:
     return load_spatial_covariate_readiness_config(
         {
             "schema_version": 1,
             "analysis": {
                 "years": [2024, 2025],
-                "baseline_generation_sha256": BASELINE_GENERATION,
+                "baseline_generation_sha256": baseline_generation,
                 "station_inventory_generation_sha256": INVENTORY_GENERATION,
                 "minimum_train_stations": 8,
             },
@@ -281,10 +284,8 @@ def _synthetic_frames() -> dict[str, pl.DataFrame]:
 @pytest.fixture
 def generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     frames = _synthetic_frames()
-    baseline = (
-        tmp_path / "outputs" / "spatial_surface_baseline" / "generations" / BASELINE_GENERATION
-    )
-    baseline.mkdir(parents=True)
+    staging = tmp_path / "baseline-staging"
+    staging.mkdir()
     baseline_frames = {
         "stations": frames["stations"],
         "panel": frames["panel"],
@@ -292,11 +293,11 @@ def generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "folds": frames["baseline_folds"],
     }
     for name, frame in baseline_frames.items():
-        frame.write_parquet(baseline / f"{name}.parquet")
+        frame.write_parquet(staging / f"{name}.parquet")
     baseline_members = {
         f"{name}.parquet": {
-            "bytes": (baseline / f"{name}.parquet").stat().st_size,
-            "sha256": sha256((baseline / f"{name}.parquet").read_bytes()).hexdigest(),
+            "bytes": (staging / f"{name}.parquet").stat().st_size,
+            "sha256": sha256((staging / f"{name}.parquet").read_bytes()).hexdigest(),
         }
         for name in baseline_frames
     }
@@ -307,14 +308,33 @@ def generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             if member not in baseline_members
         }
     )
+    baseline_identity = {
+        "schema_version": 1,
+        "analysis": "spatial_surface_baseline",
+        "config": {"synthetic_fixture": True},
+        "inputs": [],
+        "inventory_generation_sha256": INVENTORY_GENERATION,
+        "tables": {},
+        "gate": {},
+        "claim_boundary": {},
+        "git_sha": "e" * 40,
+        "git_dirty": False,
+        "members": baseline_members,
+    }
+    baseline_generation = sha256(_canonical_json(baseline_identity)).hexdigest()
+    baseline = (
+        tmp_path / "outputs" / "spatial_surface_baseline" / "generations" / baseline_generation
+    )
+    baseline.parent.mkdir(parents=True)
+    staging.rename(baseline)
     baseline_manifest = baseline / "manifest.json"
     baseline_manifest.write_bytes(
         _canonical_json(
             {
+                **baseline_identity,
+                "generated_at": "2026-08-28T00:00:00+00:00",
                 "complete": True,
-                "generation_sha256": BASELINE_GENERATION,
-                "inventory_generation_sha256": INVENTORY_GENERATION,
-                "members": baseline_members,
+                "generation_sha256": baseline_generation,
             }
         )
     )
@@ -363,9 +383,18 @@ def generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             )
             for path in input_paths
         ),
-        baseline_generation_sha256=BASELINE_GENERATION,
+        baseline_generation_sha256=baseline_generation,
         station_inventory_generation_sha256=INVENTORY_GENERATION,
     )
+    reviewed_inputs = {
+        path.relative_to(tmp_path).as_posix(): {
+            "bytes": path.stat().st_size,
+            "sha256": sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in input_paths
+    }
+    monkeypatch.setattr(verifier, "_BASELINE_GENERATION", baseline_generation)
+    monkeypatch.setattr(verifier, "REVIEWED_INPUT_IDENTITIES", reviewed_inputs, raising=False)
     monkeypatch.setattr(readiness, "load_frozen_inputs", lambda *_args, **_kwargs: inputs)
     monkeypatch.setattr(
         readiness, "assemble_covariates", lambda *_args, **_kwargs: frames["covariates"]
@@ -379,7 +408,7 @@ def generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(readiness, "_exact_git_state", lambda: ("f" * 40, False))
     result = readiness.run_spatial_covariate_readiness(
         data_root=tmp_path,
-        config=_config(),
+        config=_config(baseline_generation),
         generated_at="2026-08-28T00:00:00+00:00",
     )
     written = readiness.write_spatial_covariate_readiness_result(
@@ -444,6 +473,21 @@ def _refresh_member_identity(generation: Path, member: str) -> Path:
     return _resign_generation(generation)
 
 
+def _refresh_bound_input_identities(generation: Path, *relative_paths: str) -> Path:
+    manifest_path = generation / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data_root = generation.parents[3]
+    selected = set(relative_paths)
+    for item in manifest["inputs"]:
+        if item["path"] not in selected:
+            continue
+        payload = data_root.joinpath(*PurePosixPath(item["path"]).parts).read_bytes()
+        item["bytes"] = len(payload)
+        item["sha256"] = sha256(payload).hexdigest()
+    manifest_path.write_bytes(_canonical_json(manifest))
+    return _resign_generation(generation)
+
+
 def _assert_problem(generation: Path, relationship: str) -> None:
     problems = verify_generation(generation)
     assert problems
@@ -494,6 +538,83 @@ def test_resigned_training_membership_must_match_baseline_authorization(generati
     _assert_problem(generation, "baseline training authorization")
 
 
+def test_resigned_alternate_baseline_cannot_retain_the_reviewed_generation_identity(
+    generation: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
+    baseline_manifest_relative = next(
+        item["path"] for item in manifest["inputs"] if item["path"].endswith("/manifest.json")
+    )
+    baseline_manifest_path = generation.parents[3].joinpath(
+        *PurePosixPath(baseline_manifest_relative).parts
+    )
+    baseline = baseline_manifest_path.parent
+    baseline_station_relative = next(
+        item["path"] for item in manifest["inputs"] if item["path"].endswith("/stations.parquet")
+    )
+    baseline_panel_relative = next(
+        item["path"]
+        for item in manifest["inputs"]
+        if "spatial_surface_baseline" in item["path"] and item["path"].endswith("/panel.parquet")
+    )
+
+    baseline_station_rows = pl.read_parquet(baseline / "stations.parquet").to_dicts()
+    target = baseline_station_rows[0]["station_name"]
+    baseline_station_rows[0]["lon"] = float(baseline_station_rows[0]["lon"]) + 1.0
+    pl.DataFrame(
+        baseline_station_rows, schema=SPATIAL_BASELINE_TABLE_SCHEMAS["stations"]
+    ).write_parquet(baseline / "stations.parquet")
+    baseline_panel_rows = pl.read_parquet(baseline / "panel.parquet").to_dicts()
+    for row in baseline_panel_rows:
+        if row["station_name"] == target:
+            row["lon"] = float(row["lon"]) + 1.0
+    pl.DataFrame(baseline_panel_rows, schema=SPATIAL_BASELINE_TABLE_SCHEMAS["panel"]).write_parquet(
+        baseline / "panel.parquet"
+    )
+    baseline_manifest = json.loads(baseline_manifest_path.read_text(encoding="utf-8"))
+    for member in ("stations.parquet", "panel.parquet"):
+        baseline_manifest["members"][member] = {
+            "bytes": (baseline / member).stat().st_size,
+            "sha256": sha256((baseline / member).read_bytes()).hexdigest(),
+        }
+    baseline_manifest_path.write_bytes(_canonical_json(baseline_manifest))
+
+    station_rows = pl.read_parquet(generation / "stations.parquet").to_dicts()
+    station_rows[0]["lon"] = float(station_rows[0]["lon"]) + 1.0
+    panel_rows = pl.read_parquet(generation / "panel.parquet").to_dicts()
+    covariate_rows = pl.read_parquet(generation / "covariates.parquet").to_dicts()
+    for row in panel_rows:
+        if row["station_name"] == target:
+            row["lon"] = float(row["lon"]) + 1.0
+    for row in covariate_rows:
+        if row["station_name"] == target:
+            row["lon"] = float(row["lon"]) + 1.0
+    generation = _rewrite_table(generation, "stations", station_rows)
+    generation = _rewrite_table(generation, "panel", panel_rows)
+    generation = _rewrite_table(generation, "covariates", covariate_rows)
+    generation = _refresh_bound_input_identities(
+        generation,
+        baseline_manifest_relative,
+        baseline_station_relative,
+        baseline_panel_relative,
+    )
+
+    alternate_reviewed = copy.deepcopy(verifier.REVIEWED_INPUT_IDENTITIES)
+    for relative in (
+        baseline_manifest_relative,
+        baseline_station_relative,
+        baseline_panel_relative,
+    ):
+        path = generation.parents[3].joinpath(*PurePosixPath(relative).parts)
+        alternate_reviewed[relative] = {
+            "bytes": path.stat().st_size,
+            "sha256": sha256(path.read_bytes()).hexdigest(),
+        }
+    monkeypatch.setattr(verifier, "REVIEWED_INPUT_IDENTITIES", alternate_reviewed)
+
+    _assert_problem(generation, "baseline generation identity")
+
+
 @pytest.mark.parametrize("mutation", ["missing", "replaced"])
 def test_bound_input_inventory_requires_all_ten_exact_roles(
     generation: Path, mutation: str
@@ -508,6 +629,22 @@ def test_bound_input_inventory_requires_all_ten_exact_roles(
     mutated = _resign_generation(generation)
 
     _assert_problem(mutated, "bound input role inventory")
+
+
+def test_resigned_replacement_of_a_reviewed_external_input_is_rejected(
+    generation: Path,
+) -> None:
+    manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
+    relative = next(
+        item["path"]
+        for item in manifest["inputs"]
+        if "year=2024/era5_station_hour.parquet" in item["path"]
+    )
+    path = generation.parents[3].joinpath(*PurePosixPath(relative).parts)
+    path.write_bytes(b"coherently replaced era5 payload")
+    generation = _refresh_bound_input_identities(generation, relative)
+
+    _assert_problem(generation, "reviewed input identity")
 
 
 @pytest.mark.parametrize("member", ["scores.parquet", "unexpected.txt"])
@@ -670,6 +807,21 @@ def test_estimator_failure_requires_an_exception_class(generation: Path) -> None
     _assert_problem(mutated, "prediction failure contract")
 
 
+def test_estimator_failure_rejects_an_unrecognized_exception_class(generation: Path) -> None:
+    rows = pl.read_parquet(generation / "predictions.parquet").to_dicts()
+    failed = next(
+        row
+        for row in rows
+        if row["method"] == "covariate_gbm" and row["prediction_state"] == "scored"
+    )
+    failed["predicted"] = None
+    failed["error"] = None
+    failed["prediction_state"] = "estimator_failed"
+    failed["failure_type"] = "banana"
+    mutated = _rewrite_table(generation, "predictions", rows)
+    _assert_problem(mutated, "prediction failure contract")
+
+
 def test_bound_input_hash_is_recomputed(generation: Path) -> None:
     manifest_path = generation / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -779,9 +931,32 @@ def test_claim_boundary_is_fail_closed(generation: Path, mutation: str) -> None:
     _assert_problem(mutated, "claim boundary")
 
 
+def _synthetic_cli_command(generation: Path) -> list[str]:
+    manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
+    reviewed = {
+        item["path"]: {
+            "bytes": generation.parents[3]
+            .joinpath(*PurePosixPath(item["path"]).parts)
+            .stat()
+            .st_size,
+            "sha256": sha256(
+                generation.parents[3].joinpath(*PurePosixPath(item["path"]).parts).read_bytes()
+            ).hexdigest(),
+        }
+        for item in manifest["inputs"]
+    }
+    setup = (
+        "import json; import scripts.verify_spatial_covariate_readiness as verifier; "
+        f"verifier._BASELINE_GENERATION={manifest['baseline_generation_sha256']!r}; "
+        f"verifier.REVIEWED_INPUT_IDENTITIES=json.loads({json.dumps(reviewed)!r}); "
+        f"raise SystemExit(verifier.main([{str(generation)!r}]))"
+    )
+    return [sys.executable, "-c", setup]
+
+
 def test_cli_prints_exactly_one_pass_line_for_a_valid_generation(generation: Path) -> None:
     completed = subprocess.run(
-        [sys.executable, "scripts/verify_spatial_covariate_readiness.py", str(generation)],
+        _synthetic_cli_command(generation),
         check=False,
         capture_output=True,
         text=True,
@@ -794,7 +969,7 @@ def test_cli_prints_exactly_one_pass_line_for_a_valid_generation(generation: Pat
 def test_cli_exits_one_without_a_pass_line_for_an_invalid_generation(generation: Path) -> None:
     (generation / "scores.parquet").unlink()
     completed = subprocess.run(
-        [sys.executable, "scripts/verify_spatial_covariate_readiness.py", str(generation)],
+        _synthetic_cli_command(generation),
         check=False,
         capture_output=True,
         text=True,

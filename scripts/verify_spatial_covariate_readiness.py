@@ -71,13 +71,65 @@ _MANIFEST_KEYS = {
     "generation_sha256",
 }
 _GIT_SHA = re.compile(r"[0-9a-f]{40}")
-_FAILURE_TYPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ESTIMATOR_FAILURE_TYPES = frozenset(
+    {
+        "FloatingPointError",
+        "LightGBMError",
+        "MemoryError",
+        "OverflowError",
+        "RuntimeError",
+        "TypeError",
+        "ValueError",
+    }
+)
 _BASELINE_MEMBERS = (
     "stations.parquet",
     "panel.parquet",
     "support.parquet",
     "folds.parquet",
 )
+REVIEWED_INPUT_IDENTITIES: dict[str, dict[str, object]] = {
+    f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/manifest.json": {
+        "bytes": 5565,
+        "sha256": "565123d3b14e1b8bda5f6f7ef916aaaf2067def9af4d8d8dacf214516657c285",
+    },
+    f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/stations.parquet": {
+        "bytes": 2896,
+        "sha256": "6480234956105313bd10d11316144766afa6c6f03f4ad267ab36aee44cae7af3",
+    },
+    f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/panel.parquet": {
+        "bytes": 15264,
+        "sha256": "85264993c0326fd144ec076a984d3ba5d81156d2752bb711c28d5407a37ed8ae",
+    },
+    f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/support.parquet": {
+        "bytes": 4839,
+        "sha256": "2df1ab2ef6815222682db51e722ddc1f3d41df2c00b5223d91f2b29a238264ec",
+    },
+    f"outputs/spatial_surface_baseline/generations/{_BASELINE_GENERATION}/folds.parquet": {
+        "bytes": 33058,
+        "sha256": "4a6cced9cbbb82162c8f8f1e1a05d40f624f1da1e7c75c1f048a9a6dd9b8d61a",
+    },
+    f"interim/era5/generations/{_INVENTORY_GENERATION}/year=2023/era5_station_hour.parquet": {
+        "bytes": 465000,
+        "sha256": "b00b80d87df934f5195dc66585d4790b276ef0482c6febd461f72746a5957e80",
+    },
+    f"interim/era5/generations/{_INVENTORY_GENERATION}/year=2024/era5_station_hour.parquet": {
+        "bytes": 10864032,
+        "sha256": "6544973520b63ea63a40d9bd806366dd9d1a44431218d1c13a8d543f721bc753",
+    },
+    f"interim/era5/generations/{_INVENTORY_GENERATION}/year=2025/era5_station_hour.parquet": {
+        "bytes": 10825372,
+        "sha256": "56794097a91bc9ec785478199ec6cd8e9b89432f4e1d9d59e8d4ee00241d81e9",
+    },
+    f"outputs/m8_satellite/generations/{_INVENTORY_GENERATION}/year=2024/panel.parquet": {
+        "bytes": 33552,
+        "sha256": "a91d4225d35e9ad12a0fdfcccd27e027752210dcd064366ae34af42ccfc90e33",
+    },
+    f"outputs/m8_satellite/generations/{_INVENTORY_GENERATION}/year=2025/panel.parquet": {
+        "bytes": 33866,
+        "sha256": "aa34e69720098e8868dc1e004f77b3f8e425288089f867bd310e08366d0198e2",
+    },
+}
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -294,6 +346,10 @@ def _input_problems(directory: Path, manifest: dict[str, Any]) -> list[str]:
     }
     if len(inputs) != len(expected_paths) or observed_paths != expected_paths:
         problems.append("bound input role inventory differs from the exact ten-file contract")
+    if set(REVIEWED_INPUT_IDENTITIES) != expected_paths:
+        problems.append(
+            "reviewed input identity inventory differs from the exact ten-file contract"
+        )
     seen: set[str] = set()
     for item in inputs:
         if not isinstance(item, dict) or set(item) != {"path", "bytes", "sha256"}:
@@ -319,8 +375,11 @@ def _input_problems(directory: Path, manifest: dict[str, Any]) -> list[str]:
             continue
         if _is_link_or_reparse(candidate) or not candidate.is_file():
             problems.append(f"bound input identity is linked or not a file: {relative_value}")
-        if observed != {"bytes": item.get("bytes"), "sha256": item.get("sha256")}:
+        declared = {"bytes": item.get("bytes"), "sha256": item.get("sha256")}
+        if observed != declared:
             problems.append(f"bound input identity differs from bytes on disk: {relative_value}")
+        if observed != REVIEWED_INPUT_IDENTITIES.get(relative_value):
+            problems.append(f"reviewed input identity differs from bytes on disk: {relative_value}")
     if inputs != sorted(
         inputs, key=lambda item: str(item.get("path")) if isinstance(item, dict) else ""
     ):
@@ -346,11 +405,26 @@ def _baseline_authority_problems(
     if not isinstance(manifest_value, dict):
         return ["frozen baseline manifest is not a JSON object"]
     baseline_manifest: dict[str, Any] = manifest_value
+    try:
+        canonical_manifest = _canonical_json_bytes(baseline_manifest)
+        baseline_identity = {
+            key: value
+            for key, value in baseline_manifest.items()
+            if key not in {"generated_at", "complete", "generation_sha256"}
+        }
+        recomputed_generation = _canonical_hash(baseline_identity)
+    except (TypeError, ValueError):
+        return ["frozen baseline generation identity cannot be recomputed"]
+    if manifest_payload != canonical_manifest:
+        problems.append("frozen baseline manifest is not canonical JSON")
     if (
         baseline_manifest.get("complete") is not True
-        or baseline_manifest.get("generation_sha256") != _BASELINE_GENERATION
-        or baseline_manifest.get("inventory_generation_sha256") != _INVENTORY_GENERATION
+        or baseline_manifest.get("generation_sha256") != recomputed_generation
+        or baseline.name != recomputed_generation
+        or recomputed_generation != _BASELINE_GENERATION
     ):
+        problems.append("frozen baseline generation identity differs from the reviewed generation")
+    if baseline_manifest.get("inventory_generation_sha256") != _INVENTORY_GENERATION:
         problems.append("frozen baseline manifest identity differs from the reviewed inputs")
     members = baseline_manifest.get("members")
     if not isinstance(members, dict) or set(members) != set(SPATIAL_BASELINE_MEMBER_NAMES[:-1]):
@@ -683,9 +757,7 @@ def _validate_prediction_row(row: dict[str, Any], problems: list[str]) -> None:
     state = str(row["prediction_state"])
     failure_type = row["failure_type"]
     valid_failure_type = (
-        state == "estimator_failed"
-        and isinstance(failure_type, str)
-        and _FAILURE_TYPE.fullmatch(failure_type) is not None
+        state == "estimator_failed" and failure_type in _ESTIMATOR_FAILURE_TYPES
     ) or (state != "estimator_failed" and failure_type is None)
     if (
         state not in valid_failures.get(str(row["method"]), set())
