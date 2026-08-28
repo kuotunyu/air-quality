@@ -672,7 +672,9 @@ def build_fold_ledger(inputs: SurfaceInputs, config: SpatialSurfaceBaselineConfi
                     "fold_reason": fold_reason,
                 }
             )
-    return pl.DataFrame(rows).sort("evaluation", "year", "month", "target_station")
+    return pl.DataFrame(rows, schema=_FOLD_SCHEMA).sort(
+        "evaluation", "year", "month", "target_station"
+    )
 
 
 def _projected_distances_km(

@@ -654,6 +654,28 @@ def test_withheld_target_stays_in_fold_ledger_but_is_never_scored() -> None:
     assert set(row["fold_state"]) == {"unscored_target_withheld"}
 
 
+def test_fold_ledger_pins_schema_when_a_late_target_is_withheld() -> None:
+    inputs = synthetic_surface_inputs(
+        stations=36,
+        months=2,
+        withheld=("s35", date(2024, 2, 1)),
+    )
+
+    ledger = build_fold_ledger(inputs, _config(spatial_folds=3))
+    early = ledger.filter(pl.col("month") == date(2024, 1, 1))
+    late = ledger.filter(
+        (pl.col("target_station") == "s35") & (pl.col("month") == date(2024, 2, 1))
+    )
+
+    assert early.height == 108
+    assert set(early["fold_state"]) == {"eligible"}
+    assert ledger.schema == spatial_surface_baseline._FOLD_SCHEMA
+    assert late.height == 3
+    assert set(late["fold_state"]) == {"unscored_target_withheld"}
+    assert late.schema["fold_reason"] == pl.String
+    assert set(late["fold_reason"]) == {"target_state=withheld"}
+
+
 def test_cluster_fold_keeps_a_station_in_one_cluster_across_months() -> None:
     inputs = synthetic_surface_inputs(stations=12, months=2)
 
