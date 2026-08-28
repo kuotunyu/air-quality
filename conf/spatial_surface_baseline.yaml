@@ -1,0 +1,20 @@
+"schema_version": 1
+"analysis":
+  "years": [2024, 2025]
+  "pollutant": "PM2.5"
+  "station_types": ["一般站", "背景站"]
+  "excluded_stations": ["馬公", "金門", "馬祖"]
+  "min_train_stations": 8
+"validation":
+  "buffer_radii_km": [20.0, 40.0]
+  "spatial_folds": 5
+  "projection_epsg": 3826
+  "methods": ["station_mean", "nearest", "idw2", "kriging_spherical", "kriging_hole_effect"]
+  "idw_power": 2.0
+  "minimum_distance_km": 0.1
+  "bootstrap_draws": 9999
+  "seed": 20260828
+"gate":
+  "comparison_method": "station_mean"
+  "required_evaluations": ["buffer_20km", "buffer_40km", "spatial_cluster"]
+  "required_years": [2024, 2025]
