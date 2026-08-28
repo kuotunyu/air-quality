@@ -140,7 +140,8 @@ evaluation-year cell 的分母完全相同：2024 是 708 intended / 708 scored 
 2025 是 707 / 707 / 0；六個 cell 都是 59 intended / 59 scored stations。
 
 凍結規則要求 20／40 km 的 2024／2025 四個 required cells 的 prediction 完整，且至少
-一個 candidate 的 median station MAE delta 皆小於 0。實測 verdict 為 `go`：IDW²、
+一個 candidate 的 median station MAE delta 皆小於 0。此外，each qualifying method must also have a
+finite, complete spatial_cluster score in both 2024 and 2025。實測 verdict 為 `go`：IDW²、
 hole-effect kriging、spherical kriging 與 nearest 都合格。`go` 只表示可以開始
 covariate-model design；這個 generation 沒有產生濃度場或人口暴露結果，也不是地圖發布證據。
 

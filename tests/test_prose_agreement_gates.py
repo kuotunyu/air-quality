@@ -1219,6 +1219,10 @@ def _spatial_baseline_section(text: str) -> str:
 def _assert_spatial_baseline_claim_boundary(section: str) -> None:
     folded = " ".join(section.casefold().split())
     assert "baseline readiness gate" in folded
+    assert (
+        "each qualifying method must also have a finite, complete spatial_cluster score "
+        "in both 2024 and 2025"
+    ) in folded
     assert re.search(r"\b1 km surface\b", folded) is None
     assert re.search(r"\bproduced (?:a )?population exposure result\b", folded) is None
     assert re.search(r"\bfusion\b", folded) is None
@@ -1248,8 +1252,28 @@ def test_spatial_baseline_boundary_rejects_surface_exposure_and_fusion_mutations
 ) -> None:
     bounded = (
         "Spatial baseline readiness gate. "
+        "Each qualifying method must also have a finite, complete spatial_cluster score "
+        "in both 2024 and 2025. "
         "It produced no concentration surface or population exposure."
     )
 
     with pytest.raises(AssertionError):
         _assert_spatial_baseline_claim_boundary(f"{bounded} {mutation}")
+
+
+def test_spatial_baseline_rule_rejects_omitted_or_weakened_cluster_prerequisite() -> None:
+    complete = (
+        "Spatial baseline readiness gate. "
+        "Each qualifying method must also have a finite, complete spatial_cluster score "
+        "in both 2024 and 2025."
+    )
+    mutations = (
+        "Spatial baseline readiness gate.",
+        complete.replace("finite, ", ""),
+        complete.replace("complete ", ""),
+        complete.replace("both 2024 and 2025", "2024"),
+    )
+
+    for mutation in mutations:
+        with pytest.raises(AssertionError):
+            _assert_spatial_baseline_claim_boundary(mutation)

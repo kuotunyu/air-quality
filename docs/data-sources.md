@@ -537,8 +537,9 @@ predictions（4,248 × 5）、30 列 scores 與 24 列 paired deltas。每個 ev
 | `spatial_cluster` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
 
 凍結規則是「2024／2025 在 20／40 km 的 prediction 都完整，且至少一個
-candidate 在四個 required cells 的 median station MAE delta 都小於 0」。四種
-candidate 的實測配對 delta 均通過：
+candidate 在四個 required cells 的 median station MAE delta 都小於 0」。此外，each
+qualifying method must also have a finite, complete spatial_cluster score in both
+2024 and 2025。四種 candidate 的實測配對 delta 均通過：
 
 | candidate | 20 km 2024 | 20 km 2025 | 40 km 2024 | 40 km 2025 |
 |---|---:|---:|---:|---:|

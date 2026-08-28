@@ -216,8 +216,10 @@ evaluation-year cell: 708 intended / 708 scored / 0 failed rows in 2024 and
 707 / 707 / 0 in 2025, with 59 intended / 59 scored stations in all six cells.
 
 The frozen rule requires complete predictions and a median station MAE delta
-below zero in all four required 2024/2025 20/40 km cells. The measured verdict
-is `go`: IDW², hole-effect kriging, spherical kriging, and nearest all qualify.
+below zero in all four required 2024/2025 20/40 km cells; each qualifying method
+must also have a finite, complete spatial_cluster score in both 2024 and 2025.
+The measured verdict is `go`: IDW², hole-effect kriging, spherical kriging, and
+nearest all qualify.
 `go` says only that covariate-model design may begin. This generation produced
 no concentration surface or population exposure result, and it is not evidence
 for publishing a map.

@@ -352,21 +352,25 @@ def test_spatial_baseline_readiness_gate_keeps_the_verified_result_and_boundary_
         "README.md": (
             "baseline readiness gate",
             "59 個測站、1,416 個站月 key",
+            "each qualifying method must also have a finite, complete spatial_cluster score in both 2024 and 2025",
             "沒有產生濃度場或人口暴露結果",
         ),
         "README.en.md": (
             "baseline readiness gate",
             "59 stations and 1,416 station-month keys",
+            "each qualifying method must also have a finite, complete spatial_cluster score in both 2024 and 2025",
             "produced no concentration surface or population exposure result",
         ),
         "docs/data-sources.md": (
             "baseline readiness gate",
             "59 個測站、1,416 個站月 key",
+            "each qualifying method must also have a finite, complete spatial_cluster score in both 2024 and 2025",
             "沒有產生濃度場或人口暴露結果",
         ),
         "docs/methodology.md": (
             "baseline readiness gate",
             "59 個測站、1,416 個站月 key",
+            "each qualifying method must also have a finite, complete spatial_cluster score in both 2024 and 2025",
             "沒有產生濃度場或人口暴露結果",
         ),
     }

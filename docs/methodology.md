@@ -720,7 +720,8 @@ null prediction/error 與明確狀態，沒有 estimator failure。
 
 凍結規則先要求 2024／2025 在 20／40 km 的四個 required cells 都有完整
 prediction，再要求至少一種 candidate 在四格的 median station MAE delta 都小於 0。
-實測的 candidate-minus-`station_mean` 配對 delta 為：
+此外，each qualifying method must also have a finite, complete spatial_cluster score
+in both 2024 and 2025。實測的 candidate-minus-`station_mean` 配對 delta 為：
 
 | candidate | 20 km 2024 | 20 km 2025 | 40 km 2024 | 40 km 2025 |
 |---|---:|---:|---:|---:|
