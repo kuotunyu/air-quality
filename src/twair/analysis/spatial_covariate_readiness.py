@@ -26,6 +26,7 @@ from twair.config import ConfigError, load_conf
 __all__ = [
     "COVARIATE_MODEL_FEATURES",
     "COVARIATE_READINESS_EVALUATIONS",
+    "COVARIATE_READINESS_LIMITATIONS",
     "COVARIATE_READINESS_METHODS",
     "CovariatePrediction",
     "CovariateReadinessConfig",
@@ -33,17 +34,28 @@ __all__ = [
     "InputFile",
     "aggregate_era5_monthly",
     "assemble_covariates",
+    "bootstrap_station_delta",
     "build_covariate_fold_ledger",
+    "decide_covariate_gate",
     "fit_covariate_model",
     "load_frozen_inputs",
     "load_spatial_covariate_readiness_config",
+    "paired_readiness_deltas",
     "pivot_satellite_monthly",
     "predict_readiness_methods",
+    "score_readiness_predictions",
 ]
 
 
 COVARIATE_READINESS_METHODS = ("idw2", "covariate_gbm", "covariate_gbm_idw2")
 COVARIATE_READINESS_EVALUATIONS = ("buffer_20km", "buffer_40km", "spatial_cluster")
+COVARIATE_READINESS_LIMITATIONS = (
+    "covariate-model readiness only; no concentration surface was generated",
+    "passing permits full-domain covariate acquisition and nested surface design, "
+    "not publication of a map",
+    "no prediction interval, support mask, population-weighted ambient concentration "
+    "or personal-exposure result",
+)
 COVARIATE_MODEL_FEATURES = (
     "x_m",
     "y_m",
@@ -173,6 +185,36 @@ _COVARIATE_PREDICTION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "failure_type": pl.String,
     "error": pl.Float64,
 }
+_READINESS_SCORE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "training_period": pl.String,
+    "train_year": pl.Int64,
+    "target_year": pl.Int64,
+    "method": pl.String,
+    "n_intended": pl.Int64,
+    "n_scored": pl.Int64,
+    "n_failed": pl.Int64,
+    "n_stations_intended": pl.Int64,
+    "n_stations_scored": pl.Int64,
+    "station_clustered_mae": pl.Float64,
+    "station_clustered_rmse": pl.Float64,
+    "station_clustered_bias": pl.Float64,
+    "score_state": pl.String,
+}
+_READINESS_DELTA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "training_period": pl.String,
+    "train_year": pl.Int64,
+    "target_year": pl.Int64,
+    "method": pl.String,
+    "comparison_method": pl.String,
+    "n_stations": pl.Int64,
+    "median_station_mae_delta": pl.Float64,
+    "lower_2_5": pl.Float64,
+    "upper_97_5": pl.Float64,
+    "paired_state": pl.String,
+}
+_READINESS_CELL_KEY = ("evaluation", "training_period", "train_year", "target_year")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1138,6 +1180,461 @@ def predict_readiness_methods(
     return pl.DataFrame(rows, schema=_COVARIATE_PREDICTION_SCHEMA).sort(
         *_COVARIATE_TARGET_KEY, "method"
     )
+
+
+def score_readiness_predictions(
+    predictions: pl.DataFrame, config: CovariateReadinessConfig
+) -> pl.DataFrame:
+    """Score the authoritative eligible grid after aggregating within stations."""
+    _validate_scoring_config(config)
+    _require_readiness_prediction_columns(predictions)
+    rows = list(predictions.iter_rows(named=True))
+    observed_methods = {str(row["method"]) for row in rows}
+    unexpected_methods = observed_methods.difference(config.methods)
+    if unexpected_methods:
+        raise RuntimeError("spatial covariate prediction method domain changed")
+    _validate_prediction_grid(rows, require_complete_methods=False)
+
+    target_by_key = _authoritative_target_rows(rows)
+    cells = sorted({_readiness_cell(row) for row in target_by_key.values()})
+    score_rows: list[dict[str, object]] = []
+    for cell in cells:
+        cell_keys = {
+            key
+            for key, target in target_by_key.items()
+            if _readiness_cell(target) == cell and target["fold_state"] == "eligible"
+        }
+        intended_stations = {str(target_by_key[key]["target_station"]) for key in cell_keys}
+        for method in config.methods:
+            method_rows = [
+                row for row in rows if row["method"] == method and _readiness_cell(row) == cell
+            ]
+            intended_rows = [row for row in method_rows if row["fold_state"] == "eligible"]
+            intended_keys = {_readiness_prediction_key(row) for row in intended_rows}
+            scored_rows = [row for row in intended_rows if _finite_readiness_prediction(row)]
+            n_intended = len(cell_keys)
+            n_scored = len(scored_rows)
+            if not cell_keys:
+                score_state = "no_eligible_targets"
+            elif intended_keys != cell_keys:
+                score_state = "missing_intended_predictions"
+            elif n_scored != n_intended:
+                score_state = "incomplete_predictions"
+            else:
+                score_state = "complete"
+
+            mae: float | None = None
+            rmse: float | None = None
+            bias: float | None = None
+            if score_state != "missing_intended_predictions" and scored_rows:
+                station_summaries: list[tuple[float, float, float]] = []
+                for station in sorted({str(row["target_station"]) for row in scored_rows}):
+                    errors = np.asarray(
+                        [
+                            float(row["error"])
+                            for row in scored_rows
+                            if row["target_station"] == station
+                        ],
+                        dtype=float,
+                    )
+                    station_summaries.append(
+                        (
+                            float(np.abs(errors).mean()),
+                            float(np.sqrt(np.square(errors).mean())),
+                            float(errors.mean()),
+                        )
+                    )
+                mae = float(np.mean([summary[0] for summary in station_summaries]))
+                rmse = float(np.mean([summary[1] for summary in station_summaries]))
+                bias = float(np.mean([summary[2] for summary in station_summaries]))
+            evaluation, training_period, train_year, target_year = cell
+            score_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "training_period": training_period,
+                    "train_year": train_year,
+                    "target_year": target_year,
+                    "method": method,
+                    "n_intended": n_intended,
+                    "n_scored": n_scored,
+                    "n_failed": n_intended - n_scored,
+                    "n_stations_intended": len(intended_stations),
+                    "n_stations_scored": len({str(row["target_station"]) for row in scored_rows}),
+                    "station_clustered_mae": mae,
+                    "station_clustered_rmse": rmse,
+                    "station_clustered_bias": bias,
+                    "score_state": score_state,
+                }
+            )
+    return pl.DataFrame(score_rows, schema=_READINESS_SCORE_SCHEMA).sort(
+        *_READINESS_CELL_KEY, "method"
+    )
+
+
+def bootstrap_station_delta(
+    station_deltas: np.ndarray, *, draws: int, seed: int
+) -> tuple[float, float, float]:
+    """Bootstrap the median station MAE delta deterministically."""
+    values = np.asarray(station_deltas, dtype=float)
+    if values.ndim != 1 or values.size == 0 or not np.isfinite(values).all():
+        raise ValueError("station deltas must be a non-empty finite one-dimensional array")
+    if draws <= 0:
+        raise ValueError("bootstrap draws must be positive")
+    generator = np.random.default_rng(seed)
+    samples = values[generator.integers(0, values.size, size=(draws, values.size))]
+    quantiles = np.percentile(np.median(samples, axis=1), [2.5, 97.5])
+    return float(np.median(values)), float(quantiles[0]), float(quantiles[1])
+
+
+def paired_readiness_deltas(
+    predictions: pl.DataFrame, config: CovariateReadinessConfig
+) -> pl.DataFrame:
+    """Pair both candidates with IDW2 on the complete authoritative target key."""
+    _validate_scoring_config(config)
+    _require_readiness_prediction_columns(predictions)
+    rows = list(predictions.iter_rows(named=True))
+    if {str(row["method"]) for row in rows} != set(config.methods):
+        raise RuntimeError("spatial covariate prediction method domain changed")
+    _validate_prediction_grid(rows, require_complete_methods=True)
+    target_by_key = _authoritative_target_rows(rows)
+    by_method = {
+        method: {_readiness_prediction_key(row): row for row in rows if row["method"] == method}
+        for method in config.methods
+    }
+    comparator_by_key = by_method[config.comparator]
+    cells = sorted({_readiness_cell(row) for row in target_by_key.values()})
+    paired_rows: list[dict[str, object]] = []
+    for method in config.methods:
+        if method == config.comparator:
+            continue
+        candidate_by_key = by_method[method]
+        for cell in cells:
+            keys = [
+                key
+                for key, target in target_by_key.items()
+                if _readiness_cell(target) == cell and target["fold_state"] == "eligible"
+            ]
+            if not keys:
+                n_stations = 0
+                median = lower = upper = None
+                paired_state = "no_eligible_targets"
+            elif not all(
+                _finite_readiness_prediction(comparator_by_key[key])
+                and _finite_readiness_prediction(candidate_by_key[key])
+                for key in keys
+            ):
+                n_stations = 0
+                median = lower = upper = None
+                paired_state = "incomplete_predictions"
+            else:
+                station_deltas: list[float] = []
+                for station in sorted({str(target_by_key[key]["target_station"]) for key in keys}):
+                    station_keys = [
+                        key for key in keys if target_by_key[key]["target_station"] == station
+                    ]
+                    candidate_mae = float(
+                        np.mean(
+                            [abs(float(candidate_by_key[key]["error"])) for key in station_keys]
+                        )
+                    )
+                    comparator_mae = float(
+                        np.mean(
+                            [abs(float(comparator_by_key[key]["error"])) for key in station_keys]
+                        )
+                    )
+                    station_deltas.append(candidate_mae - comparator_mae)
+                median, lower, upper = bootstrap_station_delta(
+                    np.asarray(station_deltas, dtype=float),
+                    draws=config.bootstrap_draws,
+                    seed=config.bootstrap_seed,
+                )
+                n_stations = len(station_deltas)
+                paired_state = "complete"
+            evaluation, training_period, train_year, target_year = cell
+            paired_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "training_period": training_period,
+                    "train_year": train_year,
+                    "target_year": target_year,
+                    "method": method,
+                    "comparison_method": config.comparator,
+                    "n_stations": n_stations,
+                    "median_station_mae_delta": median,
+                    "lower_2_5": lower,
+                    "upper_97_5": upper,
+                    "paired_state": paired_state,
+                }
+            )
+    return pl.DataFrame(paired_rows, schema=_READINESS_DELTA_SCHEMA).sort(
+        *_READINESS_CELL_KEY, "method"
+    )
+
+
+def decide_covariate_gate(
+    scores: pl.DataFrame, deltas: pl.DataFrame, config: CovariateReadinessConfig
+) -> dict[str, Any]:
+    """Apply the frozen seven-cell covariate-model readiness rule."""
+    _validate_scoring_config(config)
+    _required_columns(scores, tuple(_READINESS_SCORE_SCHEMA), label="spatial covariate scores")
+    _required_columns(
+        deltas, tuple(_READINESS_DELTA_SCHEMA), label="spatial covariate paired deltas"
+    )
+    candidates = tuple(method for method in config.methods if method != config.comparator)
+    if set(scores["method"].to_list()) != set(config.methods):
+        raise RuntimeError("spatial covariate score method domain changed")
+    if set(deltas["method"].to_list()) != set(candidates):
+        raise RuntimeError("spatial covariate paired method domain changed")
+    score_key = (*_READINESS_CELL_KEY, "method")
+    delta_key = (*_READINESS_CELL_KEY, "method")
+    if scores.select(*score_key).n_unique() != scores.height:
+        raise RuntimeError("spatial covariate scores contain duplicate required cells")
+    if deltas.select(*delta_key).n_unique() != deltas.height:
+        raise RuntimeError("spatial covariate paired deltas contain duplicate required cells")
+
+    expected_cells = _required_gate_cells(config)
+    observed_score_grid = {
+        (*_readiness_cell(row), str(row["method"])) for row in scores.iter_rows(named=True)
+    }
+    observed_delta_grid = {
+        (*_readiness_cell(row), str(row["method"])) for row in deltas.iter_rows(named=True)
+    }
+    expected_score_grid = {(*cell, method) for cell in expected_cells for method in config.methods}
+    expected_delta_grid = {(*cell, method) for cell in expected_cells for method in candidates}
+    structurally_complete = (
+        observed_score_grid == expected_score_grid and observed_delta_grid == expected_delta_grid
+    )
+
+    qualifying: list[str] = []
+    if structurally_complete:
+        score_rows = {
+            (*_readiness_cell(row), str(row["method"])): row for row in scores.iter_rows(named=True)
+        }
+        delta_rows = {
+            (*_readiness_cell(row), str(row["method"])): row for row in deltas.iter_rows(named=True)
+        }
+        same_year_improvements = {
+            (evaluation, "same_year", year, year)
+            for evaluation in ("buffer_20km", "buffer_40km")
+            for year in config.years
+        }
+        forward_period = f"{config.years[0]}_to_{config.years[1]}"
+        forward_improvements = {
+            (evaluation, forward_period, config.years[0], config.years[1])
+            for evaluation in config.evaluations
+        }
+        improvement_cells = same_year_improvements | forward_improvements
+        cluster_cells = {("spatial_cluster", "same_year", year, year) for year in config.years}
+        for method in candidates:
+            complete = all(
+                _gate_pair_is_complete(
+                    score_rows[(*cell, method)],
+                    score_rows[(*cell, config.comparator)],
+                    delta_rows[(*cell, method)],
+                    comparator=config.comparator,
+                )
+                for cell in improvement_cells
+            ) and all(
+                _gate_scores_are_complete(
+                    score_rows[(*cell, method)], score_rows[(*cell, config.comparator)]
+                )
+                for cell in cluster_cells
+            )
+            if complete:
+                qualifying.append(method)
+    return {
+        "state": "go" if qualifying else "stop",
+        "qualifying_methods": sorted(qualifying),
+        "required_improvement_cells": 7,
+        "rule": (
+            "complete predictions and median station MAE delta < 0 versus idw2 "
+            "in 2024/2025 same-year 20/40 km and all 2024-to-2025 joint cells"
+        ),
+        "limitations": list(COVARIATE_READINESS_LIMITATIONS),
+    }
+
+
+def _validate_scoring_config(config: CovariateReadinessConfig) -> None:
+    if (
+        config.years != (2024, 2025)
+        or config.methods != COVARIATE_READINESS_METHODS
+        or config.comparator != "idw2"
+        or config.evaluations != COVARIATE_READINESS_EVALUATIONS
+        or config.bootstrap_draws != 9999
+        or config.bootstrap_seed != 20260828
+    ):
+        raise RuntimeError("spatial covariate scoring configuration changed")
+
+
+def _require_readiness_prediction_columns(predictions: pl.DataFrame) -> None:
+    _required_columns(
+        predictions,
+        (
+            *_COVARIATE_TARGET_KEY,
+            "target_state",
+            "observed",
+            "fold_state",
+            "method",
+            "predicted",
+            "prediction_state",
+            "error",
+        ),
+        label="spatial covariate predictions",
+    )
+
+
+def _readiness_prediction_key(row: dict[str, Any]) -> tuple[object, ...]:
+    return tuple(row[column] for column in _COVARIATE_TARGET_KEY)
+
+
+def _readiness_cell(row: dict[str, Any]) -> tuple[str, str, int, int]:
+    return (
+        str(row["evaluation"]),
+        str(row["training_period"]),
+        _strict_integer(row["train_year"], label="train year"),
+        _strict_integer(row["target_year"], label="target year"),
+    )
+
+
+def _strict_integer(value: object, *, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RuntimeError(f"spatial covariate {label} must be an integer")
+    return value
+
+
+def _nonnegative_count(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _validate_prediction_grid(
+    rows: list[dict[str, Any]], *, require_complete_methods: bool
+) -> None:
+    keys_by_method: dict[str, list[tuple[object, ...]]] = {}
+    for row in rows:
+        keys_by_method.setdefault(str(row["method"]), []).append(_readiness_prediction_key(row))
+    for keys in keys_by_method.values():
+        if len(keys) != len(set(keys)):
+            raise RuntimeError("spatial covariate predictions contain duplicate method target keys")
+    if require_complete_methods:
+        grids = [set(keys) for keys in keys_by_method.values()]
+        if not grids or any(grid != grids[0] for grid in grids[1:]):
+            raise RuntimeError("spatial covariate paired predictions have unequal target keys")
+
+
+def _authoritative_target_rows(
+    rows: list[dict[str, Any]],
+) -> dict[tuple[object, ...], dict[str, Any]]:
+    targets: dict[tuple[object, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = _readiness_prediction_key(row)
+        existing = targets.get(key)
+        if existing is None:
+            targets[key] = row
+            continue
+        metadata = ("target_state", "observed", "fold_state")
+        if any(existing[column] != row[column] for column in metadata):
+            raise RuntimeError("spatial covariate predictions have mismatched eligibility metadata")
+    return targets
+
+
+def _finite_readiness_prediction(row: dict[str, Any]) -> bool:
+    predicted = row["predicted"]
+    error = row["error"]
+    try:
+        return (
+            row["prediction_state"] == "scored"
+            and predicted is not None
+            and error is not None
+            and math.isfinite(float(predicted))
+            and math.isfinite(float(error))
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _required_gate_cells(config: CovariateReadinessConfig) -> set[tuple[str, str, int, int]]:
+    same_year = {
+        (evaluation, "same_year", year, year)
+        for evaluation in config.evaluations
+        for year in config.years
+    }
+    forward_period = f"{config.years[0]}_to_{config.years[1]}"
+    forward = {
+        (evaluation, forward_period, config.years[0], config.years[1])
+        for evaluation in config.evaluations
+    }
+    return same_year | forward
+
+
+def _complete_readiness_score(row: dict[str, Any]) -> bool:
+    try:
+        n_intended = _nonnegative_count(row["n_intended"])
+        n_scored = _nonnegative_count(row["n_scored"])
+        n_failed = _nonnegative_count(row["n_failed"])
+        n_stations_intended = _nonnegative_count(row["n_stations_intended"])
+        n_stations_scored = _nonnegative_count(row["n_stations_scored"])
+        counts_complete = (
+            n_intended is not None
+            and n_intended > 0
+            and n_intended == n_scored
+            and n_failed == 0
+            and n_stations_intended is not None
+            and n_stations_intended > 0
+            and n_stations_intended == n_stations_scored
+        )
+        metrics_finite = all(
+            value is not None and math.isfinite(float(value))
+            for value in (
+                row["station_clustered_mae"],
+                row["station_clustered_rmse"],
+                row["station_clustered_bias"],
+            )
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    return row["score_state"] == "complete" and counts_complete and metrics_finite
+
+
+def _gate_scores_are_complete(candidate: dict[str, Any], comparator: dict[str, Any]) -> bool:
+    return (
+        _complete_readiness_score(candidate)
+        and _complete_readiness_score(comparator)
+        and candidate["n_intended"] == comparator["n_intended"]
+        and candidate["n_stations_intended"] == comparator["n_stations_intended"]
+    )
+
+
+def _gate_pair_is_complete(
+    candidate: dict[str, Any],
+    comparator_score: dict[str, Any],
+    delta: dict[str, Any],
+    *,
+    comparator: str,
+) -> bool:
+    if not _gate_scores_are_complete(candidate, comparator_score):
+        return False
+    try:
+        n_stations = _nonnegative_count(delta["n_stations"])
+        intervals_finite = all(
+            value is not None and math.isfinite(float(value))
+            for value in (
+                delta["median_station_mae_delta"],
+                delta["lower_2_5"],
+                delta["upper_97_5"],
+            )
+        )
+        return (
+            delta["comparison_method"] == comparator
+            and delta["paired_state"] == "complete"
+            and n_stations is not None
+            and n_stations == candidate["n_stations_intended"]
+            and intervals_finite
+            and float(delta["median_station_mae_delta"]) < 0
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _mapping(value: object, *, path: str, keys: set[str]) -> dict[str, Any]:

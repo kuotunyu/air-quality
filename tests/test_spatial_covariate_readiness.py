@@ -18,17 +18,22 @@ import pytest
 import twair.analysis.spatial_covariate_readiness as readiness
 from twair.analysis.spatial_covariate_readiness import (
     COVARIATE_MODEL_FEATURES,
+    COVARIATE_READINESS_LIMITATIONS,
     CovariateReadinessConfig,
     FrozenInputs,
     InputFile,
     aggregate_era5_monthly,
     assemble_covariates,
+    bootstrap_station_delta,
     build_covariate_fold_ledger,
+    decide_covariate_gate,
     fit_covariate_model,
     load_frozen_inputs,
     load_spatial_covariate_readiness_config,
+    paired_readiness_deltas,
     pivot_satellite_monthly,
     predict_readiness_methods,
+    score_readiness_predictions,
 )
 from twair.analysis.spatial_surface_baseline import SPATIAL_BASELINE_TABLE_SCHEMAS
 from twair.config import ConfigError
@@ -917,6 +922,378 @@ def test_withheld_target_emits_null_prediction_and_error_for_every_method(
     assert set(predictions["prediction_state"]) == {"unscored_target_withheld"}
     assert predictions["predicted"].null_count() == predictions.height
     assert predictions["error"].null_count() == predictions.height
+
+
+def _score_prediction_fixture() -> pl.DataFrame:
+    """Return two periods over the same two-station, two-month target grid."""
+    rows: list[dict[str, object]] = []
+    errors = {
+        "idw2": {"s0": (2.0, 2.0), "s1": (4.0, None)},
+        "covariate_gbm": {"s0": (1.0, -1.0), "s1": (5.0, None)},
+        "covariate_gbm_idw2": {"s0": (0.5, -0.5), "s1": (1.5, None)},
+    }
+    for training_period, train_year in (("same_year", 2025), ("2024_to_2025", 2024)):
+        for station_index, station in enumerate(("s0", "s1")):
+            for month_index, month_number in enumerate((1, 2)):
+                month = date(2025, month_number, 1)
+                withheld = station == "s1" and month_number == 2
+                observed = None if withheld else float(20 + station_index + month_index)
+                for method in _model_config().methods:
+                    error = errors[method][station][month_index]
+                    predicted = None if observed is None or error is None else observed + error
+                    rows.append(
+                        {
+                            "evaluation": "buffer_20km",
+                            "training_period": training_period,
+                            "train_year": train_year,
+                            "target_year": 2025,
+                            "month": month,
+                            "target_station": station,
+                            "target_state": "withheld" if withheld else "observed",
+                            "observed": observed,
+                            "fold_state": "unscored_target_withheld" if withheld else "eligible",
+                            "method": method,
+                            "predicted": predicted,
+                            "prediction_state": (
+                                "unscored_target_withheld" if withheld else "scored"
+                            ),
+                            "error": error,
+                        }
+                    )
+    return pl.DataFrame(rows).cast(
+        {
+            "evaluation": pl.String,
+            "training_period": pl.String,
+            "train_year": pl.Int64,
+            "target_year": pl.Int64,
+            "month": pl.Date,
+            "target_station": pl.String,
+            "target_state": pl.String,
+            "observed": pl.Float64,
+            "fold_state": pl.String,
+            "method": pl.String,
+            "predicted": pl.Float64,
+            "prediction_state": pl.String,
+            "error": pl.Float64,
+        }
+    )
+
+
+def test_scores_use_authoritative_denominators_and_station_equal_aggregation() -> None:
+    scores = score_readiness_predictions(_score_prediction_fixture(), _model_config())
+
+    assert scores.columns == [
+        "evaluation",
+        "training_period",
+        "train_year",
+        "target_year",
+        "method",
+        "n_intended",
+        "n_scored",
+        "n_failed",
+        "n_stations_intended",
+        "n_stations_scored",
+        "station_clustered_mae",
+        "station_clustered_rmse",
+        "station_clustered_bias",
+        "score_state",
+    ]
+    row = scores.filter(
+        (pl.col("training_period") == "same_year") & (pl.col("method") == "covariate_gbm")
+    ).row(0, named=True)
+    assert row["n_intended"] == 3
+    assert row["n_scored"] == 3
+    assert row["n_failed"] == 0
+    assert row["n_stations_intended"] == 2
+    assert row["n_stations_scored"] == 2
+    assert row["station_clustered_mae"] == 3.0
+    assert row["station_clustered_rmse"] == 3.0
+    assert row["station_clustered_bias"] == 2.5
+    assert row["score_state"] == "complete"
+
+
+@pytest.mark.parametrize("mutation", ["missing_method", "duplicate_key", "fold_state", "nan"])
+def test_score_denominator_never_shrinks_under_prediction_mutations(mutation: str) -> None:
+    predictions = _score_prediction_fixture()
+    changed = (
+        (pl.col("training_period") == "same_year")
+        & (pl.col("method") == "covariate_gbm")
+        & (pl.col("target_station") == "s0")
+        & (pl.col("month") == date(2025, 1, 1))
+    )
+    if mutation == "missing_method":
+        predictions = predictions.filter(~changed)
+    elif mutation == "duplicate_key":
+        predictions = pl.concat([predictions, predictions.filter(changed)])
+    elif mutation == "fold_state":
+        predictions = predictions.with_columns(
+            pl.when(changed)
+            .then(pl.lit("unscored_insufficient_train"))
+            .otherwise(pl.col("fold_state"))
+            .alias("fold_state")
+        )
+    else:
+        assert mutation == "nan"
+        predictions = predictions.with_columns(
+            pl.when(changed).then(pl.lit(float("nan"))).otherwise(pl.col("error")).alias("error")
+        )
+
+    if mutation in {"duplicate_key", "fold_state"}:
+        with pytest.raises(RuntimeError, match=r"duplicate|eligibility"):
+            score_readiness_predictions(predictions, _model_config())
+        return
+    row = (
+        score_readiness_predictions(predictions, _model_config())
+        .filter((pl.col("training_period") == "same_year") & (pl.col("method") == "covariate_gbm"))
+        .row(0, named=True)
+    )
+    assert row["n_intended"] == 3
+    assert row["n_scored"] == 2
+    assert row["n_failed"] == 1
+    assert row["score_state"] in {"missing_intended_predictions", "incomplete_predictions"}
+
+
+def test_paired_deltas_use_exact_keys_and_fixed_station_bootstrap() -> None:
+    predictions = _score_prediction_fixture()
+
+    deltas = paired_readiness_deltas(predictions, _model_config())
+    row = deltas.filter(
+        (pl.col("training_period") == "same_year") & (pl.col("method") == "covariate_gbm_idw2")
+    ).row(0, named=True)
+    expected = bootstrap_station_delta(np.asarray([-1.5, -2.5]), draws=9999, seed=20260828)
+
+    assert row["comparison_method"] == "idw2"
+    assert row["n_stations"] == 2
+    assert row["median_station_mae_delta"] == expected[0]
+    assert row["lower_2_5"] == expected[1]
+    assert row["upper_97_5"] == expected[2]
+    assert row["paired_state"] == "complete"
+
+
+@pytest.mark.parametrize("mutation", ["missing_key", "extra_method", "duplicate_key"])
+def test_paired_deltas_reject_unequal_method_domains_or_target_grids(mutation: str) -> None:
+    predictions = _score_prediction_fixture()
+    changed = (
+        (pl.col("training_period") == "same_year")
+        & (pl.col("method") == "covariate_gbm")
+        & (pl.col("target_station") == "s0")
+        & (pl.col("month") == date(2025, 1, 1))
+    )
+    if mutation == "missing_key":
+        predictions = predictions.filter(~changed)
+    elif mutation == "extra_method":
+        predictions = pl.concat(
+            [predictions, predictions.head(1).with_columns(pl.lit("extra").alias("method"))]
+        )
+    else:
+        assert mutation == "duplicate_key"
+        predictions = pl.concat([predictions, predictions.filter(changed)])
+
+    with pytest.raises(RuntimeError, match=r"method domain|target keys|duplicate"):
+        paired_readiness_deltas(predictions, _model_config())
+
+
+def _gate_fixture(
+    *, qualifying: tuple[str, ...] = ("covariate_gbm",)
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    score_rows: list[dict[str, object]] = []
+    delta_rows: list[dict[str, object]] = []
+    cells = [
+        *(
+            ("same_year", year, year, evaluation)
+            for evaluation in _model_config().evaluations
+            for year in (2024, 2025)
+        ),
+        *(("2024_to_2025", 2024, 2025, evaluation) for evaluation in _model_config().evaluations),
+    ]
+    for training_period, train_year, target_year, evaluation in cells:
+        for method in _model_config().methods:
+            score_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "training_period": training_period,
+                    "train_year": train_year,
+                    "target_year": target_year,
+                    "method": method,
+                    "n_intended": 24,
+                    "n_scored": 24,
+                    "n_failed": 0,
+                    "n_stations_intended": 2,
+                    "n_stations_scored": 2,
+                    "station_clustered_mae": 1.0,
+                    "station_clustered_rmse": 1.25,
+                    "station_clustered_bias": 0.0,
+                    "score_state": "complete",
+                }
+            )
+            if method != "idw2":
+                delta_rows.append(
+                    {
+                        "evaluation": evaluation,
+                        "training_period": training_period,
+                        "train_year": train_year,
+                        "target_year": target_year,
+                        "method": method,
+                        "comparison_method": "idw2",
+                        "n_stations": 2,
+                        "median_station_mae_delta": -0.25 if method in qualifying else 0.25,
+                        "lower_2_5": -0.5,
+                        "upper_97_5": 0.1,
+                        "paired_state": "complete",
+                    }
+                )
+    return pl.DataFrame(score_rows), pl.DataFrame(delta_rows)
+
+
+def _mutate_gate_evidence(
+    scores: pl.DataFrame, deltas: pl.DataFrame, mutation: str
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    target_score = (
+        (pl.col("training_period") == "same_year")
+        & (pl.col("target_year") == 2024)
+        & (pl.col("evaluation") == "buffer_20km")
+        & (pl.col("method") == "covariate_gbm")
+    )
+    target_delta = (
+        (pl.col("training_period") == "same_year")
+        & (pl.col("target_year") == 2024)
+        & (pl.col("evaluation") == "buffer_20km")
+        & (pl.col("method") == "covariate_gbm")
+    )
+    if mutation == "zero_delta":
+        deltas = deltas.with_columns(
+            pl.when(target_delta)
+            .then(pl.lit(0.0))
+            .otherwise(pl.col("median_station_mae_delta"))
+            .alias("median_station_mae_delta")
+        )
+    elif mutation == "positive_delta":
+        deltas = deltas.with_columns(
+            pl.when(target_delta)
+            .then(pl.lit(0.01))
+            .otherwise(pl.col("median_station_mae_delta"))
+            .alias("median_station_mae_delta")
+        )
+    elif mutation == "missing_score":
+        scores = scores.filter(~target_score)
+    elif mutation == "failed_prediction":
+        scores = scores.with_columns(
+            pl.when(target_score).then(pl.lit(23)).otherwise(pl.col("n_scored")).alias("n_scored"),
+            pl.when(target_score).then(pl.lit(1)).otherwise(pl.col("n_failed")).alias("n_failed"),
+            pl.when(target_score)
+            .then(pl.lit("incomplete_predictions"))
+            .otherwise(pl.col("score_state"))
+            .alias("score_state"),
+        )
+    elif mutation == "wrong_comparator":
+        deltas = deltas.with_columns(
+            pl.when(target_delta)
+            .then(pl.lit("covariate_gbm_idw2"))
+            .otherwise(pl.col("comparison_method"))
+            .alias("comparison_method")
+        )
+    elif mutation == "wrong_station_denominator":
+        deltas = deltas.with_columns(
+            pl.when(target_delta)
+            .then(pl.lit(1))
+            .otherwise(pl.col("n_stations"))
+            .alias("n_stations")
+        )
+    elif mutation == "fractional_score_denominator":
+        scores = scores.with_columns(
+            pl.when(target_score)
+            .then(pl.lit(24.5))
+            .otherwise(pl.col("n_intended"))
+            .alias("n_intended")
+        )
+    elif mutation == "fractional_paired_denominator":
+        deltas = deltas.with_columns(
+            pl.when(target_delta)
+            .then(pl.lit(2.5))
+            .otherwise(pl.col("n_stations"))
+            .alias("n_stations")
+        )
+    elif mutation == "missing_cluster_cell":
+        scores = scores.filter(
+            ~(
+                (pl.col("training_period") == "same_year")
+                & (pl.col("target_year") == 2025)
+                & (pl.col("evaluation") == "spatial_cluster")
+                & (pl.col("method") == "covariate_gbm")
+            )
+        )
+    elif mutation == "absent_year":
+        scores = scores.filter(pl.col("target_year") != 2024)
+        deltas = deltas.filter(pl.col("target_year") != 2024)
+    else:
+        assert mutation == "extra_method"
+        scores = pl.concat([scores, scores.head(1).with_columns(pl.lit("extra").alias("method"))])
+    return scores, deltas
+
+
+def test_gate_requires_all_seven_improvement_cells_and_complete_cluster_scores() -> None:
+    scores, deltas = _gate_fixture()
+
+    verdict = decide_covariate_gate(scores, deltas, _model_config())
+
+    assert verdict == {
+        "state": "go",
+        "qualifying_methods": ["covariate_gbm"],
+        "required_improvement_cells": 7,
+        "rule": (
+            "complete predictions and median station MAE delta < 0 versus idw2 "
+            "in 2024/2025 same-year 20/40 km and all 2024-to-2025 joint cells"
+        ),
+        "limitations": list(COVARIATE_READINESS_LIMITATIONS),
+    }
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "zero_delta",
+        "positive_delta",
+        "missing_score",
+        "failed_prediction",
+        "wrong_comparator",
+        "wrong_station_denominator",
+        "fractional_score_denominator",
+        "fractional_paired_denominator",
+        "missing_cluster_cell",
+        "absent_year",
+        "extra_method",
+    ],
+)
+def test_gate_fails_closed_for_each_required_evidence_mutation(mutation: str) -> None:
+    scores, deltas = _mutate_gate_evidence(*_gate_fixture(), mutation)
+
+    try:
+        verdict = decide_covariate_gate(scores, deltas, _model_config())
+    except RuntimeError:
+        return
+    assert verdict["state"] == "stop"
+    assert verdict["qualifying_methods"] == []
+
+
+def test_gate_is_go_for_a_second_qualifying_candidate_and_stop_for_none() -> None:
+    second_scores, second_deltas = _gate_fixture(qualifying=("covariate_gbm_idw2",))
+    stop_scores, stop_deltas = _gate_fixture(qualifying=())
+
+    assert decide_covariate_gate(second_scores, second_deltas, _model_config())[
+        "qualifying_methods"
+    ] == ["covariate_gbm_idw2"]
+    assert decide_covariate_gate(stop_scores, stop_deltas, _model_config())["state"] == "stop"
+
+
+def test_gate_rejects_a_direct_config_year_mutation() -> None:
+    scores, deltas = _gate_fixture()
+
+    with pytest.raises(RuntimeError, match="configuration"):
+        decide_covariate_gate(
+            scores,
+            deltas,
+            replace(_model_config(), years=(2023, 2024)),
+        )
 
 
 def test_shipped_config_pins_the_reviewed_covariate_contract() -> None:
