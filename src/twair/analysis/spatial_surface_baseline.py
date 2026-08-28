@@ -25,12 +25,16 @@ __all__ = [
     "SpatialSurfaceBaselineConfig",
     "SurfaceInputs",
     "assign_spatial_clusters",
+    "bootstrap_station_delta",
     "build_fold_ledger",
     "build_station_support",
+    "decide_baseline_gate",
     "evaluate_baselines",
     "load_spatial_surface_baseline_config",
     "load_surface_inputs",
+    "paired_method_deltas",
     "predict_target",
+    "score_predictions",
 ]
 
 
@@ -63,6 +67,32 @@ _PREDICTION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "failure_type": pl.String,
     "error": pl.Float64,
 }
+_SCORE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "year": pl.Int64,
+    "method": pl.String,
+    "n_intended": pl.Int64,
+    "n_scored": pl.Int64,
+    "n_failed": pl.Int64,
+    "n_stations_intended": pl.Int64,
+    "n_stations_scored": pl.Int64,
+    "station_clustered_mae": pl.Float64,
+    "station_clustered_rmse": pl.Float64,
+    "station_clustered_bias": pl.Float64,
+    "score_state": pl.String,
+}
+_PAIRED_DELTA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "year": pl.Int64,
+    "method": pl.String,
+    "comparison_method": pl.String,
+    "n_stations": pl.Int64,
+    "median_station_mae_delta": pl.Float64,
+    "lower_2_5": pl.Float64,
+    "upper_97_5": pl.Float64,
+    "paired_state": pl.String,
+}
+_TARGET_KEY_COLUMNS = ("evaluation", "fold_id", "year", "month", "target_station")
 
 
 @dataclass(frozen=True, slots=True)
@@ -702,3 +732,274 @@ def evaluate_baselines(
                 }
             )
     return pl.DataFrame(rows, schema=_PREDICTION_SCHEMA)
+
+
+def _prediction_key(row: dict[str, Any]) -> tuple[object, ...]:
+    return tuple(row[column] for column in _TARGET_KEY_COLUMNS)
+
+
+def _require_prediction_columns(predictions: pl.DataFrame) -> None:
+    _require_columns(
+        predictions,
+        (*_TARGET_KEY_COLUMNS, "fold_state", "method", "prediction_state", "error"),
+        label="spatial surface predictions",
+    )
+
+
+def _finite_error(row: dict[str, Any]) -> bool:
+    value = row["error"]
+    return row["prediction_state"] == "scored" and value is not None and math.isfinite(float(value))
+
+
+def score_predictions(
+    predictions: pl.DataFrame, config: SpatialSurfaceBaselineConfig
+) -> pl.DataFrame:
+    """Summarize eligible predictions with equal weight for every target station."""
+    _require_prediction_columns(predictions)
+    rows = list(predictions.iter_rows(named=True))
+    for method in config.methods:
+        method_keys = [_prediction_key(row) for row in rows if row["method"] == method]
+        if len(method_keys) != len(set(method_keys)):
+            raise RuntimeError("spatial surface predictions contain duplicate method target keys")
+    cells = sorted({(str(row["evaluation"]), int(row["year"])) for row in rows})
+    score_rows: list[dict[str, object]] = []
+    for evaluation, year in cells:
+        cell_rows = [
+            row for row in rows if row["evaluation"] == evaluation and int(row["year"]) == year
+        ]
+        expected_keys = {
+            _prediction_key(row) for row in cell_rows if row["fold_state"] == "eligible"
+        }
+        for method in config.methods:
+            method_rows = [row for row in cell_rows if row["method"] == method]
+            intended_rows = [row for row in method_rows if row["fold_state"] == "eligible"]
+            intended_keys = {_prediction_key(row) for row in intended_rows}
+            scored_rows = [row for row in intended_rows if _finite_error(row)]
+            n_intended = len(intended_rows)
+            n_scored = len(scored_rows)
+            n_failed = n_intended - n_scored
+            n_stations_intended = len({str(row["target_station"]) for row in intended_rows})
+            n_stations_scored = len({str(row["target_station"]) for row in scored_rows})
+            if not expected_keys:
+                score_state = "no_eligible_targets"
+            elif intended_keys != expected_keys:
+                score_state = "missing_intended_predictions"
+            elif n_failed:
+                score_state = "incomplete_predictions"
+            else:
+                score_state = "complete"
+            mae: float | None = None
+            rmse: float | None = None
+            bias: float | None = None
+            if score_state == "complete":
+                per_station: list[tuple[float, float, float]] = []
+                for station in sorted({str(row["target_station"]) for row in scored_rows}):
+                    errors = np.asarray(
+                        [
+                            float(row["error"])
+                            for row in scored_rows
+                            if row["target_station"] == station
+                        ],
+                        dtype=float,
+                    )
+                    per_station.append(
+                        (
+                            float(np.abs(errors).mean()),
+                            float(np.sqrt(np.square(errors).mean())),
+                            float(errors.mean()),
+                        )
+                    )
+                mae = float(np.mean([summary[0] for summary in per_station]))
+                rmse = float(np.mean([summary[1] for summary in per_station]))
+                bias = float(np.mean([summary[2] for summary in per_station]))
+            score_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "year": year,
+                    "method": method,
+                    "n_intended": n_intended,
+                    "n_scored": n_scored,
+                    "n_failed": n_failed,
+                    "n_stations_intended": n_stations_intended,
+                    "n_stations_scored": n_stations_scored,
+                    "station_clustered_mae": mae,
+                    "station_clustered_rmse": rmse,
+                    "station_clustered_bias": bias,
+                    "score_state": score_state,
+                }
+            )
+    return pl.DataFrame(score_rows, schema=_SCORE_SCHEMA).sort("evaluation", "year", "method")
+
+
+def bootstrap_station_delta(
+    station_deltas: np.ndarray, *, draws: int, seed: int
+) -> tuple[float, float, float]:
+    """Bootstrap the station-weighted median error difference deterministically."""
+    values = np.asarray(station_deltas, dtype=float)
+    if values.ndim != 1 or values.size == 0 or not np.isfinite(values).all():
+        raise ValueError("station deltas must be a non-empty finite one-dimensional array")
+    if draws <= 0:
+        raise ValueError("bootstrap draws must be positive")
+    generator = np.random.default_rng(seed)
+    samples = values[generator.integers(0, values.size, size=(draws, values.size))]
+    quantiles = np.percentile(np.median(samples, axis=1), [2.5, 97.5])
+    return float(np.median(values)), float(quantiles[0]), float(quantiles[1])
+
+
+def paired_method_deltas(
+    predictions: pl.DataFrame, config: SpatialSurfaceBaselineConfig
+) -> pl.DataFrame:
+    """Compare each method with the configured baseline on identical target keys."""
+    _require_prediction_columns(predictions)
+    rows = list(predictions.iter_rows(named=True))
+    by_method = {
+        method: [row for row in rows if row["method"] == method] for method in config.methods
+    }
+    baseline_rows = by_method[config.comparison_method]
+    baseline_keys = [_prediction_key(row) for row in baseline_rows]
+    if len(baseline_keys) != len(set(baseline_keys)):
+        raise RuntimeError("spatial surface paired predictions contain duplicate target keys")
+    baseline_by_key = {_prediction_key(row): row for row in baseline_rows}
+    paired_rows: list[dict[str, object]] = []
+    for method in config.methods:
+        if method == config.comparison_method:
+            continue
+        candidate_rows = by_method[method]
+        candidate_keys = [_prediction_key(row) for row in candidate_rows]
+        if len(candidate_keys) != len(set(candidate_keys)):
+            raise RuntimeError("spatial surface paired predictions contain duplicate target keys")
+        candidate_by_key = {_prediction_key(row): row for row in candidate_rows}
+        if set(candidate_by_key) != set(baseline_by_key):
+            raise RuntimeError("spatial surface paired predictions have unequal target keys")
+        for key in baseline_by_key:
+            if candidate_by_key[key]["fold_state"] != baseline_by_key[key]["fold_state"]:
+                raise RuntimeError("spatial surface paired predictions have mismatched eligibility")
+        cells = sorted({(str(row["evaluation"]), int(row["year"])) for row in baseline_rows})
+        for evaluation, year in cells:
+            keys = [
+                key
+                for key, baseline in baseline_by_key.items()
+                if baseline["evaluation"] == evaluation
+                and int(baseline["year"]) == year
+                and baseline["fold_state"] == "eligible"
+            ]
+            if not keys:
+                paired_state = "no_eligible_targets"
+                n_stations = 0
+                median = lower = upper = None
+            elif not all(
+                _finite_error(baseline_by_key[key]) and _finite_error(candidate_by_key[key])
+                for key in keys
+            ):
+                paired_state = "incomplete_predictions"
+                n_stations = 0
+                median = lower = upper = None
+            else:
+                station_deltas: list[float] = []
+                for station in sorted(
+                    {str(baseline_by_key[key]["target_station"]) for key in keys}
+                ):
+                    station_keys = [
+                        key for key in keys if baseline_by_key[key]["target_station"] == station
+                    ]
+                    candidate_mae = float(
+                        np.mean(
+                            [abs(float(candidate_by_key[key]["error"])) for key in station_keys]
+                        )
+                    )
+                    baseline_mae = float(
+                        np.mean([abs(float(baseline_by_key[key]["error"])) for key in station_keys])
+                    )
+                    station_deltas.append(candidate_mae - baseline_mae)
+                median, lower, upper = bootstrap_station_delta(
+                    np.asarray(station_deltas), draws=config.bootstrap_draws, seed=config.seed
+                )
+                paired_state = "complete"
+                n_stations = len(station_deltas)
+            paired_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "year": year,
+                    "method": method,
+                    "comparison_method": config.comparison_method,
+                    "n_stations": n_stations,
+                    "median_station_mae_delta": median,
+                    "lower_2_5": lower,
+                    "upper_97_5": upper,
+                    "paired_state": paired_state,
+                }
+            )
+    return pl.DataFrame(paired_rows, schema=_PAIRED_DELTA_SCHEMA).sort(
+        "evaluation", "year", "method"
+    )
+
+
+def _single_gate_row(
+    frame: pl.DataFrame, *, evaluation: str, year: int, method: str
+) -> dict[str, Any] | None:
+    matches = frame.filter(
+        (pl.col("evaluation") == evaluation)
+        & (pl.col("year") == year)
+        & (pl.col("method") == method)
+    )
+    if matches.height != 1:
+        return None
+    return matches.row(0, named=True)
+
+
+def decide_baseline_gate(
+    scores: pl.DataFrame, deltas: pl.DataFrame, config: SpatialSurfaceBaselineConfig
+) -> dict[str, Any]:
+    """Apply the preregistered complete-prediction baseline readiness rule."""
+    _require_columns(scores, _SCORE_SCHEMA, label="spatial surface scores")
+    _require_columns(deltas, _PAIRED_DELTA_SCHEMA, label="spatial surface paired deltas")
+    qualifying: list[str] = []
+    primary_evaluations = ("buffer_20km", "buffer_40km")
+    for method in config.methods:
+        if method == config.comparison_method:
+            continue
+        primary_complete = True
+        for evaluation in primary_evaluations:
+            for year in config.required_years:
+                score = _single_gate_row(scores, evaluation=evaluation, year=year, method=method)
+                delta = _single_gate_row(deltas, evaluation=evaluation, year=year, method=method)
+                if (
+                    score is None
+                    or delta is None
+                    or int(score["n_intended"]) == 0
+                    or int(score["n_intended"]) != int(score["n_scored"])
+                    or int(score["n_failed"]) != 0
+                    or score["score_state"] != "complete"
+                    or delta["comparison_method"] != config.comparison_method
+                    or int(delta["n_stations"]) == 0
+                    or delta["paired_state"] != "complete"
+                    or delta["median_station_mae_delta"] is None
+                    or not math.isfinite(float(delta["median_station_mae_delta"]))
+                    or float(delta["median_station_mae_delta"]) >= 0
+                ):
+                    primary_complete = False
+        cluster_complete = True
+        for year in config.required_years:
+            cluster_score = _single_gate_row(
+                scores, evaluation="spatial_cluster", year=year, method=method
+            )
+            if (
+                cluster_score is None
+                or cluster_score["score_state"] != "complete"
+                or cluster_score["station_clustered_mae"] is None
+                or not math.isfinite(float(cluster_score["station_clustered_mae"]))
+            ):
+                cluster_complete = False
+        if primary_complete and cluster_complete:
+            qualifying.append(method)
+    return {
+        "state": "go" if qualifying else "stop",
+        "qualifying_methods": sorted(qualifying),
+        "required_cells": 4,
+        "rule": "complete predictions and median station MAE delta < 0 in 2024/2025 at 20/40 km",
+        "limitations": [
+            "baseline readiness gate only; no concentration surface was generated",
+            "passing permits covariate-model design, not publication of a map",
+            "no population-weighted or personal-exposure result",
+        ],
+    }

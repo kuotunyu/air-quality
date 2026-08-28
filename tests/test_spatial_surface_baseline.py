@@ -18,12 +18,16 @@ from twair.analysis.spatial_surface_baseline import (
     SpatialSurfaceBaselineConfig,
     SurfaceInputs,
     assign_spatial_clusters,
+    bootstrap_station_delta,
     build_fold_ledger,
     build_station_support,
+    decide_baseline_gate,
     evaluate_baselines,
     load_spatial_surface_baseline_config,
     load_surface_inputs,
+    paired_method_deltas,
     predict_target,
+    score_predictions,
 )
 from twair.config import ConfigError, load_conf
 
@@ -127,6 +131,175 @@ def synthetic_fold_ledger() -> pl.DataFrame:
             "fold_reason": pl.String,
         },
     )
+
+
+def prediction_fixture(*, one_failure: bool = False) -> pl.DataFrame:
+    """Return 3 stations × 4 months × 5 methods with canonical target keys."""
+    rows: list[dict[str, object]] = []
+    methods = _config().methods
+    for station_index, station_name in enumerate(["s00", "s01", "s02"]):
+        for month_index in range(4):
+            month = date(2024, month_index + 1, 1)
+            observed = float(20 + station_index + month_index)
+            for method_index, method in enumerate(methods):
+                failed = one_failure and method == "nearest" and station_index == month_index == 0
+                predicted = None if failed else observed + float(method_index)
+                rows.append(
+                    {
+                        "evaluation": "buffer_20km",
+                        "fold_id": f"buffer_20km:{station_name}",
+                        "year": 2024,
+                        "month": month,
+                        "target_station": station_name,
+                        "target_cluster": station_index,
+                        "target_state": "observed",
+                        "observed": observed,
+                        "train_stations": ["train-a", "train-b"],
+                        "n_train": 2,
+                        "fold_state": "eligible",
+                        "fold_reason": None,
+                        "method": method,
+                        "predicted": predicted,
+                        "kriging_sd": None,
+                        "prediction_state": "estimator_failed" if failed else "scored",
+                        "failure_type": "ValueError" if failed else None,
+                        "error": None if predicted is None else predicted - observed,
+                    }
+                )
+    return pl.DataFrame(rows).cast(
+        {
+            "evaluation": pl.String,
+            "fold_id": pl.String,
+            "year": pl.Int64,
+            "month": pl.Date,
+            "target_station": pl.String,
+            "target_cluster": pl.Int64,
+            "target_state": pl.String,
+            "observed": pl.Float64,
+            "train_stations": pl.List(pl.String),
+            "n_train": pl.Int64,
+            "fold_state": pl.String,
+            "fold_reason": pl.String,
+            "method": pl.String,
+            "predicted": pl.Float64,
+            "kriging_sd": pl.Float64,
+            "prediction_state": pl.String,
+            "failure_type": pl.String,
+            "error": pl.Float64,
+        }
+    )
+
+
+def gate_fixture(
+    *, winner: str = "idw2", mutation: str | None = None
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Return all evaluation-year cells with one optional gate-breaking change."""
+    score_rows: list[dict[str, object]] = []
+    delta_rows: list[dict[str, object]] = []
+    for evaluation in ("buffer_20km", "buffer_40km", "spatial_cluster"):
+        for year in (2024, 2025):
+            for method in _config().methods:
+                score_rows.append(
+                    {
+                        "evaluation": evaluation,
+                        "year": year,
+                        "method": method,
+                        "n_intended": 12,
+                        "n_scored": 12,
+                        "n_failed": 0,
+                        "n_stations_intended": 3,
+                        "n_stations_scored": 3,
+                        "station_clustered_mae": 1.0,
+                        "station_clustered_rmse": 1.0,
+                        "station_clustered_bias": 0.0,
+                        "score_state": "complete",
+                    }
+                )
+                if method != "station_mean":
+                    delta_rows.append(
+                        {
+                            "evaluation": evaluation,
+                            "year": year,
+                            "method": method,
+                            "comparison_method": "station_mean",
+                            "n_stations": 3,
+                            "median_station_mae_delta": -1.0 if method == winner else 0.0,
+                            "lower_2_5": -1.0,
+                            "upper_97_5": -1.0,
+                            "paired_state": "complete",
+                        }
+                    )
+    scores = pl.DataFrame(score_rows).cast(
+        {
+            "evaluation": pl.String,
+            "year": pl.Int64,
+            "method": pl.String,
+            "n_intended": pl.Int64,
+            "n_scored": pl.Int64,
+            "n_failed": pl.Int64,
+            "n_stations_intended": pl.Int64,
+            "n_stations_scored": pl.Int64,
+            "station_clustered_mae": pl.Float64,
+            "station_clustered_rmse": pl.Float64,
+            "station_clustered_bias": pl.Float64,
+            "score_state": pl.String,
+        }
+    )
+    deltas = pl.DataFrame(delta_rows).cast(
+        {
+            "evaluation": pl.String,
+            "year": pl.Int64,
+            "method": pl.String,
+            "comparison_method": pl.String,
+            "n_stations": pl.Int64,
+            "median_station_mae_delta": pl.Float64,
+            "lower_2_5": pl.Float64,
+            "upper_97_5": pl.Float64,
+            "paired_state": pl.String,
+        }
+    )
+    if mutation == "missing_prediction":
+        scores = scores.with_columns(
+            pl.when(
+                (pl.col("evaluation") == "buffer_20km")
+                & (pl.col("year") == 2024)
+                & (pl.col("method") == winner)
+            )
+            .then(pl.lit(11))
+            .otherwise(pl.col("n_scored"))
+            .alias("n_scored"),
+            pl.when(
+                (pl.col("evaluation") == "buffer_20km")
+                & (pl.col("year") == 2024)
+                & (pl.col("method") == winner)
+            )
+            .then(pl.lit(1))
+            .otherwise(pl.col("n_failed"))
+            .alias("n_failed"),
+            pl.when(
+                (pl.col("evaluation") == "buffer_20km")
+                & (pl.col("year") == 2024)
+                & (pl.col("method") == winner)
+            )
+            .then(pl.lit("incomplete_predictions"))
+            .otherwise(pl.col("score_state"))
+            .alias("score_state"),
+        )
+    elif mutation in {"loses_2024_40km", "loses_2025_20km"}:
+        year, evaluation = (
+            (2024, "buffer_40km") if mutation == "loses_2024_40km" else (2025, "buffer_20km")
+        )
+        deltas = deltas.with_columns(
+            pl.when(
+                (pl.col("evaluation") == evaluation)
+                & (pl.col("year") == year)
+                & (pl.col("method") == winner)
+            )
+            .then(pl.lit(0.0))
+            .otherwise(pl.col("median_station_mae_delta"))
+            .alias("median_station_mae_delta")
+        )
+    return scores, deltas
 
 
 def distance_km(left: str, right: str, stations: pl.DataFrame) -> float:
@@ -650,3 +823,71 @@ def test_evaluation_schema_stays_complete_for_success_failure_and_unscored_input
     assert successful.schema == expected_schema
     assert failed.schema == expected_schema
     assert retained_unscored.schema == expected_schema
+
+
+def test_scores_report_intended_scored_and_failed_denominators() -> None:
+    predictions = prediction_fixture(one_failure=True)
+
+    scores = score_predictions(predictions, _config())
+    row = scores.filter(pl.col("method") == "nearest").row(0, named=True)
+
+    assert row["n_intended"] == 12
+    assert row["n_scored"] == 11
+    assert row["n_failed"] == 1
+    assert row["n_stations_intended"] == 3
+    assert row["n_stations_scored"] == 3
+    assert row["score_state"] == "incomplete_predictions"
+    assert row["station_clustered_mae"] is None
+
+
+def test_bootstrap_station_delta_is_byte_identical_for_a_fixed_seed() -> None:
+    station_deltas = np.array([-2.0, -1.0, 0.0, 3.0])
+
+    first = bootstrap_station_delta(station_deltas, draws=99, seed=20260828)
+    second = bootstrap_station_delta(station_deltas, draws=99, seed=20260828)
+
+    assert (
+        np.asarray(first, dtype=np.float64).tobytes()
+        == np.asarray(second, dtype=np.float64).tobytes()
+    )
+
+
+def test_paired_deltas_reject_unequal_method_and_baseline_target_keys() -> None:
+    predictions = prediction_fixture().filter(
+        ~((pl.col("method") == "idw2") & (pl.col("target_station") == "s02"))
+    )
+
+    with pytest.raises(RuntimeError, match="target keys"):
+        paired_method_deltas(predictions, _config())
+
+
+def test_gate_requires_one_complete_method_to_beat_station_mean_everywhere() -> None:
+    scores, deltas = gate_fixture(winner="idw2")
+
+    verdict = decide_baseline_gate(scores, deltas, _config())
+
+    assert verdict["state"] == "go"
+    assert verdict["qualifying_methods"] == ["idw2"]
+
+
+@pytest.mark.parametrize("mutation", ["missing_prediction", "loses_2024_40km", "loses_2025_20km"])
+def test_gate_fails_closed_on_incomplete_or_inconsistent_evidence(mutation: str) -> None:
+    scores, deltas = gate_fixture(mutation=mutation)
+
+    assert decide_baseline_gate(scores, deltas, _config())["state"] == "stop"
+
+
+def test_spatial_cluster_score_cannot_substitute_for_a_missing_primary_buffer_cell() -> None:
+    scores, deltas = gate_fixture(winner="idw2", mutation="missing_prediction")
+
+    verdict = decide_baseline_gate(scores, deltas, _config())
+
+    assert verdict["state"] == "stop"
+    assert (
+        scores.filter(
+            (pl.col("evaluation") == "spatial_cluster")
+            & (pl.col("method") == "idw2")
+            & (pl.col("score_state") == "complete")
+        ).height
+        == 2
+    )
