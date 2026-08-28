@@ -7,17 +7,22 @@ from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import polars as pl
 import pytest
+from pykrige.ok import OrdinaryKriging
 
+import twair.analysis.spatial_surface_baseline as spatial_surface_baseline
 from twair.analysis.spatial_surface_baseline import (
     SpatialSurfaceBaselineConfig,
     SurfaceInputs,
     assign_spatial_clusters,
     build_fold_ledger,
     build_station_support,
+    evaluate_baselines,
     load_spatial_surface_baseline_config,
     load_surface_inputs,
+    predict_target,
 )
 from twair.config import ConfigError
 
@@ -82,6 +87,44 @@ def synthetic_surface_inputs(
         ),
         input_files=(),
         inventory_generation_sha256="synthetic",
+    )
+
+
+def synthetic_fold_ledger() -> pl.DataFrame:
+    """Return one eligible and one explicitly unscored production fold."""
+    month = date(2024, 1, 1)
+    return pl.DataFrame(
+        {
+            "evaluation": ["buffer_20km", "buffer_20km"],
+            "fold_id": ["buffer_20km:s00", "buffer_20km:s09"],
+            "year": [2024, 2024],
+            "month": [month, month],
+            "target_station": ["s00", "s09"],
+            "target_cluster": [0, 1],
+            "target_state": ["observed", "withheld"],
+            "observed": [10.0, None],
+            "train_stations": [
+                ["s01", "s02", "s03", "s04", "s05", "s06", "s07", "s08"],
+                [],
+            ],
+            "n_train": [8, 0],
+            "fold_state": ["eligible", "unscored_target_withheld"],
+            "fold_reason": [None, "target_state=withheld"],
+        },
+        schema={
+            "evaluation": pl.String,
+            "fold_id": pl.String,
+            "year": pl.Int64,
+            "month": pl.Date,
+            "target_station": pl.String,
+            "target_cluster": pl.Int64,
+            "target_state": pl.String,
+            "observed": pl.Float64,
+            "train_stations": pl.List(pl.String),
+            "n_train": pl.Int64,
+            "fold_state": pl.String,
+            "fold_reason": pl.String,
+        },
     )
 
 
@@ -425,3 +468,112 @@ def test_insufficient_training_stations_stays_as_an_unscored_fold() -> None:
     assert fold["n_train"] < 8
     assert fold["fold_state"] == "unscored_insufficient_train"
     assert fold["fold_reason"] is not None
+
+
+def test_simple_predictors_use_only_the_supplied_training_rows() -> None:
+    train = pl.DataFrame(
+        {
+            "station_name": ["near", "far"],
+            "lat": [23.0, 23.0],
+            "lon": [120.1, 120.3],
+            "mean": [10.0, 30.0],
+        }
+    )
+    target = {"lat": 23.0, "lon": 120.0}
+
+    assert predict_target(train, target, "station_mean", _config()).value == 20.0
+    assert predict_target(train, target, "nearest", _config()).value == 10.0
+    assert predict_target(train, target, "idw2", _config()).value == pytest.approx(12.0, abs=0.2)
+
+
+def test_estimator_failure_remains_one_row_with_null_prediction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        OrdinaryKriging,
+        "execute",
+        lambda *_a, **_k: (_ for _ in ()).throw(ValueError("bad fit")),
+    )
+    predictions = evaluate_baselines(
+        synthetic_surface_inputs(12, 1), synthetic_fold_ledger(), _config()
+    )
+    failed = predictions.filter(pl.col("method") == "kriging_spherical")
+
+    assert failed.height == synthetic_fold_ledger().height
+    assert set(failed["prediction_state"]) == {"estimator_failed", "unscored_target_withheld"}
+    scored_failure = failed.filter(pl.col("prediction_state") == "estimator_failed")
+    assert scored_failure["predicted"].null_count() == scored_failure.height
+    assert set(scored_failure["failure_type"]) == {"ValueError"}
+
+
+def test_evaluation_emits_identical_five_method_rows_for_every_fold_key() -> None:
+    predictions = evaluate_baselines(
+        synthetic_surface_inputs(12, 1), synthetic_fold_ledger(), _config()
+    )
+    counts = predictions.group_by("evaluation", "fold_id", "target_station", "month").len()
+
+    assert counts["len"].to_list() == [5, 5]
+    assert predictions.group_by("evaluation", "fold_id", "target_station", "month").agg(
+        pl.col("method").sort()
+    )["method"].to_list() == [sorted(_config().methods), sorted(_config().methods)]
+
+
+def test_ineligible_fold_emits_unscored_rows_without_calling_an_estimator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def estimator_was_called(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("an unscored fold must not construct an estimator")
+
+    monkeypatch.setattr(spatial_surface_baseline, "OrdinaryKriging", estimator_was_called)
+    unscored_fold = synthetic_fold_ledger().filter(pl.col("fold_state") != "eligible")
+
+    predictions = evaluate_baselines(synthetic_surface_inputs(12, 1), unscored_fold, _config())
+
+    assert predictions.height == len(_config().methods)
+    assert set(predictions["prediction_state"]) == {"unscored_target_withheld"}
+    assert predictions["predicted"].null_count() == predictions.height
+
+
+def test_duplicate_coordinates_fail_and_kriging_predictor_uses_fold_local_geographic_variograms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    duplicate_train = pl.DataFrame(
+        {
+            "station_name": ["same"],
+            "lat": [23.0],
+            "lon": [120.0],
+            "mean": [10.0],
+        }
+    )
+    duplicate = predict_target(
+        duplicate_train,
+        {"lat": 23.0, "lon": 120.0},
+        "idw2",
+        _config(),
+    )
+    calls: list[dict[str, object]] = []
+
+    class RecordingKriging:
+        def __init__(self, *_args: object, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+        def execute(self, *_args: object, **_kwargs: object) -> tuple[np.ndarray, np.ndarray]:
+            return np.array([11.0]), np.array([4.0])
+
+    monkeypatch.setattr(spatial_surface_baseline, "OrdinaryKriging", RecordingKriging)
+    predictions = evaluate_baselines(
+        synthetic_surface_inputs(12, 1), synthetic_fold_ledger().head(1), _config()
+    )
+
+    assert duplicate.state == "duplicate_coordinate"
+    assert duplicate.value is None
+    assert len(calls) == 2
+    assert {call["variogram_model"] for call in calls} == {"spherical", "hole-effect"}
+    assert {call["coordinates_type"] for call in calls} == {"geographic"}
+    assert {call["nlags"] for call in calls} == {8}
+    assert predictions.filter(pl.col("method").str.starts_with("kriging_"))[
+        "prediction_state"
+    ].to_list() == [
+        "scored",
+        "scored",
+    ]

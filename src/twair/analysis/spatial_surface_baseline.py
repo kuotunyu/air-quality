@@ -13,6 +13,7 @@ from typing import Any
 import geopandas as gpd
 import numpy as np
 import polars as pl
+from pykrige.ok import OrdinaryKriging
 from sklearn.cluster import KMeans
 
 from twair.config import ConfigError, load_conf
@@ -20,13 +21,16 @@ from twair.ingest.station_inventory import station_inventory_generation
 
 __all__ = [
     "FileIdentity",
+    "Prediction",
     "SpatialSurfaceBaselineConfig",
     "SurfaceInputs",
     "assign_spatial_clusters",
     "build_fold_ledger",
     "build_station_support",
+    "evaluate_baselines",
     "load_spatial_surface_baseline_config",
     "load_surface_inputs",
+    "predict_target",
 ]
 
 
@@ -67,6 +71,14 @@ class SurfaceInputs:
     panel: pl.DataFrame
     input_files: tuple[FileIdentity, ...]
     inventory_generation_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class Prediction:
+    value: float | None
+    kriging_sd: float | None
+    state: str
+    failure_type: str | None
 
 
 def _mapping(value: object, *, path: str) -> dict[str, Any]:
@@ -500,3 +512,157 @@ def build_fold_ledger(inputs: SurfaceInputs, config: SpatialSurfaceBaselineConfi
                 }
             )
     return pl.DataFrame(rows).sort("evaluation", "year", "month", "target_station")
+
+
+def _projected_distances_km(
+    train: pl.DataFrame,
+    target: dict[str, Any],
+    config: SpatialSurfaceBaselineConfig,
+) -> np.ndarray:
+    target_lat = float(target["lat"])
+    target_lon = float(target["lon"])
+    points = gpd.GeoDataFrame(
+        {
+            "lon": [*train["lon"].to_list(), target_lon],
+            "lat": [*train["lat"].to_list(), target_lat],
+        },
+        geometry=gpd.points_from_xy(
+            [*train["lon"].to_list(), target_lon],
+            [*train["lat"].to_list(), target_lat],
+        ),
+        crs="EPSG:4326",
+    ).to_crs(epsg=config.projection_epsg)
+    x = points.geometry.x.to_numpy()
+    y = points.geometry.y.to_numpy()
+    return np.asarray(np.hypot(x[:-1] - x[-1], y[:-1] - y[-1]) / 1000, dtype=float)
+
+
+def _finite_prediction(value: float) -> Prediction:
+    if math.isfinite(value):
+        return Prediction(value=value, kriging_sd=None, state="scored", failure_type=None)
+    return Prediction(value=None, kriging_sd=None, state="non_finite_prediction", failure_type=None)
+
+
+def predict_target(
+    train: pl.DataFrame,
+    target: dict[str, Any],
+    method: str,
+    config: SpatialSurfaceBaselineConfig,
+) -> Prediction:
+    if method not in config.methods:
+        raise ValueError(f"spatial surface method is not configured: {method}")
+    distances_km = _projected_distances_km(train, target, config)
+    if np.any(distances_km == 0.0):
+        return Prediction(
+            value=None,
+            kriging_sd=None,
+            state="duplicate_coordinate",
+            failure_type=None,
+        )
+    values = np.asarray(train["mean"].to_numpy(), dtype=float)
+    if method == "station_mean":
+        return _finite_prediction(float(values.mean()))
+    if method == "nearest":
+        return _finite_prediction(float(values[np.argmin(distances_km)]))
+    if method == "idw2":
+        weights = 1.0 / np.maximum(distances_km, config.minimum_distance_km) ** config.idw_power
+        return _finite_prediction(float(weights @ values / weights.sum()))
+    variogram_model = "hole-effect" if method == "kriging_hole_effect" else "spherical"
+    try:
+        model = OrdinaryKriging(
+            np.asarray(train["lon"].to_numpy(), dtype=float),
+            np.asarray(train["lat"].to_numpy(), dtype=float),
+            values,
+            variogram_model=variogram_model,
+            nlags=8,
+            coordinates_type="geographic",
+            enable_plotting=False,
+        )
+        predicted, variance = model.execute(
+            "points",
+            np.array([float(target["lon"])]),
+            np.array([float(target["lat"])]),
+        )
+        value = float(np.asarray(predicted).ravel()[0])
+        variance_value = float(np.asarray(variance).ravel()[0])
+        if not math.isfinite(value) or not math.isfinite(variance_value):
+            return Prediction(
+                value=None,
+                kriging_sd=None,
+                state="non_finite_prediction",
+                failure_type=None,
+            )
+        return Prediction(
+            value=value,
+            kriging_sd=float(math.sqrt(max(variance_value, 0.0))),
+            state="scored",
+            failure_type=None,
+        )
+    except Exception as error:
+        return Prediction(
+            value=None,
+            kriging_sd=None,
+            state="estimator_failed",
+            failure_type=type(error).__name__,
+        )
+
+
+def evaluate_baselines(
+    inputs: SurfaceInputs,
+    folds: pl.DataFrame,
+    config: SpatialSurfaceBaselineConfig,
+) -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for fold in folds.iter_rows(named=True):
+        target_station = str(fold["target_station"])
+        fold_state = str(fold["fold_state"])
+        if fold_state == "eligible":
+            train_stations = [str(station) for station in fold["train_stations"]]
+            train = (
+                inputs.panel.filter(
+                    (pl.col("month") == fold["month"])
+                    & pl.col("station_name").is_in(train_stations)
+                )
+                .join(inputs.stations.select("station_name", "lat", "lon"), on="station_name")
+                .sort("station_name")
+            )
+            if train.height != int(fold["n_train"]):
+                raise RuntimeError("spatial surface fold training count does not match its ledger")
+            if target_station in set(train["station_name"].to_list()):
+                raise RuntimeError("spatial surface fold training set includes its target")
+            if not train.filter(pl.col("target_state") != "observed").is_empty():
+                raise RuntimeError("spatial surface fold training rows must be observed")
+            coordinates = inputs.stations.filter(pl.col("station_name") == target_station)
+            if coordinates.height != 1:
+                raise RuntimeError("spatial surface fold target station is not uniquely available")
+            target = {
+                "lat": coordinates.item(0, "lat"),
+                "lon": coordinates.item(0, "lon"),
+            }
+        for method in config.methods:
+            if fold_state == "eligible":
+                outcome = predict_target(train, target, method, config)
+            else:
+                outcome = Prediction(
+                    value=None,
+                    kriging_sd=None,
+                    state=fold_state,
+                    failure_type=None,
+                )
+            observed = fold["observed"]
+            rows.append(
+                {
+                    **fold,
+                    "method": method,
+                    "predicted": outcome.value,
+                    "kriging_sd": outcome.kriging_sd,
+                    "prediction_state": outcome.state,
+                    "failure_type": outcome.failure_type,
+                    "error": (
+                        outcome.value - float(observed)
+                        if outcome.state == "scored" and outcome.value is not None
+                        else None
+                    ),
+                }
+            )
+    return pl.DataFrame(rows)
