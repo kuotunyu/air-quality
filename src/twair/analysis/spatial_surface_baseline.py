@@ -1236,6 +1236,33 @@ def _manifest_identity(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _expected_summary(frames: dict[str, pl.DataFrame], identity: dict[str, Any]) -> dict[str, Any]:
+    raw_config = identity.get("config")
+    if not isinstance(raw_config, dict):
+        raise RuntimeError("spatial surface manifest config changed")
+    try:
+        config = load_spatial_surface_baseline_config(raw_config)
+    except ConfigError as exc:
+        raise RuntimeError("spatial surface manifest config changed") from exc
+    expected_gate = decide_baseline_gate(frames["scores"], frames["paired_deltas"], config)
+    if identity.get("gate") != expected_gate:
+        raise RuntimeError("spatial surface manifest gate changed")
+    claim_boundary = identity.get("claim_boundary")
+    expected_claim_boundary = {
+        "feeds_web": False,
+        "limitations": list(SPATIAL_BASELINE_LIMITATIONS),
+    }
+    if claim_boundary != expected_claim_boundary:
+        raise RuntimeError("spatial surface manifest claim boundary changed")
+    return {
+        "analysis": "spatial_surface_baseline",
+        "inventory_generation_sha256": identity.get("inventory_generation_sha256"),
+        "output_rows": {name: frame.height for name, frame in frames.items()},
+        "gate": expected_gate,
+        **expected_claim_boundary,
+    }
+
+
 def _input_manifest(
     inputs: SurfaceInputs,
     *,
@@ -1364,6 +1391,18 @@ def _ensure_directory(path: Path, *, label: str) -> Path:
     return _validated_directory(path, label=label)
 
 
+def _prepare_output_root(path: Path) -> Path:
+    absolute = path.absolute()
+    components = (*reversed(absolute.parents), absolute)
+    for component in components:
+        if _path_exists(component):
+            _validated_directory(component, label="spatial surface output root ancestor")
+            continue
+        component.mkdir()
+        _validated_directory(component, label="spatial surface output root component")
+    return _validated_directory(absolute, label="spatial surface output root")
+
+
 def _validate_generation_inventory(directory: Path, *, label: str) -> tuple[Path, ...]:
     validated = _validated_directory(directory, label=label)
     try:
@@ -1469,14 +1508,14 @@ def write_spatial_surface_baseline_result(
         or provisional_identity.get("tables") != expected_tables
     ):
         raise RuntimeError("spatial surface prepared result identity changed")
+    if result.summary != _expected_summary(frames, provisional_identity):
+        raise RuntimeError("spatial surface prepared result summary changed")
     selected_root = (
         output_root.absolute()
         if output_root is not None
         else outputs_dir("spatial_surface_baseline").absolute()
     )
-    if not _path_exists(selected_root):
-        selected_root.mkdir(parents=True)
-    root = _validated_directory(selected_root, label="spatial surface output root")
+    root = _prepare_output_root(selected_root)
     generations = _ensure_directory(
         root / "generations", label="spatial surface generations directory"
     )
@@ -1495,13 +1534,13 @@ def write_spatial_surface_baseline_result(
         final_identity = {**provisional_identity, "members": members}
         generation = _canonical_hash(final_identity)
         destination = generations / generation
-        manifest = {
+        incomplete_manifest = {
             **final_identity,
             "generated_at": result.manifest["generated_at"],
-            "complete": True,
+            "complete": False,
             "generation_sha256": generation,
         }
-        _write_canonical_json(staged / "manifest.json", manifest)
+        _write_canonical_json(staged / "manifest.json", incomplete_manifest)
         _validate_generation_inventory(staged, label="spatial surface staging generation")
         if _path_exists(destination):
             return _validate_existing_generation(
@@ -1517,6 +1556,10 @@ def write_spatial_surface_baseline_result(
                 staged=staged,
                 expected_identity=final_identity,
             )
+        complete_manifest = {**incomplete_manifest, "complete": True}
+        complete_manifest_staging = destination / f".manifest.complete-{token}.json"
+        _write_canonical_json(complete_manifest_staging, complete_manifest)
+        complete_manifest_staging.replace(destination / "manifest.json")
         _validate_generation_inventory(destination, label="spatial surface final generation")
         return _written_paths(destination)
     finally:

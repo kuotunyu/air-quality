@@ -1056,6 +1056,17 @@ def test_writer_reuses_an_identical_generation_and_refuses_collision(tmp_path: P
         write_spatial_surface_baseline_result(result, output_root=tmp_path)
 
 
+def test_writer_reconstructs_summary_instead_of_trusting_prepared_summary(tmp_path: Path) -> None:
+    result = synthetic_baseline_result()
+    result.summary["feeds_web"] = True
+    result.summary["gate"] = {"state": "go", "winning_method": "unreviewed"}
+
+    with pytest.raises(RuntimeError, match="summary"):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    assert not (tmp_path / "generations").exists()
+
+
 def test_atomic_writer_removes_only_its_staging_after_interruption(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1113,7 +1124,38 @@ def test_failed_promotion_never_deletes_the_final_generation(
         if path.is_dir() and not path.name.startswith(".")
     ]
     assert len(generations) == 1
-    assert (generations[0] / "manifest.json").is_file()
+    manifest_path = generations[0] / "manifest.json"
+    interrupted_payload = manifest_path.read_bytes()
+    assert json.loads(interrupted_payload.decode("utf-8"))["complete"] is False
+    assert not list((tmp_path / "generations").glob(".spatial-surface-baseline.staging-*"))
+
+    monkeypatch.setattr(Path, "replace", original_replace)
+    with pytest.raises(RuntimeError, match="existing generation"):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    assert manifest_path.read_bytes() == interrupted_payload
+
+
+def test_staging_manifest_is_incomplete_immediately_before_promotion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_replace = Path.replace
+    observed: list[bool] = []
+
+    def observe_then_interrupt(self: Path, target: Path) -> Path:
+        if self.name.startswith(".spatial-surface-baseline.staging-"):
+            manifest = json.loads((self / "manifest.json").read_text(encoding="utf-8"))
+            observed.append(bool(manifest["complete"]))
+            raise KeyboardInterrupt
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", observe_then_interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        write_spatial_surface_baseline_result(synthetic_baseline_result(), output_root=tmp_path)
+
+    assert observed == [False]
     assert not list((tmp_path / "generations").glob(".spatial-surface-baseline.staging-*"))
 
 
@@ -1167,6 +1209,30 @@ def test_writer_rejects_a_windows_reparse_point_generations_destination(tmp_path
 
     assert linked.is_junction()
     assert outside.is_dir()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows reparse-point contract")
+def test_writer_validates_junction_ancestor_before_creating_output_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "linked-ancestor"
+    completed = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(linked), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        pytest.skip("directory junctions are unavailable")
+
+    with pytest.raises(RuntimeError, match=r"reparse|linked"):
+        write_spatial_surface_baseline_result(
+            synthetic_baseline_result(),
+            output_root=linked / "new" / "output",
+        )
+
+    assert linked.is_junction()
+    assert list(outside.iterdir()) == []
 
 
 def test_complete_true_appears_only_in_the_final_immutable_manifest(tmp_path: Path) -> None:

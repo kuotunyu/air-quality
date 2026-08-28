@@ -25,6 +25,14 @@ from twair.analysis.spatial_surface_baseline import (
 
 _VOLATILE_MANIFEST_FIELDS = {"generated_at", "complete", "generation_sha256"}
 _TARGET_KEYS = ("evaluation", "fold_id", "year", "month", "target_station")
+_EXPECTED_METHODS = (
+    "station_mean",
+    "nearest",
+    "idw2",
+    "kriging_spherical",
+    "kriging_hole_effect",
+)
+_FOLD_COLUMNS = tuple(SPATIAL_BASELINE_TABLE_SCHEMAS["folds"])
 _TABLE_KEYS = {
     "stations": ("station_name",),
     "panel": ("station_name", "month"),
@@ -113,20 +121,31 @@ def _finite_error(row: dict[str, Any]) -> bool:
     return row["prediction_state"] == "scored" and value is not None and math.isfinite(float(value))
 
 
-def _recompute_scores(predictions: pl.DataFrame, methods: tuple[str, ...]) -> pl.DataFrame:
+def _recompute_scores(
+    predictions: pl.DataFrame,
+    folds: pl.DataFrame,
+    methods: tuple[str, ...],
+) -> pl.DataFrame:
     rows = list(predictions.iter_rows(named=True))
-    cells = sorted({(str(row["evaluation"]), int(row["year"])) for row in rows})
+    fold_rows = list(folds.iter_rows(named=True))
+    cells = sorted({(str(row["evaluation"]), int(row["year"])) for row in fold_rows})
     score_rows: list[dict[str, object]] = []
     for evaluation, year in cells:
-        cell_rows = [
-            row for row in rows if row["evaluation"] == evaluation and int(row["year"]) == year
+        cell_folds = [
+            row for row in fold_rows if row["evaluation"] == evaluation and int(row["year"]) == year
         ]
         expected_keys = {
-            _prediction_key(row) for row in cell_rows if row["fold_state"] == "eligible"
+            _prediction_key(row) for row in cell_folds if row["fold_state"] == "eligible"
         }
         for method in methods:
-            method_rows = [row for row in cell_rows if row["method"] == method]
-            intended_rows = [row for row in method_rows if row["fold_state"] == "eligible"]
+            method_rows = [
+                row
+                for row in rows
+                if row["evaluation"] == evaluation
+                and int(row["year"]) == year
+                and row["method"] == method
+            ]
+            intended_rows = [row for row in method_rows if _prediction_key(row) in expected_keys]
             intended_keys = {_prediction_key(row) for row in intended_rows}
             scored_rows = [row for row in intended_rows if _finite_error(row)]
             n_intended = len(expected_keys)
@@ -135,8 +154,8 @@ def _recompute_scores(predictions: pl.DataFrame, methods: tuple[str, ...]) -> pl
             n_stations_intended = len(
                 {
                     str(row["target_station"])
-                    for row in cell_rows
-                    if _prediction_key(row) in expected_keys
+                    for row in cell_folds
+                    if row["fold_state"] == "eligible"
                 }
             )
             n_stations_scored = len({str(row["target_station"]) for row in scored_rows})
@@ -203,6 +222,7 @@ def _bootstrap(values: list[float], *, draws: int, seed: int) -> tuple[float, fl
 
 def _recompute_deltas(
     predictions: pl.DataFrame,
+    folds: pl.DataFrame,
     methods: tuple[str, ...],
     *,
     comparison_method: str,
@@ -210,23 +230,22 @@ def _recompute_deltas(
     seed: int,
 ) -> pl.DataFrame:
     rows = list(predictions.iter_rows(named=True))
+    fold_rows = list(folds.iter_rows(named=True))
     by_method = {method: [row for row in rows if row["method"] == method] for method in methods}
     baseline_by_key = {_prediction_key(row): row for row in by_method[comparison_method]}
     delta_rows: list[dict[str, object]] = []
-    cells = sorted(
-        {(str(row["evaluation"]), int(row["year"])) for row in by_method[comparison_method]}
-    )
+    cells = sorted({(str(row["evaluation"]), int(row["year"])) for row in fold_rows})
     for method in methods:
         if method == comparison_method:
             continue
         candidate_by_key = {_prediction_key(row): row for row in by_method[method]}
         for evaluation, year in cells:
             keys = [
-                key
-                for key, baseline in baseline_by_key.items()
-                if baseline["evaluation"] == evaluation
-                and int(baseline["year"]) == year
-                and baseline["fold_state"] == "eligible"
+                _prediction_key(row)
+                for row in fold_rows
+                if row["evaluation"] == evaluation
+                and int(row["year"]) == year
+                and row["fold_state"] == "eligible"
             ]
             if not keys:
                 state = "no_eligible_targets"
@@ -281,8 +300,42 @@ def _values_equal(left: object, right: object) -> bool:
     if left is None or right is None:
         return left is right
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        if math.isnan(float(left)) or math.isnan(float(right)):
+            return math.isnan(float(left)) and math.isnan(float(right))
         return math.isclose(float(left), float(right), rel_tol=1e-12, abs_tol=1e-12)
+    if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+        return len(left) == len(right) and all(
+            _values_equal(left_value, right_value)
+            for left_value, right_value in zip(left, right, strict=True)
+        )
     return left == right
+
+
+def _prediction_grid_problems(
+    folds: pl.DataFrame,
+    predictions: pl.DataFrame,
+    methods: tuple[str, ...],
+) -> list[str]:
+    problems: list[str] = []
+    fold_rows = list(folds.iter_rows(named=True))
+    prediction_rows = list(predictions.iter_rows(named=True))
+    fold_by_key = {_prediction_key(row): row for row in fold_rows}
+    expected = {(key, method) for key in fold_by_key for method in methods}
+    actual = [(_prediction_key(row), str(row["method"])) for row in prediction_rows]
+    if len(actual) != len(set(actual)):
+        problems.append("prediction grid contains duplicate rows")
+    if set(actual) != expected:
+        problems.append("prediction grid differs from authoritative folds and exact methods")
+    if {str(row["method"]) for row in prediction_rows} - set(methods):
+        problems.append("prediction grid contains methods outside the exact method domain")
+    for row in prediction_rows:
+        fold = fold_by_key.get(_prediction_key(row))
+        if fold is None:
+            continue
+        if any(not _values_equal(row[column], fold[column]) for column in _FOLD_COLUMNS):
+            problems.append("prediction row differs from its authoritative fold")
+            break
+    return problems
 
 
 def _frames_equal(left: pl.DataFrame, right: pl.DataFrame) -> bool:
@@ -484,6 +537,7 @@ def verify_generation(path: Path) -> list[str]:
                 problems.append(f"{name} checksum differs from manifest")
         except OSError:
             problems.append(f"{name} checksum cannot be read")
+    summary: object = None
     summary_path = directory / "summary.json"
     if summary_path.is_file():
         try:
@@ -516,7 +570,10 @@ def verify_generation(path: Path) -> list[str]:
         keys = _TABLE_KEYS[name]
         if _duplicates(frame, keys):
             problems.append(f"{name} contains duplicate table keys")
-        if frame.rows() != frame.sort(*SPATIAL_BASELINE_TABLE_ORDER[name]).rows():
+        order_keys = SPATIAL_BASELINE_TABLE_ORDER[name]
+        if not _frames_equal(
+            frame.select(*order_keys), frame.sort(*order_keys).select(*order_keys)
+        ):
             problems.append(f"{name} deterministic row order changed")
         declaration = recorded_tables.get(name)
         if not isinstance(declaration, dict):
@@ -531,6 +588,7 @@ def verify_generation(path: Path) -> list[str]:
         if observed_identity != declaration:
             problems.append(f"{name} canonical table identity differs from manifest")
     predictions = tables.get("predictions")
+    folds = tables.get("folds")
     scores = tables.get("scores")
     deltas = tables.get("paired_deltas")
     if predictions is not None:
@@ -558,12 +616,18 @@ def verify_generation(path: Path) -> list[str]:
             elif row["predicted"] is not None or row["error"] is not None:
                 problems.append("unscored prediction retains a predicted value or error")
                 break
-    if predictions is not None and scores is not None and deltas is not None:
+    if predictions is not None and folds is not None:
+        problems.extend(_prediction_grid_problems(folds, predictions, _EXPECTED_METHODS))
+    if predictions is not None and folds is not None and scores is not None and deltas is not None:
         try:
-            methods, comparison, draws, seed, required_years = _manifest_config(manifest)
-            expected_scores = _recompute_scores(predictions, methods)
+            configured_methods, comparison, draws, seed, required_years = _manifest_config(manifest)
+            if configured_methods != _EXPECTED_METHODS:
+                problems.append("config must retain the exact five configured methods")
+            methods = _EXPECTED_METHODS
+            expected_scores = _recompute_scores(predictions, folds, methods)
             expected_deltas = _recompute_deltas(
                 predictions,
+                folds,
                 methods,
                 comparison_method=comparison,
                 draws=draws,
@@ -582,6 +646,16 @@ def verify_generation(path: Path) -> list[str]:
             )
             if manifest.get("gate") != expected_gate:
                 problems.append("gate verdict does not match independently recomputed evidence")
+            expected_summary = {
+                "analysis": "spatial_surface_baseline",
+                "inventory_generation_sha256": manifest.get("inventory_generation_sha256"),
+                "output_rows": {name: frame.height for name, frame in tables.items()},
+                "gate": expected_gate,
+                "feeds_web": False,
+                "limitations": list(SPATIAL_BASELINE_LIMITATIONS),
+            }
+            if summary != expected_summary:
+                problems.append("summary semantics do not match independently verified evidence")
         except (KeyError, TypeError, ValueError, IndexError, pl.exceptions.PolarsError):
             problems.append("config or evidence cannot be independently recomputed")
     return list(dict.fromkeys(problems))
