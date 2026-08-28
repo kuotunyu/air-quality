@@ -592,6 +592,11 @@ def assemble_covariates(inputs: FrozenInputs, config: CovariateReadinessConfig) 
         raise RuntimeError("support coordinates contain a non-finite value")
 
     era5_raw, satellite_raw = _external_frames(inputs)
+    reviewed_stations = panel["station_name"].unique().to_list()
+    _required_columns(era5_raw, ("station_name",), label="ERA5 station-hour frame")
+    _required_columns(satellite_raw, ("station_name",), label="satellite panel")
+    era5_raw = era5_raw.filter(pl.col("station_name").is_in(reviewed_stations))
+    satellite_raw = satellite_raw.filter(pl.col("station_name").is_in(reviewed_stations))
     era5 = aggregate_era5_monthly(
         _local_year_rows(era5_raw, years=config.years), years=config.years
     )

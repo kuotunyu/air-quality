@@ -283,6 +283,37 @@ def test_assemble_covariates_preserves_authoritative_panel_keys_and_satellite_nu
     assert march["month_cos"][0] == pytest.approx(0.0, abs=1e-12)
 
 
+def test_assemble_covariates_ignores_complete_non_cohort_external_stations(
+    tmp_path: Path,
+) -> None:
+    inputs, config, satellite = _covariate_inputs(tmp_path)
+    months = tuple((year, month) for year in (2024, 2025) for month in range(1, 13))
+    extra_era5 = _era5_months(*months).with_columns(pl.lit("station-extra").alias("station_name"))
+    extra_panel = pl.DataFrame(
+        {
+            "station_name": ["station-extra"] * len(months),
+            "month": [date(year, month, 1) for year, month in months],
+            "mean": [10.0] * len(months),
+            "target_state": ["observed"] * len(months),
+        },
+        schema_overrides={"month": pl.Date},
+    )
+    era5_path = next(item.path for item in inputs.input_files if "era5" in item.path.parts)
+    satellite_path = next(
+        item.path for item in inputs.input_files if "m8_satellite" in item.path.parts
+    )
+    pl.concat([pl.read_parquet(era5_path), extra_era5]).write_parquet(era5_path)
+    pl.concat([satellite, _satellite_long(extra_panel)]).write_parquet(satellite_path)
+
+    result = assemble_covariates(inputs, config)
+
+    assert (
+        result.select("station_name", "month").rows()
+        == inputs.panel.select("station_name", "month").sort("station_name", "month").rows()
+    )
+    assert "station-extra" not in result["station_name"].to_list()
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
@@ -326,14 +357,16 @@ def test_pivot_satellite_monthly_rejects_invalid_long_rows(mutate: Any, message:
     ("mutate", "message"),
     [
         (
-            lambda frame: pl.concat(
-                [
-                    frame,
-                    frame.filter(pl.col("station_name") == "station-00").with_columns(
-                        pl.lit("station-outside").alias("station_name")
-                    ),
-                ]
+            lambda frame: frame.with_columns(
+                pl.when(pl.col("station_name") == "station-00")
+                .then(pl.lit("station-malformed"))
+                .otherwise(pl.col("station_name"))
+                .alias("station_name")
             ),
+            "satellite keys",
+        ),
+        (
+            lambda frame: frame.filter(pl.col("station_name") != "station-00"),
             "satellite keys",
         ),
         (
