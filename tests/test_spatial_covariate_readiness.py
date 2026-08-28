@@ -1913,6 +1913,7 @@ def _run_result_fixture(
     input_payload: bytes = b"a",
     minimum_distance_km: float = 0.1,
     mutate_table: tuple[str, str, object] | None = None,
+    patch_git_state: bool = True,
 ) -> Any:
     inputs, frames = _result_assembly_fixture(tmp_path)
     input_path = inputs.input_files[0].path
@@ -1951,7 +1952,8 @@ def _run_result_fixture(
     monkeypatch.setattr(
         readiness, "paired_readiness_deltas", lambda *_args, **_kwargs: frames["paired_deltas"]
     )
-    monkeypatch.setattr(readiness, "git_state", lambda: ("f" * 40, False), raising=False)
+    if patch_git_state:
+        monkeypatch.setattr(readiness, "_exact_git_state", lambda: ("f" * 40, False))
     return readiness.run_spatial_covariate_readiness(
         data_root=tmp_path,
         config=replace(_config(), minimum_distance_km=minimum_distance_km),
@@ -2076,6 +2078,156 @@ def test_writer_persists_exact_inventory_and_reuses_only_identical_generation(
     first["scores"].write_bytes(first["scores"].read_bytes() + b"corrupt")
     with pytest.raises(RuntimeError, match="existing generation"):
         readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
+
+
+def test_writer_reuses_a_concurrent_identical_winner_after_windows_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    output_root = tmp_path / "output"
+    first = readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
+    destination = first["manifest"].parent
+    waiting_winner = tmp_path / "waiting-winner"
+    destination.replace(waiting_winner)
+    original_replace = Path.replace
+
+    def concurrent_winner(self: Path, target: Path) -> Path:
+        if self.name.startswith(".spatial-covariate-readiness.staging-"):
+            original_replace(waiting_winner, target)
+            raise PermissionError(13, "access denied", str(target), 5)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", concurrent_winner)
+
+    reused = readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
+
+    assert reused == first
+    assert json.loads(reused["manifest"].read_text(encoding="utf-8"))["complete"] is True
+    assert not list((output_root / "generations").glob(".spatial-covariate-readiness.staging-*"))
+
+
+def test_writer_does_not_mask_permission_error_without_a_concurrent_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _run_result_fixture(tmp_path, monkeypatch)
+    original_replace = Path.replace
+
+    def denied_promotion(self: Path, target: Path) -> Path:
+        if self.name.startswith(".spatial-covariate-readiness.staging-"):
+            raise PermissionError(13, "access denied", str(target), 5)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", denied_promotion)
+
+    with pytest.raises(PermissionError, match="access denied"):
+        readiness.write_spatial_covariate_readiness_result(
+            result,
+            output_root=tmp_path / "output",
+        )
+
+    assert not list(
+        (tmp_path / "output" / "generations").glob(".spatial-covariate-readiness.staging-*")
+    )
+
+
+def _git_command_result(
+    args: list[str],
+    *,
+    sha: str,
+    status: str,
+    revision_returncode: int = 0,
+    status_returncode: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    if "rev-parse" in args:
+        output = sha[:7] if "--short" in args else sha
+        return subprocess.CompletedProcess(args, revision_returncode, stdout=output, stderr="")
+    assert "status" in args
+    return subprocess.CompletedProcess(args, status_returncode, stdout=status, stderr="")
+
+
+def test_generation_identity_binds_exact_full_git_revision_and_dirty_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sha_a = "a" * 40
+    sha_b = "b" * 40
+
+    def run_with_git(*, sha: str, status: str) -> Any:
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda args, **_kwargs: _git_command_result(
+                args,
+                sha=sha,
+                status=status,
+            ),
+        )
+        return _run_result_fixture(tmp_path, monkeypatch, patch_git_state=False)
+
+    clean = run_with_git(sha=sha_a, status="")
+    dirty = run_with_git(sha=sha_a, status=" M tracked.py\n")
+    changed_revision = run_with_git(sha=sha_b, status="")
+
+    assert clean.manifest["git_sha"] == sha_a
+    assert clean.manifest["git_dirty"] is False
+    assert dirty.manifest["git_sha"] == sha_a
+    assert dirty.manifest["git_dirty"] is True
+    assert changed_revision.manifest["git_sha"] == sha_b
+    assert (
+        len(
+            {
+                clean.manifest["generation_sha256"],
+                dirty.manifest["generation_sha256"],
+                changed_revision.manifest["generation_sha256"],
+            }
+        )
+        == 3
+    )
+
+
+@pytest.mark.parametrize(
+    ("sha", "status", "revision_returncode", "status_returncode"),
+    [
+        ("a" * 40, "", 1, 0),
+        ("a" * 40, "", 0, 1),
+        ("short", "", 0, 0),
+        ("a" * 40, "not porcelain", 0, 0),
+    ],
+)
+def test_result_assembly_fails_closed_for_unavailable_or_malformed_git_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sha: str,
+    status: str,
+    revision_returncode: int,
+    status_returncode: int,
+) -> None:
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda args, **_kwargs: _git_command_result(
+            args,
+            sha=sha,
+            status=status,
+            revision_returncode=revision_returncode,
+            status_returncode=status_returncode,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Git"):
+        _run_result_fixture(tmp_path, monkeypatch, patch_git_state=False)
+
+
+def test_result_assembly_fails_closed_when_git_cannot_be_executed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("git unavailable")),
+    )
+
+    with pytest.raises(RuntimeError, match="Git"):
+        _run_result_fixture(tmp_path, monkeypatch, patch_git_state=False)
 
 
 def test_writer_rejects_an_unexpected_existing_generation_member(

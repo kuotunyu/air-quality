@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -28,7 +29,6 @@ from twair.analysis.spatial_surface_baseline import (
 )
 from twair.config import ConfigError, load_conf
 from twair.paths import outputs_dir
-from twair.provenance import git_state
 
 __all__ = [
     "COVARIATE_MODEL_FEATURES",
@@ -96,6 +96,7 @@ _REVIEWED_PANEL_KEY_COUNT = 1416
 _REVIEWED_OBSERVED_COUNT = 1415
 _REVIEWED_WITHHELD_KEY = ("新營", date(2025, 5, 1))
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_GIT_SHA = re.compile(r"[0-9a-f]{40}")
 _EXPECTED_MODEL = ModelConfig(
     n_estimators=200,
     learning_rate=0.05,
@@ -2237,6 +2238,48 @@ def _input_manifest(inputs: FrozenInputs, *, data_root: Path) -> list[dict[str, 
     return sorted(identities, key=lambda value: str(value["path"]))
 
 
+def _git_query(*args: str, label: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"Git {label} query is unavailable") from exc
+    if completed.returncode != 0 or not isinstance(completed.stdout, str):
+        raise RuntimeError(f"Git {label} query failed")
+    return completed.stdout
+
+
+def _exact_git_state() -> tuple[str, bool]:
+    revision = _git_query("rev-parse", "--verify", "HEAD", label="revision").strip()
+    if _GIT_SHA.fullmatch(revision) is None:
+        raise RuntimeError("Git revision query returned a malformed full SHA")
+    status = _git_query(
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=no",
+        label="dirty status",
+    )
+    if status:
+        allowed = frozenset(" MADRCUTm?")
+        lines = status.splitlines(keepends=True)
+        if any(
+            not line.endswith("\n")
+            or len(line) < 5
+            or line[0] not in allowed
+            or line[1] not in allowed
+            or line[:2] in {"  ", "??"}
+            or line[2] != " "
+            for line in lines
+        ):
+            raise RuntimeError("Git dirty status query returned malformed porcelain")
+    return revision, bool(status)
+
+
 def run_spatial_covariate_readiness(
     *,
     data_root: Path,
@@ -2280,7 +2323,7 @@ def run_spatial_covariate_readiness(
         "gate": gate,
         **claim_boundary,
     }
-    git_sha, git_dirty = git_state()
+    git_sha, git_dirty = _exact_git_state()
     identity: dict[str, Any] = {
         "schema_version": COVARIATE_READINESS_SCHEMA_VERSION,
         "analysis": "spatial_covariate_readiness",
@@ -2581,6 +2624,14 @@ def write_spatial_covariate_readiness_result(
         try:
             staged.replace(destination)
         except FileExistsError:
+            return _validate_existing_generation(
+                destination,
+                staged=staged,
+                expected_identity=final_identity,
+            )
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) != 5 or not _path_exists(destination):
+                raise
             return _validate_existing_generation(
                 destination,
                 staged=staged,
