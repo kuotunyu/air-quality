@@ -1,0 +1,22 @@
+"schema_version": 1
+"analysis":
+  "years": [2024, 2025]
+  "baseline_generation_sha256": "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f"
+  "station_inventory_generation_sha256": "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
+  "minimum_train_stations": 8
+"methods":
+  "comparator": "idw2"
+  "candidates": ["covariate_gbm", "covariate_gbm_idw2"]
+  "idw_power": 2.0
+  "minimum_distance_km": 0.1
+  "model":
+    "n_estimators": 200
+    "learning_rate": 0.05
+    "num_leaves": 31
+    "min_child_samples": 10
+    "n_jobs": 1
+    "seed": 20260811
+"validation":
+  "evaluations": ["buffer_20km", "buffer_40km", "spatial_cluster"]
+  "bootstrap_draws": 9999
+  "bootstrap_seed": 20260828
