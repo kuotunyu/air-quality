@@ -30,6 +30,7 @@ never run. These tests are that failure path, kept.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,8 @@ from scripts import check_published_sarima as sarima
 from scripts import check_published_site_prose as site_prose
 from scripts import check_published_spatial as spatial
 from scripts import check_term_first_use as term_first_use
+
+from twair.paths import REPO_ROOT
 
 
 class TestIntegersCompareExactly:
@@ -1202,3 +1205,51 @@ class TestTheLastTwoTypedFiguresAreDerivedNow:
 
         assert truth["first_range_width"] > 0
         assert truth["last_range_width"] > truth["first_range_width"]
+
+
+def _spatial_baseline_section(text: str) -> str:
+    marker = "spatial baseline readiness gate"
+    start = text.casefold().find(marker)
+    assert start >= 0, "spatial baseline readiness gate section is missing"
+    remainder = text[start:]
+    next_heading = re.search(r"\n#{1,4}\s", remainder[1:])
+    return remainder if next_heading is None else remainder[: next_heading.start() + 1]
+
+
+def _assert_spatial_baseline_claim_boundary(section: str) -> None:
+    folded = " ".join(section.casefold().split())
+    assert "baseline readiness gate" in folded
+    assert re.search(r"\b1 km surface\b", folded) is None
+    assert re.search(r"\bproduced (?:a )?population exposure result\b", folded) is None
+    assert re.search(r"\bfusion\b", folded) is None
+
+
+def test_spatial_baseline_sections_keep_the_measured_claim_boundary() -> None:
+    for relative in (
+        "README.md",
+        "README.en.md",
+        "docs/data-sources.md",
+        "docs/methodology.md",
+    ):
+        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        _assert_spatial_baseline_claim_boundary(_spatial_baseline_section(text))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "It produced a 1 km surface.",
+        "It produced a population exposure result.",
+        "This is a fusion result.",
+    ],
+)
+def test_spatial_baseline_boundary_rejects_surface_exposure_and_fusion_mutations(
+    mutation: str,
+) -> None:
+    bounded = (
+        "Spatial baseline readiness gate. "
+        "It produced no concentration surface or population exposure."
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_spatial_baseline_claim_boundary(f"{bounded} {mutation}")

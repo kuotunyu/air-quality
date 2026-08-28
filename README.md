@@ -126,6 +126,24 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 
 </details>
 
+## Spatial baseline readiness gate
+
+2026-08-28 以 `uv run twair analyze spatial-surface-baseline --confirm-production`
+執行的 baseline readiness gate 已通過獨立 verifier。immutable generation 為
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`。它使用
+59 個測站、1,416 個站月 key 與 24 個月份（2024–2025）；唯一非觀測 target 是
+新營 2025-05，保留為 `withheld`，沒有被填值或計為零。
+
+三組留出評估為 20 km buffer、40 km buffer 與 spatial cluster；五種方法為
+station mean、nearest、IDW²、spherical kriging 與 hole-effect kriging。每種方法在每個
+evaluation-year cell 的分母完全相同：2024 是 708 intended / 708 scored / 0 failed，
+2025 是 707 / 707 / 0；六個 cell 都是 59 intended / 59 scored stations。
+
+凍結規則要求 20／40 km 的 2024／2025 四個 required cells 的 prediction 完整，且至少
+一個 candidate 的 median station MAE delta 皆小於 0。實測 verdict 為 `go`：IDW²、
+hole-effect kriging、spherical kriging 與 nearest 都合格。`go` 只表示可以開始
+covariate-model design；這個 generation 沒有產生濃度場或人口暴露結果，也不是地圖發布證據。
+
 ## 快速開始
 
 ```bash
@@ -167,7 +185,7 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 | Phase 2 | M1 基準、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
-| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻） | ✅ 有界完成；HYSPLIT／1 km 場／人口加權暴露延後（repo 無人口網格） |
+| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、spatial baseline gate | ✅ baseline gate 為 `go`，可開始 covariate-model design；HYSPLIT／1 km 場／人口加權暴露延後（repo 無人口網格） |
 | Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 M8 關聯與 held-out predictive-value 診斷已交付；ERA5 2024–2025 robustness 已交付；微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付，一月 reference-station satellite-context predictive-value limit 已交付，微型感測器 2025 全年 readiness audit 已交付，Q4-supported cross-station agreement 亦已交付（29 個 fold 中只有 5 個可評分，其餘 18 個測試集為空、6 個訓練集為空，均標為 unscored 而非以零計；held-quarter 與 joint station-quarter 不可估計）；validated calibration 與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5 |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
 | Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 發布收尾：正常工程與編輯式科學圖集 UI 已完成，並已整合至 `master`、部署於 GitHub Pages。L0／L1 HF Dataset 仍留到最後由 owner 決定上架或明確不發布；非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |

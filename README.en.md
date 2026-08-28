@@ -199,6 +199,29 @@ the released meteorological normalisation still uses station measurements.
 
 ---
 
+## Spatial baseline readiness gate
+
+The baseline readiness gate run on 2026-08-28 with
+`uv run twair analyze spatial-surface-baseline --confirm-production` passed its
+independent verifier. Its immutable generation is
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`.
+It used 59 stations and 1,416 station-month keys across 24 months in 2024–2025.
+The sole non-observed target, Xinying in May 2025, remains explicitly `withheld`;
+it was neither filled nor counted as zero.
+
+The three holdout families are 20 km buffer, 40 km buffer, and spatial cluster.
+The five methods are station mean, nearest, IDW², spherical kriging, and
+hole-effect kriging. Every method has the same denominator in every
+evaluation-year cell: 708 intended / 708 scored / 0 failed rows in 2024 and
+707 / 707 / 0 in 2025, with 59 intended / 59 scored stations in all six cells.
+
+The frozen rule requires complete predictions and a median station MAE delta
+below zero in all four required 2024/2025 20/40 km cells. The measured verdict
+is `go`: IDW², hole-effect kriging, spherical kriging, and nearest all qualify.
+`go` says only that covariate-model design may begin. This generation produced
+no concentration surface or population exposure result, and it is not evidence
+for publishing a map.
+
 ## Quick Start
 
 ### 1. Synchronize the Environment
@@ -246,7 +269,7 @@ evidence and decisions live in the relevant public [technical docs](docs/).
 | **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
-| **Phase 5** | M6 spatial structure and M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution) | ✅ Bounded delivery; HYSPLIT, a 1 km field, and population-weighted exposure deferred (no population grid in repo) |
+| **Phase 5** | M6 spatial structure, M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), and the spatial baseline gate | ✅ Baseline gate is `go`, so covariate-model design may begin; HYSPLIT, a 1 km field, and population-weighted exposure deferred (no population grid in repo) |
 | **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered; 2025 annual micro-sensor readiness audit delivered, and the Q4-supported cross-station agreement delivered — 5 of 29 folds scorable, the remaining 18 with an empty test set and 6 with an empty training set, all reported unscored rather than as zero; held-quarter and joint station-quarter are not estimable — while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Release closeout: normal engineering and the editorial UI implementation are complete, integrated into `master`, and deployed to GitHub Pages. The L0/L1 HF Dataset publish-or-not decision remains last and owner-controlled; the external-reader trial is deferred and non-blocking; PyPI is optional. |

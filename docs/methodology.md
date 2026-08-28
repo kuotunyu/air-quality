@@ -675,6 +675,67 @@ held-station 是主要證據：兩個比較的 device-hour median ΔRMSE 分別�
 
 ---
 
+## Spatial baseline readiness gate
+
+這是一個製作濃度場之前的 baseline readiness gate，不是場模型本身。
+2026-08-28 的確認執行指令為：
+
+```powershell
+$env:TWAIR_DATA_DIR='D:/twair-data'
+uv run twair analyze spatial-surface-baseline --confirm-production
+```
+
+獨立 verifier 通過的 immutable generation 是
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`。它固定在
+station inventory generation
+`58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`，並記錄兩個
+production input：`outputs/qc/stations.parquet` 為 11,878 bytes、SHA-256
+`d7bf35df9ee8de52e8bf4f440af9b7ac2bb829918a8d49b65640f9c2cf3c76dd`；
+`processed/monthly/monthly.parquet` 為 6,372,327 bytes、SHA-256
+`001f62a25adbbb375ff8e7cdfdbd63f0a480b8eaebc9bff0f9ecc13f93ee793f`。
+
+門檻 cohort 有 59 個測站、1,416 個站月 key、24 個月份（2024–2025）。target ledger
+保留 1,415 個 `observed` 與恰好一個 `withheld`：新營 2025-05-01 的 mean 是
+null、`meets_threshold=false`。這一列沒有被刪除、填值或當零；59 個測站仍全部
+留在 support table。
+
+評估將同一批 target 排入 `buffer_20km`、`buffer_40km` 與 `spatial_cluster`
+三個 fold family。每個 fold 比較 `station_mean`、`nearest`、`idw2`、
+`kriging_spherical` 與 `kriging_hole_effect` 五種方法。總數是 4,248 列 folds、
+21,240 列 predictions、30 列 scores 與 24 列 paired deltas。每個 evaluation 的
+2024 fold state 是 708 個 `eligible`；2025 是 707 個 `eligible` 加新營的
+`unscored_target_withheld`，reason 是 `target_state=withheld`。五種方法在那列都保留
+null prediction/error 與明確狀態，沒有 estimator failure。
+
+相同 intended population 下的分母如下；這些數字對五種方法都相同：
+
+| evaluation | year | intended / scored / failed rows | intended / scored stations | score state |
+|---|---:|---:|---:|---|
+| `buffer_20km` | 2024 | 708 / 708 / 0 | 59 / 59 | `complete` |
+| `buffer_20km` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
+| `buffer_40km` | 2024 | 708 / 708 / 0 | 59 / 59 | `complete` |
+| `buffer_40km` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
+| `spatial_cluster` | 2024 | 708 / 708 / 0 | 59 / 59 | `complete` |
+| `spatial_cluster` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
+
+凍結規則先要求 2024／2025 在 20／40 km 的四個 required cells 都有完整
+prediction，再要求至少一種 candidate 在四格的 median station MAE delta 都小於 0。
+實測的 candidate-minus-`station_mean` 配對 delta 為：
+
+| candidate | 20 km 2024 | 20 km 2025 | 40 km 2024 | 40 km 2025 |
+|---|---:|---:|---:|---:|
+| `idw2` | −1.848481 | −1.729178 | −1.808556 | −1.489642 |
+| `kriging_hole_effect` | −1.550237 | −1.586651 | −1.194335 | −1.073457 |
+| `kriging_spherical` | −1.575993 | −1.795171 | −1.279487 | −1.098592 |
+| `nearest` | −1.418523 | −1.127238 | −1.516523 | −1.537436 |
+
+四種 candidate 都合格，所以 verdict 為 `go`。這句結論只支持「covariate-model
+design 可以開始」。這個 generation 沒有產生濃度場或人口暴露結果，也沒有 raster、
+來源歸因、校正結果、地圖或網站 payload；`feeds_web=false`。通過 readiness gate 不能
+改寫成濃度場、暴露或發布已完成。
+
+---
+
 ## 結論
 
 這份重製的成果展示，我們建立的不僅僅是「寫出更漂亮的程式碼」，而是藉由資料工程與嚴謹物理原理：

@@ -344,3 +344,35 @@ def test_public_docs_publish_the_verified_satellite_context_limit_without_callin
         assert "不是微型感測器位置的衛星觀測值" in text
         assert "不是 sensor fusion" in text
         assert "held-station 是主要證據" in text
+
+
+def test_spatial_baseline_readiness_gate_keeps_the_verified_result_and_boundary_together() -> None:
+    generation = "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f"
+    expected = {
+        "README.md": (
+            "baseline readiness gate",
+            "59 個測站、1,416 個站月 key",
+            "沒有產生濃度場或人口暴露結果",
+        ),
+        "README.en.md": (
+            "baseline readiness gate",
+            "59 stations and 1,416 station-month keys",
+            "produced no concentration surface or population exposure result",
+        ),
+        "docs/data-sources.md": (
+            "baseline readiness gate",
+            "59 個測站、1,416 個站月 key",
+            "沒有產生濃度場或人口暴露結果",
+        ),
+        "docs/methodology.md": (
+            "baseline readiness gate",
+            "59 個測站、1,416 個站月 key",
+            "沒有產生濃度場或人口暴露結果",
+        ),
+    }
+
+    for relative, claims in expected.items():
+        text = " ".join((REPO_ROOT / relative).read_text(encoding="utf-8").split())
+        assert generation in text, relative
+        for claim in claims:
+            assert claim in text, f"{relative}: {claim}"

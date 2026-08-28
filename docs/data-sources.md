@@ -487,4 +487,68 @@ reverse: improve / improve / worsen / worsen；all-satellite 為 −0.179 µg/m�
 對過去的預測。這是 predictive robustness only；not causal, calibration, fusion, satellite-estimated PM2.5，
 且 not a spatial-resolution claim or an M4 replacement。
 
+## Spatial baseline readiness gate
+
+2026-08-28 的 production baseline readiness gate 使用以下確認指令：
+
+```powershell
+$env:TWAIR_DATA_DIR='D:/twair-data'
+uv run twair analyze spatial-surface-baseline --confirm-production
+```
+
+指令建立一個 immutable generation，後續由
+`scripts/verify_spatial_surface_baseline.py` 獨立驗證通過：
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`。
+它的兩個 production 輸入身分是：
+
+| 輸入 | bytes | SHA-256 |
+|---|---:|---|
+| `outputs/qc/stations.parquet` | 11,878 | `d7bf35df9ee8de52e8bf4f440af9b7ac2bb829918a8d49b65640f9c2cf3c76dd` |
+| `processed/monthly/monthly.parquet` | 6,372,327 | `001f62a25adbbb375ff8e7cdfdbd63f0a480b8eaebc9bff0f9ecc13f93ee793f` |
+
+測站 inventory generation 為
+`58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`。
+manifest 記錄的 code HEAD 是 `74d882e` 且 `git_dirty=false`，產生時間為
+`2026-08-28T11:29:00+00:00`。
+
+驗證後的 cohort 有 59 個測站、1,416 個站月 key、24 個月份，分屬
+2024 與 2025。panel 的 target 狀態是 1,415 個 `observed` 與恰好一個
+`withheld`：新營的 2025-05-01，mean 為 null 且 `meets_threshold=false`。它沒有
+被填值、刪除或當成零。support table 仍有 59 列。
+
+三個 fold family 是 `buffer_20km`、`buffer_40km` 與 `spatial_cluster`；
+五種方法是 `station_mean`、`nearest`、`idw2`、`kriging_spherical` 與
+`kriging_hole_effect`。generation 共保留 4,248 列 folds（3 × 1,416）、21,240 列
+predictions（4,248 × 5）、30 列 scores 與 24 列 paired deltas。每個 evaluation 的
+2024 fold 都是 708 個 `eligible`；2025 是 707 個 `eligible` 加一個
+`unscored_target_withheld`，reason 是 `target_state=withheld`。對每一種方法，
+這個 withheld row 的 prediction 與 error 均保留 null、state 與 reason 均明載；
+沒有 estimator failure。
+
+五種方法在每個 cell 的分母完全相同：
+
+| evaluation | year | intended / scored / failed rows（每方法） | intended / scored stations（每方法） | score state |
+|---|---:|---:|---:|---|
+| `buffer_20km` | 2024 | 708 / 708 / 0 | 59 / 59 | `complete` |
+| `buffer_20km` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
+| `buffer_40km` | 2024 | 708 / 708 / 0 | 59 / 59 | `complete` |
+| `buffer_40km` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
+| `spatial_cluster` | 2024 | 708 / 708 / 0 | 59 / 59 | `complete` |
+| `spatial_cluster` | 2025 | 707 / 707 / 0 | 59 / 59 | `complete` |
+
+凍結規則是「2024／2025 在 20／40 km 的 prediction 都完整，且至少一個
+candidate 在四個 required cells 的 median station MAE delta 都小於 0」。四種
+candidate 的實測配對 delta 均通過：
+
+| candidate | 20 km 2024 | 20 km 2025 | 40 km 2024 | 40 km 2025 |
+|---|---:|---:|---:|---:|
+| `idw2` | −1.848481 | −1.729178 | −1.808556 | −1.489642 |
+| `kriging_hole_effect` | −1.550237 | −1.586651 | −1.194335 | −1.073457 |
+| `kriging_spherical` | −1.575993 | −1.795171 | −1.279487 | −1.098592 |
+| `nearest` | −1.418523 | −1.127238 | −1.516523 | −1.537436 |
+
+因此 gate verdict 為 `go`。這只允許開始 covariate-model design。這個 baseline
+readiness generation 沒有產生濃度場或人口暴露結果，沒有 raster、地圖、
+來源歸因、校正或網站 payload；`feeds_web=false`。通過本門檻不是發布地圖的允可。
+
 見 [registrations.md](registrations.md) 取得各項憑證。
