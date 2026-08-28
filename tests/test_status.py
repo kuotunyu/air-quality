@@ -77,6 +77,14 @@ class TestTheReproduceTableCannotRot:
         assert module.feeds_web is False
         assert "not calibration" in module.what
 
+    def test_spatial_surface_baseline_has_a_reproducible_non_web_status_entry(self) -> None:
+        module = next(item for item in MODULES if item.directory == "spatial_surface_baseline")
+
+        assert module.reproduce == "twair analyze spatial-surface-baseline"
+        assert module.feeds_web is False
+        assert "not a surface" in module.what
+        assert "not population exposure" in module.what
+
     def test_the_era5_value_add_has_a_return_command_but_does_not_yet_feed_the_site(
         self,
     ) -> None:

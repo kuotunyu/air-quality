@@ -86,10 +86,11 @@ def _setup_logging() -> None:
 
 
 @app.callback()
-def main() -> None:
+def main(ctx: typer.Context) -> None:
     """Shared setup for every subcommand."""
     _setup_logging()
-    ensure_dirs()
+    if ctx.invoked_subcommand != "analyze":
+        ensure_dirs()
 
 
 @app.command()
@@ -904,6 +905,49 @@ def stations_geo(
 
 analysis_app = typer.Typer(help="Phase 2+: analysis modules.")
 app.add_typer(analysis_app, name="analyze")
+
+
+@analysis_app.callback()
+def analysis_main(ctx: typer.Context) -> None:
+    """Set up analysis directories except for the explicit no-I/O plan command."""
+    if ctx.invoked_subcommand != "spatial-surface-baseline":
+        ensure_dirs()
+
+
+@analysis_app.command("spatial-surface-baseline")
+def analyze_spatial_surface_baseline(
+    confirm_production: bool = typer.Option(False, "--confirm-production"),
+) -> None:
+    """Score the 2024–2025 spatial baseline gate; this does not build a surface."""
+    if not confirm_production:
+        console.print(
+            "[yellow]PLAN ONLY[/yellow] no analysis ran; pass --confirm-production to compute and persist"
+        )
+        return
+
+    from twair.analysis.spatial_surface_baseline import (
+        run_spatial_surface_baseline,
+        write_spatial_surface_baseline_result,
+    )
+    from twair.paths import data_root
+
+    result = run_spatial_surface_baseline(data_root=data_root())
+    written = write_spatial_surface_baseline_result(result)
+
+    console.print(f"gate: [bold]{result.summary['gate']['state']}[/bold]")
+    console.print(
+        "Baseline readiness only — no concentration surface and no population exposure were produced."
+    )
+    for row in result.scores.sort("evaluation", "year", "method").iter_rows(named=True):
+        mae = row["station_clustered_mae"]
+        mae_text = "not scored" if mae is None else f"{float(mae):.6f}"
+        console.print(
+            f"{row['evaluation']} {row['year']} {row['method']}: "
+            f"n_intended={row['n_intended']}, n_scored={row['n_scored']}, "
+            f"n_failed={row['n_failed']}; MAE={mae_text}"
+        )
+    for name, path in sorted(written.items()):
+        console.print(f"wrote {name}: {path}")
 
 
 @analysis_app.command("m1")

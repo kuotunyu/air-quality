@@ -154,6 +154,12 @@ MODULES: tuple[Module, ...] = (
     Module("m12_sarima", "twair analyze m12", "SARIMA, and what its inconvenience costs"),
     Module("m6_spatial", "twair analyze m6", "what zone stratification actually buys"),
     Module(
+        "spatial_surface_baseline",
+        "twair analyze spatial-surface-baseline",
+        "2024–2025 held-location baseline gate; not a surface and not population exposure",
+        feeds_web=False,
+    ),
+    Module(
         "qc_outliers",
         "twair qc outliers",
         "isolated excursions against network episodes",
