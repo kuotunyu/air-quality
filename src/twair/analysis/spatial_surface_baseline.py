@@ -10,7 +10,10 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import geopandas as gpd
+import numpy as np
 import polars as pl
+from sklearn.cluster import KMeans
 
 from twair.config import ConfigError, load_conf
 from twair.ingest.station_inventory import station_inventory_generation
@@ -19,6 +22,9 @@ __all__ = [
     "FileIdentity",
     "SpatialSurfaceBaselineConfig",
     "SurfaceInputs",
+    "assign_spatial_clusters",
+    "build_fold_ledger",
+    "build_station_support",
     "load_spatial_surface_baseline_config",
     "load_surface_inputs",
 ]
@@ -319,3 +325,178 @@ def load_surface_inputs(data_root: Path, config: SpatialSurfaceBaselineConfig) -
         input_files=(station_before, monthly_before),
         inventory_generation_sha256=inventory_generation_sha256,
     )
+
+
+def build_station_support(
+    stations: pl.DataFrame, config: SpatialSurfaceBaselineConfig
+) -> pl.DataFrame:
+    """Project station coordinates and measure their local support."""
+    ordered = stations.sort("station_name")
+    points = gpd.GeoDataFrame(
+        ordered.to_pandas(),
+        geometry=gpd.points_from_xy(ordered["lon"].to_list(), ordered["lat"].to_list()),
+        crs="EPSG:4326",
+    ).to_crs(epsg=config.projection_epsg)
+    x = points.geometry.x.to_numpy()
+    y = points.geometry.y.to_numpy()
+    station_names = ordered["station_name"].to_list()
+    rows: list[dict[str, object]] = []
+    for index, station_name in enumerate(station_names):
+        distances_km = np.hypot(x - x[index], y - y[index]) / 1000
+        candidates = [
+            (float(distance), str(name))
+            for candidate_index, (distance, name) in enumerate(
+                zip(distances_km, station_names, strict=True)
+            )
+            if candidate_index != index
+        ]
+        nearest_distance, nearest_station = min(candidates, key=lambda item: (item[0], item[1]))
+        rows.append(
+            {
+                "station_name": station_name,
+                "nearest_station": nearest_station,
+                "nearest_station_km": nearest_distance,
+                "stations_within_20km": sum(distance <= 20 for distance, _ in candidates),
+                "stations_within_40km": sum(distance <= 40 for distance, _ in candidates),
+                "x_m": float(x[index]),
+                "y_m": float(y[index]),
+            }
+        )
+    return pl.DataFrame(rows).sort("station_name")
+
+
+def assign_spatial_clusters(
+    stations: pl.DataFrame, config: SpatialSurfaceBaselineConfig
+) -> pl.DataFrame:
+    """Assign deterministic projected-coordinate clusters to every station."""
+    support = build_station_support(stations, config)
+    coordinates = support.select("x_m", "y_m").to_numpy()
+    standardized = (coordinates - coordinates.mean(axis=0)) / coordinates.std(axis=0)
+    labels = KMeans(
+        n_clusters=config.spatial_folds,
+        random_state=config.seed,
+        n_init=20,
+    ).fit_predict(standardized)
+    cluster_centroids = {
+        int(label): (
+            float(coordinates[labels == label, 0].mean()),
+            float(coordinates[labels == label, 1].mean()),
+        )
+        for label in set(labels)
+    }
+    canonical_labels = {
+        label: cluster_index
+        for cluster_index, (label, _) in enumerate(
+            sorted(cluster_centroids.items(), key=lambda item: item[1])
+        )
+    }
+    return support.with_columns(
+        pl.Series("spatial_cluster", [canonical_labels[int(label)] for label in labels])
+    ).sort("station_name")
+
+
+def build_fold_ledger(inputs: SurfaceInputs, config: SpatialSurfaceBaselineConfig) -> pl.DataFrame:
+    """Materialize target-held-out training sets for each evaluation family."""
+    clusters = assign_spatial_clusters(inputs.stations, config)
+    cluster_by_station = dict(
+        zip(
+            clusters["station_name"].to_list(),
+            clusters["spatial_cluster"].to_list(),
+            strict=True,
+        )
+    )
+    coordinates_by_station = dict(
+        zip(
+            clusters["station_name"].to_list(),
+            zip(clusters["x_m"].to_list(), clusters["y_m"].to_list(), strict=True),
+            strict=True,
+        )
+    )
+    observed_by_month: dict[date, list[str]] = {}
+    for station_name, month in (
+        inputs.panel.filter(pl.col("target_state") == "observed")
+        .select("station_name", "month")
+        .iter_rows()
+    ):
+        observed_by_month.setdefault(month, []).append(station_name)
+    rows: list[dict[str, object]] = []
+    for station_name, month, target_state, observed in (
+        inputs.panel.select("station_name", "month", "target_state", "mean")
+        .sort("month", "station_name")
+        .iter_rows()
+    ):
+        target_cluster = cluster_by_station[station_name]
+        observed_stations = observed_by_month.get(month, [])
+        target_x, target_y = coordinates_by_station[station_name]
+        evaluations: tuple[tuple[str, str, list[str]], ...] = (
+            (
+                "buffer_20km",
+                f"buffer_20km:{station_name}",
+                [
+                    candidate
+                    for candidate in observed_stations
+                    if candidate != station_name
+                    and np.hypot(
+                        coordinates_by_station[candidate][0] - target_x,
+                        coordinates_by_station[candidate][1] - target_y,
+                    )
+                    / 1000
+                    > 20
+                ],
+            ),
+            (
+                "buffer_40km",
+                f"buffer_40km:{station_name}",
+                [
+                    candidate
+                    for candidate in observed_stations
+                    if candidate != station_name
+                    and np.hypot(
+                        coordinates_by_station[candidate][0] - target_x,
+                        coordinates_by_station[candidate][1] - target_y,
+                    )
+                    / 1000
+                    > 40
+                ],
+            ),
+            (
+                "spatial_cluster",
+                f"spatial_cluster:{target_cluster}",
+                [
+                    candidate
+                    for candidate in observed_stations
+                    if cluster_by_station[candidate] != target_cluster
+                ],
+            ),
+        )
+        for evaluation, fold_id, train_stations in evaluations:
+            ordered_train_stations = sorted(train_stations)
+            n_train = len(ordered_train_stations)
+            if target_state != "observed":
+                fold_state = "unscored_target_withheld"
+                fold_reason: str | None = f"target_state={target_state}"
+            elif n_train < config.min_train_stations:
+                fold_state = "unscored_insufficient_train"
+                fold_reason = (
+                    f"n_train={n_train} is below min_train_stations={config.min_train_stations}"
+                )
+            else:
+                fold_state = "eligible"
+                fold_reason = None
+            rows.append(
+                {
+                    "evaluation": evaluation,
+                    "fold_id": fold_id,
+                    "year": month.year,
+                    "month": month,
+                    "target_station": station_name,
+                    "target_cluster": target_cluster,
+                    "target_state": target_state,
+                    "observed": observed,
+                    "train_stations": ordered_train_stations,
+                    "n_train": n_train,
+                    "fold_state": fold_state,
+                    "fold_reason": fold_reason,
+                }
+            )
+    return pl.DataFrame(rows).sort("evaluation", "year", "month", "target_station")

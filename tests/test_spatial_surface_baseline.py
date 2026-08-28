@@ -6,11 +6,16 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import geopandas as gpd
 import polars as pl
 import pytest
 
 from twair.analysis.spatial_surface_baseline import (
     SpatialSurfaceBaselineConfig,
+    SurfaceInputs,
+    assign_spatial_clusters,
+    build_fold_ledger,
+    build_station_support,
     load_spatial_surface_baseline_config,
     load_surface_inputs,
 )
@@ -23,6 +28,77 @@ def _config(*, spatial_folds: int = 3) -> SpatialSurfaceBaselineConfig:
         spatial_folds=spatial_folds,
         bootstrap_draws=99,
     )
+
+
+def synthetic_surface_inputs(
+    stations: int,
+    months: int,
+    *,
+    withheld: tuple[str, date] | None = None,
+) -> SurfaceInputs:
+    """Place s00 through sNN on a deterministic EPSG:3826-compatible mainland lattice."""
+    station_names = [f"s{index:02d}" for index in range(stations)]
+    station_frame = pl.DataFrame(
+        {
+            "station_name": station_names,
+            "station_type_official": ["一般站"] * stations,
+            "lon": [120.7 + 0.06 * index for index in range(stations)],
+            "lat": [23.75 + 0.005 * (index % 3) for index in range(stations)],
+        },
+        schema={
+            "station_name": pl.String,
+            "station_type_official": pl.String,
+            "lon": pl.Float64,
+            "lat": pl.Float64,
+        },
+    )
+    panel_rows: list[dict[str, object]] = []
+    for month_index in range(months):
+        month = date(2024, month_index + 1, 1)
+        for station_index, station_name in enumerate(station_names):
+            is_withheld = withheld == (station_name, month)
+            panel_rows.append(
+                {
+                    "station_name": station_name,
+                    "pollutant": "PM2.5",
+                    "month": month,
+                    "mean": None if is_withheld else float(10 + station_index + month_index),
+                    "meets_threshold": not is_withheld,
+                    "target_state": "withheld" if is_withheld else "observed",
+                }
+            )
+    return SurfaceInputs(
+        stations=station_frame,
+        panel=pl.DataFrame(
+            panel_rows,
+            schema={
+                "station_name": pl.String,
+                "pollutant": pl.String,
+                "month": pl.Date,
+                "mean": pl.Float64,
+                "meets_threshold": pl.Boolean,
+                "target_state": pl.String,
+            },
+        ),
+        input_files=(),
+        inventory_generation_sha256="synthetic",
+    )
+
+
+def distance_km(left: str, right: str, stations: pl.DataFrame) -> float:
+    """Return projected fixture distance for a named pair."""
+    points = gpd.GeoDataFrame(
+        stations.to_pandas(),
+        geometry=gpd.points_from_xy(stations["lon"].to_list(), stations["lat"].to_list()),
+        crs="EPSG:4326",
+    ).to_crs(epsg=3826)
+    coordinates = {
+        str(row.station_name): (float(row.geometry.x), float(row.geometry.y))
+        for row in points.itertuples()
+    }
+    left_x, left_y = coordinates[left]
+    right_x, right_y = coordinates[right]
+    return math.hypot(left_x - right_x, left_y - right_y) / 1000
 
 
 def write_surface_fixture(root: Path) -> Path:
@@ -261,3 +337,91 @@ def test_invalid_non_finite_monthly_means_are_not_observed(tmp_path: Path) -> No
         (pl.col("station_name") == "一般甲") & (pl.col("month") == date(2024, 2, 1))
     ).item(0, "target_state")
     assert state == "invalid_non_finite"
+
+
+def test_station_support_uses_projected_coordinates_and_counts_buffer_neighbors() -> None:
+    inputs = synthetic_surface_inputs(stations=12, months=2)
+
+    support = build_station_support(inputs.stations, _config(spatial_folds=3))
+    first = support.filter(pl.col("station_name") == "s00").row(0, named=True)
+
+    assert support["station_name"].to_list() == [f"s{index:02d}" for index in range(12)]
+    assert first["x_m"] > 100_000
+    assert first["y_m"] > 2_000_000
+    assert first["nearest_station"] == "s01"
+    assert 0 < first["nearest_station_km"] < 20
+    assert first["stations_within_20km"] == 3
+    assert first["stations_within_40km"] == 6
+
+
+def test_spatial_clusters_are_deterministic_complete_and_canonically_ordered() -> None:
+    inputs = synthetic_surface_inputs(stations=12, months=2)
+
+    first = assign_spatial_clusters(inputs.stations, _config(spatial_folds=3))
+    second = assign_spatial_clusters(inputs.stations, _config(spatial_folds=3))
+    centroids = (
+        first.group_by("spatial_cluster")
+        .agg(pl.col("x_m").mean().alias("x_m"), pl.col("y_m").mean().alias("y_m"))
+        .sort("spatial_cluster")
+    )
+
+    assert first.equals(second)
+    assert first["station_name"].sort().to_list() == [f"s{index:02d}" for index in range(12)]
+    assert first["station_name"].n_unique() == 12
+    assert first["spatial_cluster"].unique().sort().to_list() == [0, 1, 2]
+    assert list(zip(centroids["x_m"], centroids["y_m"], strict=True)) == sorted(
+        zip(centroids["x_m"], centroids["y_m"], strict=True)
+    )
+
+
+def test_buffer_fold_excludes_target_and_every_station_inside_radius() -> None:
+    inputs = synthetic_surface_inputs(stations=12, months=2)
+    ledger = build_fold_ledger(inputs, _config(spatial_folds=3))
+    fold = ledger.filter(
+        (pl.col("evaluation") == "buffer_20km")
+        & (pl.col("target_station") == "s00")
+        & (pl.col("month") == date(2024, 1, 1))
+    ).row(0, named=True)
+
+    assert "s00" not in fold["train_stations"]
+    assert all(distance_km("s00", name, inputs.stations) > 20 for name in fold["train_stations"])
+    assert fold["target_state"] == "observed"
+
+
+def test_withheld_target_stays_in_fold_ledger_but_is_never_scored() -> None:
+    inputs = synthetic_surface_inputs(stations=12, months=2, withheld=("s00", date(2024, 1, 1)))
+    ledger = build_fold_ledger(inputs, _config(spatial_folds=3))
+    row = ledger.filter((pl.col("target_station") == "s00") & (pl.col("month") == date(2024, 1, 1)))
+
+    assert row.height == 3
+    assert set(row["fold_state"]) == {"unscored_target_withheld"}
+
+
+def test_cluster_fold_keeps_a_station_in_one_cluster_across_months() -> None:
+    inputs = synthetic_surface_inputs(stations=12, months=2)
+
+    ledger = build_fold_ledger(inputs, _config(spatial_folds=3))
+    cluster_rows = ledger.filter(pl.col("evaluation") == "spatial_cluster")
+
+    assert (
+        cluster_rows.group_by("target_station")
+        .agg(pl.col("target_cluster").n_unique())
+        .select(pl.col("target_cluster").max())
+        .item()
+        == 1
+    )
+
+
+def test_insufficient_training_stations_stays_as_an_unscored_fold() -> None:
+    inputs = synthetic_surface_inputs(stations=12, months=2)
+
+    ledger = build_fold_ledger(inputs, _config(spatial_folds=3))
+    fold = ledger.filter(
+        (pl.col("evaluation") == "buffer_40km")
+        & (pl.col("target_station") == "s00")
+        & (pl.col("month") == date(2024, 1, 1))
+    ).row(0, named=True)
+
+    assert fold["n_train"] < 8
+    assert fold["fold_state"] == "unscored_insufficient_train"
+    assert fold["fold_reason"] is not None
