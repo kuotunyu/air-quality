@@ -471,7 +471,9 @@ const pickCss = pick
             </li>
           ))}
           {/*
-            Only on screen once something is off.
+            Only on screen once something is off after enhancement attaches.
+            Without JavaScript it stays rendered so native reset never removes
+            the focused control from the keyboard path.
 
             A permanent 「全部顯示」 in a row where everything is already shown
             is a control whose only honest state is "nothing to do", and it
@@ -927,6 +929,9 @@ const pickCss = pick
         if (hadFocus) switches[0].focus();
       });
     });
+
+    /* Only hide an idle reset once the focus hand-off above is available. */
+    form.classList.add("is-enhanced");
   }
 </script>
 
@@ -1647,13 +1652,17 @@ const pickCss = pick
     outline-offset: 3px;
   }
 
-  /* On screen only when it has something to undo — see the note beside the
-     markup. `display: flex` and not `list-item`, matching `.key-pick`. */
+  /* The no-JavaScript baseline keeps native reset in the keyboard path.
+     `display: flex` and not `list-item`, matching `.key-pick`. */
   .key-reset-item {
+    display: flex;
+  }
+
+  .key-form.is-enhanced .key-reset-item {
     display: none;
   }
 
-  .key-form:has(.key-switch:not(:checked)) .key-reset-item {
+  .key-form.is-enhanced:has(.key-switch:not(:checked)) .key-reset-item {
     display: flex;
   }
 

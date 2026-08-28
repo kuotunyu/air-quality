@@ -232,6 +232,87 @@ const CHART_TEXT_CONTRACTS = [
   },
 ];
 const CHART_STROKE_EPSILON = 0.01;
+
+function trendPickerInteractionProblems(state) {
+  if (!state) return ["air-zone picker state is missing"];
+  const problems = [];
+  const dimmed = state.filtered?.opacities?.slice(0, 2) ?? [];
+  const retained = state.filtered?.opacities?.slice(2) ?? [];
+  if (state.filtered?.checked !== 6) problems.push("filtered checkbox count changed");
+  if (dimmed.length !== 2 || dimmed.some((opacity) => Math.abs(opacity - 0.16) > 0.01)) {
+    problems.push("unchecked paths are not both dimmed");
+  }
+  if (retained.length !== 6 || retained.some((opacity) => Math.abs(opacity - 1) > 0.01)) {
+    problems.push("checked paths are not all fully visible");
+  }
+  if (state.filtered?.rows !== 6) problems.push("filtered readout row count changed");
+  if (!state.filtered?.resetVisible) problems.push("filtered reset control is hidden");
+  if (!state.filtered?.announcement?.includes("顯示 6 條")) {
+    problems.push("filtered announcement changed");
+  }
+  if (state.restored?.checked !== 8) problems.push("reset checkbox count changed");
+  if (state.restored?.rows !== 8) problems.push("reset readout row count changed");
+  if (state.restored?.resetVisible) problems.push("enhanced idle reset control remains visible");
+  if (!state.restored?.focusReturned) problems.push("enhanced reset focus did not return");
+  return problems;
+}
+
+function trendNoScriptPickerProblems(state) {
+  if (!state) return ["no-JavaScript air-zone picker state is missing"];
+  const problems = [];
+  const opacities = state.filtered?.opacities ?? [];
+  if (!state.resetVisibleBeforeFiltering) problems.push("native reset is hidden before filtering");
+  if (state.filtered?.checked !== 6) problems.push("native picker did not uncheck two series");
+  if (
+    opacities.length !== 8 ||
+    opacities.slice(0, 2).some((opacity) => Math.abs(opacity - 0.16) > 0.01) ||
+    opacities.slice(2).some((opacity) => Math.abs(opacity - 1) > 0.01)
+  ) {
+    problems.push("native picker did not dim only the two unchecked paths");
+  }
+  if (state.restored?.checked !== 8) problems.push("native reset did not restore all series");
+  if (!state.restored?.resetVisible) problems.push("native reset disappeared after reset");
+  if (!state.restored?.focusStayedOnReset) problems.push("native reset lost keyboard focus");
+  return problems;
+}
+
+function trendFilteredExportProblems(state) {
+  if (!state) return ["filtered PNG state is missing"];
+  const problems = [];
+  const checked = state.checkedAttributes ?? [];
+  const opacities = state.pathOpacities ?? [];
+  if (
+    checked.length !== 8 || checked.slice(0, 2).some(Boolean) ||
+    checked.slice(2).some((value) => !value)
+  ) {
+    problems.push("serialized checkbox state does not preserve the six-series filter");
+  }
+  if (
+    opacities.length !== 8 ||
+    opacities.slice(0, 2).some((opacity) => Math.abs(opacity - 0.16) > 0.01) ||
+    opacities.slice(2).some((opacity) => Math.abs(opacity - 1) > 0.01)
+  ) {
+    problems.push("serialized path state does not preserve the six-series filter");
+  }
+  return problems;
+}
+
+function trendZoomFitProblems(state) {
+  if (!state) return ["enlarged trend figure state is missing"];
+  const problems = [];
+  if (
+    !Number.isFinite(state.stageClientHeight) ||
+    !Number.isFinite(state.stageScrollHeight) ||
+    state.stageClientHeight <= 0 ||
+    state.stageScrollHeight > state.stageClientHeight + 1
+  ) {
+    problems.push("enlarged trend figure overflows the dialog stage");
+  }
+  if (!Number.isFinite(state.plotHeight) || state.plotHeight + CSS_PX_SERIALIZATION_EPSILON < 320) {
+    problems.push("enlarged trend figure plot fell below its readability floor");
+  }
+  return problems;
+}
 const AXIS_LABEL_CLEARANCE_PX = 4;
 const EXPECTED_DESKTOP_COUNTY_LABELS = 15;
 const MIN_LABELLED_MAP_WIDTH_PX = 329;
@@ -9247,6 +9328,71 @@ async function main() {
     for (const problem of textZoomRouteProblems) console.log(`  FAIL: ${problem}`);
     return 1;
   }
+  console.log("site-quality stage: trend interaction detector mutations");
+  const completePickerState = {
+    filtered: {
+      checked: 6,
+      opacities: [0.16, 0.16, 1, 1, 1, 1, 1, 1],
+      rows: 6,
+      resetVisible: true,
+      announcement: "顯示 6 條",
+    },
+    restored: {
+      checked: 8,
+      rows: 8,
+      resetVisible: false,
+      focusReturned: true,
+    },
+  };
+  if (trendPickerInteractionProblems(completePickerState).length) {
+    throw new Error("the trend picker predicate rejected the complete interaction");
+  }
+  const allDimmedPickerState = structuredClone(completePickerState);
+  allDimmedPickerState.filtered.opacities.fill(0.16);
+  if (
+    !trendPickerInteractionProblems(allDimmedPickerState).some((problem) =>
+      problem.includes("checked paths are not all fully visible"))
+  ) {
+    throw new Error("the trend picker predicate accepts all eight paths dimming together");
+  }
+  const completeNoScriptPicker = {
+    resetVisibleBeforeFiltering: true,
+    filtered: { checked: 6, opacities: [0.16, 0.16, 1, 1, 1, 1, 1, 1] },
+    restored: { checked: 8, resetVisible: true, focusStayedOnReset: true },
+  };
+  if (trendNoScriptPickerProblems(completeNoScriptPicker).length) {
+    throw new Error("the no-JavaScript trend picker predicate rejected the complete interaction");
+  }
+  const inertNoScriptPicker = structuredClone(completeNoScriptPicker);
+  inertNoScriptPicker.filtered.checked = 8;
+  inertNoScriptPicker.filtered.opacities.fill(1);
+  if (trendNoScriptPickerProblems(inertNoScriptPicker).length !== 2) {
+    throw new Error("the no-JavaScript trend picker predicate accepts inert label activation");
+  }
+  const completeFilteredExport = {
+    checkedAttributes: [false, false, true, true, true, true, true, true],
+    pathOpacities: [0.16, 0.16, 1, 1, 1, 1, 1, 1],
+  };
+  if (trendFilteredExportProblems(completeFilteredExport).length) {
+    throw new Error("the filtered PNG predicate rejected the complete export");
+  }
+  const unsynchronisedExport = structuredClone(completeFilteredExport);
+  unsynchronisedExport.checkedAttributes.fill(true);
+  unsynchronisedExport.pathOpacities.fill(1);
+  if (trendFilteredExportProblems(unsynchronisedExport).length !== 2) {
+    throw new Error("the filtered PNG predicate accepts unsynchronised checkbox or path state");
+  }
+  const completeZoomFit = { stageClientHeight: 682, stageScrollHeight: 682, plotHeight: 320 };
+  if (trendZoomFitProblems(completeZoomFit).length) {
+    throw new Error("the trend zoom-fit predicate rejected the complete dialog");
+  }
+  const overflowingZoom = { ...completeZoomFit, stageScrollHeight: 684 };
+  if (
+    !trendZoomFitProblems(overflowingZoom).some((problem) =>
+      problem.includes("overflows the dialog stage"))
+  ) {
+    throw new Error("the trend zoom-fit predicate accepts dialog overflow");
+  }
   if (!existsSync(DIST)) {
     console.error(`${DIST} not found — run \`npm --prefix web run build\` first`);
     return 1;
@@ -13400,6 +13546,50 @@ async function main() {
       ) {
         failures.push("/trend/: weather-normalised comparison is described as direct emissions");
       }
+      const pickerState = await evaluate(`(async () => {
+        const chart = [...document.querySelectorAll("main .evidence-figure")][2];
+        const switches = [...(chart?.querySelectorAll("[data-series-switch]") ?? [])];
+        const pills = [...(chart?.querySelectorAll(".key-pill") ?? [])];
+        const paths = [...(chart?.querySelectorAll("path.plot-line") ?? [])];
+        const reset = chart?.querySelector(".key-reset") ?? null;
+        const visible = (element) => {
+          if (!element) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" &&
+            rect.width > 0 && rect.height > 0;
+        };
+        if (
+          !chart || switches.length !== 8 || pills.length !== 8 ||
+          paths.length !== 8 || !reset
+        ) return null;
+        const resetVisibleBeforeFiltering = visible(reset);
+        pills[0].click();
+        pills[1].click();
+        await new Promise((resolve) => setTimeout(resolve, 180));
+        const filtered = {
+          checked: switches.filter((input) => input.checked).length,
+          opacities: paths.map((path) => Number(getComputedStyle(path).opacity)),
+        };
+        reset.focus();
+        reset.click();
+        return {
+          resetVisibleBeforeFiltering,
+          filtered,
+          restored: {
+            checked: switches.filter((input) => input.checked).length,
+            resetVisible: visible(reset),
+            focusStayedOnReset: document.activeElement === reset,
+          },
+        };
+      })()`);
+      const pickerProblems = trendNoScriptPickerProblems(pickerState);
+      if (pickerProblems.length) {
+        failures.push(
+          `/trend/: no-JavaScript air-zone picker did not round-trip ` +
+            `${pickerProblems.join(", ")} ${JSON.stringify(pickerState)}`,
+        );
+      }
     }
     if (route === "/sources/") {
       for (const problem of sourcesClaimBoundaryProblems(noScript?.mainText ?? "")) {
@@ -15247,7 +15437,7 @@ async function main() {
             plot.focus();
             const filtered = {
               checked: switches.filter((input) => input.checked).length,
-              opacities: paths.slice(0, 2).map((path) => Number(getComputedStyle(path).opacity)),
+              opacities: paths.map((path) => Number(getComputedStyle(path).opacity)),
               rows: chart.querySelectorAll(".readout-row").length,
               resetVisible: visible(reset),
               announcement: chart.querySelector("[data-pick-say]")?.textContent ?? "",
@@ -15264,20 +15454,11 @@ async function main() {
             };
             return { filtered, restored };
           })()`);
-          if (
-            pickerState?.filtered?.checked !== 6 ||
-            pickerState.filtered.opacities.some((opacity) => Math.abs(opacity - 0.16) > 0.01) ||
-            pickerState.filtered.rows !== 6 ||
-            !pickerState.filtered.resetVisible ||
-            !pickerState.filtered.announcement.includes("顯示 6 條") ||
-            pickerState.restored.checked !== 8 ||
-            pickerState.restored.rows !== 8 ||
-            pickerState.restored.resetVisible ||
-            !pickerState.restored.focusReturned
-          ) {
+          const pickerProblems = trendPickerInteractionProblems(pickerState);
+          if (pickerProblems.length) {
             failures.push(
               `/trend/ @375 light: air-zone picker and readout did not round-trip ` +
-                JSON.stringify(pickerState),
+                `${pickerProblems.join(", ")} ${JSON.stringify(pickerState)}`,
             );
           }
           const zoomTools = await evaluate(`(() => {
@@ -15325,11 +15506,16 @@ async function main() {
               `/trend/ @375 light: enlarged figure tools changed ${JSON.stringify(zoomTools)}`,
             );
           }
-          const exported = await evaluate(`(() => {
-            const root = document.querySelector("main figure:has(.plot[data-readout])");
+          const exported = await evaluate(`(async () => {
+            const shell = [...document.querySelectorAll("main .evidence-figure")][2];
+            const root = shell?.matches("figure") ? shell : shell?.querySelector("figure");
             const button = [...(root?.querySelectorAll(".fig-tool") ?? [])]
               .find((item) => item.textContent?.trim() === "下載");
-            if (!root || !button) return null;
+            const pills = [...(root?.querySelectorAll(".key-pill") ?? [])];
+            if (!root || !button || pills.length !== 8) return null;
+            pills[0].click();
+            pills[1].click();
+            await new Promise((resolve) => setTimeout(resolve, 180));
             const outerBlockSize = (element) => {
               const style = getComputedStyle(element);
               return element.getBoundingClientRect().height +
@@ -15347,6 +15533,7 @@ async function main() {
             const originalSerialize = XMLSerializer.prototype.serializeToString;
             const originalEncode = window.encodeURIComponent;
             let transient = null;
+            let filteredState = null;
             let serializedSvg = null;
             XMLSerializer.prototype.serializeToString = function(node) {
               transient = {
@@ -15358,6 +15545,19 @@ async function main() {
                 panel: node.querySelectorAll?.(".readout-panel").length ?? -1,
                 say: node.querySelectorAll?.(".readout-say").length ?? -1,
               };
+              const sandbox = document.createElement("div");
+              sandbox.style.cssText =
+                "position:fixed;left:-100000px;top:0;width:" +
+                root.getBoundingClientRect().width + "px";
+              sandbox.append(node.cloneNode(true));
+              document.body.append(sandbox);
+              filteredState = {
+                checkedAttributes: [...sandbox.querySelectorAll("[data-series-switch]")]
+                  .map((input) => input.hasAttribute("checked")),
+                pathOpacities: [...sandbox.querySelectorAll("path.plot-line")]
+                  .map((path) => Number(getComputedStyle(path).opacity)),
+              };
+              sandbox.remove();
               return originalSerialize.call(this, node);
             };
             window.encodeURIComponent = function(value) {
@@ -15378,6 +15578,7 @@ async function main() {
             );
             return {
               transient,
+              filteredState,
               dockShed,
               expectedInner,
               actualInner,
@@ -15388,6 +15589,12 @@ async function main() {
           if (!exported?.transient || Object.values(exported.transient).some((count) => count !== 0)) {
             failures.push(
               `/trend/ @375 light: PNG export retained transient nodes ${JSON.stringify(exported?.transient)}`,
+            );
+          }
+          for (const problem of trendFilteredExportProblems(exported?.filteredState)) {
+            failures.push(
+              `/trend/ @375 light: filtered PNG state changed: ${problem} ` +
+                JSON.stringify(exported?.filteredState),
             );
           }
           if (
@@ -15404,6 +15611,60 @@ async function main() {
           }
         }
       }
+    }
+  }
+
+  console.log("site-quality stage: Figure 1.1 desktop zoom fit");
+  await restartBrowser();
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1600,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  await send("Page.navigate", { url: `${origin}/trend/` });
+  if (!(await settled(evaluate, 8000, "/trend/ @1600x900 Figure 1.1 zoom fit"))) {
+    failures.push("/trend/ @1600x900 light: Figure 1.1 zoom fit never finished styling");
+  } else {
+    const zoomFit = await evaluate(`(() => {
+      const shell = [...document.querySelectorAll("main .evidence-figure")][0];
+      const root = shell?.matches("figure") ? shell : shell?.querySelector("figure");
+      const enlarge = [...(root?.querySelectorAll(".fig-tool") ?? [])]
+        .find((item) => item.textContent?.trim() === "放大");
+      if (!root || !enlarge) return null;
+      enlarge.click();
+      const dialog = document.querySelector(".fig-zoom");
+      const stage = dialog?.querySelector(".fig-zoom-body") ?? null;
+      const plotArea = dialog?.querySelector(".plot-area") ?? null;
+      const block = (element) => {
+        if (!element) return 0;
+        const style = getComputedStyle(element);
+        return element.getBoundingClientRect().height +
+          parseFloat(style.marginTop || "0") + parseFloat(style.marginBottom || "0");
+      };
+      const state = {
+        open: Boolean(dialog?.open),
+        stageClientHeight: stage?.clientHeight ?? 0,
+        stageScrollHeight: stage?.scrollHeight ?? 0,
+        plotHeight: plotArea?.getBoundingClientRect().height ?? 0,
+        rootHeight: root.getBoundingClientRect().height,
+        keyHeight: block(root.querySelector(".key-form")),
+        plotCardHeight: block(root.querySelector(".plot-card")),
+        readoutHeight: block(root.querySelector(".readout-dock")),
+        captionHeight: block(root.querySelector("figcaption")),
+      };
+      dialog?.querySelector(".fig-shut")?.click();
+      return state;
+    })()`);
+    if (!zoomFit?.open) {
+      failures.push(`/trend/ @1600x900 light: Figure 1.1 zoom did not open ${JSON.stringify(zoomFit)}`);
+    }
+    for (const problem of trendZoomFitProblems(zoomFit)) {
+      failures.push(`/trend/ @1600x900 light: ${problem} ${JSON.stringify(zoomFit)}`);
     }
   }
 
