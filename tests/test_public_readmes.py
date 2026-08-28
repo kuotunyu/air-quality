@@ -36,6 +36,16 @@ def test_both_readmes_distinguish_delivered_era5_robustness_from_deferred_calibr
     assert "Deferred; absent from current results" not in en
 
 
+def test_both_readmes_keep_population_weighted_exposure_outside_the_release_boundary() -> None:
+    zh, en = _readmes()
+
+    assert "HYSPLIT／1 km 場／人口加權暴露延後（repo 無人口網格）" in zh
+    assert (
+        "HYSPLIT, a 1 km field, and population-weighted exposure deferred "
+        "(no population grid in repo)"
+    ) in en
+
+
 def test_public_docs_record_measured_era5_value_without_reframing_the_published_m4() -> None:
     zh, en = _readmes()
     sources = (REPO_ROOT / "docs" / "data-sources.md").read_text(encoding="utf-8")
