@@ -4,23 +4,31 @@ from __future__ import annotations
 
 import copy
 import json
+import math
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import polars as pl
 import pytest
 
+import twair.analysis.spatial_covariate_readiness as readiness
 from twair.analysis.spatial_covariate_readiness import (
+    COVARIATE_MODEL_FEATURES,
     CovariateReadinessConfig,
     FrozenInputs,
     InputFile,
     aggregate_era5_monthly,
     assemble_covariates,
+    build_covariate_fold_ledger,
+    fit_covariate_model,
     load_frozen_inputs,
     load_spatial_covariate_readiness_config,
     pivot_satellite_monthly,
+    predict_readiness_methods,
 )
 from twair.analysis.spatial_surface_baseline import SPATIAL_BASELINE_TABLE_SCHEMAS
 from twair.config import ConfigError
@@ -381,6 +389,534 @@ def _config() -> CovariateReadinessConfig:
     analysis["baseline_generation_sha256"] = BASELINE_GENERATION
     analysis["station_inventory_generation_sha256"] = INVENTORY_GENERATION
     return load_spatial_covariate_readiness_config(payload)
+
+
+def _model_fixture() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    station_names = tuple(f"s{index}" for index in range(6))
+    x_by_station = {
+        "s0": 0.0,
+        "s1": 10_000.0,
+        "s2": 20_000.0,
+        "s3": 30_000.0,
+        "s4": 50_000.0,
+        "s5": 80_000.0,
+    }
+    cluster_by_station = {station: index // 2 for index, station in enumerate(station_names)}
+    months = [date(year, month, 1) for year in (2024, 2025) for month in range(1, 13)]
+    covariate_rows: list[dict[str, object]] = []
+    for station_index, station_name in enumerate(station_names):
+        for month in months:
+            withheld = station_name == "s5" and month == date(2025, 5, 1)
+            covariate_rows.append(
+                {
+                    "station_name": station_name,
+                    "month": month,
+                    "target_state": "withheld" if withheld else "observed",
+                    "PM2.5": None
+                    if withheld
+                    else float(1000 * (month.year - 2024) + 100 * month.month + station_index),
+                    "lon": 120.0 + station_index * 0.1,
+                    "lat": 23.0,
+                    "x_m": x_by_station[station_name],
+                    "y_m": 0.0,
+                    "month_sin": math.sin(2.0 * math.pi * month.month / 12.0),
+                    "month_cos": math.cos(2.0 * math.pi * month.month / 12.0),
+                    "era5_blh_mean_m": 100.0 + month.month,
+                    "era5_u10_mean_m_s": 3.0,
+                    "era5_v10_mean_m_s": 4.0,
+                    "era5_wind_speed_mean_m_s": 5.0,
+                    "era5_t2m_mean_k": 290.0 + month.month,
+                    "era5_dewpoint_depression_mean_k": 2.0,
+                    "era5_sp_mean_pa": 100_000.0,
+                    "maiac_aod": None
+                    if station_name == "s1" and month == date(2024, 1, 1)
+                    else 0.1 + station_index / 100,
+                    "s5p_no2": 0.2 + station_index / 100,
+                    "s5p_so2": 0.3 + station_index / 100,
+                }
+            )
+    covariates = pl.DataFrame(covariate_rows).with_columns(
+        pl.col("month").cast(pl.Date),
+        pl.col("PM2.5").cast(pl.Float64),
+        pl.col("maiac_aod").cast(pl.Float64),
+    )
+    support = pl.DataFrame(
+        {
+            "station_name": station_names,
+            "nearest_station": ("s1", "s0", "s1", "s2", "s3", "s4"),
+            "nearest_station_km": (10.0, 10.0, 10.0, 10.0, 20.0, 30.0),
+            "stations_within_20km": (2, 3, 4, 3, 1, 0),
+            "stations_within_40km": (3, 4, 5, 5, 4, 2),
+            "x_m": tuple(x_by_station[name] for name in station_names),
+            "y_m": (0.0,) * 6,
+        },
+        schema=SPATIAL_BASELINE_TABLE_SCHEMAS["support"],
+    )
+    observed_by_month = {
+        month: [name for name in station_names if not (name == "s5" and month == date(2025, 5, 1))]
+        for month in months
+    }
+    fold_rows: list[dict[str, object]] = []
+    for row in covariates.iter_rows(named=True):
+        target_station = str(row["station_name"])
+        month = row["month"]
+        target_x = x_by_station[target_station]
+        target_cluster = cluster_by_station[target_station]
+        for evaluation in ("buffer_20km", "buffer_40km", "spatial_cluster"):
+            if evaluation == "spatial_cluster":
+                allowed = [
+                    name
+                    for name in observed_by_month[month]
+                    if cluster_by_station[name] != target_cluster
+                ]
+            else:
+                radius_m = 20_000.0 if evaluation == "buffer_20km" else 40_000.0
+                allowed = [
+                    name
+                    for name in observed_by_month[month]
+                    if name != target_station and abs(x_by_station[name] - target_x) > radius_m
+                ]
+            target_state = str(row["target_state"])
+            fold_rows.append(
+                {
+                    "evaluation": evaluation,
+                    "fold_id": f"{evaluation}:{target_station}",
+                    "year": month.year,
+                    "month": month,
+                    "target_station": target_station,
+                    "target_cluster": target_cluster,
+                    "target_state": target_state,
+                    "observed": row["PM2.5"],
+                    "train_stations": sorted(allowed),
+                    "n_train": len(allowed),
+                    "fold_state": (
+                        "eligible" if target_state == "observed" else "unscored_target_withheld"
+                    ),
+                    "fold_reason": (
+                        None if target_state == "observed" else "target_state=withheld"
+                    ),
+                }
+            )
+    folds = pl.DataFrame(fold_rows, schema=SPATIAL_BASELINE_TABLE_SCHEMAS["folds"])
+    return covariates.sort("station_name", "month"), support, folds
+
+
+def _model_config(*, minimum_train_stations: int = 1) -> CovariateReadinessConfig:
+    return replace(_config(), minimum_train_stations=minimum_train_stations)
+
+
+def test_covariate_fold_ledger_preserves_same_year_and_forward_target_keys() -> None:
+    covariates, support, baseline_folds = _model_fixture()
+
+    ledger = build_covariate_fold_ledger(covariates, support, baseline_folds, _model_config())
+
+    target_key = [
+        "evaluation",
+        "training_period",
+        "train_year",
+        "target_year",
+        "month",
+        "target_station",
+    ]
+    assert ledger.height == (3 * 6 * 24) + (3 * 6 * 12)
+    assert ledger.select(target_key).n_unique() == ledger.height
+    assert set(ledger["training_period"]) == {"same_year", "2024_to_2025"}
+    same_year = ledger.filter(pl.col("training_period") == "same_year")
+    assert same_year.filter(pl.col("train_year") != pl.col("target_year")).is_empty()
+    assert (
+        same_year.group_by("evaluation", "target_year")
+        .agg(pl.struct("month", "target_station").n_unique().alias("keys"))["keys"]
+        .to_list()
+        == [72] * 6
+    )
+    forward = ledger.filter(pl.col("training_period") == "2024_to_2025")
+    assert set(forward["train_year"]) == {2024}
+    assert set(forward["target_year"]) == {2025}
+    assert forward.group_by("evaluation").len()["len"].to_list() == [72, 72, 72]
+    withheld = ledger.filter(
+        (pl.col("target_station") == "s5") & (pl.col("month") == date(2025, 5, 1))
+    )
+    assert withheld.height == 6
+    assert set(withheld["fold_state"]) == {"unscored_target_withheld"}
+
+
+def test_held_location_ledger_excludes_every_forbidden_station_for_the_full_year() -> None:
+    covariates, support, baseline_folds = _model_fixture()
+
+    ledger = build_covariate_fold_ledger(covariates, support, baseline_folds, _model_config())
+
+    coordinates = dict(support.select("station_name", "x_m").iter_rows())
+    clusters = (
+        baseline_folds.select("target_station", "target_cluster")
+        .unique()
+        .rows_by_key("target_station", unique=True)
+    )
+    for row in ledger.iter_rows(named=True):
+        target = str(row["target_station"])
+        train_stations = [str(name) for name in row["train_stations"]]
+        assert train_stations == sorted(train_stations)
+        assert target not in train_stations
+        if row["evaluation"].startswith("buffer_"):
+            radius_km = 20.0 if row["evaluation"] == "buffer_20km" else 40.0
+            assert all(
+                abs(coordinates[name] - coordinates[target]) / 1000 > radius_km
+                for name in train_stations
+            )
+        else:
+            assert all(clusters[name][0] != clusters[target][0] for name in train_stations)
+        model_rows = covariates.filter(
+            (pl.col("month").dt.year() == row["train_year"])
+            & pl.col("station_name").is_in(train_stations)
+            & (pl.col("target_state") == "observed")
+        )
+        source_month = date(row["train_year"], row["month"].month, 1)
+        same_month_rows = model_rows.filter(pl.col("month") == source_month)
+        assert row["n_model_train_rows"] == model_rows.height
+        assert row["n_same_month_train_rows"] == same_month_rows.height
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("duplicate_target", "duplicate"),
+        ("wrong_coordinate", "coordinate"),
+        ("null_coordinate", "coordinate"),
+        ("cluster_membership", "cluster"),
+        ("forbidden_train_station", "train station"),
+    ],
+)
+def test_covariate_fold_ledger_rejects_mutated_authoritative_inputs(
+    mutation: str, message: str
+) -> None:
+    covariates, support, baseline_folds = _model_fixture()
+    if mutation == "duplicate_target":
+        covariates = pl.concat([covariates, covariates.head(1)])
+    elif mutation == "wrong_coordinate":
+        covariates = covariates.with_columns(
+            pl.when(pl.col("station_name") == "s0")
+            .then(pl.col("x_m") + 1.0)
+            .otherwise(pl.col("x_m"))
+            .alias("x_m")
+        )
+    elif mutation == "null_coordinate":
+        covariates = covariates.with_columns(
+            pl.when(pl.col("station_name") == "s0")
+            .then(pl.lit(None, dtype=pl.Float64))
+            .otherwise(pl.col("x_m"))
+            .alias("x_m")
+        )
+    elif mutation == "cluster_membership":
+        changed = (
+            (pl.col("evaluation") == "spatial_cluster")
+            & (pl.col("target_station") == "s0")
+            & (pl.col("month") == date(2024, 1, 1))
+        )
+        baseline_folds = baseline_folds.with_columns(
+            pl.when(changed)
+            .then(pl.col("target_cluster") + 1)
+            .otherwise(pl.col("target_cluster"))
+            .alias("target_cluster")
+        )
+    else:
+        assert mutation == "forbidden_train_station"
+        changed = (
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("target_station") == "s0")
+            & (pl.col("month") == date(2024, 1, 1))
+        )
+        baseline_folds = baseline_folds.with_columns(
+            pl.when(changed)
+            .then(pl.lit(["s0", "s3", "s4", "s5"]))
+            .otherwise(pl.col("train_stations"))
+            .alias("train_stations"),
+            pl.when(changed).then(pl.lit(4)).otherwise(pl.col("n_train")).alias("n_train"),
+        )
+
+    with pytest.raises(RuntimeError, match=message):
+        build_covariate_fold_ledger(covariates, support, baseline_folds, _model_config())
+
+
+def test_fit_covariate_model_uses_only_fixed_features_and_preserves_satellite_nulls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    covariates, _, _ = _model_fixture()
+    train = covariates.filter(
+        (pl.col("month").dt.year() == 2024) & (pl.col("target_state") == "observed")
+    ).with_columns(
+        pl.lit(999.0).alias("PM10"),
+        pl.lit("forbidden-fold-state").alias("fold_state"),
+    )
+    target = train.filter((pl.col("station_name") == "s0") & (pl.col("month") == date(2024, 2, 1)))
+    captured: dict[str, Any] = {}
+
+    class RecordingRegressor:
+        def __init__(self, **parameters: object) -> None:
+            captured["parameters"] = parameters
+
+        def fit(self, features: np.ndarray, truth: np.ndarray) -> RecordingRegressor:
+            captured["fit_features"] = features
+            captured["truth"] = truth
+            return self
+
+        def predict(self, features: np.ndarray) -> np.ndarray:
+            captured["predict_features"] = features
+            return np.zeros(features.shape[0], dtype=float)
+
+    monkeypatch.setattr(
+        readiness,
+        "_lgbm_regressor",
+        lambda **parameters: RecordingRegressor(**parameters),
+    )
+
+    predicted = fit_covariate_model(train, target, _model_config())
+
+    assert COVARIATE_MODEL_FEATURES == (
+        "x_m",
+        "y_m",
+        "month_sin",
+        "month_cos",
+        "era5_blh_mean_m",
+        "era5_u10_mean_m_s",
+        "era5_v10_mean_m_s",
+        "era5_wind_speed_mean_m_s",
+        "era5_t2m_mean_k",
+        "era5_dewpoint_depression_mean_k",
+        "era5_sp_mean_pa",
+        "maiac_aod",
+        "s5p_no2",
+        "s5p_so2",
+    )
+    assert captured["fit_features"].shape == (72, 14)
+    assert captured["truth"].shape == (72,)
+    assert captured["predict_features"].shape == (1, 14)
+    assert np.isnan(captured["fit_features"]).sum() == 1
+    assert predicted.tolist() == [0.0]
+    assert captured["parameters"] == {
+        "n_estimators": 200,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "min_child_samples": 10,
+        "subsample": 0.8,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.8,
+        "n_jobs": 1,
+        "random_state": 20260811,
+        "verbose": -1,
+    }
+
+
+def test_real_covariate_model_accepts_a_null_satellite_feature() -> None:
+    covariates, _, _ = _model_fixture()
+    train = covariates.filter(
+        (pl.col("month").dt.year() == 2024) & (pl.col("target_state") == "observed")
+    )
+    target = (
+        covariates.filter((pl.col("station_name") == "s1") & (pl.col("month") == date(2025, 1, 1)))
+        .with_columns(pl.lit(None, dtype=pl.Float64).alias("maiac_aod"))
+        .head(1)
+    )
+
+    predicted = fit_covariate_model(train, target, _model_config())
+
+    assert predicted.shape == (1,)
+    assert np.isfinite(predicted).all()
+
+
+def _deterministic_model(
+    calls: list[tuple[pl.DataFrame, pl.DataFrame]],
+) -> Any:
+    def fit(
+        train: pl.DataFrame,
+        predict: pl.DataFrame,
+        _config: CovariateReadinessConfig,
+    ) -> np.ndarray:
+        calls.append((train, predict))
+        return np.asarray(predict["x_m"].to_numpy(), dtype=float) / 10_000.0
+
+    return fit
+
+
+def test_predictions_use_authorized_same_year_and_forward_month_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    covariates, support, baseline_folds = _model_fixture()
+    config = _model_config()
+    ledger = build_covariate_fold_ledger(covariates, support, baseline_folds, config).filter(
+        (pl.col("evaluation") == "buffer_20km")
+        & (pl.col("target_station") == "s0")
+        & pl.col("month").is_in([date(2025, 1, 1), date(2025, 5, 1)])
+    )
+    calls: list[tuple[pl.DataFrame, pl.DataFrame]] = []
+    monkeypatch.setattr(readiness, "fit_covariate_model", _deterministic_model(calls))
+
+    predictions = predict_readiness_methods(covariates, ledger, config)
+
+    assert predictions.height == ledger.height * 3
+    assert (
+        predictions.group_by(
+            "evaluation",
+            "training_period",
+            "train_year",
+            "target_year",
+            "month",
+            "target_station",
+        )
+        .agg(pl.col("method").sort())
+        .select("method")
+        .to_series()
+        .to_list()
+        == [["covariate_gbm", "covariate_gbm_idw2", "idw2"]] * ledger.height
+    )
+    assert len(calls) == 2
+    assert {tuple(train["month"].dt.year().unique()) for train, _ in calls} == {
+        (2024,),
+        (2025,),
+    }
+    assert all("s0" not in set(train["station_name"]) for train, _ in calls)
+    assert all(set(train["target_state"]) == {"observed"} for train, _ in calls)
+
+    same_year_january = predictions.filter(
+        (pl.col("training_period") == "same_year") & (pl.col("month") == date(2025, 1, 1))
+    )
+    forward_january = predictions.filter(
+        (pl.col("training_period") == "2024_to_2025") & (pl.col("month") == date(2025, 1, 1))
+    )
+    same_idw = same_year_january.filter(pl.col("method") == "idw2")["predicted"].item()
+    forward_idw = forward_january.filter(pl.col("method") == "idw2")["predicted"].item()
+    assert 1103.0 <= same_idw <= 1105.0
+    assert 103.0 <= forward_idw <= 105.0
+    same_residual = same_year_january.filter(pl.col("method") == "covariate_gbm_idw2")[
+        "predicted"
+    ].item()
+    forward_residual = forward_january.filter(pl.col("method") == "covariate_gbm_idw2")[
+        "predicted"
+    ].item()
+    assert 1097.0 <= same_residual <= 1100.0
+    assert 97.0 <= forward_residual <= 100.0
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_state"),
+    [
+        ("non_finite", "non_finite_prediction"),
+        ("wrong_length", "wrong_prediction_length"),
+        ("wrong_length_list", "wrong_prediction_length"),
+    ],
+)
+def test_model_output_failures_are_explicit_and_never_fall_back(
+    monkeypatch: pytest.MonkeyPatch, failure: str, expected_state: str
+) -> None:
+    covariates, support, baseline_folds = _model_fixture()
+    config = _model_config()
+    ledger = (
+        build_covariate_fold_ledger(covariates, support, baseline_folds, config)
+        .filter(
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("training_period") == "same_year")
+            & (pl.col("target_station") == "s0")
+            & (pl.col("month") == date(2024, 1, 1))
+        )
+        .head(1)
+    )
+
+    def broken_model(
+        _train: pl.DataFrame,
+        predict: pl.DataFrame,
+        _config: CovariateReadinessConfig,
+    ) -> np.ndarray:
+        if failure == "wrong_length_list":
+            return [0.0] * (predict.height - 1)  # type: ignore[return-value]
+        if failure == "wrong_length":
+            return np.zeros(predict.height - 1, dtype=float)
+        values = np.zeros(predict.height, dtype=float)
+        values[-1] = np.nan
+        return values
+
+    monkeypatch.setattr(readiness, "fit_covariate_model", broken_model)
+
+    predictions = predict_readiness_methods(covariates, ledger, config)
+
+    comparator = predictions.filter(pl.col("method") == "idw2").row(0, named=True)
+    assert comparator["prediction_state"] == "scored"
+    assert comparator["predicted"] is not None
+    candidates = predictions.filter(pl.col("method") != "idw2")
+    assert set(candidates["prediction_state"]) == {expected_state}
+    assert candidates["predicted"].null_count() == 2
+    assert candidates["error"].null_count() == 2
+
+
+def test_forward_prediction_rejects_ledger_metadata_that_would_admit_target_year_truth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    covariates, support, baseline_folds = _model_fixture()
+    config = _model_config()
+    ledger = build_covariate_fold_ledger(covariates, support, baseline_folds, config).filter(
+        (pl.col("evaluation") == "spatial_cluster")
+        & (pl.col("training_period") == "2024_to_2025")
+        & (pl.col("target_station") == "s5")
+    )
+    ledger = ledger.with_columns(pl.lit(2025).alias("train_year"))
+    calls: list[tuple[pl.DataFrame, pl.DataFrame]] = []
+    monkeypatch.setattr(readiness, "fit_covariate_model", _deterministic_model(calls))
+
+    with pytest.raises(RuntimeError, match="training period"):
+        predict_readiness_methods(covariates, ledger, config)
+
+    assert calls == []
+
+
+def test_too_few_same_month_residual_stations_fails_without_pure_model_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    covariates, support, baseline_folds = _model_fixture()
+    config = _model_config(minimum_train_stations=3)
+    ledger = (
+        build_covariate_fold_ledger(covariates, support, baseline_folds, config)
+        .filter(
+            (pl.col("evaluation") == "buffer_20km")
+            & (pl.col("training_period") == "same_year")
+            & (pl.col("target_station") == "s0")
+            & (pl.col("month") == date(2025, 5, 1))
+        )
+        .head(1)
+    )
+    calls: list[tuple[pl.DataFrame, pl.DataFrame]] = []
+    monkeypatch.setattr(readiness, "fit_covariate_model", _deterministic_model(calls))
+
+    predictions = predict_readiness_methods(covariates, ledger, config)
+
+    pure = predictions.filter(pl.col("method") == "covariate_gbm").row(0, named=True)
+    residual = predictions.filter(pl.col("method") == "covariate_gbm_idw2").row(0, named=True)
+    assert pure["prediction_state"] == "scored"
+    assert pure["predicted"] == 0.0
+    assert residual["prediction_state"] == "insufficient_residual_stations"
+    assert residual["predicted"] is None
+    assert residual["error"] is None
+
+
+def test_withheld_target_emits_null_prediction_and_error_for_every_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    covariates, support, baseline_folds = _model_fixture()
+    config = _model_config()
+    ledger = build_covariate_fold_ledger(covariates, support, baseline_folds, config).filter(
+        (pl.col("evaluation") == "spatial_cluster")
+        & (pl.col("target_station") == "s5")
+        & (pl.col("month") == date(2025, 5, 1))
+    )
+
+    def must_not_fit(*_args: object, **_kwargs: object) -> np.ndarray:
+        raise AssertionError("withheld target must not trigger model fitting")
+
+    monkeypatch.setattr(readiness, "fit_covariate_model", must_not_fit)
+
+    predictions = predict_readiness_methods(covariates, ledger, config)
+
+    assert predictions.height == 6
+    assert set(predictions["method"]) == set(config.methods)
+    assert set(predictions["prediction_state"]) == {"unscored_target_withheld"}
+    assert predictions["predicted"].null_count() == predictions.height
+    assert predictions["error"].null_count() == predictions.height
 
 
 def test_shipped_config_pins_the_reviewed_covariate_contract() -> None:

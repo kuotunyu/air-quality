@@ -11,31 +11,55 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import polars as pl
 
 from twair.analysis.era5_value import ModelConfig
 from twair.analysis.spatial_surface_baseline import (
     SPATIAL_BASELINE_TABLE_ORDER,
     SPATIAL_BASELINE_TABLE_SCHEMAS,
+    load_spatial_surface_baseline_config,
+    predict_target,
 )
 from twair.config import ConfigError, load_conf
 
 __all__ = [
+    "COVARIATE_MODEL_FEATURES",
     "COVARIATE_READINESS_EVALUATIONS",
     "COVARIATE_READINESS_METHODS",
+    "CovariatePrediction",
     "CovariateReadinessConfig",
     "FrozenInputs",
     "InputFile",
     "aggregate_era5_monthly",
     "assemble_covariates",
+    "build_covariate_fold_ledger",
+    "fit_covariate_model",
     "load_frozen_inputs",
     "load_spatial_covariate_readiness_config",
     "pivot_satellite_monthly",
+    "predict_readiness_methods",
 ]
 
 
 COVARIATE_READINESS_METHODS = ("idw2", "covariate_gbm", "covariate_gbm_idw2")
 COVARIATE_READINESS_EVALUATIONS = ("buffer_20km", "buffer_40km", "spatial_cluster")
+COVARIATE_MODEL_FEATURES = (
+    "x_m",
+    "y_m",
+    "month_sin",
+    "month_cos",
+    "era5_blh_mean_m",
+    "era5_u10_mean_m_s",
+    "era5_v10_mean_m_s",
+    "era5_wind_speed_mean_m_s",
+    "era5_t2m_mean_k",
+    "era5_dewpoint_depression_mean_k",
+    "era5_sp_mean_pa",
+    "maiac_aod",
+    "s5p_no2",
+    "s5p_so2",
+)
 _BASELINE_MEMBER_NAMES = ("stations.parquet", "panel.parquet", "support.parquet", "folds.parquet")
 _REVIEWED_STATION_COUNT = 59
 _REVIEWED_PANEL_KEY_COUNT = 1416
@@ -116,6 +140,39 @@ _COVARIATE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "s5p_no2": pl.Float64,
     "s5p_so2": pl.Float64,
 }
+_COVARIATE_LEDGER_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "training_period": pl.String,
+    "train_year": pl.Int64,
+    "target_year": pl.Int64,
+    "month": pl.Date,
+    "target_station": pl.String,
+    "target_cluster": pl.Int64,
+    "target_state": pl.String,
+    "observed": pl.Float64,
+    "train_stations": pl.List(pl.String),
+    "n_train_stations": pl.Int64,
+    "n_model_train_rows": pl.Int64,
+    "n_same_month_train_rows": pl.Int64,
+    "fold_state": pl.String,
+    "fold_reason": pl.String,
+}
+_COVARIATE_TARGET_KEY = (
+    "evaluation",
+    "training_period",
+    "train_year",
+    "target_year",
+    "month",
+    "target_station",
+)
+_COVARIATE_PREDICTION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **_COVARIATE_LEDGER_SCHEMA,
+    "method": pl.String,
+    "predicted": pl.Float64,
+    "prediction_state": pl.String,
+    "failure_type": pl.String,
+    "error": pl.Float64,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +207,13 @@ class FrozenInputs:
     input_files: tuple[InputFile, ...]
     baseline_generation_sha256: str
     station_inventory_generation_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class CovariatePrediction:
+    value: float | None
+    state: str
+    failure_type: str | None = None
 
 
 def aggregate_era5_monthly(frame: pl.DataFrame, *, years: tuple[int, int]) -> pl.DataFrame:
@@ -482,6 +546,598 @@ def assemble_covariates(inputs: FrozenInputs, config: CovariateReadinessConfig) 
     ).height:
         raise RuntimeError("assembled covariates contain a non-finite required feature")
     return result
+
+
+def _station_coordinates(
+    covariates: pl.DataFrame, support: pl.DataFrame
+) -> dict[str, tuple[float, float]]:
+    _required_columns(support, ("station_name", "x_m", "y_m"), label="baseline support")
+    if support.group_by("station_name").len().filter(pl.col("len") > 1).height:
+        raise RuntimeError("baseline support has duplicate station coordinates")
+    station_names = set(covariates["station_name"].to_list())
+    if set(support["station_name"].to_list()) != station_names:
+        raise RuntimeError("baseline support coordinate station set changed")
+    if covariates.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(name).is_null() | ~pl.col(name).cast(pl.Float64, strict=False).is_finite()
+                for name in ("x_m", "y_m")
+            )
+        )
+    ).height:
+        raise RuntimeError("covariates contain a non-finite station coordinate")
+    if support.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(name).is_null() | ~pl.col(name).cast(pl.Float64, strict=False).is_finite()
+                for name in ("x_m", "y_m")
+            )
+        )
+    ).height:
+        raise RuntimeError("baseline support contains a non-finite coordinate")
+    covariate_coordinates = covariates.select("station_name", "x_m", "y_m").unique()
+    if covariate_coordinates.height != len(station_names):
+        raise RuntimeError("covariate station coordinates change across months")
+    compared = covariate_coordinates.join(
+        support.select("station_name", "x_m", "y_m"),
+        on="station_name",
+        how="inner",
+        suffix="_support",
+    )
+    if compared.filter(
+        pl.col("x_m").ne_missing(pl.col("x_m_support"))
+        | pl.col("y_m").ne_missing(pl.col("y_m_support"))
+    ).height:
+        raise RuntimeError("covariate coordinates do not match frozen baseline support coordinates")
+    return {
+        str(station): (float(x_m), float(y_m))
+        for station, x_m, y_m in support.select("station_name", "x_m", "y_m").iter_rows()
+    }
+
+
+def _baseline_cluster_mapping(baseline_folds: pl.DataFrame) -> dict[str, int]:
+    cluster_counts = baseline_folds.group_by("target_station").agg(
+        pl.col("target_cluster").n_unique().alias("clusters")
+    )
+    if cluster_counts.filter(pl.col("clusters") != 1).height:
+        raise RuntimeError("baseline cluster membership changes across authoritative folds")
+    return {
+        str(station): int(cluster)
+        for station, cluster in baseline_folds.select("target_station", "target_cluster")
+        .unique()
+        .iter_rows()
+    }
+
+
+def _allowed_stations(
+    *,
+    evaluation: str,
+    target_station: str,
+    station_names: set[str],
+    coordinates: dict[str, tuple[float, float]],
+    clusters: dict[str, int],
+) -> list[str]:
+    if evaluation == "spatial_cluster":
+        return sorted(
+            station for station in station_names if clusters[station] != clusters[target_station]
+        )
+    radii = {"buffer_20km": 20.0, "buffer_40km": 40.0}
+    if evaluation not in radii:
+        raise RuntimeError(f"baseline fold has unexpected evaluation: {evaluation}")
+    target_x, target_y = coordinates[target_station]
+    radius_km = radii[evaluation]
+    return sorted(
+        station
+        for station in station_names
+        if station != target_station
+        and math.hypot(
+            coordinates[station][0] - target_x,
+            coordinates[station][1] - target_y,
+        )
+        / 1000
+        > radius_km
+    )
+
+
+def _validate_baseline_fold_membership(
+    covariates: pl.DataFrame,
+    baseline_folds: pl.DataFrame,
+    *,
+    coordinates: dict[str, tuple[float, float]],
+    clusters: dict[str, int],
+    evaluations: tuple[str, str, str],
+) -> dict[tuple[str, str], list[str]]:
+    required = (
+        "evaluation",
+        "year",
+        "month",
+        "target_station",
+        "target_cluster",
+        "target_state",
+        "observed",
+        "train_stations",
+        "n_train",
+    )
+    _required_columns(baseline_folds, required, label="baseline folds")
+    baseline_key = ("evaluation", "month", "target_station")
+    if baseline_folds.group_by(*baseline_key).len().filter(pl.col("len") != 1).height:
+        raise RuntimeError("baseline folds have duplicate target keys")
+    station_names = set(covariates["station_name"].to_list())
+    if set(clusters) != station_names:
+        raise RuntimeError("baseline cluster membership station set changed")
+    if set(baseline_folds["evaluation"].to_list()) != set(evaluations):
+        raise RuntimeError("baseline fold evaluation set changed")
+    expected_keys = pl.concat(
+        [
+            covariates.select(
+                pl.lit(evaluation).alias("evaluation"),
+                "month",
+                pl.col("station_name").alias("target_station"),
+            )
+            for evaluation in evaluations
+        ]
+    )
+    actual_keys = baseline_folds.select(*baseline_key)
+    if (
+        expected_keys.height != actual_keys.height
+        or not expected_keys.join(actual_keys, on=list(baseline_key), how="anti").is_empty()
+        or not actual_keys.join(expected_keys, on=list(baseline_key), how="anti").is_empty()
+    ):
+        raise RuntimeError("baseline fold target keys changed")
+    target_rows = covariates.select("station_name", "month", "target_state", "PM2.5").rename(
+        {"station_name": "target_station"}
+    )
+    compared = baseline_folds.select(
+        "evaluation",
+        "month",
+        "year",
+        "target_station",
+        "target_state",
+        "observed",
+        "target_cluster",
+    ).join(target_rows, on=["target_station", "month"], how="inner", suffix="_covariate")
+    if compared.filter(
+        (pl.col("year") != pl.col("month").dt.year())
+        | (pl.col("target_state") != pl.col("target_state_covariate"))
+        | (pl.col("observed") != pl.col("PM2.5"))
+        | (pl.col("observed").is_null() != pl.col("PM2.5").is_null())
+        | (
+            pl.col("target_cluster")
+            != pl.col("target_station").replace_strict(clusters, return_dtype=pl.Int64)
+        )
+    ).height:
+        raise RuntimeError("baseline fold target or cluster membership changed")
+
+    observed_by_month = {
+        month: set(group["station_name"].to_list())
+        for (month,), group in covariates.filter(pl.col("target_state") == "observed").group_by(
+            "month", maintain_order=True
+        )
+    }
+    allowed_by_fold: dict[tuple[str, str], list[str]] = {}
+    for evaluation in evaluations:
+        for target_station in sorted(station_names):
+            allowed_by_fold[(evaluation, target_station)] = _allowed_stations(
+                evaluation=evaluation,
+                target_station=target_station,
+                station_names=station_names,
+                coordinates=coordinates,
+                clusters=clusters,
+            )
+    for fold in baseline_folds.iter_rows(named=True):
+        evaluation = str(fold["evaluation"])
+        target_station = str(fold["target_station"])
+        month = fold["month"]
+        declared = [str(station) for station in fold["train_stations"]]
+        expected = sorted(
+            set(allowed_by_fold[(evaluation, target_station)]) & observed_by_month[month]
+        )
+        if declared != expected or int(fold["n_train"]) != len(expected):
+            raise RuntimeError("baseline fold train station membership changed")
+    return allowed_by_fold
+
+
+def build_covariate_fold_ledger(
+    covariates: pl.DataFrame,
+    support: pl.DataFrame,
+    baseline_folds: pl.DataFrame,
+    config: CovariateReadinessConfig,
+) -> pl.DataFrame:
+    """Build same-year and forward ledgers without admitting held-location truth."""
+    _required_columns(covariates, tuple(_COVARIATE_SCHEMA), label="covariates")
+    key = ("station_name", "month")
+    if covariates.group_by(*key).len().filter(pl.col("len") != 1).height:
+        raise RuntimeError("covariates have duplicate target keys")
+    if covariates.schema["month"] != pl.Date:
+        raise RuntimeError("covariate months must use Date values")
+    if set(covariates["month"].dt.year().to_list()) != set(config.years):
+        raise RuntimeError("covariate years do not match the configured analysis years")
+    coordinates = _station_coordinates(covariates, support)
+    clusters = _baseline_cluster_mapping(baseline_folds)
+    allowed_by_fold = _validate_baseline_fold_membership(
+        covariates,
+        baseline_folds,
+        coordinates=coordinates,
+        clusters=clusters,
+        evaluations=config.evaluations,
+    )
+
+    rows: list[dict[str, object]] = []
+    for target in covariates.sort("month", "station_name").iter_rows(named=True):
+        target_station = str(target["station_name"])
+        target_month = target["month"]
+        target_year = target_month.year
+        periods: list[tuple[str, int]] = [("same_year", target_year)]
+        if target_year == config.years[1]:
+            periods.append((f"{config.years[0]}_to_{config.years[1]}", config.years[0]))
+        for evaluation in config.evaluations:
+            train_stations = allowed_by_fold[(evaluation, target_station)]
+            for training_period, train_year in periods:
+                model_train = covariates.filter(
+                    (pl.col("month").dt.year() == train_year)
+                    & pl.col("station_name").is_in(train_stations)
+                    & (pl.col("target_state") == "observed")
+                )
+                source_month = date(train_year, target_month.month, 1)
+                same_month_train = model_train.filter(pl.col("month") == source_month)
+                if target["target_state"] != "observed":
+                    fold_state = "unscored_target_withheld"
+                    fold_reason: str | None = f"target_state={target['target_state']}"
+                elif len(train_stations) < config.minimum_train_stations:
+                    fold_state = "unscored_insufficient_train"
+                    fold_reason = (
+                        f"n_train_stations={len(train_stations)} is below "
+                        f"minimum_train_stations={config.minimum_train_stations}"
+                    )
+                else:
+                    fold_state = "eligible"
+                    fold_reason = None
+                rows.append(
+                    {
+                        "evaluation": evaluation,
+                        "training_period": training_period,
+                        "train_year": train_year,
+                        "target_year": target_year,
+                        "month": target_month,
+                        "target_station": target_station,
+                        "target_cluster": clusters[target_station],
+                        "target_state": target["target_state"],
+                        "observed": target["PM2.5"],
+                        "train_stations": train_stations,
+                        "n_train_stations": len(train_stations),
+                        "n_model_train_rows": model_train.height,
+                        "n_same_month_train_rows": same_month_train.height,
+                        "fold_state": fold_state,
+                        "fold_reason": fold_reason,
+                    }
+                )
+    ledger = pl.DataFrame(rows, schema=_COVARIATE_LEDGER_SCHEMA).sort(*_COVARIATE_TARGET_KEY)
+    if ledger.select(*_COVARIATE_TARGET_KEY).n_unique() != ledger.height:
+        raise RuntimeError("covariate fold ledger target keys are duplicate")
+    return ledger
+
+
+def _model_matrix(frame: pl.DataFrame, *, label: str) -> np.ndarray:
+    _required_columns(frame, COVARIATE_MODEL_FEATURES, label=label)
+    non_satellite = tuple(
+        feature for feature in COVARIATE_MODEL_FEATURES if feature not in _SATELLITE_SOURCES
+    )
+    if frame.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(feature).is_null()
+                | ~pl.col(feature).cast(pl.Float64, strict=False).is_finite()
+                for feature in non_satellite
+            )
+        )
+    ).height:
+        raise RuntimeError(f"{label} has a non-finite required model feature")
+    if frame.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(feature).is_not_null()
+                & ~pl.col(feature).cast(pl.Float64, strict=False).is_finite()
+                for feature in _SATELLITE_SOURCES
+            )
+        )
+    ).height:
+        raise RuntimeError(f"{label} has a non-finite satellite feature")
+    boundary = frame.select(
+        *(
+            pl.col(feature).cast(pl.Float64).fill_null(float("nan")).alias(feature)
+            if feature in _SATELLITE_SOURCES
+            else pl.col(feature).cast(pl.Float64)
+            for feature in COVARIATE_MODEL_FEATURES
+        )
+    )
+    return np.asarray(boundary.to_numpy(), dtype=float)
+
+
+def fit_covariate_model(
+    train: pl.DataFrame,
+    predict: pl.DataFrame,
+    config: CovariateReadinessConfig,
+) -> np.ndarray:
+    """Fit the frozen LightGBM once and predict the supplied ordered rows."""
+    if train.is_empty():
+        raise RuntimeError("covariate model training frame is empty")
+    _required_columns(train, ("PM2.5",), label="covariate model training frame")
+    if train.filter(pl.col("PM2.5").is_null() | ~pl.col("PM2.5").is_finite()).height:
+        raise RuntimeError("covariate model training truth is non-finite")
+    train_matrix = _model_matrix(train, label="covariate model training frame")
+    prediction_matrix = _model_matrix(predict, label="covariate model prediction frame")
+    model = config.model
+    estimator = _lgbm_regressor(
+        n_estimators=model.n_estimators,
+        learning_rate=model.learning_rate,
+        num_leaves=model.num_leaves,
+        min_child_samples=model.min_child_samples,
+        subsample=0.8,
+        subsample_freq=1,
+        colsample_bytree=0.8,
+        n_jobs=model.n_jobs,
+        random_state=model.seed,
+        verbose=-1,
+    )
+    estimator.fit(train_matrix, np.asarray(train["PM2.5"].to_numpy(), dtype=float))
+    return np.asarray(estimator.predict(prediction_matrix), dtype=float)
+
+
+def _lgbm_regressor(
+    *,
+    n_estimators: int,
+    learning_rate: float,
+    num_leaves: int,
+    min_child_samples: int,
+    subsample: float,
+    subsample_freq: int,
+    colsample_bytree: float,
+    n_jobs: int,
+    random_state: int,
+    verbose: int,
+) -> Any:
+    try:
+        from lightgbm import LGBMRegressor
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "spatial covariate model fitting requires the optional ml dependency"
+        ) from error
+    return LGBMRegressor(
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        num_leaves=num_leaves,
+        min_child_samples=min_child_samples,
+        subsample=subsample,
+        subsample_freq=subsample_freq,
+        colsample_bytree=colsample_bytree,
+        n_jobs=n_jobs,
+        random_state=random_state,
+        verbose=verbose,
+    )
+
+
+def _failed_prediction(state: str, failure_type: str | None = None) -> CovariatePrediction:
+    return CovariatePrediction(value=None, state=state, failure_type=failure_type)
+
+
+def _finite_covariate_prediction(value: float) -> CovariatePrediction:
+    if math.isfinite(value):
+        return CovariatePrediction(value=value, state="scored")
+    return _failed_prediction("non_finite_prediction")
+
+
+def _idw_prediction(
+    train: pl.DataFrame,
+    target: dict[str, Any],
+    *,
+    baseline_config: Any,
+) -> CovariatePrediction:
+    outcome = predict_target(train, target, "idw2", baseline_config)
+    return CovariatePrediction(
+        value=outcome.value,
+        state=outcome.state,
+        failure_type=outcome.failure_type,
+    )
+
+
+def _prediction_groups(ledger: pl.DataFrame) -> list[pl.DataFrame]:
+    group_columns = (
+        "evaluation",
+        "training_period",
+        "target_station",
+        "target_year",
+    )
+    return ledger.sort(*_COVARIATE_TARGET_KEY).partition_by(
+        list(group_columns), maintain_order=True
+    )
+
+
+def _validate_prediction_ledger(ledger: pl.DataFrame, config: CovariateReadinessConfig) -> None:
+    forward_period = f"{config.years[0]}_to_{config.years[1]}"
+    invalid_period = ledger.filter(
+        ~pl.col("training_period").is_in(["same_year", forward_period])
+        | (pl.col("target_year") != pl.col("month").dt.year())
+        | (
+            (pl.col("training_period") == "same_year")
+            & (pl.col("train_year") != pl.col("target_year"))
+        )
+        | (
+            (pl.col("training_period") == forward_period)
+            & (
+                (pl.col("train_year") != config.years[0])
+                | (pl.col("target_year") != config.years[1])
+            )
+        )
+    )
+    if not invalid_period.is_empty():
+        raise RuntimeError("covariate fold ledger training period metadata is invalid")
+    if not set(ledger["evaluation"].to_list()).issubset(config.evaluations):
+        raise RuntimeError("covariate fold ledger evaluation metadata is invalid")
+    if ledger.filter(
+        ~pl.col("target_state").is_in(["observed", "withheld"])
+        | (
+            (pl.col("target_state") == "observed")
+            & (pl.col("observed").is_null() | ~pl.col("observed").is_finite())
+        )
+        | ((pl.col("target_state") == "withheld") & pl.col("observed").is_not_null())
+    ).height:
+        raise RuntimeError("covariate fold ledger target metadata is invalid")
+
+
+def predict_readiness_methods(
+    covariates: pl.DataFrame,
+    ledger: pl.DataFrame,
+    config: CovariateReadinessConfig,
+) -> pl.DataFrame:
+    """Emit the fixed comparator and two candidate states for every ledger target."""
+    _required_columns(covariates, tuple(_COVARIATE_SCHEMA), label="covariates")
+    _required_columns(ledger, tuple(_COVARIATE_LEDGER_SCHEMA), label="covariate fold ledger")
+    if ledger.select(*_COVARIATE_TARGET_KEY).n_unique() != ledger.height:
+        raise RuntimeError("covariate fold ledger has duplicate target keys")
+    _validate_prediction_ledger(ledger, config)
+    baseline_config = load_spatial_surface_baseline_config()
+    if (
+        baseline_config.idw_power != config.idw_power
+        or baseline_config.minimum_distance_km != config.minimum_distance_km
+    ):
+        raise RuntimeError("covariate and baseline IDW2 settings differ")
+
+    rows: list[dict[str, object]] = []
+    for group in _prediction_groups(ledger):
+        first = group.row(0, named=True)
+        target_station = str(first["target_station"])
+        train_year = int(first["train_year"])
+        train_station_lists = {tuple(row) for row in group["train_stations"].to_list()}
+        if len(train_station_lists) != 1:
+            raise RuntimeError("covariate fold ledger changes train stations within a model fit")
+        train_stations = list(next(iter(train_station_lists)))
+        if target_station in train_stations:
+            raise RuntimeError("covariate model train station membership includes its target")
+        train = covariates.filter(
+            (pl.col("month").dt.year() == train_year)
+            & pl.col("station_name").is_in(train_stations)
+            & (pl.col("target_state") == "observed")
+        ).sort("station_name", "month")
+        if train.filter(pl.col("station_name") == target_station).height:
+            raise RuntimeError("covariate model training rows include the target station")
+        expected_model_counts = set(group["n_model_train_rows"].to_list())
+        if expected_model_counts != {train.height}:
+            raise RuntimeError("covariate model training rows differ from the authoritative ledger")
+        targets = (
+            group.select("month", "target_station")
+            .join(
+                covariates,
+                left_on=["target_station", "month"],
+                right_on=["station_name", "month"],
+                how="left",
+            )
+            .rename({"target_station": "station_name"})
+            .sort("month")
+        )
+        if targets.height != group.height or targets["x_m"].null_count():
+            raise RuntimeError("covariate prediction targets differ from the authoritative ledger")
+        eligible = group.filter(pl.col("fold_state") == "eligible")
+        group_failure: CovariatePrediction | None = None
+        model_values: np.ndarray | None = None
+        if not eligible.is_empty():
+            combined = pl.concat([train, targets.select(covariates.columns)], how="vertical")
+            try:
+                returned = np.asarray(fit_covariate_model(train, combined, config), dtype=float)
+            except Exception as error:
+                group_failure = _failed_prediction("estimator_failed", type(error).__name__)
+            else:
+                if returned.ndim != 1 or returned.shape[0] != combined.height:
+                    group_failure = _failed_prediction("wrong_prediction_length")
+                else:
+                    model_values = returned
+        target_by_month = {row["month"]: row for row in targets.iter_rows(named=True)}
+        group_by_month = {row["month"]: row for row in group.iter_rows(named=True)}
+        for month in sorted(group_by_month):
+            fold = group_by_month[month]
+            target = target_by_month[month]
+            fold_state = str(fold["fold_state"])
+            outcomes: dict[str, CovariatePrediction] = {}
+            if fold_state != "eligible":
+                outcomes = {
+                    method: _failed_prediction(fold_state) for method in COVARIATE_READINESS_METHODS
+                }
+            else:
+                source_month = date(train_year, month.month, 1)
+                source_train = train.filter(pl.col("month") == source_month).select(
+                    "station_name", "lon", "lat", pl.col("PM2.5").alias("mean")
+                )
+                if source_train.height != int(fold["n_same_month_train_rows"]):
+                    raise RuntimeError(
+                        "same-month comparator rows differ from the authoritative ledger"
+                    )
+                target_coordinates = {"lon": target["lon"], "lat": target["lat"]}
+                outcomes["idw2"] = _idw_prediction(
+                    source_train,
+                    target_coordinates,
+                    baseline_config=baseline_config,
+                )
+                if group_failure is not None or model_values is None:
+                    candidate_failure = group_failure or _failed_prediction("estimator_failed")
+                    outcomes["covariate_gbm"] = candidate_failure
+                    outcomes["covariate_gbm_idw2"] = candidate_failure
+                else:
+                    target_index = train.height + targets["month"].to_list().index(month)
+                    trend = _finite_covariate_prediction(float(model_values[target_index]))
+                    outcomes["covariate_gbm"] = trend
+                    if trend.state != "scored" or trend.value is None:
+                        outcomes["covariate_gbm_idw2"] = trend
+                    elif source_train.height < config.minimum_train_stations:
+                        outcomes["covariate_gbm_idw2"] = _failed_prediction(
+                            "insufficient_residual_stations"
+                        )
+                    else:
+                        train_with_predictions = train.with_columns(
+                            pl.Series("_fitted", model_values[: train.height])
+                        ).with_columns((pl.col("PM2.5") - pl.col("_fitted")).alias("_residual"))
+                        residual_train = train_with_predictions.filter(
+                            pl.col("month") == source_month
+                        ).select(
+                            "station_name",
+                            "lon",
+                            "lat",
+                            pl.col("_residual").alias("mean"),
+                        )
+                        if residual_train.filter(~pl.col("mean").is_finite()).height:
+                            residual = _failed_prediction("non_finite_prediction")
+                        else:
+                            residual = _idw_prediction(
+                                residual_train,
+                                target_coordinates,
+                                baseline_config=baseline_config,
+                            )
+                        if residual.state == "scored" and residual.value is not None:
+                            outcomes["covariate_gbm_idw2"] = _finite_covariate_prediction(
+                                trend.value + residual.value
+                            )
+                        else:
+                            outcomes["covariate_gbm_idw2"] = residual
+            for method in config.methods:
+                outcome = outcomes[method]
+                observed = fold["observed"]
+                rows.append(
+                    {
+                        **fold,
+                        "method": method,
+                        "predicted": outcome.value,
+                        "prediction_state": outcome.state,
+                        "failure_type": outcome.failure_type,
+                        "error": (
+                            outcome.value - float(observed)
+                            if outcome.state == "scored"
+                            and outcome.value is not None
+                            and observed is not None
+                            else None
+                        ),
+                    }
+                )
+    return pl.DataFrame(rows, schema=_COVARIATE_PREDICTION_SCHEMA).sort(
+        *_COVARIATE_TARGET_KEY, "method"
+    )
 
 
 def _mapping(value: object, *, path: str, keys: set[str]) -> dict[str, Any]:
