@@ -735,6 +735,47 @@ design 可以開始」。這個 generation 沒有產生濃度場或人口暴露�
 來源歸因、校正結果、地圖或網站 payload；`feeds_web=false`。通過 readiness gate 不能
 改寫成濃度場、暴露或發布已完成。
 
+## Spatial covariate-model readiness gate
+
+這是 full-domain covariate acquisition 之前的固定模型門檻。2026-08-29 以
+`TWAIR_DATA_DIR=D:/twair-data` 執行
+`uv run twair analyze spatial-covariate-readiness --confirm-production`，再由獨立 verifier
+驗證通過。immutable generation 為
+`852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38`，綁定的
+spatial baseline generation 是
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`，station inventory
+generation 是 `58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`。
+
+目標 ledger 有 59 站、1,416 個 2024–2025 station-month key、1,415 個
+`observed` 與一個新營 2025-05 `withheld`。MAIAC AOD、S5P NO₂、S5P SO₂
+的非 null 數分別是 1,309 / 1,416、1,416 / 1,416、1,411 / 1,416；1,306 / 1,416
+個 key 三者皆有。模型比較固定為 `covariate_gbm`、`covariate_gbm_idw2`
+與 comparator `idw2`，不用門檻結果重調參數。同年 2024 每個 method/cell
+都是 708 / 708 / 0 intended / scored / failed；同年 2025 與 `2024_to_2025`
+都是 707 / 707 / 0；所有 cell 的測站分母都是 59 / 59。forward ledger 只以
+2024 target 訓練，2025 PM2.5 沒有進入訓練；留出測站也不在 train-station list。
+
+| cell | station-clustered MAE：GBM / GBM+IDW² / IDW² | paired median station MAE delta [2.5%, 97.5%]：GBM / GBM+IDW² |
+|---|---:|---:|
+| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |
+| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |
+| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |
+| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |
+| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |
+| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |
+| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |
+| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |
+| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |
+
+負的 candidate-minus-`idw2` delta 才偏向 candidate。預註冊規則要求同一 candidate
+在四個 20／40 km same-year cell 與三個 `2024_to_2025` cell 的 median 全部小於零。
+兩種 candidate 都在 `buffer_20km` same-year cells 為正，故 qualifying methods: none；
+verdict: `stop`。沒有放鬆 fold、改模型或改 gate。這是 covariate-model readiness only;
+no concentration surface was generated。通過時也只能允許另行設計 full-domain acquisition
+與 nested surface，not publication of a map。no prediction interval, support mask,
+population-weighted ambient concentration or personal-exposure result。沒有 raster、source
+attribution、calibration、fusion 或 website payload；`feeds_web=false`。
+
 ---
 
 ## 結論

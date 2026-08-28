@@ -14,6 +14,15 @@ def _readmes() -> tuple[str, str]:
     )
 
 
+def _spatial_covariate_readiness_section(text: str) -> str:
+    marker = "## Spatial covariate-model readiness gate"
+    start = text.find(marker)
+    assert start >= 0, "spatial covariate-model readiness gate section is missing"
+    remainder = text[start:]
+    next_heading = remainder.find("\n## ", len(marker))
+    return remainder if next_heading < 0 else remainder[:next_heading]
+
+
 def test_public_contract_tests_do_not_require_deleted_internal_docs() -> None:
     deleted_name = "PLAN" + ".md"
 
@@ -39,11 +48,8 @@ def test_both_readmes_distinguish_delivered_era5_robustness_from_deferred_calibr
 def test_both_readmes_keep_population_weighted_exposure_outside_the_release_boundary() -> None:
     zh, en = _readmes()
 
-    assert "HYSPLIT／1 km 場／人口加權暴露延後（repo 無人口網格）" in zh
-    assert (
-        "HYSPLIT, a 1 km field, and population-weighted exposure deferred "
-        "(no population grid in repo)"
-    ) in en
+    assert "HYSPLIT／1 km 場／人口加權暴露未交付" in zh
+    assert "HYSPLIT, a 1 km field, and population-weighted exposure were not delivered" in en
 
 
 def test_public_docs_record_measured_era5_value_without_reframing_the_published_m4() -> None:
@@ -380,3 +386,51 @@ def test_spatial_baseline_readiness_gate_keeps_the_verified_result_and_boundary_
         assert generation in text, relative
         for claim in claims:
             assert claim in text, f"{relative}: {claim}"
+
+
+def test_spatial_covariate_readiness_gate_keeps_the_verified_stop_and_boundary_together() -> None:
+    generation = "852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38"
+    baseline = "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f"
+    inventory = "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
+    required = (
+        generation,
+        baseline,
+        inventory,
+        "59",
+        "1,416",
+        "1,415",
+        "1,309",
+        "1,411",
+        "1,306",
+        "covariate_gbm",
+        "covariate_gbm_idw2",
+        "idw2",
+        "708 / 708 / 0",
+        "707 / 707 / 0",
+        "59 / 59",
+        "| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |",
+        "| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |",
+        "| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |",
+        "| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |",
+        "| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |",
+        "| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |",
+        "| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |",
+        "| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |",
+        "| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |",
+        "qualifying methods: none",
+        "verdict: `stop`",
+        "covariate-model readiness only; no concentration surface was generated",
+        "not publication of a map",
+        "no prediction interval, support mask, population-weighted ambient concentration or personal-exposure result",
+    )
+
+    for relative in (
+        "README.md",
+        "README.en.md",
+        "docs/data-sources.md",
+        "docs/methodology.md",
+    ):
+        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+        section = " ".join(_spatial_covariate_readiness_section(text).split())
+        for claim in required:
+            assert claim in section, f"{relative}: {claim}"

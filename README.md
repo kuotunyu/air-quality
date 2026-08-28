@@ -146,6 +146,45 @@ finite, complete spatial_cluster score in both 2024 and 2025。實測 verdict �
 hole-effect kriging、spherical kriging 與 nearest 都合格。`go` 只表示可以開始
 covariate-model design；這個 generation 沒有產生濃度場或人口暴露結果，也不是地圖發布證據。
 
+## Spatial covariate-model readiness gate
+
+2026-08-29 以 `TWAIR_DATA_DIR=D:/twair-data` 執行
+`uv run twair analyze spatial-covariate-readiness --confirm-production`，並由獨立
+verifier 驗證通過。immutable generation 為
+`852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38`；輸入的
+spatial baseline generation 是
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`，station inventory
+generation 是 `58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`。
+
+凍結 cohort 有 59 站、1,416 個 2024–2025 station-month key，其中 1,415 個
+`observed`、一個新營 2025-05 `withheld`。MAIAC AOD、S5P NO₂、S5P SO₂
+分別有 1,309 / 1,416、1,416 / 1,416、1,411 / 1,416 個非 null 站月；
+1,306 / 1,416 個三者皆有。比較的完整 method domain 是
+`covariate_gbm`、`covariate_gbm_idw2` 與 comparator `idw2`。同年 2024 每一
+method/cell 都是 708 / 708 / 0 intended / scored / failed；同年 2025 與
+`2024_to_2025` 都是 707 / 707 / 0；全部都是 59 / 59 intended / scored
+stations。
+
+| cell | station-clustered MAE：GBM / GBM+IDW² / IDW² | paired median station MAE delta [2.5%, 97.5%]：GBM / GBM+IDW² |
+|---|---:|---:|
+| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |
+| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |
+| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |
+| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |
+| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |
+| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |
+| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |
+| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |
+| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |
+
+負的 paired delta 偏向 candidate，但凍結規則要求每個 candidate 在七個
+required improvement cells 全部小於零。`buffer_20km` 的兩個 same-year cell
+都沒有通過，所以 qualifying methods: none；verdict: `stop`。這是
+covariate-model readiness only; no concentration surface was generated。即使通過也只能允許
+後續 full-domain covariate acquisition 與 nested surface design，not publication of a map。
+no prediction interval, support mask, population-weighted ambient concentration or personal-exposure result。
+也沒有 raster、source attribution、calibration、fusion 或 website payload；`feeds_web=false`。
+
 ## 快速開始
 
 ```bash
@@ -187,7 +226,7 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 | Phase 2 | M1 基準、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
-| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、spatial baseline gate | ✅ baseline gate 為 `go`，可開始 covariate-model design；HYSPLIT／1 km 場／人口加權暴露延後（repo 無人口網格） |
+| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、spatial baseline 與 covariate-model readiness gates | ✅ baseline gate 的 `go` 允許了有界的 covariate-model design；實測 covariate-model gate 為 `stop`，所以這個固定模型分支關閉；HYSPLIT／1 km 場／人口加權暴露未交付 |
 | Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 M8 關聯與 held-out predictive-value 診斷已交付；ERA5 2024–2025 robustness 已交付；微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付，一月 reference-station satellite-context predictive-value limit 已交付，微型感測器 2025 全年 readiness audit 已交付，Q4-supported cross-station agreement 亦已交付（29 個 fold 中只有 5 個可評分，其餘 18 個測試集為空、6 個訓練集為空，均標為 unscored 而非以零計；held-quarter 與 joint station-quarter 不可估計）；validated calibration 與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5 |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
 | Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 發布收尾：正常工程與編輯式科學圖集 UI 已完成，並已整合至 `master`、部署於 GitHub Pages。L0／L1 HF Dataset 仍留到最後由 owner 決定上架或明確不發布；非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |

@@ -1287,3 +1287,145 @@ def test_spatial_baseline_rule_rejects_omitted_or_weakened_prerequisites() -> No
     for mutation in mutations:
         with pytest.raises(AssertionError):
             _assert_spatial_baseline_claim_boundary(mutation)
+
+
+def _spatial_covariate_readiness_section(text: str) -> str:
+    marker = "spatial covariate-model readiness gate"
+    start = text.casefold().find(marker)
+    assert start >= 0, "spatial covariate-model readiness gate section is missing"
+    remainder = text[start:]
+    next_heading = re.search(r"\n#{1,4}\s", remainder[1:])
+    return remainder if next_heading is None else remainder[: next_heading.start() + 1]
+
+
+def _assert_spatial_covariate_readiness_boundary(section: str) -> None:
+    folded = " ".join(section.casefold().split())
+    required = (
+        "852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38",
+        "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f",
+        "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788",
+        "59",
+        "1,416",
+        "1,415",
+        "1,309 / 1,416",
+        "1,416 / 1,416",
+        "1,411 / 1,416",
+        "1,306 / 1,416",
+        "covariate_gbm",
+        "covariate_gbm_idw2",
+        "idw2",
+        "708 / 708 / 0",
+        "707 / 707 / 0",
+        "59 / 59",
+        "| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |",
+        "| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |",
+        "| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |",
+        "| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |",
+        "| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |",
+        "| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |",
+        "| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |",
+        "| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |",
+        "| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |",
+        "qualifying methods: none",
+        "verdict: `stop`",
+        "covariate-model readiness only; no concentration surface was generated",
+        "not publication of a map",
+        "no prediction interval, support mask, population-weighted ambient concentration or personal-exposure result",
+    )
+    for claim in required:
+        assert claim in folded
+
+    forbidden_claims = (
+        r"\bconcentration surface generated\b",
+        r"\b(?:produced|generated|contains?|provides?) (?:a )?concentration surface\b",
+        r"\b1 km map\b",
+        r"\bpopulation exposure (?:is |was )?(?:a )?(?:result|generated|estimated)\b",
+        r"\bcalibrated (?:uncertainty|prediction intervals?)\b",
+        r"\b(?:fusion (?:result|product)|fuses? satellite and ground data)\b",
+    )
+    for pattern in forbidden_claims:
+        assert re.search(pattern, folded) is None
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        "README.md",
+        "README.en.md",
+        "docs/data-sources.md",
+        "docs/methodology.md",
+    ),
+)
+def test_spatial_covariate_readiness_sections_keep_the_measured_stop_boundary(
+    relative: str,
+) -> None:
+    text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+    _assert_spatial_covariate_readiness_boundary(_spatial_covariate_readiness_section(text))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "A concentration surface generated from the station rows is available.",
+        "This generation produced a concentration surface.",
+        "This is a 1 km map.",
+        "Population exposure was estimated.",
+        "This is a population exposure result.",
+        "The output provides calibrated uncertainty.",
+        "The generation contains calibrated prediction intervals.",
+        "This is a fusion result.",
+        "The model fuses satellite and ground data.",
+    ),
+)
+def test_spatial_covariate_readiness_boundary_rejects_surface_map_exposure_uncertainty_and_fusion_mutations(
+    mutation: str,
+) -> None:
+    bounded = (
+        "Spatial covariate-model readiness gate. "
+        "Generation 852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38. "
+        "59 stations, 1,416 station-month keys, and 1,415 observed targets. "
+        "Methods: covariate_gbm, covariate_gbm_idw2, idw2. "
+        "Denominators: 708 / 708 / 0; 707 / 707 / 0; 59 / 59. "
+        "Qualifying methods: none. Verdict: `stop`. "
+        "Covariate-model readiness only; no concentration surface was generated. "
+        "Passing would permit later full-domain design, not publication of a map. "
+        "No prediction interval, support mask, population-weighted ambient concentration or personal-exposure result."
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_spatial_covariate_readiness_boundary(f"{bounded} {mutation}")
+
+
+@pytest.mark.parametrize(
+    "protected_claim",
+    (
+        "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f",
+        "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788",
+        "1,309 / 1,416",
+        "1,416 / 1,416",
+        "1,411 / 1,416",
+        "1,306 / 1,416",
+        "59 / 59",
+        "2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360]",
+        "1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462]",
+        "2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222]",
+        "2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197]",
+        "2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077]",
+        "2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124]",
+        "2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125]",
+        "2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026]",
+        "2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141]",
+    ),
+)
+def test_spatial_covariate_readiness_boundary_rejects_measured_evidence_drift(
+    protected_claim: str,
+) -> None:
+    section = _spatial_covariate_readiness_section(
+        (REPO_ROOT / "docs/methodology.md").read_text(encoding="utf-8")
+    )
+    assert protected_claim in section
+
+    with pytest.raises(AssertionError):
+        _assert_spatial_covariate_readiness_boundary(
+            section.replace(protected_claim, "[drifted]", 1)
+        )

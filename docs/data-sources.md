@@ -553,4 +553,43 @@ qualifying method must also have a finite, complete spatial_cluster score in bot
 readiness generation 沒有產生濃度場或人口暴露結果，沒有 raster、地圖、
 來源歸因、校正或網站 payload；`feeds_web=false`。通過本門檻不是發布地圖的允可。
 
+## Spatial covariate-model readiness gate
+
+2026-08-29 的確認執行使用 `TWAIR_DATA_DIR=D:/twair-data` 與
+`uv run twair analyze spatial-covariate-readiness --confirm-production`。獨立 verifier
+對這個 immutable generation 回傳 PASS：
+`852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38`。它綁定
+spatial baseline generation
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f` 與 station inventory
+generation `58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`。
+
+凍結 cohort 為 59 站、1,416 個 2024–2025 station-month key：1,415 個
+`observed`，新營 2025-05 一個 `withheld`。非 null covariate coverage 是
+MAIAC AOD 1,309 / 1,416、S5P NO₂ 1,416 / 1,416、S5P SO₂ 1,411 / 1,416；
+1,306 / 1,416 個 key 同時有三種衛星值。method domain 只有
+`covariate_gbm`、`covariate_gbm_idw2` 與 comparator `idw2`。同年 2024 對每個
+method/cell 都是 708 / 708 / 0 intended / scored / failed；同年 2025 與
+`2024_to_2025` 都是 707 / 707 / 0；全部 cell 都是 59 / 59 intended /
+scored stations。
+
+| cell | station-clustered MAE：GBM / GBM+IDW² / IDW² | paired median station MAE delta [2.5%, 97.5%]：GBM / GBM+IDW² |
+|---|---:|---:|
+| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |
+| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |
+| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |
+| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |
+| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |
+| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |
+| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |
+| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |
+| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |
+
+配對 delta 為 candidate-minus-`idw2`，負值才偏向 candidate。凍結規則要求同一
+candidate 在四個 20／40 km same-year cell 與三個 `2024_to_2025` cell 全部小於零；
+兩種 candidate 都在 `buffer_20km` same-year cells 失敗。因此 qualifying methods: none；
+verdict: `stop`。這是 covariate-model readiness only; no concentration surface was generated。
+即使通過也只能啟動另一個 full-domain covariate acquisition 與 nested surface design，
+not publication of a map。no prediction interval, support mask, population-weighted ambient concentration or personal-exposure result。
+沒有 raster、source attribution、calibration、fusion 或 website payload；`feeds_web=false`。
+
 見 [registrations.md](registrations.md) 取得各項憑證。
