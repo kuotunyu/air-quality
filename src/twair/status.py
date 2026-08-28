@@ -160,6 +160,12 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "spatial_covariate_readiness",
+        "twair analyze spatial-covariate-readiness",
+        "2024–2025 covariate-model gate; not a surface and not population exposure",
+        feeds_web=False,
+    ),
+    Module(
         "qc_outliers",
         "twair qc outliers",
         "isolated excursions against network episodes",

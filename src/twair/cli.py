@@ -909,8 +909,11 @@ app.add_typer(analysis_app, name="analyze")
 
 @analysis_app.callback()
 def analysis_main(ctx: typer.Context) -> None:
-    """Set up analysis directories except for the explicit no-I/O plan command."""
-    if ctx.invoked_subcommand != "spatial-surface-baseline":
+    """Set up analysis directories except for explicit no-I/O plan commands."""
+    if ctx.invoked_subcommand not in {
+        "spatial-surface-baseline",
+        "spatial-covariate-readiness",
+    }:
         ensure_dirs()
 
 
@@ -948,6 +951,42 @@ def analyze_spatial_surface_baseline(
         )
     for name, path in sorted(written.items()):
         console.print(f"wrote {name}: {path}")
+
+
+@analysis_app.command("spatial-covariate-readiness")
+def analyze_spatial_covariate_readiness(
+    confirm_production: bool = typer.Option(False, "--confirm-production"),
+) -> None:
+    """Score the 2024–2025 covariate-model gate; this does not build a surface."""
+    if not confirm_production:
+        console.print(
+            "[yellow]PLAN ONLY[/yellow] no analysis ran; pass --confirm-production to compute and persist"
+        )
+        return
+
+    from twair.analysis.spatial_covariate_readiness import (
+        COVARIATE_READINESS_LIMITATIONS,
+        run_spatial_covariate_readiness,
+        write_spatial_covariate_readiness_result,
+    )
+    from twair.paths import data_root
+
+    result = run_spatial_covariate_readiness(data_root=data_root())
+    written = write_spatial_covariate_readiness_result(result)
+
+    console.print(f"gate: [bold]{result.summary['gate']['state']}[/bold]")
+    console.print(COVARIATE_READINESS_LIMITATIONS[0])
+    for row in result.scores.sort(
+        "evaluation", "training_period", "target_year", "method"
+    ).iter_rows(named=True):
+        mae = row["station_clustered_mae"]
+        mae_text = "not scored" if mae is None else f"{float(mae):.6f}"
+        console.print(
+            f"{row['evaluation']} {row['training_period']} {row['target_year']} {row['method']}: "
+            f"n_intended={row['n_intended']}, n_scored={row['n_scored']}, "
+            f"n_failed={row['n_failed']}; MAE={mae_text}"
+        )
+    console.print(f"generation: {written['manifest'].parent}")
 
 
 @analysis_app.command("m1")
