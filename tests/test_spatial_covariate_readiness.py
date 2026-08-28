@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -14,15 +14,319 @@ import pytest
 
 from twair.analysis.spatial_covariate_readiness import (
     CovariateReadinessConfig,
+    FrozenInputs,
     InputFile,
+    aggregate_era5_monthly,
+    assemble_covariates,
     load_frozen_inputs,
     load_spatial_covariate_readiness_config,
+    pivot_satellite_monthly,
 )
 from twair.analysis.spatial_surface_baseline import SPATIAL_BASELINE_TABLE_SCHEMAS
 from twair.config import ConfigError
 
 BASELINE_GENERATION = "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f"
 INVENTORY_GENERATION = "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
+
+
+def _era5_months(*months: tuple[int, int]) -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for year, month in months:
+        local_start = datetime(year, month, 1, tzinfo=UTC) - timedelta(hours=8)
+        if month == 12:
+            local_end = datetime(year + 1, 1, 1, tzinfo=UTC) - timedelta(hours=8)
+        else:
+            local_end = datetime(year, month + 1, 1, tzinfo=UTC) - timedelta(hours=8)
+        for offset in range(int((local_end - local_start).total_seconds() // 3600)):
+            rows.append(
+                {
+                    "station_name": "station-00",
+                    "ts_utc": local_start + timedelta(hours=offset),
+                    "grid_lat": 23.5,
+                    "grid_lon": 120.5,
+                    "blh_m": 100.0,
+                    "u10_m_s": 3.0,
+                    "v10_m_s": 4.0,
+                    "t2m_k": 300.0,
+                    "d2m_k": 298.0,
+                    "sp_pa": 100000.0,
+                }
+            )
+    return pl.DataFrame(rows).with_columns(pl.col("ts_utc").cast(pl.Datetime(time_zone="UTC")))
+
+
+def test_aggregate_era5_monthly_uses_complete_asia_taipei_calendar_months() -> None:
+    monthly = aggregate_era5_monthly(_era5_months((2024, 1), (2024, 2)), years=(2024, 2025))
+
+    january, february = monthly.iter_rows(named=True)
+    assert january["month"] == date(2024, 1, 1)
+    assert january["n_hours"] == 31 * 24
+    assert january["era5_wind_speed_mean_m_s"] == pytest.approx(5.0)
+    assert january["era5_dewpoint_depression_mean_k"] == pytest.approx(2.0)
+    assert february["month"] == date(2024, 2, 1)
+    assert february["n_hours"] == 29 * 24
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda frame: pl.concat([frame, frame.head(1)]), "duplicate"),
+        (lambda frame: frame.slice(1), "complete"),
+        (
+            lambda frame: frame.with_columns(
+                pl.when(pl.int_range(pl.len()) == 0)
+                .then(pl.lit(None))
+                .otherwise(pl.col("u10_m_s"))
+                .alias("u10_m_s")
+            ),
+            "source",
+        ),
+        (
+            lambda frame: frame.with_columns(
+                pl.when(pl.int_range(pl.len()) == 0)
+                .then(pl.lit(float("nan")))
+                .otherwise(pl.col("u10_m_s"))
+                .alias("u10_m_s")
+            ),
+            "source",
+        ),
+        (
+            lambda frame: frame.with_columns(
+                pl.when(pl.int_range(pl.len()) == 0)
+                .then(pl.lit(24.0))
+                .otherwise(pl.col("grid_lat"))
+                .alias("grid_lat")
+            ),
+            "grid",
+        ),
+        (
+            lambda frame: pl.concat(
+                [
+                    frame,
+                    pl.DataFrame(
+                        {
+                            "station_name": ["station-00"],
+                            "ts_utc": [datetime(2023, 12, 1, tzinfo=UTC)],
+                            "grid_lat": [23.5],
+                            "grid_lon": [120.5],
+                            "blh_m": [100.0],
+                            "u10_m_s": [3.0],
+                            "v10_m_s": [4.0],
+                            "t2m_k": [300.0],
+                            "d2m_k": [298.0],
+                            "sp_pa": [100000.0],
+                        }
+                    ).with_columns(pl.col("ts_utc").cast(pl.Datetime(time_zone="UTC"))),
+                ]
+            ),
+            "outside",
+        ),
+    ],
+)
+def test_aggregate_era5_monthly_rejects_invalid_station_hour_input(
+    mutate: Any, message: str
+) -> None:
+    with pytest.raises(RuntimeError, match=message):
+        aggregate_era5_monthly(mutate(_era5_months((2024, 1))), years=(2024, 2025))
+
+
+def _satellite_long(panel: pl.DataFrame) -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for row in panel.iter_rows(named=True):
+        for source, value in (("maiac_aod", None), ("s5p_no2", 2.0), ("s5p_so2", 3.0)):
+            observed = value is not None
+            target_state = row["target_state"]
+            rows.append(
+                {
+                    "source": source,
+                    "station_name": row["station_name"],
+                    "month": row["month"],
+                    "satellite_value": value,
+                    "ground_value": row["mean"],
+                    "satellite_observed": observed,
+                    "ground_row_present": True,
+                    "ground_meets_threshold": target_state == "observed",
+                    "ground_observed": target_state == "observed",
+                    "ground_withheld": target_state == "withheld",
+                    "pair_observed": observed and target_state == "observed",
+                }
+            )
+    return pl.DataFrame(rows, schema_overrides={"month": pl.Date})
+
+
+def _covariate_inputs(
+    tmp_path: Path,
+) -> tuple[FrozenInputs, CovariateReadinessConfig, pl.DataFrame]:
+    month = date(2024, 3, 1)
+    panel = pl.DataFrame(
+        {
+            "station_name": ["station-00", "station-01"],
+            "station_type_official": ["一般站", "一般站"],
+            "lon": [120.0, 120.1],
+            "lat": [23.0, 23.1],
+            "month": [month, month],
+            "pollutant": ["PM2.5", "PM2.5"],
+            "mean": [10.0, None],
+            "meets_threshold": [True, False],
+            "target_state": ["observed", "withheld"],
+        },
+        schema=SPATIAL_BASELINE_TABLE_SCHEMAS["panel"],
+    )
+    support = pl.DataFrame(
+        {
+            "station_name": ["station-00", "station-01"],
+            "nearest_station": ["station-01", "station-00"],
+            "nearest_station_km": [1.0, 1.0],
+            "stations_within_20km": [1, 1],
+            "stations_within_40km": [1, 1],
+            "x_m": [100.0, 200.0],
+            "y_m": [300.0, 400.0],
+        },
+        schema=SPATIAL_BASELINE_TABLE_SCHEMAS["support"],
+    )
+    stations = panel.select("station_name", "station_type_official", "lon", "lat").unique(
+        maintain_order=True
+    )
+    era5 = pl.concat(
+        [
+            _era5_months((2024, 3)),
+            _era5_months((2024, 3)).with_columns(pl.lit("station-01").alias("station_name")),
+        ]
+    )
+    satellite = _satellite_long(panel)
+    era5_path = tmp_path / "interim" / "era5" / "era5_station_hour.parquet"
+    satellite_path = tmp_path / "outputs" / "m8_satellite" / "panel.parquet"
+    era5_path.parent.mkdir(parents=True)
+    satellite_path.parent.mkdir(parents=True)
+    era5.write_parquet(era5_path)
+    satellite.write_parquet(satellite_path)
+    files = tuple(InputFile(path=path, bytes=0, sha256="") for path in (era5_path, satellite_path))
+    return (
+        FrozenInputs(
+            stations=stations,
+            panel=panel,
+            support=support,
+            baseline_folds=pl.DataFrame(),
+            input_files=files,
+            baseline_generation_sha256=BASELINE_GENERATION,
+            station_inventory_generation_sha256=INVENTORY_GENERATION,
+        ),
+        _config(),
+        satellite,
+    )
+
+
+def test_pivot_satellite_monthly_preserves_aod_nulls() -> None:
+    panel = pl.DataFrame(
+        {
+            "station_name": ["station-00"],
+            "month": [date(2024, 3, 1)],
+            "mean": [10.0],
+            "target_state": ["observed"],
+        }
+    )
+
+    pivoted = pivot_satellite_monthly(_satellite_long(panel))
+
+    assert pivoted["maiac_aod"].to_list() == [None]
+    assert pivoted["s5p_no2"].to_list() == [2.0]
+    assert pivoted["s5p_so2"].to_list() == [3.0]
+
+
+def test_assemble_covariates_preserves_authoritative_panel_keys_and_satellite_nulls(
+    tmp_path: Path,
+) -> None:
+    inputs, config, _ = _covariate_inputs(tmp_path)
+
+    result = assemble_covariates(inputs, config)
+
+    assert (
+        result.select("station_name", "month").rows()
+        == inputs.panel.select("station_name", "month").sort("station_name", "month").rows()
+    )
+    assert result.group_by("target_state").len().sort("target_state").rows() == [
+        ("observed", 1),
+        ("withheld", 1),
+    ]
+    assert result.filter(pl.col("station_name") == "station-00")["maiac_aod"][0] is None
+    march = result.filter(pl.col("month") == date(2024, 3, 1))
+    assert march["month_sin"][0] == pytest.approx(1.0)
+    assert march["month_cos"][0] == pytest.approx(0.0, abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda frame: pl.concat([frame, frame.head(1)]), "duplicate"),
+        (
+            lambda frame: frame.with_columns(
+                pl.when(pl.col("source") == "s5p_so2")
+                .then(pl.lit("unexpected"))
+                .otherwise(pl.col("source"))
+                .alias("source")
+            ),
+            "source",
+        ),
+        (
+            lambda frame: frame.with_columns(
+                pl.when(pl.col("source") == "s5p_no2")
+                .then(pl.lit(False))
+                .otherwise(pl.col("satellite_observed"))
+                .alias("satellite_observed")
+            ),
+            "satellite observed",
+        ),
+        (lambda frame: frame.filter(pl.col("source") != "s5p_so2"), "complete source"),
+    ],
+)
+def test_pivot_satellite_monthly_rejects_invalid_long_rows(mutate: Any, message: str) -> None:
+    panel = pl.DataFrame(
+        {
+            "station_name": ["station-00"],
+            "month": [date(2024, 3, 1)],
+            "mean": [10.0],
+            "target_state": ["observed"],
+        }
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        pivot_satellite_monthly(mutate(_satellite_long(panel)))
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda frame: pl.concat(
+                [
+                    frame,
+                    frame.filter(pl.col("station_name") == "station-00").with_columns(
+                        pl.lit("station-outside").alias("station_name")
+                    ),
+                ]
+            ),
+            "satellite keys",
+        ),
+        (
+            lambda frame: frame.with_columns(
+                pl.when(pl.col("source") == "s5p_no2")
+                .then(pl.lit(False))
+                .otherwise(pl.col("ground_observed"))
+                .alias("ground_observed")
+            ),
+            "ground state",
+        ),
+    ],
+)
+def test_assemble_covariates_rejects_satellite_drift(
+    tmp_path: Path, mutate: Any, message: str
+) -> None:
+    inputs, config, satellite = _covariate_inputs(tmp_path)
+    satellite_path = inputs.input_files[-1].path
+    mutate(satellite).write_parquet(satellite_path)
+
+    with pytest.raises(RuntimeError, match=message):
+        assemble_covariates(inputs, config)
 
 
 def _config_payload() -> dict[str, object]:

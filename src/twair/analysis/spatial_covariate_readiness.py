@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
 from hashlib import sha256
@@ -25,8 +26,11 @@ __all__ = [
     "CovariateReadinessConfig",
     "FrozenInputs",
     "InputFile",
+    "aggregate_era5_monthly",
+    "assemble_covariates",
     "load_frozen_inputs",
     "load_spatial_covariate_readiness_config",
+    "pivot_satellite_monthly",
 ]
 
 
@@ -46,6 +50,72 @@ _EXPECTED_MODEL = ModelConfig(
     n_jobs=1,
     seed=20260811,
 )
+_ERA5_SOURCE_COLUMNS = (
+    "blh_m",
+    "u10_m_s",
+    "v10_m_s",
+    "t2m_k",
+    "d2m_k",
+    "sp_pa",
+)
+_ERA5_MONTHLY_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "station_name": pl.String,
+    "month": pl.Date,
+    "n_hours": pl.Int64,
+    "era5_blh_mean_m": pl.Float64,
+    "era5_u10_mean_m_s": pl.Float64,
+    "era5_v10_mean_m_s": pl.Float64,
+    "era5_wind_speed_mean_m_s": pl.Float64,
+    "era5_t2m_mean_k": pl.Float64,
+    "era5_dewpoint_depression_mean_k": pl.Float64,
+    "era5_sp_mean_pa": pl.Float64,
+}
+_SATELLITE_SOURCES = ("maiac_aod", "s5p_no2", "s5p_so2")
+_SATELLITE_LONG_COLUMNS = (
+    "source",
+    "station_name",
+    "month",
+    "satellite_value",
+    "ground_value",
+    "satellite_observed",
+    "ground_row_present",
+    "ground_meets_threshold",
+    "ground_observed",
+    "ground_withheld",
+    "pair_observed",
+)
+_SATELLITE_MONTHLY_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "station_name": pl.String,
+    "month": pl.Date,
+    "ground_value": pl.Float64,
+    "ground_row_present": pl.Boolean,
+    "ground_meets_threshold": pl.Boolean,
+    "ground_observed": pl.Boolean,
+    "ground_withheld": pl.Boolean,
+    "maiac_aod": pl.Float64,
+    "s5p_no2": pl.Float64,
+    "s5p_so2": pl.Float64,
+}
+_COVARIATE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "station_name": pl.String,
+    "month": pl.Date,
+    "target_state": pl.String,
+    "PM2.5": pl.Float64,
+    "lon": pl.Float64,
+    "lat": pl.Float64,
+    "x_m": pl.Float64,
+    "y_m": pl.Float64,
+    "month_sin": pl.Float64,
+    "month_cos": pl.Float64,
+    **{
+        name: dtype
+        for name, dtype in _ERA5_MONTHLY_SCHEMA.items()
+        if name not in {"station_name", "month", "n_hours"}
+    },
+    "maiac_aod": pl.Float64,
+    "s5p_no2": pl.Float64,
+    "s5p_so2": pl.Float64,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +150,336 @@ class FrozenInputs:
     input_files: tuple[InputFile, ...]
     baseline_generation_sha256: str
     station_inventory_generation_sha256: str
+
+
+def aggregate_era5_monthly(frame: pl.DataFrame, *, years: tuple[int, int]) -> pl.DataFrame:
+    """Aggregate complete station-hour ERA5 rows by Asia/Taipei calendar month."""
+    required = ("station_name", "ts_utc", "grid_lat", "grid_lon", *_ERA5_SOURCE_COLUMNS)
+    missing = set(required).difference(frame.columns)
+    if missing:
+        raise RuntimeError(f"ERA5 station-hour frame is missing columns: {sorted(missing)}")
+    if frame.is_empty():
+        raise RuntimeError("ERA5 station-hour frame is empty")
+    if frame.schema["ts_utc"] != pl.Datetime(time_zone="UTC"):
+        raise RuntimeError("ERA5 station-hour timestamps must use UTC Datetime values")
+    if frame.filter(
+        pl.col("station_name").is_null() | (pl.col("station_name").str.strip_chars() == "")
+    ).height:
+        raise RuntimeError("ERA5 station-hour frame has an empty station name")
+    if frame.group_by("station_name", "ts_utc").len().filter(pl.col("len") > 1).height:
+        raise RuntimeError("ERA5 station-hour keys are duplicate")
+
+    numeric_columns = ("grid_lat", "grid_lon", *_ERA5_SOURCE_COLUMNS)
+    invalid = frame.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(name).is_null() | ~pl.col(name).cast(pl.Float64, strict=False).is_finite()
+                for name in numeric_columns
+            )
+        )
+    )
+    if not invalid.is_empty():
+        raise RuntimeError("ERA5 station-hour frame has a null or non-finite source value")
+    if (
+        frame.group_by("station_name")
+        .agg(
+            pl.col("grid_lat").n_unique().alias("latitudes"),
+            pl.col("grid_lon").n_unique().alias("longitudes"),
+        )
+        .filter((pl.col("latitudes") != 1) | (pl.col("longitudes") != 1))
+        .height
+    ):
+        raise RuntimeError("ERA5 station-hour frame has inconsistent station grid coordinates")
+
+    local = frame.with_columns(
+        pl.col("ts_utc")
+        .dt.convert_time_zone("Asia/Taipei")
+        .dt.replace_time_zone(None)
+        .alias("ts_local")
+    ).with_columns(pl.col("ts_local").dt.truncate("1mo").cast(pl.Date).alias("month"))
+    if local.filter(~pl.col("month").dt.year().is_in(years)).height:
+        raise RuntimeError("ERA5 station-hour frame has a local month outside the configured years")
+
+    monthly = local.group_by("station_name", "month").agg(
+        pl.len().cast(pl.Int64).alias("n_hours"),
+        pl.col("blh_m").cast(pl.Float64).mean().alias("era5_blh_mean_m"),
+        pl.col("u10_m_s").cast(pl.Float64).mean().alias("era5_u10_mean_m_s"),
+        pl.col("v10_m_s").cast(pl.Float64).mean().alias("era5_v10_mean_m_s"),
+        (pl.col("u10_m_s").cast(pl.Float64).pow(2) + pl.col("v10_m_s").cast(pl.Float64).pow(2))
+        .sqrt()
+        .mean()
+        .alias("era5_wind_speed_mean_m_s"),
+        pl.col("t2m_k").cast(pl.Float64).mean().alias("era5_t2m_mean_k"),
+        (pl.col("t2m_k").cast(pl.Float64) - pl.col("d2m_k").cast(pl.Float64))
+        .mean()
+        .alias("era5_dewpoint_depression_mean_k"),
+        pl.col("sp_pa").cast(pl.Float64).mean().alias("era5_sp_mean_pa"),
+    )
+    incomplete = [
+        row
+        for row in monthly.iter_rows(named=True)
+        if row["n_hours"] != monthrange(row["month"].year, row["month"].month)[1] * 24
+    ]
+    if incomplete:
+        raise RuntimeError(
+            "ERA5 station-hour frame does not contain complete local calendar months"
+        )
+    return (
+        monthly.select(*_ERA5_MONTHLY_SCHEMA)
+        .cast(pl.Schema(_ERA5_MONTHLY_SCHEMA), strict=True)
+        .sort("station_name", "month")
+    )
+
+
+def _optional_finite(value: object, *, label: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RuntimeError(f"{label} must be a finite number or null")
+    converted = float(value)
+    if not math.isfinite(converted):
+        raise RuntimeError(f"{label} must be a finite number or null")
+    return converted
+
+
+def _required_columns(frame: pl.DataFrame, columns: tuple[str, ...], *, label: str) -> None:
+    missing = set(columns).difference(frame.columns)
+    if missing:
+        raise RuntimeError(f"{label} is missing columns: {sorted(missing)}")
+
+
+def _required_bool(value: object, *, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise RuntimeError(f"{label} must be Boolean")
+    return value
+
+
+def pivot_satellite_monthly(frame: pl.DataFrame) -> pl.DataFrame:
+    """Pivot one complete set of M8 source rows per station-month without filling nulls."""
+    _required_columns(frame, _SATELLITE_LONG_COLUMNS, label="satellite panel")
+    selected = frame.select(*_SATELLITE_LONG_COLUMNS)
+    if selected.schema["month"] != pl.Date:
+        raise RuntimeError("satellite panel month must use Date values")
+    if selected.is_empty():
+        raise RuntimeError("satellite panel is empty")
+    if selected.filter(
+        pl.col("station_name").is_null()
+        | (pl.col("station_name").cast(pl.String).str.strip_chars() == "")
+    ).height:
+        raise RuntimeError("satellite panel has an empty station name")
+    sources = set(selected["source"].to_list())
+    if sources.difference(_SATELLITE_SOURCES):
+        raise RuntimeError("satellite panel has an unexpected source name")
+    if set(_SATELLITE_SOURCES).difference(sources):
+        raise RuntimeError("satellite panel lacks a complete source set")
+    if selected.group_by("source", "station_name", "month").len().filter(pl.col("len") > 1).height:
+        raise RuntimeError("satellite panel has duplicate source station-month keys")
+
+    rows: list[dict[str, object]] = []
+    for key, group in selected.group_by("station_name", "month", maintain_order=True):
+        station_name, month = key
+        if group.height != len(_SATELLITE_SOURCES) or set(group["source"].to_list()) != set(
+            _SATELLITE_SOURCES
+        ):
+            raise RuntimeError("satellite panel lacks a complete source set")
+        ground_states: list[tuple[float | None, bool, bool | None, bool, bool]] = []
+        values: dict[str, float | None] = {}
+        for item in group.iter_rows(named=True):
+            source = str(item["source"])
+            satellite = _optional_finite(item["satellite_value"], label=f"{source} satellite value")
+            satellite_observed = _required_bool(
+                item["satellite_observed"], label=f"{source} satellite observed flag"
+            )
+            if satellite_observed != (satellite is not None):
+                raise RuntimeError("satellite observed flags disagree with satellite nulls")
+            ground = _optional_finite(item["ground_value"], label="satellite ground value")
+            present = _required_bool(
+                item["ground_row_present"], label="satellite ground row-present flag"
+            )
+            threshold = item["ground_meets_threshold"]
+            if threshold is not None and not isinstance(threshold, bool):
+                raise RuntimeError("satellite ground threshold flag must be Boolean or null")
+            observed = _required_bool(
+                item["ground_observed"], label="satellite ground observed flag"
+            )
+            withheld = _required_bool(
+                item["ground_withheld"], label="satellite ground withheld flag"
+            )
+            if not present:
+                if ground is not None or threshold is not None or observed or withheld:
+                    raise RuntimeError(
+                        "satellite ground state flags disagree with the ground value"
+                    )
+            elif ground is None:
+                if threshold is not False or observed or not withheld:
+                    raise RuntimeError(
+                        "satellite ground state flags disagree with the ground value"
+                    )
+            elif threshold is not True or not observed or withheld:
+                raise RuntimeError("satellite ground state flags disagree with the ground value")
+            pair_observed = _required_bool(
+                item["pair_observed"], label="satellite pair observed flag"
+            )
+            if pair_observed != (satellite_observed and observed):
+                raise RuntimeError(
+                    "satellite pair observed flags disagree with source and ground states"
+                )
+            values[source] = satellite
+            ground_states.append((ground, present, threshold, observed, withheld))
+        if len(set(ground_states)) != 1:
+            raise RuntimeError("satellite ground state differs across source rows")
+        ground, present, threshold, observed, withheld = ground_states[0]
+        rows.append(
+            {
+                "station_name": station_name,
+                "month": month,
+                "ground_value": ground,
+                "ground_row_present": present,
+                "ground_meets_threshold": threshold,
+                "ground_observed": observed,
+                "ground_withheld": withheld,
+                **values,
+            }
+        )
+    return pl.DataFrame(rows, schema=_SATELLITE_MONTHLY_SCHEMA).sort("station_name", "month")
+
+
+def _require_exact_key_grid(
+    authoritative: pl.DataFrame, candidate: pl.DataFrame, *, label: str
+) -> None:
+    key = ("station_name", "month")
+    if candidate.group_by(*key).len().filter(pl.col("len") > 1).height:
+        raise RuntimeError(f"{label} has duplicate station-month keys")
+    expected = authoritative.select(*key)
+    observed = candidate.select(*key)
+    if (
+        expected.height != observed.height
+        or not expected.join(observed, on=list(key), how="anti").is_empty()
+        or not observed.join(expected, on=list(key), how="anti").is_empty()
+    ):
+        raise RuntimeError(f"{label} keys do not match the authoritative panel")
+
+
+def _external_frames(inputs: FrozenInputs) -> tuple[pl.DataFrame, pl.DataFrame]:
+    era5_paths = [path.path for path in inputs.input_files if "era5" in path.path.parts]
+    satellite_paths = [
+        path.path for path in inputs.input_files if "m8_satellite" in path.path.parts
+    ]
+    if not era5_paths or not satellite_paths:
+        raise RuntimeError("spatial covariate external input paths are missing")
+    try:
+        era5 = pl.concat([pl.read_parquet(path) for path in era5_paths], how="vertical_relaxed")
+        satellite = pl.concat(
+            [pl.read_parquet(path) for path in satellite_paths], how="vertical_relaxed"
+        )
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError("spatial covariate external input is unreadable") from exc
+    return era5, satellite
+
+
+def _local_year_rows(frame: pl.DataFrame, *, years: tuple[int, int]) -> pl.DataFrame:
+    _required_columns(frame, ("ts_utc",), label="ERA5 station-hour frame")
+    if frame.schema["ts_utc"] != pl.Datetime(time_zone="UTC"):
+        raise RuntimeError("ERA5 station-hour timestamps must use UTC Datetime values")
+    return (
+        frame.with_columns(
+            pl.col("ts_utc")
+            .dt.convert_time_zone("Asia/Taipei")
+            .dt.replace_time_zone(None)
+            .dt.year()
+            .alias("_local_year")
+        )
+        .filter(pl.col("_local_year").is_in(years))
+        .drop("_local_year")
+    )
+
+
+def assemble_covariates(inputs: FrozenInputs, config: CovariateReadinessConfig) -> pl.DataFrame:
+    """Join the frozen target panel to exact spatial, weather, and satellite features."""
+    panel = inputs.panel.select("station_name", "month", "mean", "target_state", "lon", "lat")
+    _require_exact_key_grid(panel, panel, label="authoritative panel")
+    if set(panel["target_state"].to_list()) != {"observed", "withheld"}:
+        raise RuntimeError("authoritative panel target states changed")
+    observed = panel.filter(pl.col("target_state") == "observed")
+    withheld = panel.filter(pl.col("target_state") == "withheld")
+    if (
+        observed.filter(pl.col("mean").is_null() | ~pl.col("mean").is_finite()).height
+        or withheld.filter(pl.col("mean").is_not_null()).height
+    ):
+        raise RuntimeError("authoritative panel target values changed")
+    support = inputs.support.select("station_name", "x_m", "y_m")
+    if support.group_by("station_name").len().filter(pl.col("len") > 1).height:
+        raise RuntimeError("support coordinates have duplicate station names")
+    if set(support["station_name"].to_list()) != set(panel["station_name"].to_list()):
+        raise RuntimeError("support coordinates do not match the authoritative station set")
+    if support.filter(
+        pl.any_horizontal(
+            *(
+                pl.col(name).is_null() | ~pl.col(name).cast(pl.Float64).is_finite()
+                for name in ("x_m", "y_m")
+            )
+        )
+    ).height:
+        raise RuntimeError("support coordinates contain a non-finite value")
+
+    era5_raw, satellite_raw = _external_frames(inputs)
+    era5 = aggregate_era5_monthly(
+        _local_year_rows(era5_raw, years=config.years), years=config.years
+    )
+    satellite = pivot_satellite_monthly(satellite_raw)
+    _require_exact_key_grid(panel, era5, label="ERA5 monthly")
+    _require_exact_key_grid(panel, satellite, label="satellite")
+    expected_ground = panel.select("station_name", "month", "mean", "target_state").rename(
+        {"mean": "ground_value"}
+    )
+    compared_ground = satellite.select(
+        "station_name",
+        "month",
+        "ground_value",
+        "ground_row_present",
+        "ground_meets_threshold",
+        "ground_observed",
+        "ground_withheld",
+    ).join(expected_ground, on=["station_name", "month"], how="inner")
+    if compared_ground.filter(
+        ~pl.col("ground_row_present")
+        | (pl.col("ground_meets_threshold") != (pl.col("target_state") == "observed"))
+        | (pl.col("ground_observed") != (pl.col("target_state") == "observed"))
+        | (pl.col("ground_withheld") != (pl.col("target_state") == "withheld"))
+        | (pl.col("ground_value") != pl.col("ground_value_right"))
+        | (pl.col("ground_value").is_null() != pl.col("ground_value_right").is_null())
+    ).height:
+        raise RuntimeError("satellite ground state does not match the authoritative panel")
+
+    result = (
+        panel.join(support, on="station_name", how="left")
+        .join(era5.drop("n_hours"), on=["station_name", "month"], how="left")
+        .join(
+            satellite.select("station_name", "month", *_SATELLITE_SOURCES),
+            on=["station_name", "month"],
+            how="left",
+        )
+        .with_columns(
+            pl.col("mean").alias("PM2.5"),
+            ((pl.col("month").dt.month() * (2.0 * math.pi / 12.0)).sin()).alias("month_sin"),
+            ((pl.col("month").dt.month() * (2.0 * math.pi / 12.0)).cos()).alias("month_cos"),
+        )
+        .select(*_COVARIATE_SCHEMA)
+        .cast(pl.Schema(_COVARIATE_SCHEMA), strict=True)
+        .sort("station_name", "month")
+    )
+    required_finite = tuple(
+        name
+        for name in _COVARIATE_SCHEMA
+        if name not in {"station_name", "month", "target_state", "PM2.5", *_SATELLITE_SOURCES}
+    )
+    if result.filter(
+        pl.any_horizontal(
+            *(pl.col(name).is_null() | ~pl.col(name).is_finite() for name in required_finite)
+        )
+    ).height:
+        raise RuntimeError("assembled covariates contain a non-finite required feature")
+    return result
 
 
 def _mapping(value: object, *, path: str, keys: set[str]) -> dict[str, Any]:
