@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import math
+import os
+import shutil
+import stat
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import geopandas as gpd
 import numpy as np
@@ -18,11 +23,19 @@ from sklearn.cluster import KMeans
 
 from twair.config import ConfigError, load_conf
 from twair.ingest.station_inventory import station_inventory_generation
+from twair.paths import outputs_dir
+from twair.provenance import git_state
 
 __all__ = [
+    "SPATIAL_BASELINE_LIMITATIONS",
+    "SPATIAL_BASELINE_MEMBER_NAMES",
+    "SPATIAL_BASELINE_SCHEMA_VERSION",
+    "SPATIAL_BASELINE_TABLE_ORDER",
+    "SPATIAL_BASELINE_TABLE_SCHEMAS",
     "FileIdentity",
     "Prediction",
     "SpatialSurfaceBaselineConfig",
+    "SpatialSurfaceBaselineResult",
     "SurfaceInputs",
     "assign_spatial_clusters",
     "bootstrap_station_delta",
@@ -34,10 +47,29 @@ __all__ = [
     "load_surface_inputs",
     "paired_method_deltas",
     "predict_target",
+    "run_spatial_surface_baseline",
     "score_predictions",
+    "write_spatial_surface_baseline_result",
 ]
 
 
+SPATIAL_BASELINE_SCHEMA_VERSION = 1
+SPATIAL_BASELINE_LIMITATIONS = (
+    "baseline readiness gate only; no concentration surface was generated",
+    "passing permits covariate-model design, not publication of a map",
+    "no population-weighted or personal-exposure result",
+)
+SPATIAL_BASELINE_MEMBER_NAMES = (
+    "stations.parquet",
+    "panel.parquet",
+    "support.parquet",
+    "folds.parquet",
+    "predictions.parquet",
+    "scores.parquet",
+    "paired_deltas.parquet",
+    "summary.json",
+    "manifest.json",
+)
 _STATION_COLUMNS = ("station_name", "station_type_official", "lon", "lat")
 _MONTHLY_COLUMNS = ("station_name", "pollutant", "month", "mean", "meets_threshold")
 _SUPPORTED_METHODS = (
@@ -93,6 +125,61 @@ _PAIRED_DELTA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "paired_state": pl.String,
 }
 _TARGET_KEY_COLUMNS = ("evaluation", "fold_id", "year", "month", "target_station")
+_STATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "station_name": pl.String,
+    "station_type_official": pl.String,
+    "lon": pl.Float64,
+    "lat": pl.Float64,
+}
+_PANEL_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **_STATION_SCHEMA,
+    "month": pl.Date,
+    "pollutant": pl.String,
+    "mean": pl.Float64,
+    "meets_threshold": pl.Boolean,
+    "target_state": pl.String,
+}
+_SUPPORT_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "station_name": pl.String,
+    "nearest_station": pl.String,
+    "nearest_station_km": pl.Float64,
+    "stations_within_20km": pl.Int64,
+    "stations_within_40km": pl.Int64,
+    "x_m": pl.Float64,
+    "y_m": pl.Float64,
+}
+_FOLD_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    "evaluation": pl.String,
+    "fold_id": pl.String,
+    "year": pl.Int64,
+    "month": pl.Date,
+    "target_station": pl.String,
+    "target_cluster": pl.Int64,
+    "target_state": pl.String,
+    "observed": pl.Float64,
+    "train_stations": pl.List(pl.String),
+    "n_train": pl.Int64,
+    "fold_state": pl.String,
+    "fold_reason": pl.String,
+}
+SPATIAL_BASELINE_TABLE_SCHEMAS = {
+    "stations": _STATION_SCHEMA,
+    "panel": _PANEL_SCHEMA,
+    "support": _SUPPORT_SCHEMA,
+    "folds": _FOLD_SCHEMA,
+    "predictions": _PREDICTION_SCHEMA,
+    "scores": _SCORE_SCHEMA,
+    "paired_deltas": _PAIRED_DELTA_SCHEMA,
+}
+SPATIAL_BASELINE_TABLE_ORDER = {
+    "stations": ("station_name",),
+    "panel": ("station_name", "month"),
+    "support": ("station_name",),
+    "folds": ("evaluation", "year", "month", "target_station"),
+    "predictions": (*_TARGET_KEY_COLUMNS, "method"),
+    "scores": ("evaluation", "year", "method"),
+    "paired_deltas": ("evaluation", "year", "method"),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +223,19 @@ class Prediction:
     kriging_sd: float | None
     state: str
     failure_type: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SpatialSurfaceBaselineResult:
+    stations: pl.DataFrame
+    panel: pl.DataFrame
+    support: pl.DataFrame
+    folds: pl.DataFrame
+    predictions: pl.DataFrame
+    scores: pl.DataFrame
+    paired_deltas: pl.DataFrame
+    summary: dict[str, Any]
+    manifest: dict[str, Any]
 
 
 def _mapping(value: object, *, path: str) -> dict[str, Any]:
@@ -1034,9 +1134,390 @@ def decide_baseline_gate(
         "qualifying_methods": sorted(qualifying),
         "required_cells": 4,
         "rule": "complete predictions and median station MAE delta < 0 in 2024/2025 at 20/40 km",
-        "limitations": [
-            "baseline readiness gate only; no concentration surface was generated",
-            "passing permits covariate-model design, not publication of a map",
-            "no population-weighted or personal-exposure result",
-        ],
+        "limitations": list(SPATIAL_BASELINE_LIMITATIONS),
     }
+
+
+def _normalized_config(config: SpatialSurfaceBaselineConfig) -> dict[str, object]:
+    return {
+        "schema_version": SPATIAL_BASELINE_SCHEMA_VERSION,
+        "analysis": {
+            "years": list(config.years),
+            "pollutant": config.pollutant,
+            "station_types": list(config.station_types),
+            "excluded_stations": list(config.excluded_stations),
+            "min_train_stations": config.min_train_stations,
+        },
+        "validation": {
+            "buffer_radii_km": list(config.buffer_radii_km),
+            "spatial_folds": config.spatial_folds,
+            "projection_epsg": config.projection_epsg,
+            "methods": list(config.methods),
+            "idw_power": config.idw_power,
+            "minimum_distance_km": config.minimum_distance_km,
+            "bootstrap_draws": config.bootstrap_draws,
+            "seed": config.seed,
+        },
+        "gate": {
+            "comparison_method": config.comparison_method,
+            "required_evaluations": list(config.required_evaluations),
+            "required_years": list(config.required_years),
+        },
+    }
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _canonical_hash(value: object) -> str:
+    return sha256(_canonical_json_bytes(value)).hexdigest()
+
+
+def _normalized_table(name: str, frame: pl.DataFrame) -> pl.DataFrame:
+    schema = SPATIAL_BASELINE_TABLE_SCHEMAS[name]
+    if set(frame.columns) != set(schema):
+        raise RuntimeError(f"spatial surface {name} columns changed")
+    return (
+        frame.select(*schema)
+        .cast(pl.Schema(schema), strict=True)
+        .sort(*SPATIAL_BASELINE_TABLE_ORDER[name])
+    )
+
+
+def _table_identity(name: str, frame: pl.DataFrame) -> dict[str, object]:
+    normalized = _normalized_table(name, frame)
+    payload = _canonical_json_bytes(
+        {
+            "schema": [[column, str(dtype)] for column, dtype in normalized.schema.items()],
+            "order": list(SPATIAL_BASELINE_TABLE_ORDER[name]),
+            "rows": [[_table_scalar(value) for value in row] for row in normalized.iter_rows()],
+        }
+    )
+    return {
+        "rows": normalized.height,
+        "bytes": len(payload),
+        "sha256": sha256(payload).hexdigest(),
+        "schema": {column: str(dtype) for column, dtype in normalized.schema.items()},
+        "order": list(SPATIAL_BASELINE_TABLE_ORDER[name]),
+    }
+
+
+def _table_scalar(value: object) -> object:
+    if isinstance(value, date):
+        return {"date": value.isoformat()}
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return {"float": "nan"}
+        return {"float": "positive_infinity" if value > 0 else "negative_infinity"}
+    if isinstance(value, (list, tuple)):
+        return [_table_scalar(item) for item in value]
+    return value
+
+
+def _result_frames(result: SpatialSurfaceBaselineResult) -> dict[str, pl.DataFrame]:
+    return {
+        name: _normalized_table(name, getattr(result, name))
+        for name in SPATIAL_BASELINE_TABLE_SCHEMAS
+    }
+
+
+def _manifest_identity(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"generated_at", "complete", "generation_sha256"}
+    }
+
+
+def _input_manifest(
+    inputs: SurfaceInputs,
+    *,
+    data_root: Path,
+) -> list[dict[str, object]]:
+    root = data_root.absolute()
+    identities: list[dict[str, object]] = []
+    for identity in inputs.input_files:
+        path = identity.path.absolute()
+        try:
+            relative = path.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeError("spatial surface input is outside data root") from exc
+        identities.append(
+            {
+                "path": relative.as_posix(),
+                "bytes": identity.bytes,
+                "sha256": identity.sha256,
+            }
+        )
+    return sorted(identities, key=lambda value: str(value["path"]))
+
+
+def run_spatial_surface_baseline(
+    *,
+    data_root: Path,
+    config: SpatialSurfaceBaselineConfig | None = None,
+    generated_at: str | None = None,
+) -> SpatialSurfaceBaselineResult:
+    reviewed = config if config is not None else load_spatial_surface_baseline_config()
+    inputs = load_surface_inputs(data_root, reviewed)
+    support = build_station_support(inputs.stations, reviewed)
+    folds = build_fold_ledger(inputs, reviewed)
+    predictions = evaluate_baselines(inputs, folds, reviewed)
+    scores = score_predictions(predictions, reviewed)
+    paired_deltas = paired_method_deltas(predictions, reviewed)
+    gate = decide_baseline_gate(scores, paired_deltas, reviewed)
+    frames = {
+        "stations": inputs.stations,
+        "panel": inputs.panel,
+        "support": support,
+        "folds": folds,
+        "predictions": predictions,
+        "scores": scores,
+        "paired_deltas": paired_deltas,
+    }
+    normalized = {name: _normalized_table(name, frame) for name, frame in frames.items()}
+    tables = {name: _table_identity(name, frame) for name, frame in normalized.items()}
+    claim_boundary = {
+        "feeds_web": False,
+        "limitations": list(SPATIAL_BASELINE_LIMITATIONS),
+    }
+    summary: dict[str, Any] = {
+        "analysis": "spatial_surface_baseline",
+        "inventory_generation_sha256": inputs.inventory_generation_sha256,
+        "output_rows": {name: frame.height for name, frame in normalized.items()},
+        "gate": gate,
+        **claim_boundary,
+    }
+    git_sha, git_dirty = git_state()
+    identity: dict[str, Any] = {
+        "schema_version": SPATIAL_BASELINE_SCHEMA_VERSION,
+        "analysis": "spatial_surface_baseline",
+        "config": _normalized_config(reviewed),
+        "inputs": _input_manifest(inputs, data_root=data_root),
+        "inventory_generation_sha256": inputs.inventory_generation_sha256,
+        "tables": tables,
+        "gate": gate,
+        "claim_boundary": claim_boundary,
+        "git_sha": git_sha,
+        "git_dirty": git_dirty,
+    }
+    manifest = {
+        **identity,
+        "generated_at": generated_at
+        if generated_at is not None
+        else datetime.now(UTC).isoformat(timespec="seconds"),
+        "complete": False,
+        "generation_sha256": _canonical_hash(identity),
+    }
+    return SpatialSurfaceBaselineResult(
+        stations=normalized["stations"],
+        panel=normalized["panel"],
+        support=normalized["support"],
+        folds=normalized["folds"],
+        predictions=normalized["predictions"],
+        scores=normalized["scores"],
+        paired_deltas=normalized["paired_deltas"],
+        summary=summary,
+        manifest=manifest,
+    )
+
+
+def _path_exists(path: Path) -> bool:
+    return os.path.lexists(path)
+
+
+def _is_link_or_reparse(path: Path) -> bool:
+    try:
+        attributes = int(getattr(path.lstat(), "st_file_attributes", 0))
+    except OSError:
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    return (
+        path.is_symlink()
+        or (is_junction is not None and is_junction())
+        or bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    )
+
+
+def _validated_directory(path: Path, *, label: str) -> Path:
+    absolute = path.absolute()
+    try:
+        resolved = absolute.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(f"{label} is unreadable") from exc
+    if _is_link_or_reparse(absolute) or not absolute.is_dir() or resolved != absolute:
+        raise RuntimeError(f"{label} is linked, reparse-point, or outside")
+    return absolute
+
+
+def _ensure_directory(path: Path, *, label: str) -> Path:
+    if _path_exists(path):
+        return _validated_directory(path, label=label)
+    path.mkdir()
+    return _validated_directory(path, label=label)
+
+
+def _validate_generation_inventory(directory: Path, *, label: str) -> tuple[Path, ...]:
+    validated = _validated_directory(directory, label=label)
+    try:
+        entries = tuple(validated.iterdir())
+    except OSError as exc:
+        raise RuntimeError(f"{label} is unreadable") from exc
+    if {entry.name for entry in entries} != set(SPATIAL_BASELINE_MEMBER_NAMES):
+        raise RuntimeError(f"{label} has an unexpected member inventory")
+    for entry in entries:
+        try:
+            resolved = entry.resolve(strict=True)
+            links = entry.stat().st_nlink
+        except OSError as exc:
+            raise RuntimeError(f"{label} member is unreadable: {entry.name}") from exc
+        if (
+            _is_link_or_reparse(entry)
+            or not entry.is_file()
+            or resolved.parent != validated
+            or links != 1
+        ):
+            raise RuntimeError(f"{label} member is linked or reparse-point: {entry.name}")
+    return entries
+
+
+def _observed_file_identity(path: Path) -> dict[str, object]:
+    payload = path.read_bytes()
+    return {"bytes": len(payload), "sha256": sha256(payload).hexdigest()}
+
+
+def _write_canonical_json(path: Path, value: object) -> None:
+    path.write_bytes(_canonical_json_bytes(value))
+
+
+def _written_paths(directory: Path) -> dict[str, Path]:
+    return {
+        **{name: directory / f"{name}.parquet" for name in SPATIAL_BASELINE_TABLE_SCHEMAS},
+        "summary": directory / "summary.json",
+        "manifest": directory / "manifest.json",
+    }
+
+
+def _validate_existing_generation(
+    destination: Path,
+    *,
+    staged: Path,
+    expected_identity: dict[str, Any],
+) -> dict[str, Path]:
+    try:
+        _validate_generation_inventory(destination, label="existing generation")
+        manifest_path = destination / "manifest.json"
+        payload = manifest_path.read_bytes()
+        manifest = json.loads(payload.decode("utf-8"))
+        if not isinstance(manifest, dict) or payload != _canonical_json_bytes(manifest):
+            raise RuntimeError("manifest is not canonical")
+        if (
+            manifest.get("complete") is not True
+            or manifest.get("generation_sha256") != destination.name
+            or _manifest_identity(manifest) != expected_identity
+            or _canonical_hash(expected_identity) != destination.name
+        ):
+            raise RuntimeError("manifest identity differs")
+        members = manifest.get("members")
+        if not isinstance(members, dict) or set(members) != set(SPATIAL_BASELINE_MEMBER_NAMES[:-1]):
+            raise RuntimeError("manifest member identities differ")
+        for name in SPATIAL_BASELINE_MEMBER_NAMES[:-1]:
+            existing = destination / name
+            if _observed_file_identity(existing) != members[name]:
+                raise RuntimeError(f"member checksum differs: {name}")
+            if existing.read_bytes() != (staged / name).read_bytes():
+                raise RuntimeError(f"member bytes differ: {name}")
+    except (KeyError, OSError, UnicodeError, json.JSONDecodeError, RuntimeError) as exc:
+        raise RuntimeError(f"existing generation is not reusable: {exc}") from exc
+    return _written_paths(destination)
+
+
+def _remove_invocation_staging(staged: Path, *, generations: Path, token: str) -> None:
+    if not _path_exists(staged):
+        return
+    if (
+        staged.name != f".spatial-surface-baseline.staging-{token}"
+        or staged.absolute().parent != generations
+    ):
+        return
+    try:
+        validated = _validated_directory(staged, label="spatial surface staging directory")
+    except RuntimeError:
+        return
+    if validated.parent == generations:
+        shutil.rmtree(validated)
+
+
+def write_spatial_surface_baseline_result(
+    result: SpatialSurfaceBaselineResult,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, Path]:
+    frames = _result_frames(result)
+    expected_tables = {name: _table_identity(name, frame) for name, frame in frames.items()}
+    provisional_identity = _manifest_identity(result.manifest)
+    if (
+        result.manifest.get("complete") is not False
+        or result.manifest.get("generation_sha256") != _canonical_hash(provisional_identity)
+        or provisional_identity.get("tables") != expected_tables
+    ):
+        raise RuntimeError("spatial surface prepared result identity changed")
+    selected_root = (
+        output_root.absolute()
+        if output_root is not None
+        else outputs_dir("spatial_surface_baseline").absolute()
+    )
+    if not _path_exists(selected_root):
+        selected_root.mkdir(parents=True)
+    root = _validated_directory(selected_root, label="spatial surface output root")
+    generations = _ensure_directory(
+        root / "generations", label="spatial surface generations directory"
+    )
+    token = uuid4().hex
+    staged = generations / f".spatial-surface-baseline.staging-{token}"
+    staged.mkdir()
+    _validated_directory(staged, label="spatial surface staging directory")
+    try:
+        for name, frame in frames.items():
+            frame.write_parquet(staged / f"{name}.parquet")
+        _write_canonical_json(staged / "summary.json", result.summary)
+        members = {
+            name: _observed_file_identity(staged / name)
+            for name in SPATIAL_BASELINE_MEMBER_NAMES[:-1]
+        }
+        final_identity = {**provisional_identity, "members": members}
+        generation = _canonical_hash(final_identity)
+        destination = generations / generation
+        manifest = {
+            **final_identity,
+            "generated_at": result.manifest["generated_at"],
+            "complete": True,
+            "generation_sha256": generation,
+        }
+        _write_canonical_json(staged / "manifest.json", manifest)
+        _validate_generation_inventory(staged, label="spatial surface staging generation")
+        if _path_exists(destination):
+            return _validate_existing_generation(
+                destination,
+                staged=staged,
+                expected_identity=final_identity,
+            )
+        try:
+            staged.replace(destination)
+        except FileExistsError:
+            return _validate_existing_generation(
+                destination,
+                staged=staged,
+                expected_identity=final_identity,
+            )
+        _validate_generation_inventory(destination, label="spatial surface final generation")
+        return _written_paths(destination)
+    finally:
+        _remove_invocation_staging(staged, generations=generations, token=token)

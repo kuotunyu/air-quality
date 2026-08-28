@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
+import subprocess
+import sys
+import tempfile
 from copy import deepcopy
 from dataclasses import replace
 from datetime import date
@@ -16,6 +20,7 @@ from pykrige.ok import OrdinaryKriging
 import twair.analysis.spatial_surface_baseline as spatial_surface_baseline
 from twair.analysis.spatial_surface_baseline import (
     SpatialSurfaceBaselineConfig,
+    SpatialSurfaceBaselineResult,
     SurfaceInputs,
     assign_spatial_clusters,
     bootstrap_station_delta,
@@ -27,7 +32,9 @@ from twair.analysis.spatial_surface_baseline import (
     load_surface_inputs,
     paired_method_deltas,
     predict_target,
+    run_spatial_surface_baseline,
     score_predictions,
+    write_spatial_surface_baseline_result,
 )
 from twair.config import ConfigError, load_conf
 
@@ -380,6 +387,39 @@ def write_surface_fixture(root: Path) -> Path:
         },
     ).write_parquet(monthly_path)
     return root
+
+
+def mutate_one_monthly_value(root: Path) -> None:
+    """Change one finite fixture mean without changing its table shape."""
+    monthly_path = _monthly_path(root)
+    monthly = pl.read_parquet(monthly_path).with_columns(
+        pl.when(
+            (pl.col("station_name") == "一般甲")
+            & (pl.col("pollutant") == "PM2.5")
+            & (pl.col("month") == date(2024, 1, 1))
+        )
+        .then(pl.col("mean") + 0.25)
+        .otherwise(pl.col("mean"))
+        .alias("mean")
+    )
+    monthly.write_parquet(monthly_path)
+
+
+def synthetic_baseline_result() -> SpatialSurfaceBaselineResult:
+    """Return a complete self-consistent immutable-writer fixture."""
+    with tempfile.TemporaryDirectory(prefix="twair-spatial-baseline-") as temporary:
+        root = write_surface_fixture(Path(temporary))
+        return run_spatial_surface_baseline(
+            data_root=root,
+            config=_config(spatial_folds=2),
+            generated_at="2026-08-28T00:00:00+00:00",
+        )
+
+
+def corrupt_file(path: Path) -> None:
+    """Flip the final byte of one artifact without changing its length."""
+    payload = path.read_bytes()
+    path.write_bytes(payload[:-1] + bytes([payload[-1] ^ 1]))
 
 
 def _stations_path(root: Path) -> Path:
@@ -962,3 +1002,189 @@ def test_spatial_cluster_score_cannot_substitute_for_a_missing_primary_buffer_ce
         ).height
         == 2
     )
+
+
+def test_generation_identity_changes_when_any_bound_input_changes(tmp_path: Path) -> None:
+    root = write_surface_fixture(tmp_path)
+    first = run_spatial_surface_baseline(
+        data_root=root,
+        config=_config(spatial_folds=2),
+        generated_at="2026-08-28T00:00:00+00:00",
+    )
+    mutate_one_monthly_value(root)
+    second = run_spatial_surface_baseline(
+        data_root=root,
+        config=_config(spatial_folds=2),
+        generated_at="2026-08-29T00:00:00+00:00",
+    )
+
+    assert first.manifest["generation_sha256"] != second.manifest["generation_sha256"]
+
+
+def test_generation_identity_excludes_generated_at_but_binds_normalized_config(
+    tmp_path: Path,
+) -> None:
+    root = write_surface_fixture(tmp_path)
+    first = run_spatial_surface_baseline(
+        data_root=root,
+        config=_config(spatial_folds=2),
+        generated_at="2026-08-28T00:00:00+00:00",
+    )
+    later = run_spatial_surface_baseline(
+        data_root=root,
+        config=_config(spatial_folds=2),
+        generated_at="2026-08-29T00:00:00+00:00",
+    )
+    changed_config = run_spatial_surface_baseline(
+        data_root=root,
+        config=replace(_config(spatial_folds=2), minimum_distance_km=0.2),
+        generated_at="2026-08-28T00:00:00+00:00",
+    )
+
+    assert first.manifest["generation_sha256"] == later.manifest["generation_sha256"]
+    assert first.manifest["generation_sha256"] != changed_config.manifest["generation_sha256"]
+
+
+def test_writer_reuses_an_identical_generation_and_refuses_collision(tmp_path: Path) -> None:
+    result = synthetic_baseline_result()
+    first = write_spatial_surface_baseline_result(result, output_root=tmp_path)
+    second = write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    assert first == second
+    corrupt_file(first["scores"])
+    with pytest.raises(RuntimeError, match="existing generation"):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+
+def test_atomic_writer_removes_only_its_staging_after_interruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = synthetic_baseline_result()
+    sentinel = tmp_path / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    original_write_parquet = pl.DataFrame.write_parquet
+    calls = 0
+
+    def interrupt_after_first_member(
+        self: pl.DataFrame, file: str | Path, *args: Any, **kwargs: Any
+    ) -> None:
+        nonlocal calls
+        original_write_parquet(self, file, *args, **kwargs)
+        calls += 1
+        if calls == 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(pl.DataFrame, "write_parquet", interrupt_after_first_member)
+
+    with pytest.raises(KeyboardInterrupt):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert not list((tmp_path / "generations").glob(".spatial-surface-baseline.staging-*"))
+    assert not [
+        path
+        for path in (tmp_path / "generations").iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    ]
+
+
+def test_failed_promotion_never_deletes_the_final_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = synthetic_baseline_result()
+    original_replace = Path.replace
+
+    def promote_then_report_failure(self: Path, target: Path) -> Path:
+        promoted = original_replace(self, target)
+        if self.name.startswith(".spatial-surface-baseline.staging-"):
+            raise OSError("simulated post-rename failure")
+        return promoted
+
+    monkeypatch.setattr(Path, "replace", promote_then_report_failure)
+
+    with pytest.raises(OSError, match="post-rename failure"):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    generations = [
+        path
+        for path in (tmp_path / "generations").iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    ]
+    assert len(generations) == 1
+    assert (generations[0] / "manifest.json").is_file()
+    assert not list((tmp_path / "generations").glob(".spatial-surface-baseline.staging-*"))
+
+
+def test_writer_rejects_an_unexpected_existing_generation_member(tmp_path: Path) -> None:
+    result = synthetic_baseline_result()
+    written = write_spatial_surface_baseline_result(result, output_root=tmp_path)
+    unexpected = written["manifest"].parent / "unexpected.txt"
+    unexpected.write_text("not reviewed", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="existing generation"):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    assert unexpected.read_text(encoding="utf-8") == "not reviewed"
+
+
+def test_writer_rejects_a_symlinked_existing_generation_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = synthetic_baseline_result()
+    written = write_spatial_surface_baseline_result(result, output_root=tmp_path)
+    real_is_symlink = Path.is_symlink
+    monkeypatch.setattr(
+        Path,
+        "is_symlink",
+        lambda path: path == written["scores"] or real_is_symlink(path),
+    )
+
+    with pytest.raises(RuntimeError, match="existing generation"):
+        write_spatial_surface_baseline_result(result, output_root=tmp_path)
+
+    assert written["scores"].is_file()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows reparse-point contract")
+def test_writer_rejects_a_windows_reparse_point_generations_destination(tmp_path: Path) -> None:
+    outside = tmp_path / "outside-generations"
+    outside.mkdir()
+    linked = tmp_path / "generations"
+    completed = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(linked), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        pytest.skip("directory junctions are unavailable")
+
+    with pytest.raises(RuntimeError, match=r"reparse|linked"):
+        write_spatial_surface_baseline_result(synthetic_baseline_result(), output_root=tmp_path)
+
+    assert linked.is_junction()
+    assert outside.is_dir()
+
+
+def test_complete_true_appears_only_in_the_final_immutable_manifest(tmp_path: Path) -> None:
+    result = synthetic_baseline_result()
+    written = write_spatial_surface_baseline_result(result, output_root=tmp_path)
+    persisted = json.loads(written["manifest"].read_text(encoding="utf-8"))
+
+    assert result.manifest["complete"] is False
+    assert persisted["complete"] is True
+    assert written["manifest"].parent.name == persisted["generation_sha256"]
+    assert {path.name for path in written["manifest"].parent.iterdir()} == {
+        "stations.parquet",
+        "panel.parquet",
+        "support.parquet",
+        "folds.parquet",
+        "predictions.parquet",
+        "scores.parquet",
+        "paired_deltas.parquet",
+        "summary.json",
+        "manifest.json",
+    }
