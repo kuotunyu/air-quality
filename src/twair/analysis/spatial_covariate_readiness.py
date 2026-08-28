@@ -6,7 +6,7 @@ import math
 import re
 from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -199,6 +199,17 @@ def aggregate_era5_monthly(frame: pl.DataFrame, *, years: tuple[int, int]) -> pl
     ).with_columns(pl.col("ts_local").dt.truncate("1mo").cast(pl.Date).alias("month"))
     if local.filter(~pl.col("month").dt.year().is_in(years)).height:
         raise RuntimeError("ERA5 station-hour frame has a local month outside the configured years")
+    for (_, month), group in local.group_by("station_name", "month", maintain_order=True):
+        expected_hours = monthrange(month.year, month.month)[1] * 24
+        expected_timestamps = [
+            datetime(month.year, month.month, 1) + timedelta(hours=offset)
+            for offset in range(expected_hours)
+        ]
+        actual_timestamps = group["ts_local"].unique().sort().to_list()
+        if actual_timestamps != expected_timestamps:
+            raise RuntimeError(
+                "ERA5 station-hour frame does not contain complete local calendar hours"
+            )
 
     monthly = local.group_by("station_name", "month").agg(
         pl.len().cast(pl.Int64).alias("n_hours"),
@@ -215,15 +226,6 @@ def aggregate_era5_monthly(frame: pl.DataFrame, *, years: tuple[int, int]) -> pl
         .alias("era5_dewpoint_depression_mean_k"),
         pl.col("sp_pa").cast(pl.Float64).mean().alias("era5_sp_mean_pa"),
     )
-    incomplete = [
-        row
-        for row in monthly.iter_rows(named=True)
-        if row["n_hours"] != monthrange(row["month"].year, row["month"].month)[1] * 24
-    ]
-    if incomplete:
-        raise RuntimeError(
-            "ERA5 station-hour frame does not contain complete local calendar months"
-        )
     return (
         monthly.select(*_ERA5_MONTHLY_SCHEMA)
         .cast(pl.Schema(_ERA5_MONTHLY_SCHEMA), strict=True)

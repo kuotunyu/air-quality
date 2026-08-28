@@ -130,6 +130,20 @@ def test_aggregate_era5_monthly_rejects_invalid_station_hour_input(
         aggregate_era5_monthly(mutate(_era5_months((2024, 1))), years=(2024, 2025))
 
 
+def test_aggregate_era5_monthly_rejects_an_off_grid_timestamp_that_replaces_a_local_hour() -> None:
+    frame = _era5_months((2024, 1)).with_columns(
+        pl.when(pl.col("ts_utc") == datetime(2023, 12, 31, 16, tzinfo=UTC))
+        .then(
+            pl.lit(datetime(2023, 12, 31, 16, 30, tzinfo=UTC), dtype=pl.Datetime(time_zone="UTC"))
+        )
+        .otherwise(pl.col("ts_utc"))
+        .alias("ts_utc")
+    )
+
+    with pytest.raises(RuntimeError, match="complete local calendar hours"):
+        aggregate_era5_monthly(frame, years=(2024, 2025))
+
+
 def _satellite_long(panel: pl.DataFrame) -> pl.DataFrame:
     rows: list[dict[str, object]] = []
     for row in panel.iter_rows(named=True):
