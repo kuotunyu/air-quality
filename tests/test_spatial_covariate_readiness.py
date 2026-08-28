@@ -1053,6 +1053,29 @@ def test_score_denominator_never_shrinks_under_prediction_mutations(mutation: st
     assert row["score_state"] in {"missing_intended_predictions", "incomplete_predictions"}
 
 
+def test_score_rejects_a_missing_withheld_method_row_from_the_full_key_grid() -> None:
+    predictions = _score_prediction_fixture().filter(
+        ~(
+            (pl.col("training_period") == "same_year")
+            & (pl.col("method") == "covariate_gbm")
+            & (pl.col("target_station") == "s1")
+            & (pl.col("month") == date(2025, 2, 1))
+        )
+    )
+
+    row = (
+        score_readiness_predictions(predictions, _model_config())
+        .filter((pl.col("training_period") == "same_year") & (pl.col("method") == "covariate_gbm"))
+        .row(0, named=True)
+    )
+
+    assert row["n_intended"] == 3
+    assert row["n_scored"] == 3
+    assert row["n_failed"] == 0
+    assert row["score_state"] == "missing_intended_predictions"
+    assert row["station_clustered_mae"] is None
+
+
 def test_paired_deltas_use_exact_keys_and_fixed_station_bootstrap() -> None:
     predictions = _score_prediction_fixture()
 
@@ -1213,6 +1236,42 @@ def _mutate_gate_evidence(
             .otherwise(pl.col("n_stations"))
             .alias("n_stations")
         )
+    elif mutation == "impossible_station_denominator":
+        required_cell = (
+            (pl.col("training_period") == "same_year")
+            & (pl.col("target_year") == 2024)
+            & (pl.col("evaluation") == "buffer_20km")
+            & pl.col("method").is_in(["idw2", "covariate_gbm"])
+        )
+        scores = scores.with_columns(
+            pl.when(required_cell)
+            .then(pl.lit(25))
+            .otherwise(pl.col("n_stations_intended"))
+            .alias("n_stations_intended"),
+            pl.when(required_cell)
+            .then(pl.lit(25))
+            .otherwise(pl.col("n_stations_scored"))
+            .alias("n_stations_scored"),
+        )
+        deltas = deltas.with_columns(
+            pl.when(target_delta)
+            .then(pl.lit(25))
+            .otherwise(pl.col("n_stations"))
+            .alias("n_stations")
+        )
+    elif mutation == "wrong_cluster_comparator":
+        cluster_delta = (
+            (pl.col("training_period") == "same_year")
+            & (pl.col("target_year") == 2024)
+            & (pl.col("evaluation") == "spatial_cluster")
+            & (pl.col("method") == "covariate_gbm")
+        )
+        deltas = deltas.with_columns(
+            pl.when(cluster_delta)
+            .then(pl.lit("extra"))
+            .otherwise(pl.col("comparison_method"))
+            .alias("comparison_method")
+        )
     elif mutation == "missing_cluster_cell":
         scores = scores.filter(
             ~(
@@ -1259,6 +1318,8 @@ def test_gate_requires_all_seven_improvement_cells_and_complete_cluster_scores()
         "wrong_station_denominator",
         "fractional_score_denominator",
         "fractional_paired_denominator",
+        "impossible_station_denominator",
+        "wrong_cluster_comparator",
         "missing_cluster_cell",
         "absent_year",
         "extra_method",

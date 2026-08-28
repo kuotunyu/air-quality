@@ -1199,6 +1199,9 @@ def score_readiness_predictions(
     cells = sorted({_readiness_cell(row) for row in target_by_key.values()})
     score_rows: list[dict[str, object]] = []
     for cell in cells:
+        full_cell_keys = {
+            key for key, target in target_by_key.items() if _readiness_cell(target) == cell
+        }
         cell_keys = {
             key
             for key, target in target_by_key.items()
@@ -1209,12 +1212,15 @@ def score_readiness_predictions(
             method_rows = [
                 row for row in rows if row["method"] == method and _readiness_cell(row) == cell
             ]
+            method_keys = {_readiness_prediction_key(row) for row in method_rows}
             intended_rows = [row for row in method_rows if row["fold_state"] == "eligible"]
             intended_keys = {_readiness_prediction_key(row) for row in intended_rows}
             scored_rows = [row for row in intended_rows if _finite_readiness_prediction(row)]
             n_intended = len(cell_keys)
             n_scored = len(scored_rows)
-            if not cell_keys:
+            if method_keys != full_cell_keys:
+                score_state = "missing_intended_predictions"
+            elif not cell_keys:
                 score_state = "no_eligible_targets"
             elif intended_keys != cell_keys:
                 score_state = "missing_intended_predictions"
@@ -1385,6 +1391,8 @@ def decide_covariate_gate(
         raise RuntimeError("spatial covariate score method domain changed")
     if set(deltas["method"].to_list()) != set(candidates):
         raise RuntimeError("spatial covariate paired method domain changed")
+    if set(deltas["comparison_method"].to_list()) != {config.comparator}:
+        raise RuntimeError("spatial covariate paired comparator domain changed")
     score_key = (*_READINESS_CELL_KEY, "method")
     delta_key = (*_READINESS_CELL_KEY, "method")
     if scores.select(*score_key).n_unique() != scores.height:
@@ -1583,6 +1591,8 @@ def _complete_readiness_score(row: dict[str, Any]) -> bool:
             and n_stations_intended is not None
             and n_stations_intended > 0
             and n_stations_intended == n_stations_scored
+            and n_stations_intended <= n_intended
+            and n_stations_scored <= n_scored
         )
         metrics_finite = all(
             value is not None and math.isfinite(float(value))
