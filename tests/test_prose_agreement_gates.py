@@ -1223,20 +1223,24 @@ def _assert_spatial_baseline_claim_boundary(section: str) -> None:
         "each qualifying method must also have a finite, complete spatial_cluster score "
         "in both 2024 and 2025"
     ) in folded
+    assert "candidate-minus-`station_mean`" in folded
     assert re.search(r"\b1 km surface\b", folded) is None
     assert re.search(r"\bproduced (?:a )?population exposure result\b", folded) is None
     assert re.search(r"\bfusion\b", folded) is None
 
 
-def test_spatial_baseline_sections_keep_the_measured_claim_boundary() -> None:
-    for relative in (
+@pytest.mark.parametrize(
+    "relative",
+    (
         "README.md",
         "README.en.md",
         "docs/data-sources.md",
         "docs/methodology.md",
-    ):
-        text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-        _assert_spatial_baseline_claim_boundary(_spatial_baseline_section(text))
+    ),
+)
+def test_spatial_baseline_sections_keep_the_measured_claim_boundary(relative: str) -> None:
+    text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+    _assert_spatial_baseline_claim_boundary(_spatial_baseline_section(text))
 
 
 @pytest.mark.parametrize(
@@ -1254,6 +1258,7 @@ def test_spatial_baseline_boundary_rejects_surface_exposure_and_fusion_mutations
         "Spatial baseline readiness gate. "
         "Each qualifying method must also have a finite, complete spatial_cluster score "
         "in both 2024 and 2025. "
+        "The paired median station MAE delta is candidate-minus-`station_mean`. "
         "It produced no concentration surface or population exposure."
     )
 
@@ -1261,17 +1266,22 @@ def test_spatial_baseline_boundary_rejects_surface_exposure_and_fusion_mutations
         _assert_spatial_baseline_claim_boundary(f"{bounded} {mutation}")
 
 
-def test_spatial_baseline_rule_rejects_omitted_or_weakened_cluster_prerequisite() -> None:
+def test_spatial_baseline_rule_rejects_omitted_or_weakened_prerequisites() -> None:
     complete = (
         "Spatial baseline readiness gate. "
         "Each qualifying method must also have a finite, complete spatial_cluster score "
-        "in both 2024 and 2025."
+        "in both 2024 and 2025. "
+        "The paired median station MAE delta is candidate-minus-`station_mean`."
     )
     mutations = (
         "Spatial baseline readiness gate.",
         complete.replace("finite, ", ""),
         complete.replace("complete ", ""),
         complete.replace("both 2024 and 2025", "2024"),
+        complete.replace(
+            "The paired median station MAE delta is candidate-minus-`station_mean`.", ""
+        ),
+        complete.replace("candidate-minus-`station_mean`", "candidate-minus-`nearest`"),
     )
 
     for mutation in mutations:
