@@ -228,8 +228,7 @@ def test_pilot_plan_selects_and_matches_without_relaxation_or_randomness() -> No
     assert plan.runs["start_height_m_agl"].unique().sort().to_list() == [100, 300, 500]
 
     expected_utc = [
-        value.replace(tzinfo=UTC) - timedelta(hours=8)
-        for value in events["ts_local"].to_list()
+        value.replace(tzinfo=UTC) - timedelta(hours=8) for value in events["ts_local"].to_list()
     ]
     assert events["arrival_utc"].to_list() == expected_utc
     assert events["arrival_utc"].dt.minute().to_list() == [30, 45]

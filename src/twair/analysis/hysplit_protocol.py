@@ -252,8 +252,7 @@ def _validated_geography(
         raise ConfigError("HYSPLIT pilot requires exactly one geography row per receptor")
 
     invalid_english = selected.filter(
-        pl.col("station_name_en").is_null()
-        | (pl.col("station_name_en").str.strip_chars() == "")
+        pl.col("station_name_en").is_null() | (pl.col("station_name_en").str.strip_chars() == "")
     )
     if not invalid_english.is_empty():
         raise ConfigError("HYSPLIT receptor English name must be present")
@@ -340,10 +339,7 @@ def _hash_value(value: object) -> str:
 def _frame_identity(frame: pl.DataFrame) -> dict[str, object]:
     payload = {
         "schema": [[name, str(dtype)] for name, dtype in frame.schema.items()],
-        "rows": [
-            [_canonical_scalar(value) for value in row]
-            for row in frame.iter_rows()
-        ],
+        "rows": [[_canonical_scalar(value) for value in row] for row in frame.iter_rows()],
     }
     return {
         "rows": frame.height,
@@ -409,9 +405,7 @@ def _matching_control(
         if (
             control_time.month == event_time.month
             and control_time.hour == event_time.hour
-            and _direction_sector(
-                float(control["WD_HR"]), protocol.direction_sector_degrees
-            )
+            and _direction_sector(float(control["WD_HR"]), protocol.direction_sector_degrees)
             == event_sector
             and _speed_bin(float(control["WS_HR"]), protocol.speed_bins_ms) == event_speed
         ):
@@ -450,9 +444,7 @@ def build_hysplit_pilot_plan(
         )
         .drop_nulls(_REQUIRED_WIND_COLUMNS)
         .filter(
-            pl.col("PM2.5").is_finite()
-            & pl.col("WS_HR").is_finite()
-            & pl.col("WD_HR").is_finite()
+            pl.col("PM2.5").is_finite() & pl.col("WS_HR").is_finite() & pl.col("WD_HR").is_finite()
         )
     )
     duplicates = usable.group_by("station_name", "ts_local").len().filter(pl.col("len") > 1)
@@ -495,16 +487,12 @@ def build_hysplit_pilot_plan(
             timestamp = candidate["ts_local"]
             if not isinstance(timestamp, datetime):
                 raise ConfigError("HYSPLIT source ts_local values must be datetimes")
-            if all(
-                abs(timestamp - earlier["ts_local"]) >= separation for earlier in retained
-            ):
+            if all(abs(timestamp - earlier["ts_local"]) >= separation for earlier in retained):
                 retained.append(candidate)
                 if len(retained) == protocol.max_events_per_station:
                     break
 
-        controls = station_frame.filter(
-            pl.col(protocol.pollutant) <= station_median
-        ).to_dicts()
+        controls = station_frame.filter(pl.col(protocol.pollutant) <= station_median).to_dicts()
         used_controls: set[datetime] = set()
         geo = geography[station]
         station_slug = _ascii_slug(str(geo["station_name_en"]))
@@ -582,9 +570,9 @@ def build_hysplit_pilot_plan(
         "unmatched_events": selected_events - matched_pairs,
         "standard_runs": runs.height,
     }
-    geography_frame = pl.DataFrame(
-        [geography[station] for station in protocol.receptors]
-    ).select(_REQUIRED_GEO_COLUMNS)
+    geography_frame = pl.DataFrame([geography[station] for station in protocol.receptors]).select(
+        _REQUIRED_GEO_COLUMNS
+    )
     input_identities: dict[str, object] = {
         "wind_frame": _frame_identity(usable.sort("station_name", "ts_local")),
         "station_geography": _frame_identity(geography_frame),
@@ -664,9 +652,10 @@ def _expected_plan_summary(arrivals: pl.DataFrame, runs: pl.DataFrame) -> dict[s
         raise RuntimeError("HYSPLIT arrivals contain an unknown arrival kind")
     if matched.height + unmatched.height != events.height:
         raise RuntimeError("HYSPLIT event match state differs from the reviewed contract")
-    if controls.height != matched.height or controls.filter(
-        pl.col("match_state") != "matched"
-    ).height:
+    if (
+        controls.height != matched.height
+        or controls.filter(pl.col("match_state") != "matched").height
+    ):
         raise RuntimeError("HYSPLIT controls do not form one-to-one matched pairs")
     pair_counts = arrivals.group_by("pair_id").agg(
         pl.len().alias("rows"),
@@ -795,10 +784,9 @@ def _load_hysplit_pilot_plan(
         protocol = load_hysplit_protocol(protocol_raw)
     except ConfigError as exc:
         raise RuntimeError("HYSPLIT manifest protocol changed") from exc
-    if (
-        manifest.get("ordered_receptors") != list(protocol.receptors)
-        or manifest.get("claim_boundary") != dict(protocol.claim_boundary)
-    ):
+    if manifest.get("ordered_receptors") != list(protocol.receptors) or manifest.get(
+        "claim_boundary"
+    ) != dict(protocol.claim_boundary):
         raise RuntimeError("HYSPLIT manifest claim boundary changed")
 
     members = manifest.get("members")

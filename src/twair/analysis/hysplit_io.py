@@ -177,9 +177,7 @@ def _utc(parts: Sequence[int], *, label: str) -> datetime:
         if len(parts) == 4:
             return datetime(_year(parts[0]), parts[1], parts[2], parts[3], tzinfo=UTC)
         if len(parts) == 5:
-            return datetime(
-                _year(parts[0]), parts[1], parts[2], parts[3], parts[4], tzinfo=UTC
-            )
+            return datetime(_year(parts[0]), parts[1], parts[2], parts[3], parts[4], tzinfo=UTC)
         raise ValueError("unexpected timestamp width")
     except (TypeError, ValueError) as exc:
         raise RuntimeError(f"HYSPLIT {label} timestamp is invalid") from exc

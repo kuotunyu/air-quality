@@ -188,10 +188,7 @@ def test_completion_rejects_an_early_trajectory_end() -> None:
 
 def test_completion_rejects_positive_age_in_a_backward_run() -> None:
     frame = parse_trajectory_endpoints(_ENDPOINT).with_columns(
-        pl.when(
-            (pl.col("trajectory_id") == 1)
-            & (pl.col("age_hours") == -1)
-        )
+        pl.when((pl.col("trajectory_id") == 1) & (pl.col("age_hours") == -1))
         .then(1.0)
         .otherwise(pl.col("age_hours"))
         .alias("age_hours")
@@ -203,7 +200,9 @@ def test_completion_rejects_positive_age_in_a_backward_run() -> None:
 
 def test_endpoint_parser_rejects_non_finite_coordinates() -> None:
     with pytest.raises(RuntimeError, match="finite"):
-        parse_trajectory_endpoints(_ENDPOINT.replace("25.298 121.536 100.00", "nan 121.536 100.00", 1))
+        parse_trajectory_endpoints(
+            _ENDPOINT.replace("25.298 121.536 100.00", "nan 121.536 100.00", 1)
+        )
 
 
 def test_endpoint_parser_rejects_trailing_malformed_rows() -> None:
