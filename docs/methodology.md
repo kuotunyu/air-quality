@@ -600,7 +600,7 @@ longitude／latitude 的最小與最大值相同；座標沒有被平均、修�
 最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
 全年 audit 只將下一個 calibration 實驗從「有沒有足夠 cohort」變成可以用 held-station／held-time 設計回答的問題。
 
-## 微型感測器 Q4-supported cross-station agreement protocol
+## 微型感測器 Q4-supported cross-station agreement audit
 
 `twair analyze micro-sensor-annual-agreement` 的修訂 protocol 先為每個標準站與本地日期建立唯一的
 canonical PM2.5 target。`ground_station_present_hours` 計算該站當日實際存在的逐時列；
@@ -612,10 +612,34 @@ Protocol 固定保留 5 個 held-station、4 個 held-quarter 與 20 個 joint s
 並把每個 fold 明確標為 `scored`、`unscored_empty_train`、`unscored_insufficient_train`、
 `unscored_empty_test` 或 `unscored_single_target`。只有 `scored` fold 產生 prediction；score 與 delta
 仍為所有 fold 保留列，未評分者的 metric 為 null，並保存 intended 與實際 scored population 的
-row count 與 hash。現有支持只允許 Q4 內 held-station 的跨站 agreement；held-quarter 與 joint
-station-quarter 不可估，不能宣稱全年 temporal／seasonal generalization、validated calibration、
-sensor fusion 或高解析度濃度場。新的 production generation 尚未執行與獨立驗證，因此本節只描述
-方法契約，不報告新結果。
+row count 與 hash。已獨立驗證的 immutable generation 為
+`bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a`。29 個 fold 中有 5 個
+`scored`、18 個 `unscored_empty_test`與 6 個 `unscored_empty_train`；held-quarter 與 joint
+station-quarter 不可估。The target is nearest reference-station daily PM2.5, not colocated truth.
+
+主要 station-day RMSE（raw micro / pooled micro / pooled weather）為
+**4.189404 / 4.668848 / 4.720668 µg/m³**。pooled micro 與 pooled weather 相對 raw 的 station-day
+ΔRMSE 為 +0.479444 與 +0.531263，其 station-cluster bootstrap 95% 區間都跨過零；因此主要
+尺度沒有改善。次要 device-day ΔRMSE 為 −1.327584 與 −1.251138，但不取代主要尺度。
+
+五類 negative controls 均完成固定 inventory：
+
+- within-zone station-label permutation：999 次 permutation 完整；兩個 observed station-day
+  ΔRMSE 為 +0.479444 / +0.531263，lower-tail `p=1.000`，不支持改善。
+- 7/14/28-day target shifts：12 個預定 score 列均完成；時間位移下仍有共同訊號，因此不能解釋為
+  calibration evidence。
+- monthly reference-station satellite-context permutation：999 次 permutation 完整；observed
+  station-day ΔRMSE 為 +0.152407，lower-tail `p=0.698`，沒有支持 fusion。
+- acquisition-density baseline：station-day RMSE 6.720181，training-mean comparator 為 6.734252；
+  inventory 完整，但這個極小差異不是 calibration 或 fusion 證據。
+- 0.5/1/2 km neighbor-exclusion buffers：三個 buffer 的 training membership 未移除任何裝置，
+  因此 inventory 雖完整，對 field spatial-buffer 問題不具資訊性。
+
+Gate states: `colocated_truth=fail`; `four_seasons=fail`; `validation_regimes=fail`;
+`multi_year_drift=fail`; `prediction_location_time=fail`; `primary_scale_improvement=fail`;
+`field_spatial_buffer=unmet`; `overall=stop`.
+
+Claim boundary: no validated calibration; no sensor fusion product; no high-resolution PM2.5 field; no annual transfer; no seasonal transfer; no causal effect; no source attribution.
 
 ## 微型感測器 grouped predictive benchmark
 

@@ -30,9 +30,12 @@ never run. These tests are that failure path, kept.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
+from typing import Any
 
+import polars as pl
 import pytest
 from scripts import check_chapter_titles as chapter_titles
 from scripts import check_cjk_spacing as cjk_spacing
@@ -1551,3 +1554,196 @@ def test_spatial_covariate_readiness_boundary_allows_explicit_negations(
     _assert_spatial_covariate_readiness_boundary(
         f"{_english_spatial_covariate_readiness_section()} {explicit_negation}"
     )
+
+
+_VERIFIED_AUDIT_GENERATION = (
+    "bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a"
+)
+_AUDIT_PUBLIC_DOCUMENTS = (
+    "README.md",
+    "README.en.md",
+    "docs/data-sources.md",
+    "docs/methodology.md",
+)
+_UNSUPPORTED_AUDIT_CLAIMS = (
+    "validated calibration",
+    "sensor fusion product",
+    "high-resolution PM2.5 field",
+    "annual transfer",
+    "seasonal transfer",
+    "causal effect",
+    "source attribution",
+)
+
+
+def verified_audit_prose_fixture() -> tuple[
+    dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]
+]:
+    configured_root = os.environ.get("TWAIR_DATA_DIR")
+    generation = (
+        Path(configured_root)
+        / "outputs"
+        / "micro_sensor_agreement_audit"
+        / "generations"
+        / _VERIFIED_AUDIT_GENERATION
+        if configured_root
+        else None
+    )
+    if generation is not None and generation.is_dir():
+        return (
+            json.loads((generation / "summary.json").read_text(encoding="utf-8")),
+            pl.read_parquet(generation / "control_summary.parquet").to_dicts(),
+            pl.read_parquet(generation / "fusion_gate.parquet").to_dicts(),
+        )
+    return (
+        {
+            "primary_station_day_rmse": {
+                "raw_micro": 4.1894040401059,
+                "pooled_micro_ridge": 4.6688480255628,
+                "pooled_weather_ridge": 4.720667517094,
+            },
+            "overall_verdict": "stop",
+        },
+        [
+            {"control": name, "state": "complete"}
+            for name in (
+                "station_label",
+                "target_shift",
+                "satellite_context",
+                "acquisition_density",
+                "neighbor_exclusion",
+            )
+        ],
+        [
+            {
+                "condition_id": condition,
+                "state": "unmet" if condition == "field_spatial_buffer" else "fail",
+                "overall_verdict": "stop",
+            }
+            for condition in (
+                "colocated_truth",
+                "four_seasons",
+                "validation_regimes",
+                "multi_year_drift",
+                "prediction_location_time",
+                "primary_scale_improvement",
+                "field_spatial_buffer",
+            )
+        ],
+    )
+
+
+def load_public_audit_documents() -> dict[str, str]:
+    return {
+        relative: (REPO_ROOT / relative).read_text(encoding="utf-8")
+        for relative in _AUDIT_PUBLIC_DOCUMENTS
+    }
+
+
+def audit_prose_problems(
+    documents: dict[str, str],
+    summary: dict[str, Any],
+    controls: list[dict[str, Any]],
+    gate: list[dict[str, Any]],
+) -> list[str]:
+    problems: list[str] = []
+    folded = {name: " ".join(text.lower().split()) for name, text in documents.items()}
+    boundary = "claim boundary: " + "; ".join(
+        f"no {claim}" for claim in _UNSUPPORTED_AUDIT_CLAIMS
+    )
+    target = "the target is nearest reference-station daily pm2.5, not colocated truth."
+    for name in _AUDIT_PUBLIC_DOCUMENTS:
+        text = folded.get(name, "")
+        if boundary.lower() not in text:
+            problems.append(f"{name}: audit claim boundary is missing")
+        if target.lower() not in text:
+            problems.append(f"{name}: nearest-station target boundary is missing")
+
+    primary = summary["primary_station_day_rmse"]
+    score_line = " / ".join(
+        f"{primary[model]:.6f}"
+        for model in ("raw_micro", "pooled_micro_ridge", "pooled_weather_ridge")
+    )
+    for name in ("README.md", "README.en.md"):
+        text = folded.get(name, "")
+        if score_line not in text:
+            problems.append(f"{name}: station-day reversal is missing")
+        if "verdict: `stop`" not in text:
+            problems.append(f"{name}: stop verdict is missing")
+
+    sources = folded.get("docs/data-sources.md", "")
+    for required in (
+        _VERIFIED_AUDIT_GENERATION,
+        "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb",
+        "df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624",
+        "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788",
+        "18 frozen input files",
+    ):
+        if required.lower() not in sources:
+            problems.append(f"docs/data-sources.md: missing frozen evidence {required}")
+
+    methodology = folded.get("docs/methodology.md", "")
+    complete_controls = {
+        str(row.get("control"))
+        for row in controls
+        if row.get("state") == "complete"
+    }
+    control_markers = {
+        "station_label": "within-zone station-label permutation",
+        "target_shift": "7/14/28-day target shifts",
+        "satellite_context": "monthly reference-station satellite-context permutation",
+        "acquisition_density": "acquisition-density baseline",
+        "neighbor_exclusion": "0.5/1/2 km neighbor-exclusion buffers",
+    }
+    for control, marker in control_markers.items():
+        if control not in complete_controls:
+            problems.append(f"{control} control is not complete")
+        if marker not in methodology:
+            message = (
+                "station-label control outcome is missing"
+                if control == "station_label"
+                else f"{control} control outcome is missing"
+            )
+            problems.append(message)
+
+    gate_states = {str(row["condition_id"]): str(row["state"]) for row in gate}
+    for condition, state in gate_states.items():
+        if f"{condition}={state}" not in methodology:
+            problems.append(f"docs/methodology.md: gate state missing: {condition}={state}")
+    if summary.get("overall_verdict") != "stop" or "overall=stop" not in methodology:
+        problems.append("docs/methodology.md: overall stop gate is missing")
+
+    for unsupported in _UNSUPPORTED_AUDIT_CLAIMS:
+        positive = re.compile(
+            rf"\b(?:produced|created|provides?|delivered)\s+(?:an?\s+)?"
+            rf"{re.escape(unsupported.lower())}\b"
+        )
+        for name, text in folded.items():
+            if positive.search(text):
+                problems.append(f"{name}: unsupported positive claim: {unsupported}")
+    return problems
+
+
+def test_public_docs_match_verified_micro_sensor_audit() -> None:
+    summary, controls, gate = verified_audit_prose_fixture()
+    documents = load_public_audit_documents()
+    assert audit_prose_problems(documents, summary, controls, gate) == []
+
+
+@pytest.mark.parametrize("unsupported", list(_UNSUPPORTED_AUDIT_CLAIMS))
+def test_micro_sensor_audit_copy_rejects_unsupported_claim(unsupported: str) -> None:
+    summary, controls, gate = verified_audit_prose_fixture()
+    documents = load_public_audit_documents()
+    documents["README.md"] += f"\nProject D produced {unsupported}.\n"
+    problems = audit_prose_problems(documents, summary, controls, gate)
+    assert any(unsupported in problem for problem in problems)
+
+
+def test_public_docs_cannot_omit_negative_control_outcomes() -> None:
+    summary, controls, gate = verified_audit_prose_fixture()
+    documents = load_public_audit_documents()
+    documents["docs/methodology.md"] = documents["docs/methodology.md"].replace(
+        "within-zone station-label permutation", ""
+    )
+    problems = audit_prose_problems(documents, summary, controls, gate)
+    assert any("station-label control outcome is missing" in problem for problem in problems)

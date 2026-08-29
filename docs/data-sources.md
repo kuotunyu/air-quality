@@ -186,15 +186,23 @@ generation `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`。
 最近標準站不是微型感測器位置的 colocated ground truth，也沒有建立高解析度 PM2.5 場。
 這個 audit 只支持下一步為這批寬鬆候選裝置設計獨立 target、held-station 與 held-time 實驗。
 
-#### Q4-supported cross-station agreement protocol（待執行）
+#### Q4-supported cross-station agreement audit（已獨立驗證）
 
-全年 readiness evidence 的後續 agreement protocol 已改為每個標準站／日期唯一的 canonical
-PM2.5 target：使用完整標準站日內的 valid、finite、non-null 小時，而不是依每個微型感測器的
-三變數重疊小時各自平均；少於 18 個 eligible station hours 時 target 保持 null。所有 29 個
-held-station、held-quarter 與 joint fold 都會持久化狀態，但現有觀測支持只允許 Q4 內的
-held-station agreement。held-quarter 與 joint station-quarter 明確不可估，也不支持全年 temporal、
-seasonal、calibration 或 fusion claim。`twair analyze micro-sensor-annual-agreement` 目前可檢視 plan；
-修訂後的 production generation 尚未執行與獨立驗證，因此此處不列新結果。
+`twair analyze micro-sensor-agreement-audit --confirm-production` 兩次重現同一個 immutable
+generation `bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a`，獨立
+verifier 通過。Manifest 綁定 18 frozen input files（path、bytes、SHA-256），來自 annual
+readiness `c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb`、annual
+agreement `df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624` 與 satellite
+panel `58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`。
+
+在 29 個固定 fold 中，5 個 `scored`、18 個 `unscored_empty_test`、6 個
+`unscored_empty_train`。主要 station-day RMSE（raw micro / pooled micro / pooled weather）為
+**4.189404 / 4.668848 / 4.720668 µg/m³**，兩個 pooled candidate 皆比 raw micro 差；次要
+device-day ΔRMSE 雖為 −1.327584 / −1.251138，不能反轉主要尺度結論。七個 gate
+結果為六個 `fail`、`field_spatial_buffer=unmet`，overall `stop`。The target is nearest
+reference-station daily PM2.5, not colocated truth.
+
+Claim boundary: no validated calibration; no sensor fusion product; no high-resolution PM2.5 field; no annual transfer; no seasonal transfer; no causal effect; no source attribution.
 
 #### 每月標準站 satellite context 的增量預測測試
 

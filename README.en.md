@@ -299,6 +299,18 @@ workspace overrides and never rewrite the installed package.
 
 The `probe sources` utility parses the live airtw annual catalogue, resolves current Google Drive identifiers, downloads one real archive sample, and populates `conf/sources.yaml` and `docs/data-sources.md`. Credentialed value-add sources remain explicitly unprobed when no credential is configured. Since government links change periodically, the catalogue is rediscovered rather than treated as a permanent hardcoded URL list.
 
+### Micro-sensor agreement audit
+
+The independent verifier passed immutable generation
+`bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a`.
+Primary station-day RMSE (raw micro / pooled micro / pooled weather) is
+**4.189404 / 4.668848 / 4.720668 µg/m³**: both pooled candidates reverse the
+secondary device-day improvement at the primary scale. The result is
+verdict: `stop` and does not advance to calibration or fusion. The target is
+nearest reference-station daily PM2.5, not colocated truth.
+
+Claim boundary: no validated calibration; no sensor fusion product; no high-resolution PM2.5 field; no annual transfer; no seasonal transfer; no causal effect; no source attribution.
+
 ---
 
 ## Project Status

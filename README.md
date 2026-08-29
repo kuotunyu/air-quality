@@ -214,6 +214,17 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 會明確保留為未驗證。
 政府網站的連結會變動，所以這一步每次都重新解析，不寫死任何 URL。
 
+### 微型感測器 agreement audit
+
+獨立 verifier 已通過 immutable generation
+`bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a`。主要的 station-day
+RMSE（raw micro / pooled micro / pooled weather）為
+**4.189404 / 4.668848 / 4.720668 µg/m³**；兩個 pooled candidate 在這個主要尺度都比 raw
+micro 差，雖然次要的 device-day ΔRMSE 為負。因此 verdict: `stop`，不進入 calibration
+或 fusion。The target is nearest reference-station daily PM2.5, not colocated truth.
+
+Claim boundary: no validated calibration; no sensor fusion product; no high-resolution PM2.5 field; no annual transfer; no seasonal transfer; no causal effect; no source attribution.
+
 ## 專案狀態
 
 目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
