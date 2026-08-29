@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -232,6 +232,7 @@ DENSITY_FEATURES = (
     "temperature_observed_hours",
     "trio_observed_hours",
 )
+EARTH_RADIUS_KM = 6371.0088
 AUDIT_UNCERTAINTY_SCHEMA: tuple[
     tuple[str, pl.DataType | type[pl.DataType]], ...
 ] = (
@@ -2291,3 +2292,406 @@ def run_acquisition_density_baselines(
     if not rows:
         raise RuntimeError("acquisition-density baselines have no scored fold")
     return pl.concat(rows).sort("evaluation", "fold", "model", "date", "device_id")
+
+
+def device_coordinate_inventory(memberships: pl.DataFrame) -> pl.DataFrame:
+    required = {"device_id", "lon_min", "lat_min"}
+    missing = sorted(required - set(memberships.columns))
+    if missing:
+        raise RuntimeError(f"device coordinate inventory is missing columns: {missing}")
+    coordinates = memberships.select(*sorted(required)).unique()
+    if coordinates.is_empty() or coordinates.filter(
+        pl.col("device_id").is_null()
+        | pl.col("lon_min").is_null()
+        | pl.col("lat_min").is_null()
+        | ~pl.col("lon_min").is_finite()
+        | ~pl.col("lat_min").is_finite()
+    ).height:
+        raise RuntimeError("device coordinate inventory contains invalid coordinates")
+    inventory = coordinates.group_by("device_id").agg(
+        pl.struct("lon_min", "lat_min").n_unique().alias("coordinate_positions"),
+        pl.col("lon_min").min().alias("lon_min"),
+        pl.col("lon_min").max().alias("lon_max"),
+        pl.col("lat_min").min().alias("lat_min"),
+        pl.col("lat_min").max().alias("lat_max"),
+    )
+    if inventory.filter(
+        (pl.col("coordinate_positions") != 1)
+        | (pl.col("lon_min") != pl.col("lon_max"))
+        | (pl.col("lat_min") != pl.col("lat_max"))
+    ).height:
+        raise RuntimeError("device coordinate inventory is not stable across eligible dates")
+    return inventory.sort("device_id")
+
+
+def _great_circle_distances_km(
+    lon: float,
+    lat: float,
+    station_lon: np.ndarray[Any, np.dtype[np.float64]],
+    station_lat: np.ndarray[Any, np.dtype[np.float64]],
+) -> np.ndarray[Any, np.dtype[np.float64]]:
+    lon_radians = math.radians(lon)
+    lat_radians = math.radians(lat)
+    station_lon_radians = np.radians(station_lon)
+    station_lat_radians = np.radians(station_lat)
+    delta_lon = station_lon_radians - lon_radians
+    delta_lat = station_lat_radians - lat_radians
+    haversine = np.sin(delta_lat / 2.0) ** 2 + np.cos(lat_radians) * np.cos(
+        station_lat_radians
+    ) * np.sin(delta_lon / 2.0) ** 2
+    return cast(
+        np.ndarray[Any, np.dtype[np.float64]],
+        2.0
+        * EARTH_RADIUS_KM
+        * np.arcsin(np.sqrt(np.clip(haversine, 0.0, 1.0))),
+    )
+
+
+def _neighbor_state(train: pl.DataFrame, test: pl.DataFrame) -> str:
+    state = _fold_state(train, test)
+    if state == "scored":
+        return state
+    if state == "unscored_empty_train":
+        return "unscored_empty_train_after_neighbor_exclusion"
+    if state == "unscored_insufficient_train":
+        return "unscored_insufficient_train_after_neighbor_exclusion"
+    return state
+
+
+def exclude_neighbor_training_rows(
+    membership: pl.DataFrame,
+    geography: pl.DataFrame,
+    *,
+    buffer_km: float,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    if isinstance(buffer_km, bool) or not isinstance(buffer_km, (int, float)):
+        raise ValueError("neighbor-exclusion buffer must be a finite positive number")
+    normalized_buffer = float(buffer_km)
+    if not math.isfinite(normalized_buffer) or normalized_buffer <= 0.0:
+        raise ValueError("neighbor-exclusion buffer must be a finite positive number")
+    required_membership = {"role", "station_name", "device_id"}
+    required_geography = {"station_name", "lon", "lat"}
+    if required_membership - set(membership.columns) or required_geography - set(
+        geography.columns
+    ):
+        raise RuntimeError("neighbor-exclusion input schema changed")
+    fold_identity = membership.select("evaluation", "fold").unique()
+    if fold_identity.height != 1:
+        raise RuntimeError("neighbor exclusion requires exactly one fold membership")
+    inventory = device_coordinate_inventory(membership)
+    test = membership.filter(pl.col("role") == "test")
+    source_train = membership.filter(pl.col("role") == "train")
+    if test.is_empty():
+        raise RuntimeError("neighbor exclusion requires unchanged test rows")
+    reviewed = geography.select("station_name", "lon", "lat")
+    if reviewed["station_name"].n_unique() != reviewed.height or reviewed.filter(
+        pl.col("station_name").is_null()
+        | pl.col("lon").is_null()
+        | pl.col("lat").is_null()
+        | ~pl.col("lon").is_finite()
+        | ~pl.col("lat").is_finite()
+    ).height:
+        raise RuntimeError("neighbor-exclusion reviewed geography changed")
+    test_stations = test.select("station_name").unique().join(
+        reviewed, on="station_name", how="left"
+    )
+    if test_stations["lon"].null_count() or test_stations["lat"].null_count():
+        raise RuntimeError("neighbor-exclusion test-station coordinate is missing")
+    station_lon = test_stations["lon"].to_numpy()
+    station_lat = test_stations["lat"].to_numpy()
+    train_devices = source_train.select("device_id").unique().join(
+        inventory, on="device_id", how="left"
+    )
+    removed_devices: list[str] = []
+    for row in train_devices.iter_rows(named=True):
+        distances = _great_circle_distances_km(
+            float(row["lon_min"]),
+            float(row["lat_min"]),
+            station_lon,
+            station_lat,
+        )
+        if distances.size and float(np.min(distances)) <= normalized_buffer:
+            removed_devices.append(str(row["device_id"]))
+    filtered = membership.filter(
+        (pl.col("role") != "train") | ~pl.col("device_id").is_in(removed_devices)
+    )
+    remaining_train = filtered.filter(pl.col("role") == "train")
+    filtered_test = filtered.filter(pl.col("role") == "test")
+    if not filtered_test.sort("date", "device_id").equals(
+        test.sort("date", "device_id")
+    ):
+        raise RuntimeError("neighbor exclusion changed test rows")
+    state = _neighbor_state(remaining_train, filtered_test)
+    identity = fold_identity.row(0, named=True)
+    evidence = pl.DataFrame(
+        [
+            {
+                "control": "neighbor_exclusion",
+                "variant": f"buffer_{normalized_buffer:g}km",
+                "buffer_km": normalized_buffer,
+                "evaluation": identity["evaluation"],
+                "fold": identity["fold"],
+                "state": state,
+                "reason": state,
+                "coordinate_devices": inventory.height,
+                "source_train_rows": source_train.height,
+                "remaining_train_rows": remaining_train.height,
+                "test_rows": filtered_test.height,
+                "removed_devices": len(removed_devices),
+                "removed_train_rows": source_train.height - remaining_train.height,
+                "remaining_train_devices": remaining_train["device_id"].n_unique(),
+                "remaining_train_stations": remaining_train["station_name"].n_unique(),
+                "source_train_membership_sha256": _frame_digest(source_train),
+                "train_membership_sha256": _frame_digest(remaining_train),
+                "test_membership_sha256": _frame_digest(filtered_test),
+                "test_truth_sha256": _frame_digest(filtered_test, truth=True),
+            }
+        ],
+        schema_overrides={"buffer_km": pl.Float64},
+    )
+    return filtered.sort("role", "station_name", "date", "device_id"), evidence
+
+
+def run_neighbor_exclusion_controls(
+    control: tuple[pl.DataFrame, ...],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    memberships, folds, geography = control[:3]
+    rows: list[dict[str, object]] = []
+    scored_folds = folds.filter(
+        (pl.col("state") == "scored") & (pl.col("evaluation") == "held_station")
+    )
+    for buffer_km in config.neighbor_exclusion_buffers_km:
+        for fold in scored_folds["fold"]:
+            split = memberships.filter(pl.col("fold") == fold)
+            filtered, evidence_frame = exclude_neighbor_training_rows(
+                split, geography, buffer_km=buffer_km
+            )
+            evidence = evidence_frame.row(0, named=True)
+            state = str(evidence["state"])
+            if state == "scored":
+                one_fold = pl.DataFrame(
+                    {
+                        "evaluation": [evidence["evaluation"]],
+                        "fold": [fold],
+                        "state": [state],
+                    }
+                )
+                test = filtered.filter(pl.col("role") == "test")
+                comparator = test.select(
+                    "evaluation", "fold", "station_name", "date", "device_id"
+                ).with_columns(
+                    test["ground_pm25_mean"].alias("y_true"),
+                    test["micro_pm25_mean"].alias("y_pred"),
+                )
+                for model, features in CORE_FEATURES.items():
+                    candidate = _fit_named_ridge(
+                        filtered,
+                        one_fold,
+                        features=features,
+                        model=model,
+                        config=config,
+                    )
+                    metric_rows = _paired_diagnostic_rows(
+                        candidate,
+                        comparator,
+                        variant=str(evidence["variant"]),
+                        replicate=None,
+                        candidate_name=model,
+                        comparator_name="raw_micro",
+                    )
+                    for metric_row in metric_rows:
+                        rows.append(
+                            {
+                                **metric_row,
+                                **evidence,
+                                "control": "neighbor_exclusion",
+                            }
+                        )
+            else:
+                for model in CORE_FEATURES:
+                    for unit in ("station_day", "device_day"):
+                        for metric in ("delta_rmse", "delta_mae"):
+                            rows.append(
+                                {
+                                    **evidence,
+                                    "replicate": None,
+                                    "model": model,
+                                    "comparator": "raw_micro",
+                                    "unit": unit,
+                                    "metric": metric,
+                                    "value": None,
+                                    "n": 0,
+                                }
+                            )
+    return pl.DataFrame(
+        rows,
+        schema_overrides={
+            "replicate": pl.Int64,
+            "buffer_km": pl.Float64,
+            "value": pl.Float64,
+        },
+    ).sort("buffer_km", "fold", "model", "unit", "metric")
+
+
+def summarize_negative_controls(
+    control_scores: pl.DataFrame,
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    required = {
+        "control",
+        "variant",
+        "replicate",
+        "state",
+        "reason",
+        "model",
+        "comparator",
+        "unit",
+        "metric",
+        "value",
+        "n",
+        "membership_sha256",
+        "truth_sha256",
+    }
+    missing = sorted(required - set(control_scores.columns))
+    if missing:
+        raise RuntimeError(f"negative-control scores are missing columns: {missing}")
+    expected_controls = {
+        "station_label",
+        "target_shift",
+        "satellite_context",
+        "acquisition_density",
+        "neighbor_exclusion",
+    }
+    if set(control_scores["control"].unique()) != expected_controls:
+        raise RuntimeError("negative-control family inventory changed")
+    inventory_rules = {
+        "station_label": config.permutation_draws,
+        "target_shift": len(config.target_time_shifts_days),
+        "satellite_context": config.permutation_draws,
+        "acquisition_density": 1,
+        "neighbor_exclusion": len(config.neighbor_exclusion_buffers_km),
+    }
+    family_complete = {
+        "station_label": control_scores.filter(
+            (pl.col("control") == "station_label") & (pl.col("state") == "scored")
+        )["replicate"].n_unique()
+        == config.permutation_draws,
+        "target_shift": set(
+            control_scores.filter(pl.col("control") == "target_shift")["variant"]
+        )
+        == {f"shift_{days:02d}d" for days in config.target_time_shifts_days},
+        "satellite_context": (
+            control_scores.filter(
+                (pl.col("control") == "satellite_context")
+                & (pl.col("variant") == "permuted_context")
+                & (pl.col("state") == "scored")
+            )["replicate"].n_unique()
+            == config.permutation_draws
+            and control_scores.filter(
+                (pl.col("control") == "satellite_context")
+                & (pl.col("variant") == "observed_context")
+                & (pl.col("state") == "scored")
+            ).height
+            > 0
+        ),
+        "acquisition_density": set(
+            control_scores.filter(pl.col("control") == "acquisition_density")["model"]
+        )
+        == {"training_mean", "acquisition_density_ridge"},
+        "neighbor_exclusion": set(
+            control_scores.filter(pl.col("control") == "neighbor_exclusion")["variant"]
+        )
+        == {
+            f"buffer_{buffer_km:g}km"
+            for buffer_km in config.neighbor_exclusion_buffers_km
+        },
+    }
+    rows: list[dict[str, object]] = []
+    group_columns = ("control", "model", "comparator", "unit", "metric")
+    for group in control_scores.partition_by(*group_columns, maintain_order=True):
+        identity = group.select(*group_columns).row(0, named=True)
+        control_name = str(identity["control"])
+        observed = group.filter(pl.col("variant").str.starts_with("observed"))
+        null = group.filter(pl.col("variant").str.contains("permuted|within_airzone"))
+        finite = group.filter((pl.col("state") == "scored") & pl.col("value").is_finite())
+        valid_null = null.filter(
+            (pl.col("state") == "scored") & pl.col("value").is_finite()
+        )
+        expected = inventory_rules[control_name]
+        if control_name in {"station_label", "satellite_context"}:
+            valid_count = valid_null["replicate"].n_unique()
+            invalid_count = expected - valid_count
+        elif control_name == "target_shift":
+            valid_count = finite["variant"].n_unique()
+            invalid_count = expected - valid_count
+        elif control_name == "acquisition_density":
+            valid_count = group["model"].n_unique()
+            invalid_count = expected - valid_count
+        else:
+            valid_count = finite["variant"].n_unique()
+            invalid_count = expected - valid_count
+        inventory_state = (
+            "complete"
+            if family_complete[control_name] and invalid_count == 0
+            else "failed_control"
+        )
+        null_values = valid_null["value"].to_numpy()
+        observed_value = (
+            float(observed["value"][0])
+            if observed.height == 1 and observed["value"][0] is not None
+            else None
+        )
+        rows.append(
+            {
+                **identity,
+                "state": inventory_state,
+                "reason": (
+                    "exact_control_inventory"
+                    if inventory_state == "complete"
+                    else "insufficient_valid_control_inventory"
+                ),
+                "expected_count": expected,
+                "valid_count": valid_count,
+                "invalid_count": invalid_count,
+                "observed_value": observed_value,
+                "null_q025": (
+                    float(np.quantile(null_values, 0.025)) if null_values.size else None
+                ),
+                "null_median": (
+                    float(np.quantile(null_values, 0.5)) if null_values.size else None
+                ),
+                "null_q975": (
+                    float(np.quantile(null_values, 0.975)) if null_values.size else None
+                ),
+                "empirical_lower_tail_p": (
+                    empirical_lower_tail_p(observed_value, null_values)
+                    if observed_value is not None and null_values.size == expected
+                    else None
+                ),
+                "n_min": cast(int, finite["n"].min()) if finite.height else 0,
+                "n_max": cast(int, finite["n"].max()) if finite.height else 0,
+                "membership_sha256": canonical_hash(
+                    sorted({str(value) for value in group["membership_sha256"]})
+                ),
+                "truth_sha256": canonical_hash(
+                    sorted({str(value) for value in group["truth_sha256"]})
+                ),
+                "invalid_reasons_sha256": canonical_hash(
+                    group.filter(pl.col("state") != "scored")
+                    .select("variant", "replicate", "state", "reason")
+                    .sort("variant", "replicate", nulls_last=True)
+                    .to_dicts()
+                ),
+            }
+        )
+    return pl.DataFrame(
+        rows,
+        schema_overrides={
+            "observed_value": pl.Float64,
+            "null_q025": pl.Float64,
+            "null_median": pl.Float64,
+            "null_q975": pl.Float64,
+            "empirical_lower_tail_p": pl.Float64,
+        },
+    ).sort(*group_columns)

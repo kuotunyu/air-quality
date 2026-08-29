@@ -1056,6 +1056,67 @@ def distinguishable_satellite_context_fixture() -> pl.DataFrame:
     )
 
 
+def membership_hash(frame: pl.DataFrame) -> str:
+    return _fixture_digest(frame)
+
+
+def neighbor_fixture(buffer_km: float) -> tuple[pl.DataFrame, pl.DataFrame]:
+    station_lon = 121.0
+    station_lat = 25.0
+    angular_buffer_degrees = math.degrees(buffer_km / 6371.0088)
+    coordinates = {
+        "inside": (station_lon, station_lat + 0.99 * angular_buffer_degrees),
+        "outside": (station_lon, station_lat + 1.01 * angular_buffer_degrees),
+        "held-test": (station_lon, station_lat),
+    }
+    rows: list[dict[str, object]] = []
+    for day in (1, 2):
+        for device_id, role in (
+            ("inside", "train"),
+            ("outside", "train"),
+            ("held-test", "test"),
+        ):
+            lon, lat = coordinates[device_id]
+            rows.append(
+                {
+                    "evaluation": "held_station",
+                    "fold": "held_station_00",
+                    "role": role,
+                    "station_fold": 0 if role == "test" else 1,
+                    "radius_km": 0.5,
+                    "calendar_state": "complete",
+                    "quarter": 4,
+                    "date": date(2025, 10, day),
+                    "device_id": device_id,
+                    "station_name": "held-station" if role == "test" else "train-station",
+                    "distance_km": 0.1,
+                    "lon_min": lon,
+                    "lat_min": lat,
+                    "micro_pm25_mean": float(10 + day),
+                    "micro_humidity_mean": float(60 + day),
+                    "micro_temperature_mean": float(24 + day),
+                    "ground_pm25_mean": float(11 + day),
+                    "reason": "eligible",
+                    "fold_state": "scored",
+                    "fold_reason": "scored",
+                }
+            )
+    membership = _frame(_FOLD_MEMBERSHIP_SCHEMA, rows).sort("role", "date", "device_id")
+    geography = pl.DataFrame(
+        {
+            "station_name": ["held-station"],
+            "lon": [station_lon],
+            "lat": [station_lat],
+        }
+    )
+    return membership, geography
+
+
+def all_training_inside_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
+    membership, geography = neighbor_fixture(2.0)
+    return membership.filter(pl.col("device_id") != "outside"), geography
+
+
 def test_shipped_config_pins_the_audit_protocol() -> None:
     config = load_micro_sensor_agreement_audit_config()
     assert config.protocol_revision == 1
@@ -1316,3 +1377,35 @@ def test_density_ridge_rejects_any_concentration_weather_ground_or_satellite_val
     ):
         with pytest.raises(RuntimeError, match="prohibited density feature"):
             audit.validate_density_features((*audit.DENSITY_FEATURES, prohibited))
+
+
+@pytest.mark.parametrize("buffer_km", [0.5, 1.0, 2.0])
+def test_neighbor_exclusion_removes_every_training_device_inside_buffer(
+    buffer_km: float,
+) -> None:
+    membership, geography = neighbor_fixture(buffer_km)
+    filtered, evidence = audit.exclude_neighbor_training_rows(
+        membership, geography, buffer_km=buffer_km
+    )
+    assert "inside" not in set(filtered.filter(pl.col("role") == "train")["device_id"])
+    assert "outside" in set(filtered.filter(pl.col("role") == "train")["device_id"])
+    assert evidence["removed_devices"][0] == 1
+
+
+def test_neighbor_exclusion_never_changes_test_rows() -> None:
+    membership, geography = neighbor_fixture(2.0)
+    before = membership.filter(pl.col("role") == "test").sort("date", "device_id")
+    after, evidence = audit.exclude_neighbor_training_rows(
+        membership, geography, buffer_km=2.0
+    )
+    assert after.filter(pl.col("role") == "test").sort("date", "device_id").equals(before)
+    assert evidence["test_membership_sha256"][0] == membership_hash(before)
+
+
+def test_neighbor_exclusion_persists_a_new_unestimable_fold_state() -> None:
+    membership, geography = all_training_inside_fixture()
+    _, evidence = audit.exclude_neighbor_training_rows(
+        membership, geography, buffer_km=2.0
+    )
+    assert evidence["state"][0] == "unscored_empty_train_after_neighbor_exclusion"
+    assert evidence["remaining_train_rows"][0] == 0
