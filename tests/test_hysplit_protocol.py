@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import polars as pl
 import pytest
 
 from twair.analysis.hysplit_protocol import (
+    build_hysplit_pilot_plan,
     load_hysplit_protocol,
     validate_ascii_external_path,
 )
@@ -128,3 +131,149 @@ def test_external_paths_accept_an_absolute_ascii_path(tmp_path: Path) -> None:
     path = tmp_path / "hysplit"
 
     assert validate_ascii_external_path(path, label="HYSPLIT work directory") == path.absolute()
+
+
+def _synthetic_geography() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "station_name": ["富貴角", "麥寮", "楠梓", "花蓮"],
+            "station_name_en": ["Fugueijiao", "Mailiao", "Nanzi", "Hualien"],
+            "lon": [121.536, 120.252, 120.328, 121.599],
+            "lat": [25.298, 23.754, 22.733, 23.971],
+        }
+    )
+
+
+def _synthetic_wind_frame() -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    start = datetime(2025, 1, 1, 1, 30)
+    for day in range(27):
+        rows.append(
+            {
+                "station_name": "富貴角",
+                "ts_local": start + timedelta(days=day),
+                "PM2.5": 10.0,
+                "WS_HR": 3.0,
+                "WD_HR": 200.0,
+            }
+        )
+
+    # Equidistant eligible controls: the earlier timestamp must win.
+    rows[7].update(
+        ts_local=datetime(2025, 1, 8, 12, 30),
+        WS_HR=2.0,
+        WD_HR=10.0,
+    )
+    rows[11].update(
+        ts_local=datetime(2025, 1, 12, 12, 30),
+        WS_HR=2.0,
+        WD_HR=10.0,
+    )
+    rows.extend(
+        [
+            {
+                "station_name": "富貴角",
+                "ts_local": datetime(2025, 1, 10, 12, 30),
+                "PM2.5": 100.0,
+                "WS_HR": 2.0,
+                "WD_HR": 10.0,
+            },
+            {
+                "station_name": "富貴角",
+                "ts_local": datetime(2025, 1, 14, 12, 45),
+                "PM2.5": 90.0,
+                "WS_HR": 5.0,
+                "WD_HR": 100.0,
+            },
+            # High but within 72 hours of the top-ranked retained event.
+            {
+                "station_name": "富貴角",
+                "ts_local": datetime(2025, 1, 11, 12, 15),
+                "PM2.5": 80.0,
+                "WS_HR": 2.0,
+                "WD_HR": 10.0,
+            },
+            # A calm extreme must never become an event.
+            {
+                "station_name": "富貴角",
+                "ts_local": datetime(2025, 1, 25, 12, 30),
+                "PM2.5": 1000.0,
+                "WS_HR": 0.5,
+                "WD_HR": 10.0,
+            },
+        ]
+    )
+    return pl.DataFrame(rows)
+
+
+def test_pilot_plan_selects_and_matches_without_relaxation_or_randomness() -> None:
+    plan = build_hysplit_pilot_plan(
+        _synthetic_wind_frame(),
+        _synthetic_geography(),
+        load_hysplit_protocol(),
+    )
+    events = plan.arrivals.filter(pl.col("arrival_kind") == "event")
+    controls = plan.arrivals.filter(pl.col("arrival_kind") == "control")
+
+    assert events["event_rank"].to_list() == [1, 2]
+    assert events["match_state"].to_list() == ["matched", "unmatched_no_control"]
+    assert controls["ts_local"].to_list() == [datetime(2025, 1, 8, 12, 30)]
+    assert controls["ts_local"].n_unique() == controls.height
+    assert plan.runs.height == controls.height * 2 * 3
+    assert plan.runs["duration_hours"].unique().to_list() == [-72]
+    assert plan.runs["start_height_m_agl"].unique().sort().to_list() == [100, 300, 500]
+
+    expected_utc = [
+        value.replace(tzinfo=UTC) - timedelta(hours=8)
+        for value in events["ts_local"].to_list()
+    ]
+    assert events["arrival_utc"].to_list() == expected_utc
+    assert events["arrival_utc"].dt.minute().to_list() == [30, 45]
+    assert plan.summary == {
+        "selected_events": 2,
+        "matched_pairs": 1,
+        "unmatched_events": 1,
+        "standard_runs": 6,
+    }
+
+
+def test_pilot_plan_rejects_incomplete_or_duplicate_receptor_geography() -> None:
+    frame = _synthetic_wind_frame()
+    geography = _synthetic_geography()
+
+    with pytest.raises(ConfigError, match="one geography row per receptor"):
+        build_hysplit_pilot_plan(frame, geography.head(3), load_hysplit_protocol())
+    with pytest.raises(ConfigError, match="one geography row per receptor"):
+        build_hysplit_pilot_plan(
+            frame,
+            pl.concat([geography, geography.head(1)]),
+            load_hysplit_protocol(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("lon", float("nan"), "finite coordinates"),
+        ("lat", 30.0, "outside Taiwan"),
+        ("station_name_en", "", "English name"),
+    ],
+)
+def test_pilot_plan_rejects_unusable_receptor_geography(
+    column: str,
+    value: object,
+    message: str,
+) -> None:
+    geography = _synthetic_geography().with_columns(
+        pl.when(pl.col("station_name") == "富貴角")
+        .then(pl.lit(value))
+        .otherwise(pl.col(column))
+        .alias(column)
+    )
+
+    with pytest.raises(ConfigError, match=message):
+        build_hysplit_pilot_plan(
+            _synthetic_wind_frame(),
+            geography,
+            load_hysplit_protocol(),
+        )
