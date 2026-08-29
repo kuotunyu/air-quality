@@ -172,6 +172,12 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "hysplit_pilot_plan",
+        "twair analyze hysplit-plan",
+        "2025 event/control trajectory plan; no HYSPLIT execution or source attribution",
+        feeds_web=False,
+    ),
+    Module(
         "qc_outliers",
         "twair qc outliers",
         "isolated excursions against network episodes",

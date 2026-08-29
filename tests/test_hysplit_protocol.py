@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,12 @@ import polars as pl
 import pytest
 
 from twair.analysis.hysplit_protocol import (
+    PilotPlan,
     build_hysplit_pilot_plan,
+    load_hysplit_pilot_plan,
     load_hysplit_protocol,
     validate_ascii_external_path,
+    write_hysplit_pilot_plan,
 )
 from twair.config import ConfigError
 
@@ -277,3 +281,61 @@ def test_pilot_plan_rejects_unusable_receptor_geography(
             geography,
             load_hysplit_protocol(),
         )
+
+
+def _synthetic_plan() -> PilotPlan:
+    return build_hysplit_pilot_plan(
+        _synthetic_wind_frame(),
+        _synthetic_geography(),
+        load_hysplit_protocol(),
+    )
+
+
+def test_immutable_plan_write_is_content_addressed_and_independently_reloadable(
+    tmp_path: Path,
+) -> None:
+    plan = _synthetic_plan()
+
+    first = write_hysplit_pilot_plan(plan, output_root=tmp_path / "output")
+    second = write_hysplit_pilot_plan(plan, output_root=tmp_path / "output")
+    loaded = load_hysplit_pilot_plan(first["manifest"].parent)
+
+    assert first == second
+    assert first["manifest"].parent.name == first["manifest"].parent.name.lower()
+    assert len(first["manifest"].parent.name) == 64
+    assert loaded.arrivals.equals(plan.arrivals)
+    assert loaded.runs.equals(plan.runs)
+    assert loaded.summary == plan.summary
+    assert loaded.input_identities == plan.input_identities
+
+
+def test_changed_arrival_produces_a_different_generation(tmp_path: Path) -> None:
+    plan = _synthetic_plan()
+    changed = replace(
+        plan,
+        arrivals=plan.arrivals.with_columns((pl.col("pm25") + 0.25).alias("pm25")),
+    )
+
+    original = write_hysplit_pilot_plan(plan, output_root=tmp_path / "output")
+    modified = write_hysplit_pilot_plan(changed, output_root=tmp_path / "output")
+
+    assert original["manifest"].parent != modified["manifest"].parent
+
+
+@pytest.mark.parametrize("damage", ["arrivals", "summary", "extra"])
+def test_plan_loader_rejects_tampering_or_unexpected_members(
+    tmp_path: Path,
+    damage: str,
+) -> None:
+    written = write_hysplit_pilot_plan(_synthetic_plan(), output_root=tmp_path / "output")
+    directory = written["manifest"].parent
+    if damage == "arrivals":
+        with (directory / "arrivals.parquet").open("ab") as stream:
+            stream.write(b"changed")
+    elif damage == "summary":
+        (directory / "summary.json").write_text("{}", encoding="utf-8")
+    else:
+        (directory / "unexpected.txt").write_text("unexpected", encoding="ascii")
+
+    with pytest.raises(RuntimeError):
+        load_hysplit_pilot_plan(directory)

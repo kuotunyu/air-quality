@@ -129,6 +129,15 @@ class TestTheReproduceTableCannotRot:
         assert "not a surface" in module.what
         assert "not population" in module.what
 
+    def test_hysplit_plan_has_a_reproducible_preparation_only_status_entry(self) -> None:
+        module = next(item for item in MODULES if item.directory == "hysplit_pilot_plan")
+
+        assert module.reproduce == "twair analyze hysplit-plan"
+        assert declared_reproduce_targets()[module.reproduce] is True
+        assert module.feeds_web is False
+        assert "no HYSPLIT execution" in module.what
+        assert "source attribution" in module.what
+
     def test_the_era5_value_add_has_a_return_command_but_does_not_yet_feed_the_site(
         self,
     ) -> None:

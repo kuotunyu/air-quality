@@ -989,6 +989,29 @@ def analyze_spatial_covariate_readiness(
     console.print(f"generation: {written['manifest'].parent}")
 
 
+@analysis_app.command("hysplit-plan")
+def analyze_hysplit_plan() -> None:
+    """Publish the reviewed trajectory plan without installing or running HYSPLIT."""
+    from twair.analysis.hysplit_protocol import (
+        prepare_hysplit_pilot_plan,
+        write_hysplit_pilot_plan,
+    )
+
+    plan = prepare_hysplit_pilot_plan()
+    written = write_hysplit_pilot_plan(plan)
+    summary = plan.summary
+    console.print("HYSPLIT C0 preparation only")
+    console.print(
+        f"{summary['selected_events']} selected events; "
+        f"{summary['matched_pairs']} matched pairs; "
+        f"{summary['unmatched_events']} unmatched events"
+    )
+    console.print(f"{summary['standard_runs']} standard trajectories planned")
+    console.print("pathway evidence only; no source identity, contribution, or attribution")
+    console.print("no HYSPLIT binary or GDAS1 data downloaded or executed")
+    console.print(f"generation: {written['manifest'].parent}")
+
+
 @analysis_app.command("m1")
 def analyze_m1(
     valid_only: bool = typer.Option(

@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
+import math
+import os
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from itertools import pairwise
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import polars as pl
@@ -17,6 +23,7 @@ import polars as pl
 from twair.analysis.sources import CALM_THRESHOLD_MS, DEFAULT_SPEED_BINS, build_wind_frame
 from twair.config import ConfigError, load_conf
 from twair.ingest.station_meta import TAIWAN_BOUNDS, load_station_geo
+from twair.paths import outputs_dir
 
 _RECEPTORS = ("富貴角", "麥寮", "楠梓", "花蓮")
 _SPEED_BINS_MS = (0.5, 1.5, 2.5, 4.0, 6.0, 8.0)
@@ -105,6 +112,7 @@ _RUNS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "model_top_m_agl": pl.Float64,
     "meteorology_dataset": pl.String,
 }
+_GENERATION_MEMBERS = ("arrivals.parquet", "runs.parquet", "summary.json", "manifest.json")
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +146,7 @@ class PilotPlan:
     arrivals: pl.DataFrame
     runs: pl.DataFrame
     summary: dict[str, int]
+    input_identities: dict[str, object]
 
 
 def _same_typed_value(actual: object, expected: object) -> bool:
@@ -300,6 +309,47 @@ def _float_value(value: object, *, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{label} must be numeric")
     return float(value)
+
+
+def _canonical_scalar(value: object) -> object:
+    if isinstance(value, datetime):
+        return {"datetime": value.isoformat()}
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise RuntimeError("HYSPLIT generation cannot contain non-finite values")
+        return value
+    if isinstance(value, tuple):
+        return [_canonical_scalar(item) for item in value]
+    return value
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _hash_value(value: object) -> str:
+    return sha256(_canonical_json_bytes(value)).hexdigest()
+
+
+def _frame_identity(frame: pl.DataFrame) -> dict[str, object]:
+    payload = {
+        "schema": [[name, str(dtype)] for name, dtype in frame.schema.items()],
+        "rows": [
+            [_canonical_scalar(value) for value in row]
+            for row in frame.iter_rows()
+        ],
+    }
+    return {
+        "rows": frame.height,
+        "sha256": _hash_value(payload),
+        "schema": {name: str(dtype) for name, dtype in frame.schema.items()},
+    }
 
 
 def _arrival_row(
@@ -532,7 +582,19 @@ def build_hysplit_pilot_plan(
         "unmatched_events": selected_events - matched_pairs,
         "standard_runs": runs.height,
     }
-    return PilotPlan(arrivals=arrivals, runs=runs, summary=summary)
+    geography_frame = pl.DataFrame(
+        [geography[station] for station in protocol.receptors]
+    ).select(_REQUIRED_GEO_COLUMNS)
+    input_identities: dict[str, object] = {
+        "wind_frame": _frame_identity(usable.sort("station_name", "ts_local")),
+        "station_geography": _frame_identity(geography_frame),
+    }
+    return PilotPlan(
+        arrivals=arrivals,
+        runs=runs,
+        summary=summary,
+        input_identities=input_identities,
+    )
 
 
 def prepare_hysplit_pilot_plan(root: Path | None = None) -> PilotPlan:
@@ -549,3 +611,326 @@ def prepare_hysplit_pilot_plan(root: Path | None = None) -> PilotPlan:
     if missing:
         raise ConfigError(f"HYSPLIT wind frame is missing receptor data: {sorted(missing)}")
     return build_hysplit_pilot_plan(frame, load_station_geo(), protocol)
+
+
+def _protocol_document(protocol: HysplitProtocol) -> dict[str, object]:
+    document: dict[str, object] = {
+        "schema_version": 1,
+        "analysis": {
+            "year": protocol.year,
+            "pollutant": protocol.pollutant,
+            "receptors": list(protocol.receptors),
+            "event_percentile": protocol.event_percentile,
+            "control_percentile": protocol.control_percentile,
+            "max_events_per_station": protocol.max_events_per_station,
+            "event_separation_hours": protocol.event_separation_hours,
+            "calm_threshold_ms": protocol.calm_threshold_ms,
+            "direction_sector_degrees": protocol.direction_sector_degrees,
+            "speed_bins_ms": list(protocol.speed_bins_ms),
+            "matching": dict(protocol.matching),
+            "duration_hours": protocol.duration_hours,
+            "start_heights_m_agl": list(protocol.start_heights_m_agl),
+            "vertical_motion": protocol.vertical_motion,
+            "model_top_m_agl": protocol.model_top_m_agl,
+            "meteorology_dataset": protocol.meteorology_dataset,
+            "official_sources": dict(protocol.official_sources),
+            "claim_boundary": dict(protocol.claim_boundary),
+        },
+    }
+    try:
+        load_hysplit_protocol(document)
+    except ConfigError as exc:
+        raise RuntimeError("HYSPLIT plan protocol differs from the reviewed contract") from exc
+    return document
+
+
+def _normalize_plan_table(name: str, frame: pl.DataFrame) -> pl.DataFrame:
+    schemas = {"arrivals": _ARRIVALS_SCHEMA, "runs": _RUNS_SCHEMA}
+    schema = schemas[name]
+    if frame.columns != list(schema):
+        raise RuntimeError(f"HYSPLIT {name} columns differ from the reviewed schema")
+    try:
+        return frame.cast(pl.Schema(schema), strict=True)
+    except (TypeError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError(f"HYSPLIT {name} types differ from the reviewed schema") from exc
+
+
+def _expected_plan_summary(arrivals: pl.DataFrame, runs: pl.DataFrame) -> dict[str, int]:
+    events = arrivals.filter(pl.col("arrival_kind") == "event")
+    controls = arrivals.filter(pl.col("arrival_kind") == "control")
+    matched = events.filter(pl.col("match_state") == "matched")
+    unmatched = events.filter(pl.col("match_state") == "unmatched_no_control")
+    if events.height + controls.height != arrivals.height:
+        raise RuntimeError("HYSPLIT arrivals contain an unknown arrival kind")
+    if matched.height + unmatched.height != events.height:
+        raise RuntimeError("HYSPLIT event match state differs from the reviewed contract")
+    if controls.height != matched.height or controls.filter(
+        pl.col("match_state") != "matched"
+    ).height:
+        raise RuntimeError("HYSPLIT controls do not form one-to-one matched pairs")
+    pair_counts = arrivals.group_by("pair_id").agg(
+        pl.len().alias("rows"),
+        pl.col("arrival_kind").n_unique().alias("kinds"),
+    )
+    if pair_counts.filter(
+        ~(
+            ((pl.col("rows") == 2) & (pl.col("kinds") == 2))
+            | ((pl.col("rows") == 1) & (pl.col("kinds") == 1))
+        )
+    ).height:
+        raise RuntimeError("HYSPLIT pair membership differs from the reviewed contract")
+    if runs["run_id"].n_unique() != runs.height:
+        raise RuntimeError("HYSPLIT run IDs are not unique")
+    expected_runs = matched.height * 2 * len(_START_HEIGHTS_M_AGL)
+    if runs.height != expected_runs:
+        raise RuntimeError("HYSPLIT run matrix is incomplete")
+    return {
+        "selected_events": events.height,
+        "matched_pairs": matched.height,
+        "unmatched_events": unmatched.height,
+        "standard_runs": runs.height,
+    }
+
+
+def _plan_identity(
+    plan: PilotPlan,
+    *,
+    members: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    protocol = load_hysplit_protocol()
+    arrivals = _normalize_plan_table("arrivals", plan.arrivals)
+    runs = _normalize_plan_table("runs", plan.runs)
+    expected_summary = _expected_plan_summary(arrivals, runs)
+    if plan.summary != expected_summary:
+        raise RuntimeError("HYSPLIT plan summary differs from its tables")
+    if set(plan.input_identities) != {"wind_frame", "station_geography"}:
+        raise RuntimeError("HYSPLIT plan input identities are incomplete")
+    return {
+        "schema_version": 1,
+        "analysis": "hysplit_pilot_plan",
+        "protocol": _protocol_document(protocol),
+        "ordered_receptors": list(protocol.receptors),
+        "claim_boundary": dict(protocol.claim_boundary),
+        "input_identities": plan.input_identities,
+        "tables": {
+            "arrivals": _frame_identity(arrivals),
+            "runs": _frame_identity(runs),
+        },
+        "summary": expected_summary,
+        "members": members,
+    }
+
+
+def _file_identity(path: Path) -> dict[str, object]:
+    payload = path.read_bytes()
+    return {"bytes": len(payload), "sha256": sha256(payload).hexdigest()}
+
+
+def _write_bytes(path: Path, payload: bytes) -> None:
+    with path.open("wb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _written_plan_paths(directory: Path) -> dict[str, Path]:
+    return {
+        "arrivals": directory / "arrivals.parquet",
+        "runs": directory / "runs.parquet",
+        "summary": directory / "summary.json",
+        "manifest": directory / "manifest.json",
+    }
+
+
+def _load_hysplit_pilot_plan(
+    directory: Path,
+    *,
+    require_directory_name: bool,
+) -> PilotPlan:
+    if not directory.is_dir() or directory.is_symlink():
+        raise RuntimeError("HYSPLIT generation is missing or linked")
+    entries = tuple(directory.iterdir())
+    if {entry.name for entry in entries} != set(_GENERATION_MEMBERS):
+        raise RuntimeError("HYSPLIT generation has an unexpected member inventory")
+    if any(not entry.is_file() or entry.is_symlink() for entry in entries):
+        raise RuntimeError("HYSPLIT generation contains a non-regular member")
+
+    manifest_payload = (directory / "manifest.json").read_bytes()
+    try:
+        manifest = json.loads(manifest_payload.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("HYSPLIT manifest is unreadable") from exc
+    if not isinstance(manifest, dict) or manifest_payload != _canonical_json_bytes(manifest):
+        raise RuntimeError("HYSPLIT manifest is not canonical JSON")
+    expected_manifest_fields = {
+        "schema_version",
+        "analysis",
+        "protocol",
+        "ordered_receptors",
+        "claim_boundary",
+        "input_identities",
+        "tables",
+        "summary",
+        "members",
+        "complete",
+        "generation_sha256",
+    }
+    if set(manifest) != expected_manifest_fields or manifest.get("complete") is not True:
+        raise RuntimeError("HYSPLIT manifest fields or completion state changed")
+    identity = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"complete", "generation_sha256"}
+    }
+    generation = _hash_value(identity)
+    if manifest.get("generation_sha256") != generation:
+        raise RuntimeError("HYSPLIT generation identity differs")
+    if require_directory_name and directory.name != generation:
+        raise RuntimeError("HYSPLIT generation directory does not match its identity")
+
+    protocol_raw = manifest.get("protocol")
+    if not isinstance(protocol_raw, dict):
+        raise RuntimeError("HYSPLIT manifest protocol changed")
+    try:
+        protocol = load_hysplit_protocol(protocol_raw)
+    except ConfigError as exc:
+        raise RuntimeError("HYSPLIT manifest protocol changed") from exc
+    if (
+        manifest.get("ordered_receptors") != list(protocol.receptors)
+        or manifest.get("claim_boundary") != dict(protocol.claim_boundary)
+    ):
+        raise RuntimeError("HYSPLIT manifest claim boundary changed")
+
+    members = manifest.get("members")
+    expected_member_names = {"arrivals.parquet", "runs.parquet", "summary.json"}
+    if not isinstance(members, dict) or set(members) != expected_member_names:
+        raise RuntimeError("HYSPLIT member identities changed")
+    for name in expected_member_names:
+        if members[name] != _file_identity(directory / name):
+            raise RuntimeError(f"HYSPLIT member checksum differs: {name}")
+
+    try:
+        arrivals = _normalize_plan_table(
+            "arrivals", pl.read_parquet(directory / "arrivals.parquet")
+        )
+        runs = _normalize_plan_table("runs", pl.read_parquet(directory / "runs.parquet"))
+    except pl.exceptions.PolarsError as exc:
+        raise RuntimeError("HYSPLIT generation table is unreadable") from exc
+    tables = manifest.get("tables")
+    expected_tables = {
+        "arrivals": _frame_identity(arrivals),
+        "runs": _frame_identity(runs),
+    }
+    if tables != expected_tables:
+        raise RuntimeError("HYSPLIT table identity differs")
+
+    summary_payload = (directory / "summary.json").read_bytes()
+    try:
+        summary = json.loads(summary_payload.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("HYSPLIT summary is unreadable") from exc
+    if (
+        not isinstance(summary, dict)
+        or summary_payload != _canonical_json_bytes(summary)
+        or summary != _expected_plan_summary(arrivals, runs)
+        or summary != manifest.get("summary")
+    ):
+        raise RuntimeError("HYSPLIT summary differs from its tables")
+    input_identities = manifest.get("input_identities")
+    if not isinstance(input_identities, dict) or set(input_identities) != {
+        "wind_frame",
+        "station_geography",
+    }:
+        raise RuntimeError("HYSPLIT input identities changed")
+    return PilotPlan(
+        arrivals=arrivals,
+        runs=runs,
+        summary={str(key): int(value) for key, value in summary.items()},
+        input_identities=input_identities,
+    )
+
+
+def load_hysplit_pilot_plan(directory: Path) -> PilotPlan:
+    """Independently reload and verify an immutable C0 preparation generation."""
+    try:
+        return _load_hysplit_pilot_plan(directory.absolute(), require_directory_name=True)
+    except (OSError, TypeError, ValueError) as exc:
+        raise RuntimeError("HYSPLIT generation cannot be verified") from exc
+
+
+def write_hysplit_pilot_plan(
+    plan: PilotPlan,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, Path]:
+    """Atomically publish a content-addressed C0 preparation generation."""
+    arrivals = _normalize_plan_table("arrivals", plan.arrivals)
+    runs = _normalize_plan_table("runs", plan.runs)
+    if plan.summary != _expected_plan_summary(arrivals, runs):
+        raise RuntimeError("HYSPLIT plan summary differs from its tables")
+
+    root = (
+        output_root.absolute()
+        if output_root is not None
+        else outputs_dir("hysplit_pilot_plan").absolute()
+    )
+    generations = root / "generations"
+    generations.mkdir(parents=True, exist_ok=True)
+    token = uuid4().hex
+    staged = generations / f".hysplit-plan.staging-{token}"
+    staged.mkdir()
+    try:
+        arrivals.write_parquet(staged / "arrivals.parquet")
+        runs.write_parquet(staged / "runs.parquet")
+        for name in ("arrivals.parquet", "runs.parquet"):
+            with (staged / name).open("ab") as stream:
+                stream.flush()
+                os.fsync(stream.fileno())
+        _write_bytes(staged / "summary.json", _canonical_json_bytes(plan.summary))
+        members = {
+            name: _file_identity(staged / name)
+            for name in ("arrivals.parquet", "runs.parquet", "summary.json")
+        }
+        identity = _plan_identity(plan, members=members)
+        generation = _hash_value(identity)
+        manifest = {
+            **identity,
+            "complete": True,
+            "generation_sha256": generation,
+        }
+        _write_bytes(staged / "manifest.json", _canonical_json_bytes(manifest))
+        staged_plan = _load_hysplit_pilot_plan(staged, require_directory_name=False)
+        if (
+            not staged_plan.arrivals.equals(arrivals)
+            or not staged_plan.runs.equals(runs)
+            or staged_plan.summary != plan.summary
+            or staged_plan.input_identities != plan.input_identities
+        ):
+            raise RuntimeError("HYSPLIT staged generation differs from the prepared plan")
+
+        destination = generations / generation
+        if destination.exists():
+            existing = load_hysplit_pilot_plan(destination)
+            if (
+                not existing.arrivals.equals(arrivals)
+                or not existing.runs.equals(runs)
+                or existing.summary != plan.summary
+                or existing.input_identities != plan.input_identities
+            ):
+                raise RuntimeError("existing HYSPLIT generation is not reusable")
+            return _written_plan_paths(destination)
+        try:
+            staged.replace(destination)
+        except FileExistsError as exc:
+            existing = load_hysplit_pilot_plan(destination)
+            if not existing.arrivals.equals(arrivals) or not existing.runs.equals(runs):
+                raise RuntimeError("concurrent HYSPLIT generation differs") from exc
+        load_hysplit_pilot_plan(destination)
+        return _written_plan_paths(destination)
+    finally:
+        if (
+            staged.exists()
+            and staged.parent == generations
+            and staged.name == f".hysplit-plan.staging-{token}"
+        ):
+            shutil.rmtree(staged)
