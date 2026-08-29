@@ -1627,6 +1627,16 @@ def test_summary_preserves_device_day_improvement_and_station_day_reversal() -> 
 @pytest.mark.parametrize("changed", ["scores", "control_scores"])
 def test_generation_identity_binds_scientific_table_content(changed: str) -> None:
     result = assembled_result_fixture()
+    source = getattr(result, changed)
+    subprecision_noise = source.with_columns(
+        pl.when(pl.int_range(pl.len()) == 0)
+        .then(pl.col("value") + 1e-15)
+        .otherwise(pl.col("value"))
+        .alias("value")
+    )
+    assert audit._normalize_audit_floats(source).equals(
+        audit._normalize_audit_floats(subprecision_noise)
+    )
     frame = getattr(result, changed).with_columns(
         pl.when(pl.int_range(pl.len()) == 0)
         .then(pl.col("value") + 1.0)

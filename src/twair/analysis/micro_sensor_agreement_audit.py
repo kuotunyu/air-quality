@@ -3072,6 +3072,21 @@ def _json_scalar(value: object) -> object:
     return value
 
 
+def _normalize_audit_floats(frame: pl.DataFrame) -> pl.DataFrame:
+    expressions: list[pl.Expr] = []
+    for name, dtype in frame.schema.items():
+        if dtype not in {pl.Float32, pl.Float64}:
+            continue
+        rounded = pl.col(name).round(12)
+        expressions.append(
+            pl.when(rounded == 0.0)
+            .then(pl.lit(0.0).cast(dtype))
+            .otherwise(rounded)
+            .alias(name)
+        )
+    return frame.with_columns(expressions) if expressions else frame
+
+
 def _semantic_frame_hash(frame: pl.DataFrame) -> str:
     if frame.is_empty():
         rows: list[dict[str, object]] = []
@@ -3423,6 +3438,11 @@ def run_micro_sensor_agreement_audit(
         neighbor,
     )
     control_summary = summarize_negative_controls(control_scores, selected_config)
+    scores = _normalize_audit_floats(scores)
+    deltas = _normalize_audit_floats(deltas)
+    uncertainty = _normalize_audit_floats(uncertainty)
+    control_scores = _normalize_audit_floats(control_scores)
+    control_summary = _normalize_audit_floats(control_summary)
     fusion_gate = evaluate_fusion_gate(
         fold_audit,
         scores,
