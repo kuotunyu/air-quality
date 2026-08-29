@@ -3481,9 +3481,8 @@ def agreement_audit_run_lock(path: Path) -> Iterator[None]:
         _lock_byte(handle)
         try:
             if os.name == "nt":
-                import msvcrt
-
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt_module: Any = importlib.import_module("msvcrt")
+                msvcrt_module.locking(handle.fileno(), msvcrt_module.LK_NBLCK, 1)
             else:
                 fcntl_module: Any = importlib.import_module("fcntl")
                 fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX | fcntl_module.LOCK_NB)
@@ -3496,9 +3495,8 @@ def agreement_audit_run_lock(path: Path) -> Iterator[None]:
             if acquired:
                 handle.seek(0)
                 if os.name == "nt":
-                    import msvcrt
-
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    msvcrt_module = importlib.import_module("msvcrt")
+                    msvcrt_module.locking(handle.fileno(), msvcrt_module.LK_UNLCK, 1)
                 else:
                     fcntl_module = importlib.import_module("fcntl")
                     fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
