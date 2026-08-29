@@ -98,9 +98,7 @@ def _reject_constant(value: str) -> object:
 
 def _read_json(path: Path, *, label: str) -> dict[str, Any]:
     try:
-        value = json.loads(
-            path.read_text(encoding="utf-8"), parse_constant=_reject_constant
-        )
+        value = json.loads(path.read_text(encoding="utf-8"), parse_constant=_reject_constant)
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         raise VerificationError(f"{label} is unreadable") from exc
     if not isinstance(value, dict):
@@ -130,12 +128,7 @@ def _file_identity(path: Path, *, parent: Path) -> tuple[int, str]:
         stat = path.stat()
     except OSError as exc:
         raise VerificationError(f"member is unreadable: {path.name}") from exc
-    if (
-        _is_link_like(path)
-        or not path.is_file()
-        or resolved.parent != parent
-        or stat.st_nlink != 1
-    ):
+    if _is_link_like(path) or not path.is_file() or resolved.parent != parent or stat.st_nlink != 1:
         raise VerificationError(f"member is linked or not ordinary: {path.name}")
     return stat.st_size, _sha256_file(path)
 
@@ -176,16 +169,12 @@ def _result_identity(
     summary: dict[str, Any],
 ) -> str:
     manifest_identity = {
-        key: value
-        for key, value in manifest.items()
-        if key not in TRANSIENT_MANIFEST_FIELDS
+        key: value for key, value in manifest.items() if key not in TRANSIENT_MANIFEST_FIELDS
     }
     return canonical_hash(
         {
             "manifest": manifest_identity,
-            "tables": {
-                name: semantic_frame_hash(frames[name]) for name in TABLE_MEMBERS
-            },
+            "tables": {name: semantic_frame_hash(frames[name]) for name in TABLE_MEMBERS},
             "summary": summary,
         }
     )
@@ -200,8 +189,7 @@ def _require_columns(frame: pl.DataFrame, columns: set[str], *, label: str) -> N
 def _validate_hash_columns(frame: pl.DataFrame, *, label: str) -> None:
     for column in (name for name in frame.columns if name.endswith("_sha256")):
         invalid = frame.filter(
-            pl.col(column).is_not_null()
-            & ~pl.col(column).str.contains(r"^[0-9a-f]{64}$")
+            pl.col(column).is_not_null() & ~pl.col(column).str.contains(r"^[0-9a-f]{64}$")
         )
         if invalid.height:
             raise VerificationError(f"{label} contains an invalid {column}")
@@ -259,9 +247,7 @@ def _validate_deltas(frame: pl.DataFrame) -> None:
     _validate_hash_columns(frame, label="deltas")
 
 
-def _validate_score_delta_relationships(
-    scores: pl.DataFrame, deltas: pl.DataFrame
-) -> None:
+def _validate_score_delta_relationships(scores: pl.DataFrame, deltas: pl.DataFrame) -> None:
     key = ("scope", "evaluation", "fold", "unit", "metric")
     scored = scores.filter(pl.col("state") == "scored")
     baseline = scored.select(
@@ -274,13 +260,17 @@ def _validate_score_delta_relationships(
         "model",
         pl.col("value").alias("candidate_value"),
     )
-    comparable = deltas.filter(pl.col("state") == "scored").join(
-        baseline, on=(*key, "baseline_model"), how="inner", nulls_equal=True
-    ).join(candidates, on=(*key, "model"), how="inner", nulls_equal=True)
-    if comparable.height and comparable.filter(
-        (pl.col("value") - (pl.col("candidate_value") - pl.col("baseline_value"))).abs()
-        > 1e-12
-    ).height:
+    comparable = (
+        deltas.filter(pl.col("state") == "scored")
+        .join(baseline, on=(*key, "baseline_model"), how="inner", nulls_equal=True)
+        .join(candidates, on=(*key, "model"), how="inner", nulls_equal=True)
+    )
+    if (
+        comparable.height
+        and comparable.filter(
+            (pl.col("value") - (pl.col("candidate_value") - pl.col("baseline_value"))).abs() > 1e-12
+        ).height
+    ):
         raise VerificationError("delta does not equal candidate minus comparator score")
 
 
@@ -316,9 +306,10 @@ def _validate_uncertainty(frame: pl.DataFrame, deltas: pl.DataFrame) -> None:
         pl.col("value").alias("expected"),
     )
     paired = frame.join(observed, on=("candidate", "comparator"), how="inner")
-    if paired.height and paired.filter(
-        (pl.col("observed_delta_rmse") - pl.col("expected")).abs() > 1e-12
-    ).height:
+    if (
+        paired.height
+        and paired.filter((pl.col("observed_delta_rmse") - pl.col("expected")).abs() > 1e-12).height
+    ):
         raise VerificationError("uncertainty observed delta changed")
     _validate_hash_columns(frame, label="uncertainty")
 
@@ -424,9 +415,7 @@ def _verify(directory: Path) -> None:
     if not isinstance(members, dict) or set(members) != expected_members:
         raise VerificationError("member declaration inventory changed")
     for name in expected_members:
-        if _declared_member(members[name], name=name) != _file_identity(
-            paths[name], parent=parent
-        ):
+        if _declared_member(members[name], name=name) != _file_identity(paths[name], parent=parent):
             raise VerificationError(f"member bytes or hash changed: {name}")
     declarations = manifest.get("tables")
     if not isinstance(declarations, dict) or set(declarations) != set(TABLE_MEMBERS):
@@ -458,9 +447,7 @@ def _verify(directory: Path) -> None:
     _validate_uncertainty(frames["uncertainty"], frames["deltas"])
     _validate_controls(frames["control_scores"], frames["control_summary"])
     _validate_gate(frames["fusion_gate"])
-    _validate_summary(
-        summary, frames["scores"], frames["deltas"], frames["fusion_gate"]
-    )
+    _validate_summary(summary, frames["scores"], frames["deltas"], frames["fusion_gate"])
     after = {name: _file_identity(path, parent=parent) for name, path in paths.items()}
     if before != after:
         raise VerificationError("generation changed during verification")

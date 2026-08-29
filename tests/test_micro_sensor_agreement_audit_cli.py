@@ -63,18 +63,9 @@ def test_command_defaults_to_plan_without_computation(
     assert "PLAN ONLY" in result.stdout
     assert "station-day primary" in result.stdout
     assert "999" in result.stdout and "1,999" in result.stdout
-    assert (
-        "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
-        in result.stdout
-    )
-    assert (
-        "df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624"
-        in result.stdout
-    )
-    assert (
-        "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
-        in result.stdout
-    )
+    assert "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb" in result.stdout
+    assert "df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624" in result.stdout
+    assert "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788" in result.stdout
     assert "network: disabled" in result.stdout
     run.assert_not_called()
 

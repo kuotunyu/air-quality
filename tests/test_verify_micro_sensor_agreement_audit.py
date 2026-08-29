@@ -58,8 +58,7 @@ def generation(tmp_path: Path) -> Path:
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n",
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
 
@@ -127,17 +126,11 @@ def mutate_and_resign_generation(generation: Path, mutation: str) -> Path:
     if mutation == "row_count":
         frames["fold_audit"] = frames["fold_audit"].head(0)
     elif mutation == "schema":
-        frames["scores"] = frames["scores"].with_columns(
-            pl.col("value").cast(pl.String)
-        )
+        frames["scores"] = frames["scores"].with_columns(pl.col("value").cast(pl.String))
     elif mutation == "fold_state":
-        frames["fold_audit"] = frames["fold_audit"].with_columns(
-            pl.lit("corrupted").alias("state")
-        )
+        frames["fold_audit"] = frames["fold_audit"].with_columns(pl.lit("corrupted").alias("state"))
     elif mutation == "score":
-        frames["scores"] = frames["scores"].with_columns(
-            (pl.col("value") + 1.0).alias("value")
-        )
+        frames["scores"] = frames["scores"].with_columns((pl.col("value") + 1.0).alias("value"))
     elif mutation == "delta":
         frames["deltas"] = frames["deltas"].with_columns(
             pl.when(pl.col("unit") == "device_day")
@@ -146,13 +139,9 @@ def mutate_and_resign_generation(generation: Path, mutation: str) -> Path:
             .alias("value")
         )
     elif mutation == "membership_hash":
-        frames["scores"] = frames["scores"].with_columns(
-            pl.lit("bad").alias("membership_sha256")
-        )
+        frames["scores"] = frames["scores"].with_columns(pl.lit("bad").alias("membership_sha256"))
     elif mutation == "truth_hash":
-        frames["scores"] = frames["scores"].with_columns(
-            pl.lit("bad").alias("truth_sha256")
-        )
+        frames["scores"] = frames["scores"].with_columns(pl.lit("bad").alias("truth_sha256"))
     elif mutation == "missing_control_replicate":
         frames["control_scores"] = frames["control_scores"].head(0)
     elif mutation == "incorrect_gate_pass":

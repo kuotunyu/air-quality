@@ -1433,9 +1433,7 @@ def analyze_micro_sensor_agreement_audit(
         or published.directory.name != generation
         or set(written) != set(AUDIT_MEMBER_NAMES)
         or any(
-            not isinstance(path, Path)
-            or not path.is_file()
-            or path.parent != published.directory
+            not isinstance(path, Path) or not path.is_file() or path.parent != published.directory
             for path in written.values()
         )
         or gate.height != len(FUSION_CONDITION_IDS)

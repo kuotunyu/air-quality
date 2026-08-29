@@ -146,9 +146,7 @@ _EXPECTED_ANALYSIS: dict[str, object] = {
     "annual_generation_sha256": (
         "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
     ),
-    "annual_manifest_sha256": (
-        "eb37676fd8d357af4080048828a3f33b8de212a6dfb46752ea059cbab4c6e89d"
-    ),
+    "annual_manifest_sha256": ("eb37676fd8d357af4080048828a3f33b8de212a6dfb46752ea059cbab4c6e89d"),
     "annual_git_sha": "e4839bc",
     "agreement_generation_sha256": (
         "df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624"
@@ -165,15 +163,11 @@ _EXPECTED_ANALYSIS: dict[str, object] = {
     ),
     "satellite_year": 2025,
     "satellite_panel_bytes": 33866,
-    "satellite_panel_sha256": (
-        "aa34e69720098e8868dc1e004f77b3f8e425288089f867bd310e08366d0198e2"
-    ),
+    "satellite_panel_sha256": ("aa34e69720098e8868dc1e004f77b3f8e425288089f867bd310e08366d0198e2"),
     "reviewed_geography_sha256": (
         "72146c443374303ad95f69e820e4f067b8378a3b0167a03e67c29c68b63c1f32"
     ),
-    "reviewed_airzone_sha256": (
-        "911a4967b9e9ab3c3af9821f53d8ba99eb5c1a8bc5c8384ce9ca19867dc8ee54"
-    ),
+    "reviewed_airzone_sha256": ("911a4967b9e9ab3c3af9821f53d8ba99eb5c1a8bc5c8384ce9ca19867dc8ee54"),
     "primary_radius_km": 0.5,
     "ridge_alpha": 1.0,
     "permutation_draws": 999,
@@ -249,9 +243,7 @@ FUSION_CONDITION_IDS = (
     "primary_scale_improvement",
     "field_spatial_buffer",
 )
-AUDIT_UNCERTAINTY_SCHEMA: tuple[
-    tuple[str, pl.DataType | type[pl.DataType]], ...
-] = (
+AUDIT_UNCERTAINTY_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
     ("candidate", pl.String),
     ("comparator", pl.String),
     ("unit", pl.String),
@@ -269,9 +261,7 @@ AUDIT_UNCERTAINTY_SCHEMA: tuple[
     ("delta_mae_ci_low", pl.Float64),
     ("delta_mae_ci_high", pl.Float64),
 )
-AUDIT_CONTROL_SCORE_SCHEMA: tuple[
-    tuple[str, pl.DataType | type[pl.DataType]], ...
-] = (
+AUDIT_CONTROL_SCORE_SCHEMA: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...] = (
     ("control", pl.String),
     ("variant", pl.String),
     ("replicate", pl.Int64),
@@ -478,7 +468,11 @@ def load_micro_sensor_agreement_audit_config(
     top = _mapping(raw, label="micro_sensor_agreement_audit")
     _exact_keys(top, {"schema_version", "analysis"}, label="micro_sensor_agreement_audit")
     schema_version = top["schema_version"]
-    if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version != 1:
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version != 1
+    ):
         raise ConfigError("micro_sensor_agreement_audit.schema_version must be one")
     analysis = _mapping(top["analysis"], label="micro_sensor_agreement_audit.analysis")
     _exact_keys(analysis, set(_EXPECTED_ANALYSIS), label="micro_sensor_agreement_audit.analysis")
@@ -557,12 +551,7 @@ def _ordinary_file_identity(path: Path, *, parent: Path, label: str) -> tuple[in
         stat = path.stat()
     except OSError as exc:
         raise RuntimeError(f"frozen input {label} is unreadable") from exc
-    if (
-        _is_link_like(path)
-        or not path.is_file()
-        or resolved.parent != parent
-        or stat.st_nlink != 1
-    ):
+    if _is_link_like(path) or not path.is_file() or resolved.parent != parent or stat.st_nlink != 1:
         raise RuntimeError(f"frozen input {label} must be one ordinary file")
     return stat.st_size, sha256_file(path)
 
@@ -702,8 +691,7 @@ def _load_annual(
     manifest_inputs = manifest.get("inputs")
     if (
         not isinstance(manifest_inputs, dict)
-        or manifest_inputs.get("reviewed_geography_sha256")
-        != config.reviewed_geography_sha256
+        or manifest_inputs.get("reviewed_geography_sha256") != config.reviewed_geography_sha256
     ):
         raise RuntimeError("frozen input annual geography binding changed")
     members = manifest.get("members")
@@ -735,11 +723,11 @@ def _load_annual(
     summary = _read_json(summary_path, label="annual summary")
     if "output_rows" in summary and summary["output_rows"] != _ANNUAL_EXPECTED_ROWS:
         raise RuntimeError("frozen input annual summary row counts changed")
-    if _ordinary_file_identity(
-        manifest_path, parent=directory, label="annual manifest"
-    ) != (manifest_file.bytes, manifest_file.sha256) or _read_json(
-        manifest_path, label="annual manifest"
-    ) != manifest:
+    if (
+        _ordinary_file_identity(manifest_path, parent=directory, label="annual manifest")
+        != (manifest_file.bytes, manifest_file.sha256)
+        or _read_json(manifest_path, label="annual manifest") != manifest
+    ):
         raise RuntimeError("frozen input annual manifest changed during read")
     _validate_inventory(directory, expected_files, label="annual readiness")
     return manifest, tuple(files)
@@ -829,11 +817,11 @@ def _load_agreement(
         raise RuntimeError("frozen input agreement summary identity changed")
     if "output_rows" in summary and summary["output_rows"] != _AGREEMENT_EXPECTED_ROWS:
         raise RuntimeError("frozen input agreement summary row counts changed")
-    if _ordinary_file_identity(
-        manifest_path, parent=directory, label="agreement manifest"
-    ) != (manifest_file.bytes, manifest_file.sha256) or _read_json(
-        manifest_path, label="agreement manifest"
-    ) != manifest:
+    if (
+        _ordinary_file_identity(manifest_path, parent=directory, label="agreement manifest")
+        != (manifest_file.bytes, manifest_file.sha256)
+        or _read_json(manifest_path, label="agreement manifest") != manifest
+    ):
         raise RuntimeError("frozen input agreement manifest changed during read")
     _validate_inventory(directory, expected_files, label="agreement")
     return manifest, summary, frames, tuple(files)
@@ -882,9 +870,7 @@ def _load_geography(config: AgreementAuditConfig) -> pl.DataFrame:
         or selected.filter(~pl.col("lon").is_finite() | ~pl.col("lat").is_finite()).height
     ):
         raise RuntimeError("frozen input reviewed geography rows changed")
-    coordinate_hash = canonical_hash(
-        coordinate_identity.sort("station_name").to_dicts()
-    )
+    coordinate_hash = canonical_hash(coordinate_identity.sort("station_name").to_dicts())
     airzone_hash = canonical_hash(selected.sort("station_name").to_dicts())
     if coordinate_hash != config.reviewed_geography_sha256:
         raise RuntimeError("frozen input reviewed geography identity changed")
@@ -904,9 +890,7 @@ def load_frozen_agreement_audit_inputs(
     if _is_link_like(data_root) or not root.is_dir():
         raise RuntimeError("frozen input data root must be an ordinary directory")
     annual_manifest, annual_files = _load_annual(root, config)
-    agreement_manifest, agreement_summary, frames, agreement_files = _load_agreement(
-        root, config
-    )
+    agreement_manifest, agreement_summary, frames, agreement_files = _load_agreement(root, config)
     satellite_panel, satellite_file = _load_satellite(root, config)
     geography = _load_geography(config)
     return FrozenAuditInputs(
@@ -1005,9 +989,10 @@ def _eligible_agreement_rows(
     if missing:
         raise RuntimeError(f"agreement reproduction mismatch: missing columns {missing}")
     eligible = inputs.agreement_paired_days.filter(pl.col("reason") == "eligible")
-    if eligible.is_empty() or eligible.filter(
-        pl.col("radius_km") != config.primary_radius_km
-    ).height:
+    if (
+        eligible.is_empty()
+        or eligible.filter(pl.col("radius_km") != config.primary_radius_km).height
+    ):
         raise RuntimeError("agreement reproduction mismatch: primary cohort changed")
     if eligible.select("radius_km", "date", "device_id").n_unique() != eligible.height:
         raise RuntimeError("agreement reproduction mismatch: eligible identity is duplicated")
@@ -1069,15 +1054,9 @@ def _bind_source_predictions(
         index=keys,
         values="y_pred",
     )
-    pivoted = pivoted.rename(
-        {model: f"source_{model}_y_pred" for model in _CORE_MODELS}
-    )
-    enriched = memberships.join(pivoted, on=keys, how="left").join(
-        truth, on=keys, how="left"
-    )
-    scored_test = enriched.filter(
-        (pl.col("fold_state") == "scored") & (pl.col("role") == "test")
-    )
+    pivoted = pivoted.rename({model: f"source_{model}_y_pred" for model in _CORE_MODELS})
+    enriched = memberships.join(pivoted, on=keys, how="left").join(truth, on=keys, how="left")
+    scored_test = enriched.filter((pl.col("fold_state") == "scored") & (pl.col("role") == "test"))
     reference_columns = ("source_y_true", *(f"source_{model}_y_pred" for model in _CORE_MODELS))
     if scored_test.select(
         pl.any_horizontal(pl.col(column).is_null() for column in reference_columns).any()
@@ -1133,14 +1112,10 @@ def reconstruct_agreement_folds(
                     pl.lit("joint").alias("evaluation"),
                     pl.lit(f"joint_{station_fold:02d}_{quarter:02d}").alias("fold"),
                     pl.when(
-                        (pl.col("station_fold") == station_fold)
-                        & (pl.col("quarter") == quarter)
+                        (pl.col("station_fold") == station_fold) & (pl.col("quarter") == quarter)
                     )
                     .then(pl.lit("test"))
-                    .when(
-                        (pl.col("station_fold") != station_fold)
-                        & (pl.col("quarter") != quarter)
-                    )
+                    .when((pl.col("station_fold") != station_fold) & (pl.col("quarter") != quarter))
                     .then(pl.lit("train"))
                     .otherwise(pl.lit("excluded"))
                     .alias("role"),
@@ -1209,9 +1184,9 @@ def reconstruct_agreement_folds(
     ).equals(source_memberships):
         raise RuntimeError("agreement reproduction mismatch: fold membership changed")
     source_folds = inputs.agreement_folds.sort("evaluation", "fold")
-    comparable_folds = fold_audit.rename(
-        {"state": "fold_state", "reason": "fold_reason"}
-    ).select(*source_folds.columns)
+    comparable_folds = fold_audit.rename({"state": "fold_state", "reason": "fold_reason"}).select(
+        *source_folds.columns
+    )
     if not comparable_folds.equals(source_folds):
         raise RuntimeError("agreement reproduction mismatch: fold ledger changed")
     memberships = _bind_source_predictions(memberships, inputs.agreement_predictions)
@@ -1219,12 +1194,9 @@ def reconstruct_agreement_folds(
 
 
 def _training_weights(train: pl.DataFrame) -> np.ndarray[Any, np.dtype[np.float64]]:
-    return (
-        train.select(
-            (1.0 / pl.len().over("station_name", "date")).alias("_sample_weight")
-        )["_sample_weight"]
-        .to_numpy()
-    )
+    return train.select((1.0 / pl.len().over("station_name", "date")).alias("_sample_weight"))[
+        "_sample_weight"
+    ].to_numpy()
 
 
 def refit_core_candidates(
@@ -1300,14 +1272,12 @@ def refit_core_candidates(
 def _unit_predictions(predictions: pl.DataFrame, *, unit: str) -> pl.DataFrame:
     if unit == "device_day":
         return predictions
-    truth_counts = predictions.group_by(
-        "evaluation", "fold", "model", "station_name", "date"
-    ).agg(pl.col("y_true").n_unique().alias("_truth_values"))
+    truth_counts = predictions.group_by("evaluation", "fold", "model", "station_name", "date").agg(
+        pl.col("y_true").n_unique().alias("_truth_values")
+    )
     if truth_counts.filter(pl.col("_truth_values") != 1).height:
         raise RuntimeError("agreement reproduction mismatch: station-day truth is not unique")
-    return predictions.group_by(
-        "evaluation", "fold", "model", "station_name", "date"
-    ).agg(
+    return predictions.group_by("evaluation", "fold", "model", "station_name", "date").agg(
         pl.col("radius_km").first(),
         pl.col("y_true").first(),
         pl.col("y_pred").mean(),
@@ -1365,7 +1335,9 @@ def _score_rows(
                     & (pl.col("fold") == fold)
                     & (pl.col("model") == model)
                 )
-                scored = _unit_predictions(selected, unit=unit) if not selected.is_empty() else selected
+                scored = (
+                    _unit_predictions(selected, unit=unit) if not selected.is_empty() else selected
+                )
                 values = _score_values(scored) if state == "scored" else dict.fromkeys(_METRICS)
                 membership_hash = (
                     _scored_identity(scored, unit=unit, truth=False)
@@ -1403,19 +1375,19 @@ def _score_rows(
                     )
     for evaluation in ("held_station", "held_quarter", "joint"):
         evaluation_folds = folds.filter(pl.col("evaluation") == evaluation)
-        unscored = evaluation_folds.filter(pl.col("state") != "scored").select(
-            "fold", "state"
-        )
+        unscored = evaluation_folds.filter(pl.col("state") != "scored").select("fold", "state")
         selected_evaluation = predictions.filter(pl.col("evaluation") == evaluation)
-        overall_state = "scored" if not selected_evaluation.is_empty() else "unscored_no_scored_folds"
+        overall_state = (
+            "scored" if not selected_evaluation.is_empty() else "unscored_no_scored_folds"
+        )
         for unit in ("station_day", "device_day"):
             for model in _CORE_MODELS:
                 selected = selected_evaluation.filter(pl.col("model") == model)
-                scored = _unit_predictions(selected, unit=unit) if not selected.is_empty() else selected
+                scored = (
+                    _unit_predictions(selected, unit=unit) if not selected.is_empty() else selected
+                )
                 values = (
-                    _score_values(scored)
-                    if overall_state == "scored"
-                    else dict.fromkeys(_METRICS)
+                    _score_values(scored) if overall_state == "scored" else dict.fromkeys(_METRICS)
                 )
                 membership_hash = _scored_identity(scored, unit=unit, truth=False)
                 truth_hash = _scored_identity(scored, unit=unit, truth=True)
@@ -1453,13 +1425,9 @@ def score_audit_predictions(
     scores = pl.DataFrame(
         _score_rows(predictions, folds),
         schema_overrides={"fold": pl.String, "value": pl.Float64},
-    ).sort(
-        "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
-    )
+    ).sort("scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True)
     key_columns = ("scope", "evaluation", "fold", "unit", "metric")
-    baseline = scores.filter(
-        (pl.col("model") == "raw_micro") & (pl.col("state") == "scored")
-    )
+    baseline = scores.filter((pl.col("model") == "raw_micro") & (pl.col("state") == "scored"))
     delta_rows: list[dict[str, object]] = []
     for candidate in CORE_FEATURES:
         candidate_rows = scores.filter(
@@ -1476,10 +1444,13 @@ def score_audit_predictions(
             how="inner",
             nulls_equal=True,
         )
-        if paired.height != candidate_rows.height or paired.filter(
-            (pl.col("membership_sha256") != pl.col("_baseline_membership"))
-            | (pl.col("truth_sha256") != pl.col("_baseline_truth"))
-        ).height:
+        if (
+            paired.height != candidate_rows.height
+            or paired.filter(
+                (pl.col("membership_sha256") != pl.col("_baseline_membership"))
+                | (pl.col("truth_sha256") != pl.col("_baseline_truth"))
+            ).height
+        ):
             raise RuntimeError("agreement reproduction mismatch: score pairing changed")
         for row in paired.iter_rows(named=True):
             value = float(row["value"]) - float(row["_baseline_value"])
@@ -1516,9 +1487,7 @@ def score_audit_predictions(
     deltas = pl.DataFrame(
         delta_rows,
         schema_overrides={"fold": pl.String, "value": pl.Float64},
-    ).sort(
-        "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
-    )
+    ).sort("scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True)
     return scores, deltas
 
 
@@ -1527,12 +1496,15 @@ def _station_day_prediction_table(predictions: pl.DataFrame) -> pl.DataFrame:
     missing = sorted(required - set(predictions.columns))
     if missing:
         raise RuntimeError(f"clustered uncertainty is missing columns: {missing}")
-    if predictions.is_empty() or predictions.filter(
-        pl.any_horizontal(
-            pl.col(column).is_null() | ~pl.col(column).is_finite()
-            for column in ("y_true", "y_pred")
-        )
-    ).height:
+    if (
+        predictions.is_empty()
+        or predictions.filter(
+            pl.any_horizontal(
+                pl.col(column).is_null() | ~pl.col(column).is_finite()
+                for column in ("y_true", "y_pred")
+            )
+        ).height
+    ):
         raise RuntimeError("clustered uncertainty contains invalid predictions")
     grouped = predictions.group_by("station_name", "date", "model").agg(
         pl.col("y_true").n_unique().alias("_truth_values"),
@@ -1595,9 +1567,7 @@ def station_cluster_bootstrap(
     rng = np.random.default_rng(config.bootstrap_seed)
     rows: list[dict[str, object]] = []
     for candidate, comparator in normalized_pairs:
-        paired = station_days.select(
-            "station_name", "date", "y_true", candidate, comparator
-        )
+        paired = station_days.select("station_name", "date", "y_true", candidate, comparator)
         if paired.select(
             pl.any_horizontal(pl.col(candidate).is_null(), pl.col(comparator).is_null()).any()
         ).item():
@@ -1606,16 +1576,12 @@ def station_cluster_bootstrap(
         candidate_error = paired[candidate].to_numpy() - truth
         comparator_error = paired[comparator].to_numpy() - truth
         observed_delta_rmse = float(
-            np.sqrt(np.mean(candidate_error**2))
-            - np.sqrt(np.mean(comparator_error**2))
+            np.sqrt(np.mean(candidate_error**2)) - np.sqrt(np.mean(comparator_error**2))
         )
         observed_delta_mae = float(
             np.mean(np.abs(candidate_error)) - np.mean(np.abs(comparator_error))
         )
-        blocks = {
-            station: paired.filter(pl.col("station_name") == station)
-            for station in stations
-        }
+        blocks = {station: paired.filter(pl.col("station_name") == station) for station in stations}
         rmse_draws = np.empty(config.bootstrap_draws, dtype=np.float64)
         mae_draws = np.empty(config.bootstrap_draws, dtype=np.float64)
         for draw in range(config.bootstrap_draws):
@@ -1652,9 +1618,7 @@ def station_cluster_bootstrap(
                 "delta_mae_ci_high": float(mae_interval[1]),
             }
         )
-    return pl.DataFrame(rows, schema=dict(AUDIT_UNCERTAINTY_SCHEMA)).sort(
-        "candidate", "comparator"
-    )
+    return pl.DataFrame(rows, schema=dict(AUDIT_UNCERTAINTY_SCHEMA)).sort("candidate", "comparator")
 
 
 def permute_station_day_targets(
@@ -1702,15 +1666,11 @@ def permute_station_day_targets(
                 }
             )
             rows.append(
-                group.with_columns(
-                    pl.lit(None, dtype=pl.Float64).alias("ground_pm25_mean")
-                )
+                group.with_columns(pl.lit(None, dtype=pl.Float64).alias("ground_pm25_mean"))
             )
             continue
         permuted = rng.permutation(group["ground_pm25_mean"].to_numpy())
-        rows.append(
-            group.with_columns(pl.Series("ground_pm25_mean", permuted, dtype=pl.Float64))
-        )
+        rows.append(group.with_columns(pl.Series("ground_pm25_mean", permuted, dtype=pl.Float64)))
     issue_schema = {
         "replicate": pl.Int64,
         "date": pl.Date,
@@ -1927,9 +1887,9 @@ def shift_station_day_targets(
     membership_records = shifted.select("station_name", "date").with_columns(
         pl.col("date").cast(pl.String)
     )
-    truth_records = shifted.select(
-        "station_name", "date", "shifted_ground_pm25_mean"
-    ).with_columns(pl.col("date").cast(pl.String))
+    truth_records = shifted.select("station_name", "date", "shifted_ground_pm25_mean").with_columns(
+        pl.col("date").cast(pl.String)
+    )
     return shifted.with_columns(
         pl.lit(canonical_hash(membership_records.to_dicts())).alias("membership_sha256"),
         pl.lit(canonical_hash(truth_records.to_dicts())).alias("truth_sha256"),
@@ -2078,11 +2038,9 @@ def build_satellite_context(
     if (
         completeness.height != eligible.height
         or completeness.filter(
-            (pl.col("sources") != len(SATELLITE_FEATURES))
-            | (pl.col("null_values") != 0)
+            (pl.col("sources") != len(SATELLITE_FEATURES)) | (pl.col("null_values") != 0)
         ).height
-        or selected.select("station_name", "month", "source").n_unique()
-        != selected.height
+        or selected.select("station_name", "month", "source").n_unique() != selected.height
     ):
         raise RuntimeError("satellite context requires three satellite sources")
     context = selected.pivot(
@@ -2090,16 +2048,19 @@ def build_satellite_context(
         index=("station_name", "month", "airzone_official"),
         values="satellite_value",
     )
-    if set(SATELLITE_FEATURES) - set(context.columns) or context.filter(
-        pl.any_horizontal(
-            pl.col(feature).is_null() | ~pl.col(feature).is_finite()
-            for feature in SATELLITE_FEATURES
-        )
-    ).height:
+    if (
+        set(SATELLITE_FEATURES) - set(context.columns)
+        or context.filter(
+            pl.any_horizontal(
+                pl.col(feature).is_null() | ~pl.col(feature).is_finite()
+                for feature in SATELLITE_FEATURES
+            )
+        ).height
+    ):
         raise RuntimeError("satellite context requires three satellite sources")
-    return context.select(
-        "station_name", "month", "airzone_official", *SATELLITE_FEATURES
-    ).sort("month", "airzone_official", "station_name")
+    return context.select("station_name", "month", "airzone_official", *SATELLITE_FEATURES).sort(
+        "month", "airzone_official", "station_name"
+    )
 
 
 def permute_satellite_context(
@@ -2191,13 +2152,19 @@ def _paired_diagnostic_rows(
 ) -> list[dict[str, object]]:
     keys = ("evaluation", "fold", "station_name", "date", "device_id")
     paired = candidate.select(*keys, "y_true", pl.col("y_pred").alias("candidate_pred")).join(
-        comparator.select(*keys, pl.col("y_true").alias("comparator_truth"), pl.col("y_pred").alias("comparator_pred")),
+        comparator.select(
+            *keys,
+            pl.col("y_true").alias("comparator_truth"),
+            pl.col("y_pred").alias("comparator_pred"),
+        ),
         on=keys,
         how="inner",
     )
-    if paired.height != candidate.height or paired.height != comparator.height or paired.filter(
-        pl.col("y_true") != pl.col("comparator_truth")
-    ).height:
+    if (
+        paired.height != candidate.height
+        or paired.height != comparator.height
+        or paired.filter(pl.col("y_true") != pl.col("comparator_truth")).height
+    ):
         raise RuntimeError("diagnostic model pairing changed")
     rows: list[dict[str, object]] = []
     for unit in ("station_day", "device_day"):
@@ -2220,8 +2187,7 @@ def _paired_diagnostic_rows(
         comparator_error = scored["comparator_pred"].to_numpy() - truth
         metrics = {
             "delta_rmse": float(
-                np.sqrt(np.mean(candidate_error**2))
-                - np.sqrt(np.mean(comparator_error**2))
+                np.sqrt(np.mean(candidate_error**2)) - np.sqrt(np.mean(comparator_error**2))
             ),
             "delta_mae": float(
                 np.mean(np.abs(candidate_error)) - np.mean(np.abs(comparator_error))
@@ -2271,12 +2237,10 @@ def run_satellite_context_control(
     diagnostic_features = (*CORE_FEATURES["pooled_weather_ridge"], *SATELLITE_FEATURES)
 
     def fit_context(selected_context: pl.DataFrame) -> pl.DataFrame:
-        joined = (
-            with_month.join(
-                selected_context.select("station_name", "month", *SATELLITE_FEATURES),
-                on=("station_name", "month"),
-                how="left",
-            )
+        joined = with_month.join(
+            selected_context.select("station_name", "month", *SATELLITE_FEATURES),
+            on=("station_name", "month"),
+            how="left",
         )
         if joined.select(
             pl.any_horizontal(pl.col(feature).is_null() for feature in SATELLITE_FEATURES).any()
@@ -2362,9 +2326,7 @@ def run_acquisition_density_baselines(
         weights = _training_weights(train)
         target = train["ground_pm25_mean"].to_numpy()
         training_mean = float(np.average(target, weights=weights))
-        base = test.select(
-            "evaluation", "fold", "station_name", "date", "device_id"
-        )
+        base = test.select("evaluation", "fold", "station_name", "date", "device_id")
         rows.append(
             base.with_columns(
                 pl.lit("training_mean").alias("model"),
@@ -2403,13 +2365,16 @@ def device_coordinate_inventory(memberships: pl.DataFrame) -> pl.DataFrame:
     if missing:
         raise RuntimeError(f"device coordinate inventory is missing columns: {missing}")
     coordinates = memberships.select(*sorted(required)).unique()
-    if coordinates.is_empty() or coordinates.filter(
-        pl.col("device_id").is_null()
-        | pl.col("lon_min").is_null()
-        | pl.col("lat_min").is_null()
-        | ~pl.col("lon_min").is_finite()
-        | ~pl.col("lat_min").is_finite()
-    ).height:
+    if (
+        coordinates.is_empty()
+        or coordinates.filter(
+            pl.col("device_id").is_null()
+            | pl.col("lon_min").is_null()
+            | pl.col("lat_min").is_null()
+            | ~pl.col("lon_min").is_finite()
+            | ~pl.col("lat_min").is_finite()
+        ).height
+    ):
         raise RuntimeError("device coordinate inventory contains invalid coordinates")
     inventory = coordinates.group_by("device_id").agg(
         pl.struct("lon_min", "lat_min").n_unique().alias("coordinate_positions"),
@@ -2439,14 +2404,13 @@ def _great_circle_distances_km(
     station_lat_radians = np.radians(station_lat)
     delta_lon = station_lon_radians - lon_radians
     delta_lat = station_lat_radians - lat_radians
-    haversine = np.sin(delta_lat / 2.0) ** 2 + np.cos(lat_radians) * np.cos(
-        station_lat_radians
-    ) * np.sin(delta_lon / 2.0) ** 2
+    haversine = (
+        np.sin(delta_lat / 2.0) ** 2
+        + np.cos(lat_radians) * np.cos(station_lat_radians) * np.sin(delta_lon / 2.0) ** 2
+    )
     return cast(
         np.ndarray[Any, np.dtype[np.float64]],
-        2.0
-        * EARTH_RADIUS_KM
-        * np.arcsin(np.sqrt(np.clip(haversine, 0.0, 1.0))),
+        2.0 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(np.clip(haversine, 0.0, 1.0))),
     )
 
 
@@ -2474,9 +2438,7 @@ def exclude_neighbor_training_rows(
         raise ValueError("neighbor-exclusion buffer must be a finite positive number")
     required_membership = {"role", "station_name", "device_id"}
     required_geography = {"station_name", "lon", "lat"}
-    if required_membership - set(membership.columns) or required_geography - set(
-        geography.columns
-    ):
+    if required_membership - set(membership.columns) or required_geography - set(geography.columns):
         raise RuntimeError("neighbor-exclusion input schema changed")
     fold_identity = membership.select("evaluation", "fold").unique()
     if fold_identity.height != 1:
@@ -2487,23 +2449,26 @@ def exclude_neighbor_training_rows(
     if test.is_empty():
         raise RuntimeError("neighbor exclusion requires unchanged test rows")
     reviewed = geography.select("station_name", "lon", "lat")
-    if reviewed["station_name"].n_unique() != reviewed.height or reviewed.filter(
-        pl.col("station_name").is_null()
-        | pl.col("lon").is_null()
-        | pl.col("lat").is_null()
-        | ~pl.col("lon").is_finite()
-        | ~pl.col("lat").is_finite()
-    ).height:
+    if (
+        reviewed["station_name"].n_unique() != reviewed.height
+        or reviewed.filter(
+            pl.col("station_name").is_null()
+            | pl.col("lon").is_null()
+            | pl.col("lat").is_null()
+            | ~pl.col("lon").is_finite()
+            | ~pl.col("lat").is_finite()
+        ).height
+    ):
         raise RuntimeError("neighbor-exclusion reviewed geography changed")
-    test_stations = test.select("station_name").unique().join(
-        reviewed, on="station_name", how="left"
+    test_stations = (
+        test.select("station_name").unique().join(reviewed, on="station_name", how="left")
     )
     if test_stations["lon"].null_count() or test_stations["lat"].null_count():
         raise RuntimeError("neighbor-exclusion test-station coordinate is missing")
     station_lon = test_stations["lon"].to_numpy()
     station_lat = test_stations["lat"].to_numpy()
-    train_devices = source_train.select("device_id").unique().join(
-        inventory, on="device_id", how="left"
+    train_devices = (
+        source_train.select("device_id").unique().join(inventory, on="device_id", how="left")
     )
     removed_devices: list[str] = []
     for row in train_devices.iter_rows(named=True):
@@ -2520,9 +2485,7 @@ def exclude_neighbor_training_rows(
     )
     remaining_train = filtered.filter(pl.col("role") == "train")
     filtered_test = filtered.filter(pl.col("role") == "test")
-    if not filtered_test.sort("date", "device_id").equals(
-        test.sort("date", "device_id")
-    ):
+    if not filtered_test.sort("date", "device_id").equals(test.sort("date", "device_id")):
         raise RuntimeError("neighbor exclusion changed test rows")
     state = _neighbor_state(remaining_train, filtered_test)
     identity = fold_identity.row(0, named=True)
@@ -2682,9 +2645,7 @@ def summarize_negative_controls(
             & pl.col("replicate").is_not_null()
         )["replicate"].n_unique()
         == config.permutation_draws,
-        "target_shift": set(
-            control_scores.filter(pl.col("control") == "target_shift")["variant"]
-        )
+        "target_shift": set(control_scores.filter(pl.col("control") == "target_shift")["variant"])
         == {f"shift_{days:02d}d" for days in config.target_time_shifts_days},
         "satellite_context": (
             control_scores.filter(
@@ -2707,10 +2668,7 @@ def summarize_negative_controls(
         "neighbor_exclusion": set(
             control_scores.filter(pl.col("control") == "neighbor_exclusion")["variant"]
         )
-        == {
-            f"buffer_{buffer_km:g}km"
-            for buffer_km in config.neighbor_exclusion_buffers_km
-        },
+        == {f"buffer_{buffer_km:g}km" for buffer_km in config.neighbor_exclusion_buffers_km},
     }
     rows: list[dict[str, object]] = []
     group_columns = ("control", "model", "comparator", "unit", "metric")
@@ -2724,9 +2682,7 @@ def summarize_negative_controls(
             else group.filter(pl.col("variant").str.contains("permuted"))
         )
         finite = group.filter((pl.col("state") == "scored") & pl.col("value").is_finite())
-        valid_null = null.filter(
-            (pl.col("state") == "scored") & pl.col("value").is_finite()
-        )
+        valid_null = null.filter((pl.col("state") == "scored") & pl.col("value").is_finite())
         expected = inventory_rules[control_name]
         if control_name in {"station_label", "satellite_context"}:
             valid_count = valid_null["replicate"].n_unique()
@@ -2741,9 +2697,7 @@ def summarize_negative_controls(
             valid_count = finite["variant"].n_unique()
             invalid_count = expected - valid_count
         inventory_state = (
-            "complete"
-            if family_complete[control_name] and invalid_count == 0
-            else "failed_control"
+            "complete" if family_complete[control_name] and invalid_count == 0 else "failed_control"
         )
         null_values = valid_null["value"].to_numpy()
         observed_value = (
@@ -2764,15 +2718,9 @@ def summarize_negative_controls(
                 "valid_count": valid_count,
                 "invalid_count": invalid_count,
                 "observed_value": observed_value,
-                "null_q025": (
-                    float(np.quantile(null_values, 0.025)) if null_values.size else None
-                ),
-                "null_median": (
-                    float(np.quantile(null_values, 0.5)) if null_values.size else None
-                ),
-                "null_q975": (
-                    float(np.quantile(null_values, 0.975)) if null_values.size else None
-                ),
+                "null_q025": (float(np.quantile(null_values, 0.025)) if null_values.size else None),
+                "null_median": (float(np.quantile(null_values, 0.5)) if null_values.size else None),
+                "null_q975": (float(np.quantile(null_values, 0.975)) if null_values.size else None),
                 "empirical_lower_tail_p": (
                     empirical_lower_tail_p(observed_value, null_values)
                     if observed_value is not None and null_values.size == expected
@@ -2845,9 +2793,7 @@ def _density_control_score_rows(predictions: pl.DataFrame) -> list[dict[str, obj
             raise RuntimeError("acquisition-density model feature identity changed")
         for unit in ("station_day", "device_day"):
             if unit == "station_day":
-                scored = selected.group_by(
-                    "evaluation", "fold", "station_name", "date"
-                ).agg(
+                scored = selected.group_by("evaluation", "fold", "station_name", "date").agg(
                     pl.col("y_true").n_unique().alias("_truth_values"),
                     pl.col("y_true").first(),
                     pl.col("y_pred").mean(),
@@ -2877,15 +2823,9 @@ def _density_control_score_rows(predictions: pl.DataFrame) -> list[dict[str, obj
                         "value": values[metric],
                         "n": scored.height,
                         "intended_n": scored.height,
-                        "membership_sha256": _scored_identity(
-                            scored, unit=unit, truth=False
-                        ),
-                        "truth_sha256": _scored_identity(
-                            scored, unit=unit, truth=True
-                        ),
-                        "details_sha256": canonical_hash(
-                            {"model_features": feature_values[0]}
-                        ),
+                        "membership_sha256": _scored_identity(scored, unit=unit, truth=False),
+                        "truth_sha256": _scored_identity(scored, unit=unit, truth=True),
+                        "details_sha256": canonical_hash({"model_features": feature_values[0]}),
                     }
                 )
     return rows
@@ -3008,9 +2948,7 @@ def _normalize_control_scores(
                 "intended_n": row["n"],
                 "membership_sha256": row["membership_sha256"],
                 "truth_sha256": row["truth_sha256"],
-                "details_sha256": canonical_hash(
-                    {"satellite_features": SATELLITE_FEATURES}
-                ),
+                "details_sha256": canonical_hash({"satellite_features": SATELLITE_FEATURES}),
             }
         )
     rows.extend(_density_control_score_rows(density_predictions))
@@ -3047,9 +2985,7 @@ def _normalize_control_scores(
                 "intended_n": row["test_rows"],
                 "membership_sha256": row["test_membership_sha256"],
                 "truth_sha256": row["test_truth_sha256"],
-                "details_sha256": canonical_hash(
-                    {name: row[name] for name in evidence_columns}
-                ),
+                "details_sha256": canonical_hash({name: row[name] for name in evidence_columns}),
             }
         )
     return pl.DataFrame(rows, schema=dict(AUDIT_CONTROL_SCORE_SCHEMA)).sort(
@@ -3079,10 +3015,7 @@ def _normalize_audit_floats(frame: pl.DataFrame) -> pl.DataFrame:
             continue
         rounded = pl.col(name).round(13)
         expressions.append(
-            pl.when(rounded == 0.0)
-            .then(pl.lit(0.0).cast(dtype))
-            .otherwise(rounded)
-            .alias(name)
+            pl.when(rounded == 0.0).then(pl.lit(0.0).cast(dtype)).otherwise(rounded).alias(name)
         )
     return frame.with_columns(expressions) if expressions else frame
 
@@ -3145,13 +3078,9 @@ def evaluate_fusion_gate(
         "state",
         "delta_rmse_ci_high",
     }
-    if required_deltas - set(deltas.columns) or required_uncertainty - set(
-        uncertainty.columns
-    ):
+    if required_deltas - set(deltas.columns) or required_uncertainty - set(uncertainty.columns):
         raise RuntimeError("fusion gate evidence schema changed")
-    regimes = set(
-        fold_audit.filter(pl.col("state") == "scored")["evaluation"].unique()
-    )
+    regimes = set(fold_audit.filter(pl.col("state") == "scored")["evaluation"].unique())
     regimes_pass = regimes == {"held_station", "held_quarter", "joint"}
     primary_deltas = deltas.filter(
         (pl.col("scope") == "overall")
@@ -3171,13 +3100,9 @@ def evaluate_fusion_gate(
         "delta_rmse_ci_high",
     )
     primary_evidence = primary_deltas.join(intervals, on="model", how="inner")
-    primary_pass = (
-        primary_evidence.height == len(CORE_FEATURES)
-        and primary_evidence.filter(
-            (pl.col("value") < 0.0) & (pl.col("delta_rmse_ci_high") < 0.0)
-        ).height
-        == len(CORE_FEATURES)
-    )
+    primary_pass = primary_evidence.height == len(CORE_FEATURES) and primary_evidence.filter(
+        (pl.col("value") < 0.0) & (pl.col("delta_rmse_ci_high") < 0.0)
+    ).height == len(CORE_FEATURES)
     table_hashes = {
         "fold_audit": _semantic_frame_hash(fold_audit),
         "scores": _semantic_frame_hash(scores),
@@ -3251,9 +3176,7 @@ def evaluate_fusion_gate(
     ]
     gate = pl.DataFrame(rows).sort("condition_id")
     verdict = overall_fusion_verdict(gate)
-    return gate.with_columns(pl.lit(verdict).alias("overall_verdict")).sort(
-        "condition_id"
-    )
+    return gate.with_columns(pl.lit(verdict).alias("overall_verdict")).sort("condition_id")
 
 
 def result_identity(result: AgreementAuditResult) -> str:
@@ -3265,9 +3188,7 @@ def result_identity(result: AgreementAuditResult) -> str:
         "tables",
     }
     manifest_identity = {
-        key: value
-        for key, value in result.manifest.items()
-        if key not in transient_manifest_fields
+        key: value for key, value in result.manifest.items() if key not in transient_manifest_fields
     }
     return canonical_hash(
         {
@@ -3360,13 +3281,11 @@ def _audit_summary(
         "secondary_unit": "device_day",
         "primary_station_day_rmse": dict(primary.iter_rows()),
         "secondary_device_day_delta_rmse": dict(secondary.iter_rows()),
-        "station_cluster_uncertainty": uncertainty.sort(
-            "candidate", "comparator"
-        ).to_dicts(),
+        "station_cluster_uncertainty": uncertainty.sort("candidate", "comparator").to_dicts(),
         "negative_control_families": family_states.to_dicts(),
-        "fusion_gate": fusion_gate.select(
-            "condition_id", "state", "reason", "evidence_sha256"
-        ).sort("condition_id").to_dicts(),
+        "fusion_gate": fusion_gate.select("condition_id", "state", "reason", "evidence_sha256")
+        .sort("condition_id")
+        .to_dicts(),
         "overall_verdict": overall_fusion_verdict(fusion_gate),
         "claim_boundary": dict(config.claim_boundary),
     }
@@ -3461,12 +3380,10 @@ def run_micro_sensor_agreement_audit(
     )
     reloaded = load_frozen_agreement_audit_inputs(data_root, selected_config)
     original_identity = tuple(
-        (item.role, item.relative_path, item.bytes, item.sha256)
-        for item in inputs.input_files
+        (item.role, item.relative_path, item.bytes, item.sha256) for item in inputs.input_files
     )
     reloaded_identity = tuple(
-        (item.role, item.relative_path, item.bytes, item.sha256)
-        for item in reloaded.input_files
+        (item.role, item.relative_path, item.bytes, item.sha256) for item in reloaded.input_files
     )
     if original_identity != reloaded_identity:
         raise RuntimeError("frozen audit inputs changed during computation")
@@ -3569,14 +3486,10 @@ def agreement_audit_run_lock(path: Path) -> Iterator[None]:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 fcntl_module: Any = importlib.import_module("fcntl")
-                fcntl_module.flock(
-                    handle.fileno(), fcntl_module.LOCK_EX | fcntl_module.LOCK_NB
-                )
+                fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_EX | fcntl_module.LOCK_NB)
             acquired = True
         except OSError:
-            raise RuntimeError(
-                "another micro-sensor agreement audit is active"
-            ) from None
+            raise RuntimeError("another micro-sensor agreement audit is active") from None
         try:
             yield
         finally:
@@ -3651,9 +3564,7 @@ def _validate_published_inventory(directory: Path) -> dict[str, Path]:
         raise RuntimeError("agreement audit member inventory changed")
     written = _published_paths(directory)
     for path in written.values():
-        _ordinary_file_identity(
-            path, parent=resolved, label=f"agreement audit {path.name}"
-        )
+        _ordinary_file_identity(path, parent=resolved, label=f"agreement audit {path.name}")
     return written
 
 
@@ -3711,9 +3622,7 @@ def _load_micro_sensor_agreement_audit_result_unlocked(
     directory = directory.absolute()
     written = _validate_published_inventory(directory)
     before = {
-        name: _ordinary_file_identity(
-            path, parent=directory, label=f"agreement audit {name}"
-        )
+        name: _ordinary_file_identity(path, parent=directory, label=f"agreement audit {name}")
         for name, path in written.items()
     }
     manifest = _read_output_json(written["manifest.json"], label="manifest")
@@ -3778,9 +3687,7 @@ def _load_micro_sensor_agreement_audit_result_unlocked(
         raise RuntimeError("agreement audit generation identity changed")
     _validate_summary_relationships(result)
     after = {
-        name: _ordinary_file_identity(
-            path, parent=directory, label=f"agreement audit {name}"
-        )
+        name: _ordinary_file_identity(path, parent=directory, label=f"agreement audit {name}")
         for name, path in written.items()
     }
     if before != after:
@@ -3796,9 +3703,7 @@ def load_micro_sensor_agreement_audit_result(
     if requested.parent.name != "generations":
         raise RuntimeError("agreement audit generation is outside its generations root")
     output_root = requested.parent.parent
-    with agreement_audit_run_lock(
-        output_root / ".micro-sensor-agreement-audit.lock"
-    ):
+    with agreement_audit_run_lock(output_root / ".micro-sensor-agreement-audit.lock"):
         return _load_micro_sensor_agreement_audit_result_unlocked(requested)
 
 
@@ -3924,14 +3829,11 @@ def _write_micro_sensor_agreement_audit_result_unlocked(
             tables[table_name] = _manifest_table_identity(frame)
         summary_path = staged / "summary.json"
         _write_output_json(summary_path, result.summary)
-        physical_members["summary.json"] = _output_member_identity(
-            summary_path, parent=staged
-        )
+        physical_members["summary.json"] = _output_member_identity(summary_path, parent=staged)
         manifest = {
             **result.manifest,
             "complete": False,
-            "generated_at": result.manifest.get("generated_at")
-            or datetime.now(UTC).isoformat(),
+            "generated_at": result.manifest.get("generated_at") or datetime.now(UTC).isoformat(),
             "generation_sha256": generation,
             "tables": tables,
             "members": physical_members,
@@ -3961,9 +3863,7 @@ def write_micro_sensor_agreement_audit_result(
 ) -> dict[str, Path]:
     root = output_root.absolute()
     with agreement_audit_run_lock(root / ".micro-sensor-agreement-audit.lock"):
-        return _write_micro_sensor_agreement_audit_result_unlocked(
-            result, output_root=root
-        )
+        return _write_micro_sensor_agreement_audit_result_unlocked(result, output_root=root)
 
 
 def run_and_write_micro_sensor_agreement_audit() -> PublishedAgreementAudit:
@@ -3975,6 +3875,4 @@ def run_and_write_micro_sensor_agreement_audit() -> PublishedAgreementAudit:
         written = _write_micro_sensor_agreement_audit_result_unlocked(
             result, output_root=plan.output_root
         )
-        return _load_micro_sensor_agreement_audit_result_unlocked(
-            written["manifest.json"].parent
-        )
+        return _load_micro_sensor_agreement_audit_result_unlocked(written["manifest.json"].parent)

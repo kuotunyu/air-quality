@@ -1556,9 +1556,7 @@ def test_spatial_covariate_readiness_boundary_allows_explicit_negations(
     )
 
 
-_VERIFIED_AUDIT_GENERATION = (
-    "bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a"
-)
+_VERIFIED_AUDIT_GENERATION = "bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a"
 _AUDIT_PUBLIC_DOCUMENTS = (
     "README.md",
     "README.en.md",
@@ -1648,9 +1646,7 @@ def audit_prose_problems(
 ) -> list[str]:
     problems: list[str] = []
     folded = {name: " ".join(text.lower().split()) for name, text in documents.items()}
-    boundary = "claim boundary: " + "; ".join(
-        f"no {claim}" for claim in _UNSUPPORTED_AUDIT_CLAIMS
-    )
+    boundary = "claim boundary: " + "; ".join(f"no {claim}" for claim in _UNSUPPORTED_AUDIT_CLAIMS)
     target = "the target is nearest reference-station daily pm2.5, not colocated truth."
     for name in _AUDIT_PUBLIC_DOCUMENTS:
         text = folded.get(name, "")
@@ -1684,9 +1680,7 @@ def audit_prose_problems(
 
     methodology = folded.get("docs/methodology.md", "")
     complete_controls = {
-        str(row.get("control"))
-        for row in controls
-        if row.get("state") == "complete"
+        str(row.get("control")) for row in controls if row.get("state") == "complete"
     }
     control_markers = {
         "station_label": "within-zone station-label permutation",

@@ -260,10 +260,7 @@ def _frame(
     schema: tuple[tuple[str, pl.DataType | type[pl.DataType]], ...],
     rows: list[dict[str, object]],
 ) -> pl.DataFrame:
-    complete = [
-        {name: row.get(name, _default(dtype)) for name, dtype in schema}
-        for row in rows
-    ]
+    complete = [{name: row.get(name, _default(dtype)) for name, dtype in schema} for row in rows]
     return pl.DataFrame(complete, schema=_schema_dict(schema))
 
 
@@ -350,14 +347,10 @@ def _source_fold_artifacts(
                     pl.lit("joint").alias("evaluation"),
                     pl.lit(f"joint_{station_fold:02d}_{quarter:02d}").alias("fold"),
                     pl.when(
-                        (pl.col("station_fold") == station_fold)
-                        & (pl.col("quarter") == quarter)
+                        (pl.col("station_fold") == station_fold) & (pl.col("quarter") == quarter)
                     )
                     .then(pl.lit("test"))
-                    .when(
-                        (pl.col("station_fold") != station_fold)
-                        & (pl.col("quarter") != quarter)
-                    )
+                    .when((pl.col("station_fold") != station_fold) & (pl.col("quarter") != quarter))
                     .then(pl.lit("train"))
                     .otherwise(pl.lit("excluded"))
                     .alias("role"),
@@ -471,9 +464,7 @@ def _source_fold_artifacts(
             .to_numpy()
         )
         for model, model_features in features.items():
-            pipeline = Pipeline(
-                [("scale", StandardScaler()), ("ridge", Ridge(alpha=1.0))]
-            )
+            pipeline = Pipeline([("scale", StandardScaler()), ("ridge", Ridge(alpha=1.0))])
             pipeline.fit(
                 train.select(*model_features).to_numpy(),
                 train["ground_pm25_mean"].to_numpy(),
@@ -491,8 +482,10 @@ def _source_fold_artifacts(
                     ),
                 )
             )
-    predictions = pl.concat(prediction_rows).select(*dict(AGREEMENT_PREDICTION_SCHEMA)).sort(
-        "evaluation", "fold", "model", "date", "device_id"
+    predictions = (
+        pl.concat(prediction_rows)
+        .select(*dict(AGREEMENT_PREDICTION_SCHEMA))
+        .sort("evaluation", "fold", "model", "date", "device_id")
     )
     return membership, folds, predictions
 
@@ -660,11 +653,7 @@ def _create_frozen_source(root: Path) -> tuple[dict[str, int], dict[str, int]]:
     }
     _write_json(annual_staging / "manifest.json", annual_manifest)
     annual_dir = (
-        root
-        / "outputs"
-        / "micro_sensor_annual_readiness"
-        / "generations"
-        / annual_generation
+        root / "outputs" / "micro_sensor_annual_readiness" / "generations" / annual_generation
     )
     annual_dir.parent.mkdir(parents=True)
     annual_staging.rename(annual_dir)
@@ -710,23 +699,12 @@ def _create_frozen_source(root: Path) -> tuple[dict[str, int], dict[str, int]]:
     }
     _write_json(agreement_staging / "manifest.json", agreement_manifest)
     agreement_dir = (
-        root
-        / "outputs"
-        / "micro_sensor_annual_agreement"
-        / "generations"
-        / agreement_generation
+        root / "outputs" / "micro_sensor_annual_agreement" / "generations" / agreement_generation
     )
     agreement_dir.parent.mkdir(parents=True)
     agreement_staging.rename(agreement_dir)
 
-    satellite_dir = (
-        root
-        / "outputs"
-        / "m8_satellite"
-        / "generations"
-        / ("e" * 64)
-        / "year=2025"
-    )
+    satellite_dir = root / "outputs" / "m8_satellite" / "generations" / ("e" * 64) / "year=2025"
     satellite_dir.mkdir(parents=True)
     satellite_rows: list[dict[str, object]] = [
         {
@@ -867,9 +845,7 @@ def scored_prediction_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
         "test_truth_sha256",
     )
     predictions = source["predictions"].filter(pl.col("fold") == "held_station_00")
-    station_days = predictions.select("station_name", "date").unique().sort(
-        "station_name", "date"
-    )
+    station_days = predictions.select("station_name", "date").unique().sort("station_name", "date")
     first = station_days.row(0, named=True)
     second = station_days.row(1, named=True)
 
@@ -976,13 +952,15 @@ def permutation_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
 
 def control_fixture() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     source = _agreement_frames()
-    folds = source["folds"].rename(
-        {"fold_state": "state", "fold_reason": "reason"}
-    ).with_columns(
-        pl.when(pl.col("fold") == "held_station_00")
-        .then(pl.lit("scored"))
-        .otherwise(pl.lit("unscored_empty_test"))
-        .alias("state")
+    folds = (
+        source["folds"]
+        .rename({"fold_state": "state", "fold_reason": "reason"})
+        .with_columns(
+            pl.when(pl.col("fold") == "held_station_00")
+            .then(pl.lit("scored"))
+            .otherwise(pl.lit("unscored_empty_test"))
+            .alias("state")
+        )
     )
     return source["fold_membership"], folds, _geography(), satellite_panel_fixture()
 
@@ -995,9 +973,7 @@ def singleton_zone_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
             "ground_pm25_mean": [17.0],
         }
     )
-    geography = pl.DataFrame(
-        {"station_name": ["singleton"], "airzone_official": ["island"]}
-    )
+    geography = pl.DataFrame({"station_name": ["singleton"], "airzone_official": ["island"]})
     return station_days, geography
 
 
@@ -1218,22 +1194,17 @@ def synthetic_gate_rows(state: str) -> pl.DataFrame:
 
 
 def assembled_result_fixture() -> audit.AgreementAuditResult:
-    fold_audit, scores, deltas, uncertainty, control_scores, control_summary = (
-        fusion_gate_fixture()
-    )
+    fold_audit, scores, deltas, uncertainty, control_scores, control_summary = fusion_gate_fixture()
     gate = audit.evaluate_fusion_gate(
         fold_audit, scores, deltas, uncertainty, control_scores, control_summary
     )
     summary = {
         "primary_station_day_rmse": {
-            row["model"]: row["value"]
-            for row in scores.iter_rows(named=True)
+            row["model"]: row["value"] for row in scores.iter_rows(named=True)
         },
         "secondary_device_day_delta_rmse": {
             row["model"]: row["value"]
-            for row in deltas.filter(pl.col("unit") == "device_day").iter_rows(
-                named=True
-            )
+            for row in deltas.filter(pl.col("unit") == "device_day").iter_rows(named=True)
         },
         "overall_verdict": audit.overall_fusion_verdict(gate),
     }
@@ -1279,9 +1250,7 @@ def run_lock_subprocess(path: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def interrupted_write(
-    _frame: pl.DataFrame, _path: Path, *_args: object, **_kwargs: object
-) -> None:
+def interrupted_write(_frame: pl.DataFrame, _path: Path, *_args: object, **_kwargs: object) -> None:
     raise KeyboardInterrupt
 
 
@@ -1462,8 +1431,10 @@ def test_station_label_permutation_is_a_date_zone_bijection() -> None:
         station_days, geography, replicate=17, seed=20260829
     )
     keys = ["date", "airzone_official"]
-    expected = station_days.join(geography, on="station_name").group_by(*keys).agg(
-        pl.col("ground_pm25_mean").sort()
+    expected = (
+        station_days.join(geography, on="station_name")
+        .group_by(*keys)
+        .agg(pl.col("ground_pm25_mean").sort())
     )
     observed = permuted.group_by(*keys).agg(pl.col("ground_pm25_mean").sort())
     assert observed.sort(*keys).equals(expected.sort(*keys))
@@ -1502,9 +1473,7 @@ def test_target_shift_is_non_circular_and_records_changed_denominators(
 
 
 def test_empirical_lower_tail_p_includes_observed_and_null_pseudocounts() -> None:
-    assert audit.empirical_lower_tail_p(-2.0, np.array([-3.0, -1.0, 0.0])) == pytest.approx(
-        0.5
-    )
+    assert audit.empirical_lower_tail_p(-2.0, np.array([-3.0, -1.0, 0.0])) == pytest.approx(0.5)
 
 
 def test_satellite_context_requires_three_sources_for_each_station_month() -> None:
@@ -1563,18 +1532,14 @@ def test_neighbor_exclusion_removes_every_training_device_inside_buffer(
 def test_neighbor_exclusion_never_changes_test_rows() -> None:
     membership, geography = neighbor_fixture(2.0)
     before = membership.filter(pl.col("role") == "test").sort("date", "device_id")
-    after, evidence = audit.exclude_neighbor_training_rows(
-        membership, geography, buffer_km=2.0
-    )
+    after, evidence = audit.exclude_neighbor_training_rows(membership, geography, buffer_km=2.0)
     assert after.filter(pl.col("role") == "test").sort("date", "device_id").equals(before)
     assert evidence["test_membership_sha256"][0] == membership_hash(before)
 
 
 def test_neighbor_exclusion_persists_a_new_unestimable_fold_state() -> None:
     membership, geography = all_training_inside_fixture()
-    _, evidence = audit.exclude_neighbor_training_rows(
-        membership, geography, buffer_km=2.0
-    )
+    _, evidence = audit.exclude_neighbor_training_rows(membership, geography, buffer_km=2.0)
     assert evidence["state"][0] == "unscored_empty_train_after_neighbor_exclusion"
     assert evidence["remaining_train_rows"][0] == 0
 
@@ -1589,9 +1554,7 @@ def test_fusion_gate_has_exactly_seven_unique_conditions() -> None:
 def test_current_evidence_returns_stop_with_conditions_one_through_six_failed() -> None:
     gate = audit.evaluate_fusion_gate(*fusion_gate_fixture())
     states = dict(gate.select("condition_id", "state").iter_rows())
-    assert all(
-        states[condition] == "fail" for condition in audit.FUSION_CONDITION_IDS[:6]
-    )
+    assert all(states[condition] == "fail" for condition in audit.FUSION_CONDITION_IDS[:6])
     assert states["field_spatial_buffer"] == "unmet"
     assert gate["overall_verdict"].unique().to_list() == ["stop"]
 
@@ -1660,9 +1623,7 @@ def test_writer_publishes_the_exact_nine_member_inventory_atomically(
     )
     assert set(written) == set(audit.AUDIT_MEMBER_NAMES)
     assert {path.name for path in written.values()} == set(audit.AUDIT_MEMBER_NAMES)
-    assert json.loads(written["manifest.json"].read_text(encoding="utf-8"))[
-        "complete"
-    ] is True
+    assert json.loads(written["manifest.json"].read_text(encoding="utf-8"))["complete"] is True
 
 
 def test_writer_reuses_only_a_byte_identical_existing_generation(
@@ -1682,12 +1643,8 @@ def test_writer_reuses_only_a_byte_identical_existing_generation(
             "generation_sha256": audit.result_identity(configured),
         },
     )
-    first = audit.write_micro_sensor_agreement_audit_result(
-        configured, output_root=tmp_path
-    )
-    second = audit.write_micro_sensor_agreement_audit_result(
-        configured, output_root=tmp_path
-    )
+    first = audit.write_micro_sensor_agreement_audit_result(configured, output_root=tmp_path)
+    second = audit.write_micro_sensor_agreement_audit_result(configured, output_root=tmp_path)
     assert first == second
     assert {name: path.read_bytes() for name, path in first.items()} == {
         name: path.read_bytes() for name, path in second.items()
@@ -1705,9 +1662,7 @@ def test_writer_never_overwrites_a_mutated_existing_generation(
     )
     written["scores.parquet"].write_bytes(b"mutated")
     with pytest.raises(RuntimeError, match="existing generation is not reusable"):
-        audit.write_micro_sensor_agreement_audit_result(
-            prepared_audit_result, output_root=tmp_path
-        )
+        audit.write_micro_sensor_agreement_audit_result(prepared_audit_result, output_root=tmp_path)
 
 
 def test_one_run_lock_rejects_a_second_process(tmp_path: Path) -> None:
@@ -1724,12 +1679,6 @@ def test_interrupted_staging_leaves_no_final_or_invocation_residue(
 ) -> None:
     monkeypatch.setattr(pl.DataFrame, "write_parquet", interrupted_write)
     with pytest.raises(KeyboardInterrupt):
-        audit.write_micro_sensor_agreement_audit_result(
-            prepared_audit_result, output_root=tmp_path
-        )
-    assert not list(
-        (tmp_path / "generations").glob(
-            ".micro-sensor-agreement-audit.staging-*"
-        )
-    )
+        audit.write_micro_sensor_agreement_audit_result(prepared_audit_result, output_root=tmp_path)
+    assert not list((tmp_path / "generations").glob(".micro-sensor-agreement-audit.staging-*"))
     assert not list((tmp_path / "generations").glob("[0-9a-f]" * 64))

@@ -50,17 +50,13 @@ def _status(*artefacts: Artefact, export_at: datetime | None) -> Status:
 
 
 def test_micro_sensor_audit_reproduce_target_is_declared() -> None:
-    module = next(
-        item for item in MODULES if item.directory == "micro_sensor_agreement_audit"
-    )
+    module = next(item for item in MODULES if item.directory == "micro_sensor_agreement_audit")
     assert module.reproduce == "twair analyze micro-sensor-agreement-audit"
     assert module.feeds_web is False
 
 
 def test_status_distinguishes_verified_and_invalid_audit_generation() -> None:
-    module = next(
-        item for item in MODULES if item.directory == "micro_sensor_agreement_audit"
-    )
+    module = next(item for item in MODULES if item.directory == "micro_sensor_agreement_audit")
     verified = Artefact(
         module,
         True,
@@ -82,12 +78,10 @@ def test_status_distinguishes_verified_and_invalid_audit_generation() -> None:
         "member hash differs",
     )
     assert any(
-        "verified aaaaaaaaaaaa" in line
-        for line in render(_status(verified, export_at=None))
+        "verified aaaaaaaaaaaa" in line for line in render(_status(verified, export_at=None))
     )
     assert any(
-        "INVALID member hash differs" in line
-        for line in render(_status(invalid, export_at=None))
+        "INVALID member hash differs" in line for line in render(_status(invalid, export_at=None))
     )
 
 
