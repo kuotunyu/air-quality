@@ -1,0 +1,39 @@
+"schema_version": 1
+"analysis":
+  "protocol_revision": 1
+  "annual_generation_sha256": "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
+  "annual_manifest_sha256": "eb37676fd8d357af4080048828a3f33b8de212a6dfb46752ea059cbab4c6e89d"
+  "annual_git_sha": "e4839bc"
+  "agreement_generation_sha256": "df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624"
+  "agreement_manifest_sha256": "ffcc92cc03af86834a0a2e37d6e8a82491467648a3db6f423605901ced179957"
+  "agreement_summary_sha256": "18a83123d79f1fa911ee29870c869e35c4ed0dd2113c469be26268ce87f7b782"
+  "agreement_git_sha": "b7bff3e"
+  "satellite_generation_sha256": "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
+  "satellite_year": 2025
+  "satellite_panel_bytes": 33866
+  "satellite_panel_sha256": "aa34e69720098e8868dc1e004f77b3f8e425288089f867bd310e08366d0198e2"
+  "reviewed_geography_sha256": "72146c443374303ad95f69e820e4f067b8378a3b0167a03e67c29c68b63c1f32"
+  "reviewed_airzone_sha256": "911a4967b9e9ab3c3af9821f53d8ba99eb5c1a8bc5c8384ce9ca19867dc8ee54"
+  "primary_radius_km": 0.5
+  "ridge_alpha": 1.0
+  "permutation_draws": 999
+  "permutation_seed": 20260829
+  "bootstrap_draws": 1999
+  "bootstrap_seed": 20260830
+  "target_time_shifts_days": [7, 14, 28]
+  "neighbor_exclusion_buffers_km": [0.5, 1.0, 2.0]
+  "threads": 1
+  "memory_limit_gb": 6
+  "claim_boundary":
+    "q4_nearby_reference_agreement_only": true
+    "station_day_primary": true
+    "device_day_secondary": true
+    "validated_calibration": false
+    "sensor_fusion": false
+    "colocated_ground_truth": false
+    "annual_generalization": false
+    "seasonal_generalization": false
+    "causal_analysis": false
+    "source_attribution": false
+    "high_resolution_field": false
+    "population_exposure": false

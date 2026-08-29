@@ -1,0 +1,778 @@
+"""Independently audit the frozen Q4 micro-sensor agreement."""
+
+from __future__ import annotations
+
+import json
+import math
+import re
+from dataclasses import dataclass
+from hashlib import sha256
+from pathlib import Path
+from typing import Any
+
+import polars as pl
+
+from twair.analysis.micro_sensor_annual_readiness import (
+    ANNUAL_CALENDAR_SCHEMA,
+    ANNUAL_COHORT_THRESHOLD_SCHEMA,
+    ANNUAL_DEVICE_COHORT_SCHEMA,
+    ANNUAL_DEVICE_DAY_SCHEMA,
+    ANNUAL_EXCLUSION_SCHEMA,
+)
+from twair.config import ConfigError, load_conf
+from twair.ingest.station_meta import resolve_station_geo
+from twair.net import sha256_file
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+_ANNUAL_IDENTITY_FIELDS = (
+    "schema_version",
+    "analysis",
+    "config",
+    "inputs",
+    "checkpoint_inventory",
+    "claim_boundary",
+    "output_rows",
+    "members",
+    "summary_file",
+)
+_ANNUAL_MANIFEST_FIELDS = {
+    *_ANNUAL_IDENTITY_FIELDS,
+    "complete",
+    "generated_at",
+    "generation_sha256",
+    "git_sha",
+    "git_dirty",
+    "checkpoint_run",
+}
+_AGREEMENT_IDENTITY_FIELDS = (
+    "schema_version",
+    "analysis",
+    "annual_generation_sha256",
+    "panel_generation_sha256",
+    "evaluation_generation_sha256",
+    "panel_manifest",
+    "evaluation_manifest",
+    "checkpoint_inventory",
+    "config",
+    "claim_boundary",
+    "output_rows",
+    "schemas",
+    "members",
+    "summary_file",
+    "summary_sha256",
+    "git_sha",
+    "git_dirty",
+)
+_AGREEMENT_MANIFEST_FIELDS = {
+    *_AGREEMENT_IDENTITY_FIELDS,
+    "complete",
+    "generated_at",
+    "generation_sha256",
+}
+_ANNUAL_SCHEMAS = {
+    "calendar_coverage": ANNUAL_CALENDAR_SCHEMA,
+    "device_days": ANNUAL_DEVICE_DAY_SCHEMA,
+    "device_cohorts": ANNUAL_DEVICE_COHORT_SCHEMA,
+    "cohort_thresholds": ANNUAL_COHORT_THRESHOLD_SCHEMA,
+    "exclusions": ANNUAL_EXCLUSION_SCHEMA,
+}
+_AGREEMENT_MEMBERS = (
+    "calendar",
+    "paired_days",
+    "exclusions",
+    "fold_membership",
+    "folds",
+    "predictions",
+    "scores",
+    "deltas",
+)
+_SATELLITE_SCHEMA = {
+    "source": "String",
+    "station_name": "String",
+    "month": "Date",
+    "satellite_value": "Float64",
+    "satellite_unit": "String",
+    "ground_value": "Float64",
+    "ground_unit": "String",
+    "satellite_observed": "Boolean",
+    "ground_row_present": "Boolean",
+    "ground_meets_threshold": "Boolean",
+    "ground_observed": "Boolean",
+    "ground_withheld": "Boolean",
+    "pair_observed": "Boolean",
+    "collection_id": "String",
+    "band": "String",
+    "sample_scale_m": "Int32",
+}
+_COORDINATE_FIELDS = (
+    "station_name",
+    "lon",
+    "lat",
+    "geo_source",
+    "geo_source_record_namespace",
+    "geo_source_record_id",
+)
+_CLAIM_BOUNDARY = {
+    "q4_nearby_reference_agreement_only": True,
+    "station_day_primary": True,
+    "device_day_secondary": True,
+    "validated_calibration": False,
+    "sensor_fusion": False,
+    "colocated_ground_truth": False,
+    "annual_generalization": False,
+    "seasonal_generalization": False,
+    "causal_analysis": False,
+    "source_attribution": False,
+    "high_resolution_field": False,
+    "population_exposure": False,
+}
+_EXPECTED_ANALYSIS: dict[str, object] = {
+    "protocol_revision": 1,
+    "annual_generation_sha256": (
+        "c74ec40428a907e98821efbaf36c36386d2c1b99de69791b49f157eb7947e5bb"
+    ),
+    "annual_manifest_sha256": (
+        "eb37676fd8d357af4080048828a3f33b8de212a6dfb46752ea059cbab4c6e89d"
+    ),
+    "annual_git_sha": "e4839bc",
+    "agreement_generation_sha256": (
+        "df61b34157461f8eca13a119bab88136902aa4e70d8d9794a56a20e422e4c624"
+    ),
+    "agreement_manifest_sha256": (
+        "ffcc92cc03af86834a0a2e37d6e8a82491467648a3db6f423605901ced179957"
+    ),
+    "agreement_summary_sha256": (
+        "18a83123d79f1fa911ee29870c869e35c4ed0dd2113c469be26268ce87f7b782"
+    ),
+    "agreement_git_sha": "b7bff3e",
+    "satellite_generation_sha256": (
+        "58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788"
+    ),
+    "satellite_year": 2025,
+    "satellite_panel_bytes": 33866,
+    "satellite_panel_sha256": (
+        "aa34e69720098e8868dc1e004f77b3f8e425288089f867bd310e08366d0198e2"
+    ),
+    "reviewed_geography_sha256": (
+        "72146c443374303ad95f69e820e4f067b8378a3b0167a03e67c29c68b63c1f32"
+    ),
+    "reviewed_airzone_sha256": (
+        "911a4967b9e9ab3c3af9821f53d8ba99eb5c1a8bc5c8384ce9ca19867dc8ee54"
+    ),
+    "primary_radius_km": 0.5,
+    "ridge_alpha": 1.0,
+    "permutation_draws": 999,
+    "permutation_seed": 20260829,
+    "bootstrap_draws": 1999,
+    "bootstrap_seed": 20260830,
+    "target_time_shifts_days": [7, 14, 28],
+    "neighbor_exclusion_buffers_km": [0.5, 1.0, 2.0],
+    "threads": 1,
+    "memory_limit_gb": 6,
+    "claim_boundary": _CLAIM_BOUNDARY,
+}
+_INTEGER_FIELDS = {
+    "protocol_revision",
+    "satellite_year",
+    "satellite_panel_bytes",
+    "permutation_draws",
+    "permutation_seed",
+    "bootstrap_draws",
+    "bootstrap_seed",
+    "threads",
+    "memory_limit_gb",
+}
+_FLOAT_FIELDS = {"primary_radius_km", "ridge_alpha"}
+_SHA_FIELDS = {name for name in _EXPECTED_ANALYSIS if name.endswith("sha256")}
+_ANNUAL_EXPECTED_ROWS = {
+    "calendar_coverage": 365,
+    "device_days": 2_775_609,
+    "device_cohorts": 11_556,
+    "cohort_thresholds": 320,
+    "exclusions": 8,
+}
+_AGREEMENT_EXPECTED_ROWS = {
+    "calendar": 365,
+    "paired_days": 45_260,
+    "exclusions": 35_698,
+    "fold_membership": 277_298,
+    "folds": 29,
+    "predictions": 28_686,
+    "scores": 192,
+    "deltas": 128,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementAuditConfig:
+    protocol_revision: int
+    annual_generation_sha256: str
+    annual_manifest_sha256: str
+    annual_git_sha: str
+    agreement_generation_sha256: str
+    agreement_manifest_sha256: str
+    agreement_summary_sha256: str
+    agreement_git_sha: str
+    satellite_generation_sha256: str
+    satellite_year: int
+    satellite_panel_bytes: int
+    satellite_panel_sha256: str
+    reviewed_geography_sha256: str
+    reviewed_airzone_sha256: str
+    primary_radius_km: float
+    ridge_alpha: float
+    permutation_draws: int
+    permutation_seed: int
+    bootstrap_draws: int
+    bootstrap_seed: int
+    target_time_shifts_days: tuple[int, ...]
+    neighbor_exclusion_buffers_km: tuple[float, ...]
+    threads: int
+    memory_limit_gb: int
+    claim_boundary: tuple[tuple[str, bool], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InputFile:
+    role: str
+    path: Path
+    relative_path: str
+    bytes: int
+    sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenAuditInputs:
+    annual_manifest: dict[str, Any]
+    agreement_manifest: dict[str, Any]
+    agreement_summary: dict[str, Any]
+    agreement_calendar: pl.DataFrame
+    agreement_paired_days: pl.DataFrame
+    agreement_exclusions: pl.DataFrame
+    agreement_fold_membership: pl.DataFrame
+    agreement_folds: pl.DataFrame
+    agreement_predictions: pl.DataFrame
+    agreement_scores: pl.DataFrame
+    agreement_deltas: pl.DataFrame
+    satellite_panel: pl.DataFrame
+    geography: pl.DataFrame
+    input_files: tuple[InputFile, ...]
+
+
+def _mapping(value: object, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ConfigError(f"{label} must be a mapping with string keys")
+    return value
+
+
+def _exact_keys(value: dict[str, Any], expected: set[str], *, label: str) -> None:
+    unknown = sorted(set(value) - expected)
+    missing = sorted(expected - set(value))
+    if unknown:
+        raise ConfigError(f"{label} has unknown field(s): {unknown}")
+    if missing:
+        raise ConfigError(f"{label} is missing field(s): {missing}")
+
+
+def _require_frozen_value(name: str, value: object, expected: object) -> None:
+    label = f"analysis.{name}"
+    if name in _INTEGER_FIELDS:
+        if isinstance(value, bool) or not isinstance(value, int) or value != expected:
+            raise ConfigError(f"{label} changed from the reviewed protocol")
+        return
+    if name in _FLOAT_FIELDS:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ConfigError(f"{label} must be a finite number")
+        converted = float(value)
+        if not math.isfinite(converted) or converted != expected:
+            raise ConfigError(f"{label} changed from the reviewed protocol")
+        return
+    if name in _SHA_FIELDS:
+        if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+            raise ConfigError(f"{label} must be a lowercase SHA-256")
+        if value != expected:
+            raise ConfigError(f"{label} changed from the reviewed protocol")
+        return
+    if name == "claim_boundary":
+        boundary = _mapping(value, label=label)
+        _exact_keys(boundary, set(_CLAIM_BOUNDARY), label=label)
+        if any(type(item) is not bool for item in boundary.values()) or boundary != expected:
+            raise ConfigError(f"{label} changed from the reviewed protocol")
+        return
+    if name == "target_time_shifts_days":
+        if (
+            not isinstance(value, list)
+            or any(isinstance(item, bool) or not isinstance(item, int) for item in value)
+            or value != expected
+        ):
+            raise ConfigError(f"{label} changed from the reviewed protocol")
+        return
+    if name == "neighbor_exclusion_buffers_km":
+        if not isinstance(value, list) or any(
+            isinstance(item, bool)
+            or not isinstance(item, (int, float))
+            or not math.isfinite(float(item))
+            for item in value
+        ):
+            raise ConfigError(f"{label} must contain finite numbers")
+        if [float(item) for item in value] != expected:
+            raise ConfigError(f"{label} changed from the reviewed protocol")
+        return
+    if not isinstance(value, str) or value != expected:
+        raise ConfigError(f"{label} changed from the reviewed protocol")
+
+
+def load_micro_sensor_agreement_audit_config(
+    payload: dict[str, Any] | None = None,
+) -> AgreementAuditConfig:
+    raw = payload if payload is not None else load_conf("micro_sensor_agreement_audit")
+    top = _mapping(raw, label="micro_sensor_agreement_audit")
+    _exact_keys(top, {"schema_version", "analysis"}, label="micro_sensor_agreement_audit")
+    schema_version = top["schema_version"]
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version != 1:
+        raise ConfigError("micro_sensor_agreement_audit.schema_version must be one")
+    analysis = _mapping(top["analysis"], label="micro_sensor_agreement_audit.analysis")
+    _exact_keys(analysis, set(_EXPECTED_ANALYSIS), label="micro_sensor_agreement_audit.analysis")
+    for name, expected in _EXPECTED_ANALYSIS.items():
+        _require_frozen_value(name, analysis[name], expected)
+    return AgreementAuditConfig(
+        protocol_revision=analysis["protocol_revision"],
+        annual_generation_sha256=analysis["annual_generation_sha256"],
+        annual_manifest_sha256=analysis["annual_manifest_sha256"],
+        annual_git_sha=analysis["annual_git_sha"],
+        agreement_generation_sha256=analysis["agreement_generation_sha256"],
+        agreement_manifest_sha256=analysis["agreement_manifest_sha256"],
+        agreement_summary_sha256=analysis["agreement_summary_sha256"],
+        agreement_git_sha=analysis["agreement_git_sha"],
+        satellite_generation_sha256=analysis["satellite_generation_sha256"],
+        satellite_year=analysis["satellite_year"],
+        satellite_panel_bytes=analysis["satellite_panel_bytes"],
+        satellite_panel_sha256=analysis["satellite_panel_sha256"],
+        reviewed_geography_sha256=analysis["reviewed_geography_sha256"],
+        reviewed_airzone_sha256=analysis["reviewed_airzone_sha256"],
+        primary_radius_km=float(analysis["primary_radius_km"]),
+        ridge_alpha=float(analysis["ridge_alpha"]),
+        permutation_draws=analysis["permutation_draws"],
+        permutation_seed=analysis["permutation_seed"],
+        bootstrap_draws=analysis["bootstrap_draws"],
+        bootstrap_seed=analysis["bootstrap_seed"],
+        target_time_shifts_days=tuple(analysis["target_time_shifts_days"]),
+        neighbor_exclusion_buffers_km=tuple(
+            float(value) for value in analysis["neighbor_exclusion_buffers_km"]
+        ),
+        threads=analysis["threads"],
+        memory_limit_gb=analysis["memory_limit_gb"],
+        claim_boundary=tuple((key, _CLAIM_BOUNDARY[key]) for key in _CLAIM_BOUNDARY),
+    )
+
+
+def canonical_hash(value: object) -> str:
+    payload = (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
+    return sha256(payload).hexdigest()
+
+
+def _reject_json_constant(value: str) -> object:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
+def _read_json(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=_reject_json_constant,
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"frozen input {label} is unreadable") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"frozen input {label} must be an object")
+    return value
+
+
+def _is_link_like(path: Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or (is_junction is not None and is_junction())
+
+
+def _ordinary_file_identity(path: Path, *, parent: Path, label: str) -> tuple[int, str]:
+    try:
+        resolved = path.resolve(strict=True)
+        stat = path.stat()
+    except OSError as exc:
+        raise RuntimeError(f"frozen input {label} is unreadable") from exc
+    if (
+        _is_link_like(path)
+        or not path.is_file()
+        or resolved.parent != parent
+        or stat.st_nlink != 1
+    ):
+        raise RuntimeError(f"frozen input {label} must be one ordinary file")
+    return stat.st_size, sha256_file(path)
+
+
+def _generation_directory(path: Path, *, label: str) -> Path:
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(f"frozen input {label} generation is unreadable") from exc
+    if _is_link_like(path) or not resolved.is_dir() or resolved != path:
+        raise RuntimeError(f"frozen input {label} generation must be an ordinary directory")
+    return resolved
+
+
+def _validate_inventory(directory: Path, expected: set[str], *, label: str) -> None:
+    try:
+        entries = tuple(directory.iterdir())
+    except OSError as exc:
+        raise RuntimeError(f"frozen input {label} inventory is unreadable") from exc
+    if {entry.name for entry in entries} != expected:
+        raise RuntimeError(f"frozen input {label} inventory changed")
+    for entry in entries:
+        _ordinary_file_identity(entry, parent=directory, label=f"{label} {entry.name}")
+
+
+def _manifest_identity(
+    manifest: dict[str, Any],
+    fields: tuple[str, ...],
+    *,
+    label: str,
+) -> str:
+    try:
+        identity = {field: manifest[field] for field in fields}
+    except KeyError as exc:
+        raise RuntimeError(f"frozen input {label} identity is incomplete") from exc
+    try:
+        return canonical_hash(identity)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"frozen input {label} identity is not canonical") from exc
+
+
+def _declared_identity(value: object, *, expected_path: str, label: str) -> tuple[int, str]:
+    if not isinstance(value, dict) or set(value) != {"path", "bytes", "sha256"}:
+        raise RuntimeError(f"frozen input {label} declaration changed")
+    size = value.get("bytes")
+    digest = value.get("sha256")
+    if value.get("path") != expected_path:
+        raise RuntimeError(f"frozen input {label} path changed")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise RuntimeError(f"frozen input {label} byte count changed")
+    if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
+        raise RuntimeError(f"frozen input {label} SHA-256 changed")
+    return size, digest
+
+
+def _input_file(
+    root: Path,
+    path: Path,
+    *,
+    role: str,
+    expected: tuple[int, str] | None = None,
+) -> InputFile:
+    observed = _ordinary_file_identity(path, parent=path.parent, label=role)
+    if expected is not None and observed != expected:
+        raise RuntimeError(f"frozen input {role} identity changed")
+    try:
+        relative = path.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise RuntimeError(f"frozen input {role} is outside the data root") from exc
+    return InputFile(
+        role=role,
+        path=path,
+        relative_path=relative,
+        bytes=observed[0],
+        sha256=observed[1],
+    )
+
+
+def _row_count(path: Path) -> int:
+    try:
+        return int(pl.scan_parquet(path).select(pl.len()).collect().item())
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError(f"frozen input {path.name} Parquet is unreadable") from exc
+
+
+def _schema_strings(path: Path) -> dict[str, str]:
+    try:
+        return {name: str(dtype) for name, dtype in pl.read_parquet_schema(path).items()}
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError(f"frozen input {path.name} schema is unreadable") from exc
+
+
+def _load_frame(path: Path, *, label: str) -> pl.DataFrame:
+    try:
+        return pl.read_parquet(path)
+    except (OSError, pl.exceptions.PolarsError) as exc:
+        raise RuntimeError(f"frozen input {label} Parquet is unreadable") from exc
+
+
+def _load_annual(
+    root: Path,
+    config: AgreementAuditConfig,
+) -> tuple[dict[str, Any], tuple[InputFile, ...]]:
+    directory = _generation_directory(
+        root
+        / "outputs"
+        / "micro_sensor_annual_readiness"
+        / "generations"
+        / config.annual_generation_sha256,
+        label="annual readiness",
+    )
+    if directory.name != config.annual_generation_sha256:
+        raise RuntimeError("frozen input annual readiness generation changed")
+    expected_files = {
+        "manifest.json",
+        "summary.json",
+        *(f"{name}.parquet" for name in _ANNUAL_SCHEMAS),
+    }
+    _validate_inventory(directory, expected_files, label="annual readiness")
+    manifest_path = directory / "manifest.json"
+    manifest_file = _input_file(root, manifest_path, role="annual_manifest")
+    if manifest_file.sha256 != config.annual_manifest_sha256:
+        raise RuntimeError("frozen input annual manifest hash changed")
+    manifest = _read_json(manifest_path, label="annual manifest")
+    if set(manifest) != _ANNUAL_MANIFEST_FIELDS:
+        raise RuntimeError("frozen input annual manifest fields changed")
+    if (
+        manifest.get("complete") is not True
+        or manifest.get("schema_version") != 1
+        or manifest.get("analysis") != "annual_micro_sensor_readiness"
+        or manifest.get("generation_sha256") != config.annual_generation_sha256
+        or manifest.get("git_sha") != config.annual_git_sha
+        or _manifest_identity(manifest, _ANNUAL_IDENTITY_FIELDS, label="annual manifest")
+        != config.annual_generation_sha256
+    ):
+        raise RuntimeError("frozen input annual manifest identity changed")
+    manifest_inputs = manifest.get("inputs")
+    if (
+        not isinstance(manifest_inputs, dict)
+        or manifest_inputs.get("reviewed_geography_sha256")
+        != config.reviewed_geography_sha256
+    ):
+        raise RuntimeError("frozen input annual geography binding changed")
+    members = manifest.get("members")
+    output_rows = manifest.get("output_rows")
+    if (
+        not isinstance(members, dict)
+        or set(members) != set(_ANNUAL_SCHEMAS)
+        or output_rows != _ANNUAL_EXPECTED_ROWS
+    ):
+        raise RuntimeError("frozen input annual member contract changed")
+    files: list[InputFile] = [manifest_file]
+    for name, expected_schema in _ANNUAL_SCHEMAS.items():
+        path = directory / f"{name}.parquet"
+        expected = _declared_identity(
+            members[name], expected_path=path.name, label=f"annual {name}"
+        )
+        files.append(_input_file(root, path, role=f"annual_{name}", expected=expected))
+        observed_schema = _schema_strings(path)
+        required_schema = {field: str(dtype) for field, dtype in expected_schema}
+        if observed_schema != required_schema:
+            raise RuntimeError(f"frozen input annual {name} schema changed")
+        if _row_count(path) != _ANNUAL_EXPECTED_ROWS[name]:
+            raise RuntimeError(f"frozen input annual {name} row count changed")
+    summary_path = directory / "summary.json"
+    summary_expected = _declared_identity(
+        manifest.get("summary_file"), expected_path="summary.json", label="annual summary"
+    )
+    files.append(_input_file(root, summary_path, role="annual_summary", expected=summary_expected))
+    summary = _read_json(summary_path, label="annual summary")
+    if "output_rows" in summary and summary["output_rows"] != _ANNUAL_EXPECTED_ROWS:
+        raise RuntimeError("frozen input annual summary row counts changed")
+    if _ordinary_file_identity(
+        manifest_path, parent=directory, label="annual manifest"
+    ) != (manifest_file.bytes, manifest_file.sha256) or _read_json(
+        manifest_path, label="annual manifest"
+    ) != manifest:
+        raise RuntimeError("frozen input annual manifest changed during read")
+    _validate_inventory(directory, expected_files, label="annual readiness")
+    return manifest, tuple(files)
+
+
+def _load_agreement(
+    root: Path,
+    config: AgreementAuditConfig,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, pl.DataFrame], tuple[InputFile, ...]]:
+    directory = _generation_directory(
+        root
+        / "outputs"
+        / "micro_sensor_annual_agreement"
+        / "generations"
+        / config.agreement_generation_sha256,
+        label="agreement",
+    )
+    if directory.name != config.agreement_generation_sha256:
+        raise RuntimeError("frozen input agreement generation changed")
+    expected_files = {
+        "manifest.json",
+        "summary.json",
+        *(f"{name}.parquet" for name in _AGREEMENT_MEMBERS),
+    }
+    _validate_inventory(directory, expected_files, label="agreement")
+    manifest_path = directory / "manifest.json"
+    manifest_file = _input_file(root, manifest_path, role="agreement_manifest")
+    if manifest_file.sha256 != config.agreement_manifest_sha256:
+        raise RuntimeError("frozen input agreement manifest hash changed")
+    manifest = _read_json(manifest_path, label="agreement manifest")
+    if set(manifest) != _AGREEMENT_MANIFEST_FIELDS:
+        raise RuntimeError("frozen input agreement manifest fields changed")
+    if (
+        manifest.get("complete") is not True
+        or manifest.get("schema_version") != 1
+        or manifest.get("analysis") != "q4_supported_cross_station_agreement"
+        or manifest.get("annual_generation_sha256") != config.annual_generation_sha256
+        or manifest.get("generation_sha256") != config.agreement_generation_sha256
+        or manifest.get("git_sha") != config.agreement_git_sha
+        or _manifest_identity(manifest, _AGREEMENT_IDENTITY_FIELDS, label="agreement manifest")
+        != config.agreement_generation_sha256
+    ):
+        raise RuntimeError("frozen input agreement manifest identity changed")
+    members = manifest.get("members")
+    schemas = manifest.get("schemas")
+    output_rows = manifest.get("output_rows")
+    if (
+        not isinstance(members, dict)
+        or set(members) != set(_AGREEMENT_MEMBERS)
+        or not isinstance(schemas, dict)
+        or set(schemas) != set(_AGREEMENT_MEMBERS)
+        or output_rows != _AGREEMENT_EXPECTED_ROWS
+    ):
+        raise RuntimeError("frozen input agreement member contract changed")
+    files: list[InputFile] = [manifest_file]
+    frames: dict[str, pl.DataFrame] = {}
+    for name in _AGREEMENT_MEMBERS:
+        path = directory / f"{name}.parquet"
+        expected = _declared_identity(
+            members[name], expected_path=path.name, label=f"agreement {name}"
+        )
+        files.append(_input_file(root, path, role=f"agreement_{name}", expected=expected))
+        declared_schema = schemas[name]
+        if not isinstance(declared_schema, dict) or not all(
+            isinstance(field, str) and isinstance(dtype, str)
+            for field, dtype in declared_schema.items()
+        ):
+            raise RuntimeError(f"frozen input agreement {name} schema declaration changed")
+        if _schema_strings(path) != declared_schema:
+            raise RuntimeError(f"frozen input agreement {name} schema changed")
+        frames[name] = _load_frame(path, label=f"agreement {name}")
+        if frames[name].height != _AGREEMENT_EXPECTED_ROWS[name]:
+            raise RuntimeError(f"frozen input agreement {name} row count changed")
+    summary_path = directory / "summary.json"
+    summary_expected = _declared_identity(
+        manifest.get("summary_file"), expected_path="summary.json", label="agreement summary"
+    )
+    files.append(
+        _input_file(root, summary_path, role="agreement_summary", expected=summary_expected)
+    )
+    summary = _read_json(summary_path, label="agreement summary")
+    summary_hash = canonical_hash(summary)
+    if (
+        summary_hash != config.agreement_summary_sha256
+        or manifest.get("summary_sha256") != summary_hash
+    ):
+        raise RuntimeError("frozen input agreement summary identity changed")
+    if "output_rows" in summary and summary["output_rows"] != _AGREEMENT_EXPECTED_ROWS:
+        raise RuntimeError("frozen input agreement summary row counts changed")
+    if _ordinary_file_identity(
+        manifest_path, parent=directory, label="agreement manifest"
+    ) != (manifest_file.bytes, manifest_file.sha256) or _read_json(
+        manifest_path, label="agreement manifest"
+    ) != manifest:
+        raise RuntimeError("frozen input agreement manifest changed during read")
+    _validate_inventory(directory, expected_files, label="agreement")
+    return manifest, summary, frames, tuple(files)
+
+
+def _load_satellite(
+    root: Path,
+    config: AgreementAuditConfig,
+) -> tuple[pl.DataFrame, InputFile]:
+    path = (
+        root
+        / "outputs"
+        / "m8_satellite"
+        / "generations"
+        / config.satellite_generation_sha256
+        / f"year={config.satellite_year}"
+        / "panel.parquet"
+    )
+    try:
+        parent = path.parent.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("frozen input satellite panel directory is unreadable") from exc
+    observed = _ordinary_file_identity(path, parent=parent, label="satellite panel")
+    expected = (config.satellite_panel_bytes, config.satellite_panel_sha256)
+    if observed != expected:
+        raise RuntimeError("frozen input satellite panel identity changed")
+    if _schema_strings(path) != _SATELLITE_SCHEMA:
+        raise RuntimeError("frozen input satellite panel schema changed")
+    panel = _load_frame(path, label="satellite panel")
+    if _ordinary_file_identity(path, parent=parent, label="satellite panel") != observed:
+        raise RuntimeError("frozen input satellite panel changed during read")
+    return panel, _input_file(root, path, role="satellite_panel", expected=expected)
+
+
+def _load_geography(config: AgreementAuditConfig) -> pl.DataFrame:
+    geography = resolve_station_geo()
+    airzone_fields = (*_COORDINATE_FIELDS, "airzone_official")
+    missing = sorted(set(airzone_fields) - set(geography.columns))
+    if missing:
+        raise RuntimeError(f"frozen input reviewed geography is missing fields: {missing}")
+    selected = geography.select(*airzone_fields)
+    coordinate_identity = selected.select(*_COORDINATE_FIELDS)
+    if (
+        selected["station_name"].n_unique() != selected.height
+        or coordinate_identity.select(pl.any_horizontal(pl.all().is_null()).any()).item()
+        or selected.filter(~pl.col("lon").is_finite() | ~pl.col("lat").is_finite()).height
+    ):
+        raise RuntimeError("frozen input reviewed geography rows changed")
+    coordinate_hash = canonical_hash(
+        coordinate_identity.sort("station_name").to_dicts()
+    )
+    airzone_hash = canonical_hash(selected.sort("station_name").to_dicts())
+    if coordinate_hash != config.reviewed_geography_sha256:
+        raise RuntimeError("frozen input reviewed geography identity changed")
+    if airzone_hash != config.reviewed_airzone_sha256:
+        raise RuntimeError("frozen input reviewed air-zone identity changed")
+    return geography
+
+
+def load_frozen_agreement_audit_inputs(
+    data_root: Path,
+    config: AgreementAuditConfig,
+) -> FrozenAuditInputs:
+    try:
+        root = data_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("frozen input data root is unreadable") from exc
+    if _is_link_like(data_root) or not root.is_dir():
+        raise RuntimeError("frozen input data root must be an ordinary directory")
+    annual_manifest, annual_files = _load_annual(root, config)
+    agreement_manifest, agreement_summary, frames, agreement_files = _load_agreement(
+        root, config
+    )
+    satellite_panel, satellite_file = _load_satellite(root, config)
+    geography = _load_geography(config)
+    return FrozenAuditInputs(
+        annual_manifest=annual_manifest,
+        agreement_manifest=agreement_manifest,
+        agreement_summary=agreement_summary,
+        agreement_calendar=frames["calendar"],
+        agreement_paired_days=frames["paired_days"],
+        agreement_exclusions=frames["exclusions"],
+        agreement_fold_membership=frames["fold_membership"],
+        agreement_folds=frames["folds"],
+        agreement_predictions=frames["predictions"],
+        agreement_scores=frames["scores"],
+        agreement_deltas=frames["deltas"],
+        satellite_panel=satellite_panel,
+        geography=geography,
+        input_files=(*annual_files, *agreement_files, satellite_file),
+    )
