@@ -15,7 +15,7 @@ This is a model decomposition, not causal attribution to policy or emissions; th
 
 [繁體中文](README.md) ·
 [Interactive site](https://kuotunyu.github.io/air-quality/) ·
-Dataset — *not yet uploaded* ·
+[Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality) ·
 [Forecast demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
 [Methodology](docs/methodology.md)
 
@@ -119,7 +119,7 @@ flowchart TD
 
 | | Description |
 |---|---|
-| 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025, downloadable from [chapter 10](https://kuotunyu.github.io/air-quality/data/) and packageable as a Hugging Face Dataset. The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
+| 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025, downloadable from [chapter 10](https://kuotunyu.github.io/air-quality/data/) and published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | 📊 **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
 | 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
 | 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
@@ -322,14 +322,14 @@ evidence and decisions live in the relevant public [technical docs](docs/).
 | Phase | Current delivery | Disposition |
 |---|---|---|
 | **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; GEE satellite Stage A delivered; ERA5 2024–2025 acquisition and multi-year/held-out-station robustness delivered; CWA deferred |
-| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; L0/L1 Dataset bundle is locally reproducible; remote publication needs owner confirmation |
+| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; The L0/L1 Dataset is publicly available; the complete hourly L2 copy is not published |
 | **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
 | **Phase 5** | M6 spatial structure, M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), and the spatial baseline and covariate-model readiness gates | ✅ The baseline `go` permitted bounded covariate-model design; the measured covariate-model gate is `stop`, so this fixed model branch closes; HYSPLIT, a 1 km field, and population-weighted exposure were not delivered |
 | **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered; 2025 annual micro-sensor readiness audit delivered, and the Q4-supported cross-station agreement delivered — 5 of 29 folds scorable, the remaining 18 with an empty test set and 6 with an empty training set, all reported unscored rather than as zero; held-quarter and joint station-quarter are not estimable — while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
-| **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | 🔄 Release closeout: normal engineering and the editorial UI implementation are complete, integrated into `master`, and deployed to GitHub Pages. The L0/L1 HF Dataset publish-or-not decision remains last and owner-controlled; the external-reader trial is deferred and non-blocking; PyPI is optional. |
+| **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | ✅ Release closeout complete: normal engineering and the editorial UI implementation are integrated into `master` and deployed to GitHub Pages, and the L0/L1 HF Dataset is public. The external-reader trial remains deferred and non-blocking; PyPI is optional. |
 
 Implemented engineering decisions live in
 [docs/working-rules.md](docs/working-rules.md); current data and method evidence

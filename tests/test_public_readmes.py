@@ -212,14 +212,20 @@ def test_public_satellite_docs_record_measured_held_out_and_multiyear_value_with
     assert "76／73 筆 incomplete/null station-months 仍保留並計數在 source panels" in sources_prose
 
 
-def test_both_readmes_keep_hugging_face_to_l0_l1_and_owner_confirmed_publication() -> None:
+def test_both_readmes_link_the_published_hugging_face_dataset_and_keep_it_to_l0_l1() -> None:
     zh, en = _readmes()
 
-    assert "L0／L1 Dataset bundle 可本機重建，遠端上架另行人工確認" in zh
+    dataset_url = "https://huggingface.co/datasets/steven0226/air-quality"
+
+    assert f"[資料集（L0／L1）]({dataset_url})" in zh
+    assert f"[Dataset (L0/L1)]({dataset_url})" in en
+    assert "L0／L1 Dataset 已公開上架；完整 L2 逐時複本不發布" in zh
     assert (
-        "L0/L1 Dataset bundle is locally reproducible; remote publication needs owner confirmation"
+        "The L0/L1 Dataset is publicly available; the complete hourly L2 copy is not published"
         in en
     )
+    assert "遠端上架另行人工確認" not in zh
+    assert "remote publication needs owner confirmation" not in en
     assert "full HF Dataset publishes at closeout" not in en
 
 

@@ -16,7 +16,7 @@
 [English](README.en.md) ·
 [互動網站](https://kuotunyu.github.io/air-quality/) ·
 [預測 demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
-資料集 —— *尚未上架* ·
+[資料集（L0／L1）](https://huggingface.co/datasets/steven0226/air-quality) ·
 [方法論](docs/methodology.md)
 
 ---
@@ -57,7 +57,7 @@
 
 | | 內容 |
 |---|---|
-| 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計，可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載，也可封裝成 Hugging Face Dataset。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
+| 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計，可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載，也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | 📊 **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
 | 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
@@ -233,14 +233,14 @@ Claim boundary: no validated calibration; no sensor fusion product; no high-reso
 | 階段 | 目前交付 | 交付判定 |
 |---|---|---|
 | Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；GEE 衛星 Stage A 已交付；ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已交付；CWA 延後 |
-| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；L0／L1 Dataset bundle 可本機重建，遠端上架另行人工確認 |
+| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；L0／L1 Dataset 已公開上架；完整 L2 逐時複本不發布 |
 | Phase 2 | M1 基準、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
 | Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
 | Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
 | Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、spatial baseline 與 covariate-model readiness gates | ✅ baseline gate 的 `go` 允許了有界的 covariate-model design；實測 covariate-model gate 為 `stop`，所以這個固定模型分支關閉；HYSPLIT／1 km 場／人口加權暴露未交付 |
 | Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 M8 關聯與 held-out predictive-value 診斷已交付；ERA5 2024–2025 robustness 已交付；微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付，一月 reference-station satellite-context predictive-value limit 已交付，微型感測器 2025 全年 readiness audit 已交付，Q4-supported cross-station agreement 亦已交付（29 個 fold 中只有 5 個可評分，其餘 18 個測試集為空、6 個訓練集為空，均標為 unscored 而非以零計；held-quarter 與 joint station-quarter 不可估計）；validated calibration 與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5 |
 | Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
-| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 🔄 發布收尾：正常工程與編輯式科學圖集 UI 已完成，並已整合至 `master`、部署於 GitHub Pages。L0／L1 HF Dataset 仍留到最後由 owner 決定上架或明確不發布；非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |
+| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | ✅ 發布收尾完成：正常工程與編輯式科學圖集 UI 已整合至 `master`、部署於 GitHub Pages，L0／L1 HF Dataset 亦已公開。非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |
 
 磁碟上的實際狀態用 `uv run twair status` 看——這份表寫的是 release 邊界；
 那個指令量的是本機事實。已實作的工程取捨見
