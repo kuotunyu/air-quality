@@ -2113,6 +2113,13 @@ def test_writer_persists_exact_inventory_and_reuses_only_identical_generation(
         readiness.write_spatial_covariate_readiness_result(result, output_root=output_root)
 
 
+def _windows_access_denied(target: Path) -> PermissionError:
+    error = PermissionError(13, "access denied", str(target))
+    platform_error: Any = error
+    platform_error.winerror = 5
+    return error
+
+
 def test_writer_reuses_a_concurrent_identical_winner_after_windows_permission_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2127,7 +2134,7 @@ def test_writer_reuses_a_concurrent_identical_winner_after_windows_permission_er
     def concurrent_winner(self: Path, target: Path) -> Path:
         if self.name.startswith(".spatial-covariate-readiness.staging-"):
             original_replace(waiting_winner, target)
-            raise PermissionError(13, "access denied", str(target), 5)
+            raise _windows_access_denied(target)
         return original_replace(self, target)
 
     monkeypatch.setattr(Path, "replace", concurrent_winner)
@@ -2147,7 +2154,7 @@ def test_writer_does_not_mask_permission_error_without_a_concurrent_destination(
 
     def denied_promotion(self: Path, target: Path) -> Path:
         if self.name.startswith(".spatial-covariate-readiness.staging-"):
-            raise PermissionError(13, "access denied", str(target), 5)
+            raise _windows_access_denied(target)
         return original_replace(self, target)
 
     monkeypatch.setattr(Path, "replace", denied_promotion)
