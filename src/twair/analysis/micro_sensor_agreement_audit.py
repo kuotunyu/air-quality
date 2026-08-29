@@ -222,6 +222,16 @@ _METRICS = ("rmse", "mae", "r2", "bias", "absolute_bias")
 _FOLD_COUNT = 5
 _QUARTERS = (1, 2, 3, 4)
 CONTROL_CODES = {"station_label": 1, "target_shift": 2, "satellite_context": 3}
+SATELLITE_FEATURES = ("maiac_aod", "s5p_no2", "s5p_so2")
+DENSITY_FEATURES = (
+    "pm25_source_rows",
+    "pm25_observed_hours",
+    "humidity_source_rows",
+    "humidity_observed_hours",
+    "temperature_source_rows",
+    "temperature_observed_hours",
+    "trio_observed_hours",
+)
 AUDIT_UNCERTAINTY_SCHEMA: tuple[
     tuple[str, pl.DataType | type[pl.DataType]], ...
 ] = (
@@ -1723,10 +1733,10 @@ def _control_metric_rows(
 
 
 def run_station_label_control(
-    control: tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame],
+    control: tuple[pl.DataFrame, ...],
     config: AgreementAuditConfig,
 ) -> pl.DataFrame:
-    memberships, folds, geography = control
+    memberships, folds, geography = control[:3]
     truth_counts = memberships.group_by("station_name", "date").agg(
         pl.col("ground_pm25_mean").n_unique().alias("_truth_values"),
         pl.col("ground_pm25_mean").first(),
@@ -1829,10 +1839,10 @@ def shift_station_day_targets(
 
 
 def run_target_shift_controls(
-    control: tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame],
+    control: tuple[pl.DataFrame, ...],
     config: AgreementAuditConfig,
 ) -> pl.DataFrame:
-    memberships, folds, _geography = control
+    memberships, folds, _geography = control[:3]
     truth_counts = memberships.group_by("station_name", "date").agg(
         pl.col("ground_pm25_mean").n_unique().alias("_truth_values"),
         pl.col("ground_pm25_mean").first(),
@@ -1940,3 +1950,344 @@ def empirical_lower_tail_p(observed: float, null_values: np.ndarray[Any, Any]) -
     if not math.isfinite(observed) or values.ndim != 1 or not np.isfinite(values).all():
         raise ValueError("empirical lower-tail inputs must be finite")
     return float((1 + np.count_nonzero(values <= observed)) / (values.size + 1))
+
+
+def build_satellite_context(
+    panel: pl.DataFrame,
+    eligible_station_months: pl.DataFrame,
+) -> pl.DataFrame:
+    required_panel = {"station_name", "month", "source", "satellite_value"}
+    required_eligible = {"station_name", "month", "airzone_official"}
+    if required_panel - set(panel.columns) or required_eligible - set(
+        eligible_station_months.columns
+    ):
+        raise RuntimeError("satellite context schema changed")
+    eligible = eligible_station_months.select(*sorted(required_eligible)).unique()
+    if eligible.select("station_name", "month").n_unique() != eligible.height:
+        raise RuntimeError("satellite context eligible station-month is duplicated")
+    selected = panel.filter(pl.col("source").is_in(SATELLITE_FEATURES))
+    if "pair_observed" in selected.columns:
+        selected = selected.filter(pl.col("pair_observed"))
+    selected = eligible.join(
+        selected.select("station_name", "month", "source", "satellite_value"),
+        on=("station_name", "month"),
+        how="left",
+    )
+    completeness = selected.group_by("station_name", "month").agg(
+        pl.col("source").n_unique().alias("sources"),
+        pl.col("satellite_value").null_count().alias("null_values"),
+    )
+    if (
+        completeness.height != eligible.height
+        or completeness.filter(
+            (pl.col("sources") != len(SATELLITE_FEATURES))
+            | (pl.col("null_values") != 0)
+        ).height
+        or selected.select("station_name", "month", "source").n_unique()
+        != selected.height
+    ):
+        raise RuntimeError("satellite context requires three satellite sources")
+    context = selected.pivot(
+        on="source",
+        index=("station_name", "month", "airzone_official"),
+        values="satellite_value",
+    )
+    if set(SATELLITE_FEATURES) - set(context.columns) or context.filter(
+        pl.any_horizontal(
+            pl.col(feature).is_null() | ~pl.col(feature).is_finite()
+            for feature in SATELLITE_FEATURES
+        )
+    ).height:
+        raise RuntimeError("satellite context requires three satellite sources")
+    return context.select(
+        "station_name", "month", "airzone_official", *SATELLITE_FEATURES
+    ).sort("month", "airzone_official", "station_name")
+
+
+def permute_satellite_context(
+    context: pl.DataFrame,
+    *,
+    replicate: int,
+    seed: int,
+) -> pl.DataFrame:
+    required = {"station_name", "month", "airzone_official", *SATELLITE_FEATURES}
+    if required - set(context.columns):
+        raise RuntimeError("satellite context permutation schema changed")
+    if isinstance(replicate, bool) or not isinstance(replicate, int) or replicate < 0:
+        raise ValueError("satellite context replicate must be a non-negative integer")
+    rng = np.random.default_rng(
+        np.random.SeedSequence([seed, CONTROL_CODES["satellite_context"], replicate])
+    )
+    rows: list[pl.DataFrame] = []
+    for group in context.sort("month", "airzone_official", "station_name").partition_by(
+        "month", "airzone_official", maintain_order=True
+    ):
+        if group["station_name"].n_unique() < 2:
+            raise RuntimeError("satellite context permutation has an unpermutable group")
+        order = rng.permutation(group.height)
+        feature_block = group.select(*SATELLITE_FEATURES)[order]
+        rows.append(
+            group.drop(*SATELLITE_FEATURES).with_columns(
+                *(feature_block[feature] for feature in SATELLITE_FEATURES)
+            )
+        )
+    return pl.concat(rows).sort("month", "airzone_official", "station_name")
+
+
+def _fit_named_ridge(
+    memberships: pl.DataFrame,
+    folds: pl.DataFrame,
+    *,
+    features: tuple[str, ...],
+    model: str,
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    missing = sorted(set(features) - set(memberships.columns))
+    if missing:
+        raise RuntimeError(f"diagnostic model is missing features: {missing}")
+    rows: list[pl.DataFrame] = []
+    scored_folds = folds.filter(
+        (pl.col("state") == "scored") & (pl.col("evaluation") == "held_station")
+    )
+    for fold in scored_folds["fold"]:
+        split = memberships.filter(pl.col("fold") == fold).sort(
+            "role", "station_name", "date", "device_id"
+        )
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        if _fold_state(train, test) != "scored":
+            continue
+        weights = _training_weights(train)
+        pipeline = Pipeline(
+            [("scale", StandardScaler()), ("ridge", Ridge(alpha=config.ridge_alpha))]
+        )
+        with threadpool_limits(limits=config.threads):
+            pipeline.fit(
+                train.select(*features).to_numpy(),
+                train["ground_pm25_mean"].to_numpy(),
+                scale__sample_weight=weights,
+                ridge__sample_weight=weights,
+            )
+            prediction = pipeline.predict(test.select(*features).to_numpy())
+        rows.append(
+            test.select("evaluation", "fold", "station_name", "date", "device_id").with_columns(
+                pl.lit(model).alias("model"),
+                pl.lit(",".join(features)).alias("model_features"),
+                test["ground_pm25_mean"].alias("y_true"),
+                pl.Series("y_pred", prediction, dtype=pl.Float64),
+            )
+        )
+    if not rows:
+        raise RuntimeError("diagnostic model has no scored held-station fold")
+    return pl.concat(rows).sort("evaluation", "fold", "model", "date", "device_id")
+
+
+def _paired_diagnostic_rows(
+    candidate: pl.DataFrame,
+    comparator: pl.DataFrame,
+    *,
+    variant: str,
+    replicate: int | None,
+    candidate_name: str,
+    comparator_name: str,
+) -> list[dict[str, object]]:
+    keys = ("evaluation", "fold", "station_name", "date", "device_id")
+    paired = candidate.select(*keys, "y_true", pl.col("y_pred").alias("candidate_pred")).join(
+        comparator.select(*keys, pl.col("y_true").alias("comparator_truth"), pl.col("y_pred").alias("comparator_pred")),
+        on=keys,
+        how="inner",
+    )
+    if paired.height != candidate.height or paired.height != comparator.height or paired.filter(
+        pl.col("y_true") != pl.col("comparator_truth")
+    ).height:
+        raise RuntimeError("diagnostic model pairing changed")
+    rows: list[dict[str, object]] = []
+    for unit in ("station_day", "device_day"):
+        if unit == "station_day":
+            scored = paired.group_by("evaluation", "fold", "station_name", "date").agg(
+                pl.col("y_true").n_unique().alias("_truth_values"),
+                pl.col("y_true").first(),
+                pl.col("candidate_pred").mean(),
+                pl.col("comparator_pred").mean(),
+            )
+            if scored.filter(pl.col("_truth_values") != 1).height:
+                raise RuntimeError("diagnostic station-day truth changed")
+            scored = scored.drop("_truth_values").sort("station_name", "date")
+        else:
+            scored = paired.sort("station_name", "date", "device_id")
+        truth = scored["y_true"].to_numpy()
+        candidate_error = scored["candidate_pred"].to_numpy() - truth
+        comparator_error = scored["comparator_pred"].to_numpy() - truth
+        metrics = {
+            "delta_rmse": float(
+                np.sqrt(np.mean(candidate_error**2))
+                - np.sqrt(np.mean(comparator_error**2))
+            ),
+            "delta_mae": float(
+                np.mean(np.abs(candidate_error)) - np.mean(np.abs(comparator_error))
+            ),
+        }
+        for metric, value in metrics.items():
+            rows.append(
+                {
+                    "control": "satellite_context",
+                    "variant": variant,
+                    "replicate": replicate,
+                    "state": "scored",
+                    "model": candidate_name,
+                    "comparator": comparator_name,
+                    "unit": unit,
+                    "metric": metric,
+                    "value": value,
+                    "n": scored.height,
+                }
+            )
+    return rows
+
+
+def run_satellite_context_control(
+    control: tuple[pl.DataFrame, ...],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    if len(control) < 4:
+        raise RuntimeError("satellite context control is missing the frozen panel")
+    memberships, folds, geography, panel = control[:4]
+    with_month = memberships.with_columns(pl.col("date").dt.month_start().alias("month"))
+    eligible_months = (
+        with_month.select("station_name", "month")
+        .unique()
+        .join(geography.select("station_name", "airzone_official"), on="station_name")
+    )
+    context = build_satellite_context(panel, eligible_months)
+    baseline = _fit_named_ridge(
+        memberships,
+        folds,
+        features=CORE_FEATURES["pooled_weather_ridge"],
+        model="pooled_weather_ridge",
+        config=config,
+    )
+    diagnostic_features = (*CORE_FEATURES["pooled_weather_ridge"], *SATELLITE_FEATURES)
+
+    def fit_context(selected_context: pl.DataFrame) -> pl.DataFrame:
+        joined = (
+            with_month.join(
+                selected_context.select("station_name", "month", *SATELLITE_FEATURES),
+                on=("station_name", "month"),
+                how="left",
+            )
+        )
+        if joined.select(
+            pl.any_horizontal(pl.col(feature).is_null() for feature in SATELLITE_FEATURES).any()
+        ).item():
+            raise RuntimeError("satellite context is missing from eligible memberships")
+        return _fit_named_ridge(
+            joined,
+            folds,
+            features=diagnostic_features,
+            model="pooled_weather_satellite_ridge",
+            config=config,
+        )
+
+    rows = _paired_diagnostic_rows(
+        fit_context(context),
+        baseline,
+        variant="observed_context",
+        replicate=None,
+        candidate_name="pooled_weather_satellite_ridge",
+        comparator_name="pooled_weather_ridge",
+    )
+    for replicate in range(config.permutation_draws):
+        permuted = permute_satellite_context(
+            context,
+            replicate=replicate,
+            seed=config.permutation_seed,
+        )
+        rows.extend(
+            _paired_diagnostic_rows(
+                fit_context(permuted),
+                baseline,
+                variant="permuted_context",
+                replicate=replicate,
+                candidate_name="pooled_weather_satellite_ridge",
+                comparator_name="pooled_weather_ridge",
+            )
+        )
+    schema = {
+        "control": pl.String,
+        "variant": pl.String,
+        "replicate": pl.Int64,
+        "state": pl.String,
+        "model": pl.String,
+        "comparator": pl.String,
+        "unit": pl.String,
+        "metric": pl.String,
+        "value": pl.Float64,
+        "n": pl.Int64,
+    }
+    return pl.DataFrame(rows, schema=schema).sort(
+        "variant", "replicate", "unit", "metric", nulls_last=True
+    )
+
+
+def validate_density_features(features: tuple[str, ...]) -> None:
+    if features != DENSITY_FEATURES:
+        raise RuntimeError("prohibited density feature or changed density feature order")
+
+
+def run_acquisition_density_baselines(
+    control: tuple[pl.DataFrame, ...],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    memberships, folds = control[:2]
+    validate_density_features(DENSITY_FEATURES)
+    missing = sorted(set(DENSITY_FEATURES) - set(memberships.columns))
+    if missing:
+        raise RuntimeError(f"acquisition-density input is missing features: {missing}")
+    rows: list[pl.DataFrame] = []
+    scored_folds = folds.filter(
+        (pl.col("state") == "scored") & (pl.col("evaluation") == "held_station")
+    )
+    for fold in scored_folds["fold"]:
+        split = memberships.filter(pl.col("fold") == fold).sort(
+            "role", "station_name", "date", "device_id"
+        )
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        if _fold_state(train, test) != "scored":
+            continue
+        weights = _training_weights(train)
+        target = train["ground_pm25_mean"].to_numpy()
+        training_mean = float(np.average(target, weights=weights))
+        base = test.select(
+            "evaluation", "fold", "station_name", "date", "device_id"
+        )
+        rows.append(
+            base.with_columns(
+                pl.lit("training_mean").alias("model"),
+                pl.lit("inverse_station_day_weighted_target_mean").alias("model_features"),
+                test["ground_pm25_mean"].alias("y_true"),
+                pl.lit(training_mean, dtype=pl.Float64).alias("y_pred"),
+            )
+        )
+        pipeline = Pipeline(
+            [("scale", StandardScaler()), ("ridge", Ridge(alpha=config.ridge_alpha))]
+        )
+        with threadpool_limits(limits=config.threads):
+            pipeline.fit(
+                train.select(*DENSITY_FEATURES).to_numpy(),
+                target,
+                scale__sample_weight=weights,
+                ridge__sample_weight=weights,
+            )
+            prediction = pipeline.predict(test.select(*DENSITY_FEATURES).to_numpy())
+        rows.append(
+            base.with_columns(
+                pl.lit("acquisition_density_ridge").alias("model"),
+                pl.lit(",".join(DENSITY_FEATURES)).alias("model_features"),
+                test["ground_pm25_mean"].alias("y_true"),
+                pl.Series("y_pred", prediction, dtype=pl.Float64),
+            )
+        )
+    if not rows:
+        raise RuntimeError("acquisition-density baselines have no scored fold")
+    return pl.concat(rows).sort("evaluation", "fold", "model", "date", "device_id")

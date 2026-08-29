@@ -58,6 +58,13 @@ AGREEMENT_PAIRED_DAY_SCHEMA = (
     ("distance_km", pl.Float64),
     ("lon_min", pl.Float64),
     ("lat_min", pl.Float64),
+    ("pm25_source_rows", pl.Int64),
+    ("pm25_observed_hours", pl.Int64),
+    ("humidity_source_rows", pl.Int64),
+    ("humidity_observed_hours", pl.Int64),
+    ("temperature_source_rows", pl.Int64),
+    ("temperature_observed_hours", pl.Int64),
+    ("trio_observed_hours", pl.Int64),
     ("micro_pm25_mean", pl.Float64),
     ("micro_humidity_mean", pl.Float64),
     ("micro_temperature_mean", pl.Float64),
@@ -739,7 +746,7 @@ def _create_frozen_source(root: Path) -> tuple[dict[str, int], dict[str, int]]:
             "sample_scale_m": 1000,
         }
         for station_index in range(12)
-        for source in ("maiac", "s5p", "era5")
+        for source in ("maiac_aod", "s5p_no2", "s5p_so2")
     ]
     satellite_path = satellite_dir / "panel.parquet"
     _frame(_SATELLITE_SCHEMA, satellite_rows).write_parquet(satellite_path)
@@ -965,7 +972,7 @@ def permutation_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
     return station_days, geography
 
 
-def control_fixture() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+def control_fixture() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     source = _agreement_frames()
     folds = source["folds"].rename(
         {"fold_state": "state", "fold_reason": "reason"}
@@ -975,7 +982,7 @@ def control_fixture() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
         .otherwise(pl.lit("unscored_empty_test"))
         .alias("state")
     )
-    return source["fold_membership"], folds, _geography()
+    return source["fold_membership"], folds, _geography(), satellite_panel_fixture()
 
 
 def singleton_zone_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -1003,6 +1010,48 @@ def target_shift_fixture() -> pl.DataFrame:
             }
             for station_index, station in enumerate(("alpha", "beta"))
             for offset in range(61)
+        ]
+    )
+
+
+def eligible_station_months_fixture() -> pl.DataFrame:
+    geography = _geography().select("station_name", "airzone_official")
+    return pl.DataFrame(
+        {
+            "station_name": [f"station-{index:02d}" for index in range(12)],
+            "month": [date(2025, 10, 1)] * 12,
+        }
+    ).join(geography, on="station_name")
+
+
+def satellite_panel_fixture() -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for station_index in range(12):
+        for source_index, source in enumerate(("maiac_aod", "s5p_no2", "s5p_so2")):
+            rows.append(
+                {
+                    "station_name": f"station-{station_index:02d}",
+                    "month": date(2025, 10, 1),
+                    "source": source,
+                    "satellite_value": float(100 * station_index + source_index),
+                    "pair_observed": True,
+                }
+            )
+    return pl.DataFrame(rows)
+
+
+def distinguishable_satellite_context_fixture() -> pl.DataFrame:
+    return pl.DataFrame(
+        [
+            {
+                "station_name": station,
+                "month": date(2025, 10, 1),
+                "airzone_official": "shared-zone",
+                "maiac_aod": float(index * 100 + 1),
+                "s5p_no2": float(index * 100 + 2),
+                "s5p_so2": float(index * 100 + 3),
+            }
+            for index, station in enumerate(("alpha", "beta", "gamma"), start=1)
         ]
     )
 
@@ -1227,3 +1276,43 @@ def test_empirical_lower_tail_p_includes_observed_and_null_pseudocounts() -> Non
     assert audit.empirical_lower_tail_p(-2.0, np.array([-3.0, -1.0, 0.0])) == pytest.approx(
         0.5
     )
+
+
+def test_satellite_context_requires_three_sources_for_each_station_month() -> None:
+    incomplete = satellite_panel_fixture().filter(pl.col("source") != "s5p_so2")
+    with pytest.raises(RuntimeError, match="three satellite sources"):
+        audit.build_satellite_context(incomplete, eligible_station_months_fixture())
+
+
+def test_satellite_permutation_moves_the_three_source_vector_as_one_block() -> None:
+    context = distinguishable_satellite_context_fixture()
+    permuted = audit.permute_satellite_context(context, replicate=4, seed=20260829)
+    original_vectors = set(context.select(*audit.SATELLITE_FEATURES).iter_rows())
+    assert set(permuted.select(*audit.SATELLITE_FEATURES).iter_rows()) == original_vectors
+
+
+def test_satellite_candidate_is_diagnostic_and_compared_with_weather_ridge() -> None:
+    scores = audit.run_satellite_context_control(control_fixture(), audit_config())
+    observed = scores.filter(pl.col("variant") == "observed_context")
+    assert set(observed["model"]) == {"pooled_weather_satellite_ridge"}
+    assert set(observed["comparator"]) == {"pooled_weather_ridge"}
+    assert set(observed["unit"]) == {"station_day", "device_day"}
+
+
+def test_density_ridge_uses_only_the_reviewed_count_and_hour_columns() -> None:
+    predictions = audit.run_acquisition_density_baselines(control_fixture(), audit_config())
+    density = predictions.filter(pl.col("model") == "acquisition_density_ridge")
+    assert set(density["model_features"]) == {",".join(audit.DENSITY_FEATURES)}
+    assert set(predictions["model"]) == {"training_mean", "acquisition_density_ridge"}
+
+
+def test_density_ridge_rejects_any_concentration_weather_ground_or_satellite_value() -> None:
+    for prohibited in (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+        "satellite_value",
+    ):
+        with pytest.raises(RuntimeError, match="prohibited density feature"):
+            audit.validate_density_features((*audit.DENSITY_FEATURES, prohibited))
