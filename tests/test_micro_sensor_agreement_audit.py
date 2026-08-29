@@ -7,7 +7,7 @@ import math
 import re
 import subprocess
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -1668,16 +1668,33 @@ def test_writer_publishes_the_exact_nine_member_inventory_atomically(
 def test_writer_reuses_only_a_byte_identical_existing_generation(
     prepared_audit_result: audit.AgreementAuditResult, tmp_path: Path
 ) -> None:
+    configured = replace(
+        prepared_audit_result,
+        manifest={
+            **prepared_audit_result.manifest,
+            "config": asdict(audit.load_micro_sensor_agreement_audit_config()),
+        },
+    )
+    configured = replace(
+        configured,
+        manifest={
+            **configured.manifest,
+            "generation_sha256": audit.result_identity(configured),
+        },
+    )
     first = audit.write_micro_sensor_agreement_audit_result(
-        prepared_audit_result, output_root=tmp_path
+        configured, output_root=tmp_path
     )
     second = audit.write_micro_sensor_agreement_audit_result(
-        prepared_audit_result, output_root=tmp_path
+        configured, output_root=tmp_path
     )
     assert first == second
     assert {name: path.read_bytes() for name, path in first.items()} == {
         name: path.read_bytes() for name, path in second.items()
     }
+    inspected = audit.inspect_agreement_audit_output(tmp_path)
+    assert inspected.verified is True
+    assert inspected.verification_problem is None
 
 
 def test_writer_never_overwrites_a_mutated_existing_generation(

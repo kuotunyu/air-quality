@@ -3836,7 +3836,9 @@ def inspect_agreement_audit_output(
         )
         published = _load_micro_sensor_agreement_audit_result_unlocked(selected)
         expected_config = asdict(load_micro_sensor_agreement_audit_config())
-        if published.result.manifest.get("config") != expected_config:
+        if canonical_hash(published.result.manifest.get("config")) != canonical_hash(
+            expected_config
+        ):
             raise RuntimeError("published config differs from the reviewed protocol")
         return AgreementAuditOutputInspection(
             True,
