@@ -125,6 +125,12 @@ MODULES: tuple[Module, ...] = (
         feeds_web=False,
     ),
     Module(
+        "micro_sensor_agreement_audit",
+        "twair analyze micro-sensor-agreement-audit",
+        "independently verified Q4 nearby-reference agreement and fusion stop gate",
+        feeds_web=False,
+    ),
+    Module(
         "micro_sensor_calibration_benchmark",
         "twair analyze micro-sensor-benchmark",
         "January held-date and held-station prediction; not validated calibration or fusion",
@@ -203,6 +209,9 @@ class Artefact:
     files: int
     bytes: int
     modified: datetime | None
+    verified: bool | None = None
+    generation: str | None = None
+    verification_problem: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,6 +348,25 @@ def collect_status(*, count_rows: bool = True) -> Status:
     artefacts = []
     for module in MODULES:
         directory = outputs_dir(module.directory)
+        if module.directory == "micro_sensor_agreement_audit":
+            from twair.analysis.micro_sensor_agreement_audit import (
+                inspect_agreement_audit_output,
+            )
+
+            inspected = inspect_agreement_audit_output(directory)
+            artefacts.append(
+                Artefact(
+                    module,
+                    inspected.exists,
+                    inspected.files,
+                    inspected.bytes,
+                    inspected.modified,
+                    inspected.verified,
+                    inspected.generation,
+                    inspected.verification_problem,
+                )
+            )
+            continue
         if not directory.exists():
             artefacts.append(Artefact(module, False, 0, 0, None))
             continue
@@ -400,6 +428,14 @@ def render(status: Status) -> list[str]:
         name = artefact.module.directory.ljust(width)
         if not artefact.exists:
             lines.append(f"  {name}  never run    {artefact.module.reproduce}")
+        elif artefact.verified is True and artefact.generation is not None:
+            lines.append(
+                f"  {name}  verified {artefact.generation[:12]}   "
+                f"{artefact.files:>3} files   {_when(artefact.modified)}"
+            )
+        elif artefact.verified is False:
+            problem = artefact.verification_problem or "verification failed"
+            lines.append(f"  {name}  INVALID {problem}")
         else:
             lines.append(f"  {name}  {artefact.files:>3} files   {_when(artefact.modified)}")
     for name in status.undeclared:

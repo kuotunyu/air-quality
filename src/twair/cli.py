@@ -1383,6 +1383,88 @@ def analyze_micro_sensor_annual_agreement(
         console.print(f"wrote {name}: {path}")
 
 
+@analysis_app.command("micro-sensor-agreement-audit")
+def analyze_micro_sensor_agreement_audit(
+    confirm_production: bool = typer.Option(
+        False,
+        "--confirm-production",
+        help="Run and publish the locked frozen Project D agreement audit.",
+    ),
+) -> None:
+    """Plan or run the immutable micro-sensor agreement audit."""
+    from twair.analysis.micro_sensor_agreement_audit import (
+        AUDIT_MEMBER_NAMES,
+        FUSION_CONDITION_IDS,
+        agreement_audit_run_plan,
+        run_and_write_micro_sensor_agreement_audit,
+    )
+
+    if not confirm_production:
+        plan = agreement_audit_run_plan()
+        console.print("Project D micro-sensor agreement audit")
+        console.print(f"annual generation: {plan.annual_generation_sha256}")
+        console.print(f"agreement generation: {plan.agreement_generation_sha256}")
+        console.print(f"satellite generation: {plan.satellite_generation_sha256}")
+        console.print(
+            f"controls: {plan.permutation_draws} permutation draws; "
+            f"{plan.bootstrap_draws:,} clustered bootstrap draws"
+        )
+        console.print(
+            f"resources: {plan.threads} CPU thread; {plan.memory_limit_gb} GB memory limit; "
+            "network: disabled"
+        )
+        console.print("station-day primary; device-day secondary")
+        console.print(f"output root: {plan.output_root}")
+        console.print(
+            "PLAN ONLY — run again with --confirm-production to compute, verify, and publish"
+        )
+        return
+
+    published = run_and_write_micro_sensor_agreement_audit()
+    result = published.result
+    manifest = result.manifest
+    generation = manifest.get("generation_sha256")
+    summary = result.summary
+    gate = result.fusion_gate
+    written = published.written
+    if (
+        manifest.get("complete") is not True
+        or not isinstance(generation, str)
+        or published.directory.name != generation
+        or set(written) != set(AUDIT_MEMBER_NAMES)
+        or any(
+            not isinstance(path, Path)
+            or not path.is_file()
+            or path.parent != published.directory
+            for path in written.values()
+        )
+        or gate.height != len(FUSION_CONDITION_IDS)
+        or gate["condition_id"].n_unique() != len(FUSION_CONDITION_IDS)
+        or set(gate["condition_id"]) != set(FUSION_CONDITION_IDS)
+        or set(gate["state"]) - {"pass", "fail", "unmet"}
+        or gate["overall_verdict"].n_unique() != 1
+        or summary.get("overall_verdict") != gate["overall_verdict"][0]
+    ):
+        raise RuntimeError("agreement audit combined result was not persisted and verified")
+    primary = summary.get("primary_station_day_rmse")
+    secondary = summary.get("secondary_device_day_delta_rmse")
+    if not isinstance(primary, dict) or not isinstance(secondary, dict):
+        raise RuntimeError("agreement audit verified score summary changed")
+    console.print(
+        "station-day primary RMSE: "
+        + ", ".join(f"{model}={float(value):.6f}" for model, value in primary.items())
+    )
+    console.print(
+        "device-day secondary delta RMSE: "
+        + ", ".join(f"{model}={float(value):.6f}" for model, value in secondary.items())
+    )
+    states = dict(gate.select("condition_id", "state").iter_rows())
+    for condition_id in FUSION_CONDITION_IDS:
+        console.print(f"gate {condition_id}: {states[condition_id]}")
+    console.print(f"verdict: {summary['overall_verdict']}")
+    console.print(f"generation: {published.directory}")
+
+
 @analysis_app.command("micro-sensor-benchmark")
 def analyze_micro_sensor_benchmark() -> None:
     """Test January micro-sensor prediction on held dates and stations."""

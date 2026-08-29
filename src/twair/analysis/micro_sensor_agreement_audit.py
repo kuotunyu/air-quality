@@ -397,6 +397,17 @@ class PublishedAgreementAudit:
     written: dict[str, Path]
 
 
+@dataclass(frozen=True, slots=True)
+class AgreementAuditOutputInspection:
+    exists: bool
+    files: int
+    bytes: int
+    modified: datetime | None
+    verified: bool | None
+    generation: str | None
+    verification_problem: str | None
+
+
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise ConfigError(f"{label} must be a mapping with string keys")
@@ -3769,6 +3780,78 @@ def load_micro_sensor_agreement_audit_result(
         output_root / ".micro-sensor-agreement-audit.lock"
     ):
         return _load_micro_sensor_agreement_audit_result_unlocked(requested)
+
+
+def inspect_agreement_audit_output(
+    output_root: Path,
+) -> AgreementAuditOutputInspection:
+    root = output_root.absolute()
+    generations = root / "generations"
+    if not generations.exists():
+        return AgreementAuditOutputInspection(False, 0, 0, None, None, None, None)
+    try:
+        if _is_link_like(root) or _is_link_like(generations):
+            raise RuntimeError("output root is linked or outside")
+        entries = tuple(generations.iterdir())
+        candidates = tuple(
+            entry
+            for entry in entries
+            if entry.is_dir() and _SHA256.fullmatch(entry.name) is not None
+        )
+        residue = tuple(entry for entry in entries if entry not in candidates)
+        if residue:
+            raise RuntimeError("unexpected generation-root residue")
+        if not candidates:
+            return AgreementAuditOutputInspection(False, 0, 0, None, None, None, None)
+        if len(candidates) != 1:
+            raise RuntimeError("multiple audit generations require explicit review")
+        selected = candidates[0]
+        stats = [path.stat() for path in selected.iterdir() if path.is_file()]
+        files = len(stats)
+        total = sum(item.st_size for item in stats)
+        modified = (
+            None
+            if not stats
+            else datetime.fromtimestamp(max(item.st_mtime for item in stats), tz=UTC)
+        )
+        published = _load_micro_sensor_agreement_audit_result_unlocked(selected)
+        expected_config = asdict(load_micro_sensor_agreement_audit_config())
+        if published.result.manifest.get("config") != expected_config:
+            raise RuntimeError("published config differs from the reviewed protocol")
+        return AgreementAuditOutputInspection(
+            True,
+            files,
+            total,
+            modified,
+            True,
+            selected.name,
+            None,
+        )
+    except (OSError, RuntimeError, pl.exceptions.PolarsError) as exc:
+        candidates = tuple(
+            entry
+            for entry in generations.iterdir()
+            if entry.is_dir() and _SHA256.fullmatch(entry.name) is not None
+        )
+        failed_candidate: Path | None = candidates[0] if len(candidates) == 1 else None
+        stats = (
+            [path.stat() for path in failed_candidate.iterdir() if path.is_file()]
+            if failed_candidate is not None
+            else []
+        )
+        return AgreementAuditOutputInspection(
+            bool(candidates),
+            len(stats),
+            sum(item.st_size for item in stats),
+            (
+                None
+                if not stats
+                else datetime.fromtimestamp(max(item.st_mtime for item in stats), tz=UTC)
+            ),
+            False if candidates else None,
+            failed_candidate.name if failed_candidate is not None else None,
+            str(exc) or exc.__class__.__name__,
+        )
 
 
 def _write_micro_sensor_agreement_audit_result_unlocked(
