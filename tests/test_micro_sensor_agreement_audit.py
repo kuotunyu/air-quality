@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import re
@@ -11,6 +12,9 @@ from typing import Any
 
 import polars as pl
 import pytest
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 import twair.analysis.micro_sensor_agreement_audit as audit
 from twair.analysis.micro_sensor_agreement_audit import (
@@ -252,6 +256,236 @@ def _frame(
     return pl.DataFrame(complete, schema=_schema_dict(schema))
 
 
+def _fixture_digest(frame: pl.DataFrame, *, truth: bool = False) -> str:
+    identity = (
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    columns = (*identity, "ground_pm25_mean") if truth else identity
+    records = (
+        frame.select(*columns)
+        .sort(*identity)
+        .with_columns(pl.col("date").cast(pl.String))
+        .to_dicts()
+    )
+    return _canonical_hash(records)
+
+
+def _source_fold_artifacts(
+    paired: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    geography = _geography()
+    inventory = (
+        paired.select("station_name")
+        .unique()
+        .join(geography.select("station_name", "airzone_official"), on="station_name")
+    )
+    assigned: list[dict[str, object]] = []
+    position = 0
+    strata = sorted(
+        inventory["airzone_official"].unique().to_list(),
+        key=lambda value: (value is None, "" if value is None else str(value)),
+    )
+    for stratum in strata:
+        stations = inventory.filter(
+            pl.col("airzone_official").is_null()
+            if stratum is None
+            else pl.col("airzone_official") == stratum
+        ).sort("station_name")
+        for station in stations["station_name"]:
+            assigned.append(
+                {
+                    "station_name": station,
+                    "airzone_official": stratum,
+                    "station_fold": position % 5,
+                }
+            )
+            position += 1
+    eligible = paired.filter(pl.col("reason") == "eligible").join(
+        pl.DataFrame(assigned).select("station_name", "station_fold"),
+        on="station_name",
+    )
+    split_frames: list[pl.DataFrame] = []
+    for station_fold in range(5):
+        split_frames.append(
+            eligible.with_columns(
+                pl.lit("held_station").alias("evaluation"),
+                pl.lit(f"held_station_{station_fold:02d}").alias("fold"),
+                pl.when(pl.col("station_fold") == station_fold)
+                .then(pl.lit("test"))
+                .otherwise(pl.lit("train"))
+                .alias("role"),
+            )
+        )
+    for quarter in range(1, 5):
+        split_frames.append(
+            eligible.with_columns(
+                pl.lit("held_quarter").alias("evaluation"),
+                pl.lit(f"held_quarter_{quarter:02d}").alias("fold"),
+                pl.when(pl.col("quarter") == quarter)
+                .then(pl.lit("test"))
+                .otherwise(pl.lit("train"))
+                .alias("role"),
+            )
+        )
+    for station_fold in range(5):
+        for quarter in range(1, 5):
+            split_frames.append(
+                eligible.with_columns(
+                    pl.lit("joint").alias("evaluation"),
+                    pl.lit(f"joint_{station_fold:02d}_{quarter:02d}").alias("fold"),
+                    pl.when(
+                        (pl.col("station_fold") == station_fold)
+                        & (pl.col("quarter") == quarter)
+                    )
+                    .then(pl.lit("test"))
+                    .when(
+                        (pl.col("station_fold") != station_fold)
+                        & (pl.col("quarter") != quarter)
+                    )
+                    .then(pl.lit("train"))
+                    .otherwise(pl.lit("excluded"))
+                    .alias("role"),
+                )
+            )
+    memberships = pl.concat(split_frames).select(
+        "evaluation", "fold", "role", "station_fold", *paired.columns
+    )
+    bound: list[pl.DataFrame] = []
+    fold_rows: list[dict[str, object]] = []
+    for split in memberships.partition_by("evaluation", "fold"):
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        train_targets = train["ground_pm25_mean"].n_unique()
+        test_targets = test["ground_pm25_mean"].n_unique()
+        if train.is_empty():
+            state = "unscored_empty_train"
+        elif train.height < 2 or train_targets < 2:
+            state = "unscored_insufficient_train"
+        elif test.is_empty():
+            state = "unscored_empty_test"
+        elif test_targets < 2:
+            state = "unscored_single_target"
+        else:
+            state = "scored"
+        train_hash = _fixture_digest(train)
+        test_hash = _fixture_digest(test)
+        truth_hash = _fixture_digest(test, truth=True)
+        enriched = split.with_columns(
+            pl.lit(state).alias("fold_state"),
+            pl.lit(state).alias("fold_reason"),
+            pl.lit(train.height, dtype=pl.Int64).alias("train_rows"),
+            pl.lit(test.height, dtype=pl.Int64).alias("test_rows"),
+            pl.lit(train_targets, dtype=pl.Int64).alias("train_unique_targets"),
+            pl.lit(test_targets, dtype=pl.Int64).alias("test_unique_targets"),
+            pl.lit(train_hash).alias("train_membership_sha256"),
+            pl.lit(test_hash).alias("test_membership_sha256"),
+            pl.lit(truth_hash).alias("test_truth_sha256"),
+        ).select(*dict(_FOLD_MEMBERSHIP_SCHEMA))
+        bound.append(enriched)
+        train_devices = set(train["device_id"])
+        test_devices = set(test["device_id"])
+        fold_rows.append(
+            {
+                "evaluation": split["evaluation"][0],
+                "fold": split["fold"][0],
+                "fold_state": state,
+                "fold_reason": state,
+                "train_rows": train.height,
+                "test_rows": test.height,
+                "train_unique_targets": train_targets,
+                "test_unique_targets": test_targets,
+                "train_membership_sha256": train_hash,
+                "test_membership_sha256": test_hash,
+                "test_truth_sha256": truth_hash,
+                "train_devices": len(train_devices),
+                "test_devices": len(test_devices),
+                "train_stations": train["station_name"].n_unique(),
+                "test_stations": test["station_name"].n_unique(),
+                "train_dates": train["date"].n_unique(),
+                "test_dates": test["date"].n_unique(),
+                "device_overlap": len(train_devices & test_devices),
+                "excluded_rows": split.filter(pl.col("role") == "excluded").height,
+            }
+        )
+    membership = pl.concat(bound).sort(
+        "evaluation", "fold", "role", "radius_km", "date", "device_id"
+    )
+    folds = _frame(_FOLD_SCHEMA, fold_rows).sort("evaluation", "fold")
+    prediction_rows: list[pl.DataFrame] = []
+    features = {
+        "pooled_micro_ridge": ("micro_pm25_mean",),
+        "pooled_weather_ridge": (
+            "micro_pm25_mean",
+            "micro_humidity_mean",
+            "micro_temperature_mean",
+        ),
+    }
+    for fold in folds.filter(pl.col("fold_state") == "scored")["fold"]:
+        split = membership.filter(pl.col("fold") == fold)
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        base = test.select(
+            "evaluation",
+            "fold",
+            "fold_state",
+            "radius_km",
+            "date",
+            "device_id",
+            "station_name",
+            "station_fold",
+            "quarter",
+            "train_membership_sha256",
+            "test_membership_sha256",
+            "test_truth_sha256",
+        )
+        prediction_rows.append(
+            base.with_columns(
+                pl.lit("raw_micro").alias("model"),
+                pl.lit("micro_pm25_mean").alias("model_features"),
+                test["ground_pm25_mean"].alias("y_true"),
+                test["micro_pm25_mean"].alias("y_pred"),
+            )
+        )
+        counts = train.group_by("station_name", "date").len()
+        weights = (
+            train.select("station_name", "date")
+            .join(counts, on=("station_name", "date"), how="left")["len"]
+            .cast(pl.Float64)
+            .pow(-1)
+            .to_numpy()
+        )
+        for model, model_features in features.items():
+            pipeline = Pipeline(
+                [("scale", StandardScaler()), ("ridge", Ridge(alpha=1.0))]
+            )
+            pipeline.fit(
+                train.select(*model_features).to_numpy(),
+                train["ground_pm25_mean"].to_numpy(),
+                scale__sample_weight=weights,
+                ridge__sample_weight=weights,
+            )
+            prediction_rows.append(
+                base.with_columns(
+                    pl.lit(model).alias("model"),
+                    pl.lit(",".join(model_features)).alias("model_features"),
+                    test["ground_pm25_mean"].alias("y_true"),
+                    pl.Series(
+                        "y_pred",
+                        pipeline.predict(test.select(*model_features).to_numpy()),
+                    ),
+                )
+            )
+    predictions = pl.concat(prediction_rows).select(*dict(AGREEMENT_PREDICTION_SCHEMA)).sort(
+        "evaluation", "fold", "model", "date", "device_id"
+    )
+    return membership, folds, predictions
+
+
 def _write_members(
     directory: Path,
     frames: dict[str, pl.DataFrame],
@@ -308,19 +542,21 @@ def _agreement_frames() -> dict[str, pl.DataFrame]:
     eligible_rows: list[dict[str, object]] = []
     for station_index in range(12):
         for day in range(1, 4):
+            observed_day = 1 if station_index == 0 and day == 2 else day
+            device_suffix = "00b" if station_index == 0 and day == 2 else f"{station_index:02d}"
             eligible_rows.append(
                 {
                     "radius_km": 0.5,
                     "calendar_state": "complete",
                     "quarter": 4,
-                    "date": date(2025, 10, day),
-                    "device_id": f"device-{station_index:02d}",
+                    "date": date(2025, 10, observed_day),
+                    "device_id": f"device-{device_suffix}",
                     "station_name": f"station-{station_index:02d}",
                     "distance_km": 0.1,
-                    "micro_pm25_mean": float(10 + station_index + day),
-                    "micro_humidity_mean": float(60 + day),
-                    "micro_temperature_mean": float(24 + day),
-                    "ground_pm25_mean": float(11 + station_index + day),
+                    "micro_pm25_mean": float(10 + station_index + observed_day),
+                    "micro_humidity_mean": float(60 + observed_day),
+                    "micro_temperature_mean": float(24 + observed_day),
+                    "ground_pm25_mean": float(11 + station_index + observed_day),
                     "reason": "eligible",
                 }
             )
@@ -337,59 +573,8 @@ def _agreement_frames() -> dict[str, pl.DataFrame]:
             "reason": "insufficient_micro_hours",
         },
     ]
-    fold_rows: list[dict[str, object]] = []
-    empty_hash = _canonical_hash([])
-    for fold_index in range(5):
-        fold_rows.append(
-            {
-                "evaluation": "held_station",
-                "fold": f"held_station_{fold_index:02d}",
-                "fold_state": "scored",
-                "fold_reason": "scored",
-                "train_rows": 30,
-                "test_rows": 6,
-                "train_unique_targets": 20,
-                "test_unique_targets": 6,
-                "train_membership_sha256": empty_hash,
-                "test_membership_sha256": empty_hash,
-                "test_truth_sha256": empty_hash,
-                "train_devices": 10,
-                "test_devices": 2,
-                "train_stations": 10,
-                "test_stations": 2,
-                "train_dates": 3,
-                "test_dates": 3,
-                "device_overlap": 0,
-                "excluded_rows": 0,
-            }
-        )
-    for quarter in range(1, 5):
-        state = "unscored_empty_train" if quarter == 4 else "unscored_empty_test"
-        fold_rows.append(
-            {
-                "evaluation": "held_quarter",
-                "fold": f"held_quarter_{quarter:02d}",
-                "fold_state": state,
-                "fold_reason": state,
-                "train_membership_sha256": empty_hash,
-                "test_membership_sha256": empty_hash,
-                "test_truth_sha256": empty_hash,
-            }
-        )
-    for fold_index in range(5):
-        for quarter in range(1, 5):
-            state = "unscored_empty_train" if quarter == 4 else "unscored_empty_test"
-            fold_rows.append(
-                {
-                    "evaluation": "joint",
-                    "fold": f"joint_{fold_index:02d}_{quarter:02d}",
-                    "fold_state": state,
-                    "fold_reason": state,
-                    "train_membership_sha256": empty_hash,
-                    "test_membership_sha256": empty_hash,
-                    "test_truth_sha256": empty_hash,
-                }
-            )
+    paired = _frame(AGREEMENT_PAIRED_DAY_SCHEMA, paired_rows)
+    memberships, folds, predictions = _source_fold_artifacts(paired)
     return {
         "calendar": _frame(
             AGREEMENT_CALENDAR_SCHEMA,
@@ -403,7 +588,7 @@ def _agreement_frames() -> dict[str, pl.DataFrame]:
                 for day in range(1, 4)
             ],
         ),
-        "paired_days": _frame(AGREEMENT_PAIRED_DAY_SCHEMA, paired_rows),
+        "paired_days": paired,
         "exclusions": _frame(
             AGREEMENT_EXCLUSION_SCHEMA,
             [
@@ -417,9 +602,9 @@ def _agreement_frames() -> dict[str, pl.DataFrame]:
                 }
             ],
         ),
-        "fold_membership": _empty(_FOLD_MEMBERSHIP_SCHEMA),
-        "folds": _frame(_FOLD_SCHEMA, fold_rows),
-        "predictions": _empty(AGREEMENT_PREDICTION_SCHEMA),
+        "fold_membership": memberships,
+        "folds": folds,
+        "predictions": predictions,
         "scores": _empty(AGREEMENT_SCORE_SCHEMA),
         "deltas": _empty(AGREEMENT_DELTA_SCHEMA),
     }
@@ -653,6 +838,47 @@ def loaded_audit_fixture(
     return load_frozen_agreement_audit_inputs(audit_source_fixture, config), config
 
 
+@pytest.fixture
+def scored_prediction_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
+    source = _agreement_frames()
+    folds = source["folds"].select(
+        "evaluation",
+        "fold",
+        pl.when(pl.col("fold") == "held_station_00")
+        .then(pl.lit("scored"))
+        .otherwise(pl.lit("unscored_empty_test"))
+        .alias("state"),
+        pl.when(pl.col("fold") == "held_station_00")
+        .then(pl.col("test_rows"))
+        .otherwise(pl.lit(0, dtype=pl.Int64))
+        .alias("test_rows"),
+        "test_membership_sha256",
+        "test_truth_sha256",
+    )
+    predictions = source["predictions"].filter(pl.col("fold") == "held_station_00")
+    station_days = predictions.select("station_name", "date").unique().sort(
+        "station_name", "date"
+    )
+    first = station_days.row(0, named=True)
+    second = station_days.row(1, named=True)
+
+    def duplicate(station_day: dict[str, object], suffix: str) -> pl.DataFrame:
+        return predictions.filter(
+            (pl.col("station_name") == station_day["station_name"])
+            & (pl.col("date") == station_day["date"])
+        ).with_columns((pl.col("device_id") + pl.lit(suffix)).alias("device_id"))
+
+    predictions = pl.concat(
+        [
+            predictions,
+            duplicate(first, "-extra"),
+            duplicate(second, "-extra-1"),
+            duplicate(second, "-extra-2"),
+        ]
+    )
+    return predictions, folds
+
+
 def test_shipped_config_pins_the_audit_protocol() -> None:
     config = load_micro_sensor_agreement_audit_config()
     assert config.protocol_revision == 1
@@ -708,3 +934,94 @@ def test_frozen_input_loader_rejects_bound_input_mutation(
         load_frozen_agreement_audit_inputs(
             audit_source_fixture, synthetic_audit_config(audit_source_fixture)
         )
+
+
+def test_fold_reconstruction_reports_all_29_states_and_zero_device_overlap(
+    loaded_audit_fixture: tuple[FrozenAuditInputs, AgreementAuditConfig],
+) -> None:
+    inputs, config = loaded_audit_fixture
+    fold_audit, memberships = audit.reconstruct_agreement_folds(inputs, config)
+    counts = dict(fold_audit.group_by("state").len().iter_rows())
+    assert fold_audit.height == 29
+    assert counts == {"scored": 5, "unscored_empty_test": 18, "unscored_empty_train": 6}
+    assert fold_audit["device_overlap"].max() == 0
+    assert memberships.filter(pl.col("role") == "test")["device_id"].null_count() == 0
+
+
+def test_fold_reconstruction_rejects_changed_airzone_assignment(
+    loaded_audit_fixture: tuple[FrozenAuditInputs, AgreementAuditConfig],
+) -> None:
+    inputs, config = loaded_audit_fixture
+    changed = inputs.geography.with_columns(
+        pl.when(pl.int_range(pl.len()) == 0)
+        .then(pl.lit("changed-zone"))
+        .otherwise(pl.col("airzone_official"))
+        .alias("airzone_official")
+    )
+    with pytest.raises(RuntimeError, match="air-zone identity"):
+        audit.reconstruct_agreement_folds(replace(inputs, geography=changed), config)
+
+
+def test_core_refits_predict_every_and_only_scored_test_row(
+    loaded_audit_fixture: tuple[FrozenAuditInputs, AgreementAuditConfig],
+) -> None:
+    inputs, config = loaded_audit_fixture
+    folds, memberships = audit.reconstruct_agreement_folds(inputs, config)
+    predictions = audit.refit_core_candidates(memberships, folds, config)
+    expected = int(folds.filter(pl.col("state") == "scored")["test_rows"].sum()) * 3
+    assert predictions.height == expected
+    assert set(predictions["model"]) == {
+        "raw_micro",
+        "pooled_micro_ridge",
+        "pooled_weather_ridge",
+    }
+
+
+def test_scores_keep_station_day_primary_and_device_day_secondary(
+    scored_prediction_fixture: tuple[pl.DataFrame, pl.DataFrame],
+) -> None:
+    predictions, folds = scored_prediction_fixture
+    scores, deltas = audit.score_audit_predictions(predictions, folds)
+    assert set(scores["unit"]) == {"station_day", "device_day"}
+    assert scores.filter(pl.col("unit") == "station_day")["primary"].all()
+    assert not scores.filter(pl.col("unit") == "device_day")["primary"].any()
+    unscored = scores.filter(pl.col("state") != "scored")
+    assert scores.filter(pl.col("scope") == "fold")["fold"].n_unique() == 29
+    assert unscored["value"].null_count() == unscored.height
+    assert deltas.filter(pl.col("unit") == "station_day")["membership_sha256"].n_unique() == 1
+
+
+def test_reproduction_rejects_a_prediction_difference_above_one_e_minus_twelve(
+    loaded_audit_fixture: tuple[FrozenAuditInputs, AgreementAuditConfig],
+) -> None:
+    inputs, config = loaded_audit_fixture
+    changed = inputs.agreement_predictions.with_columns(
+        pl.when(pl.int_range(pl.len()) == 0)
+        .then(pl.col("y_pred") + 2e-12)
+        .otherwise(pl.col("y_pred"))
+        .alias("y_pred")
+    )
+    folds, memberships = audit.reconstruct_agreement_folds(
+        replace(inputs, agreement_predictions=changed), config
+    )
+    with pytest.raises(RuntimeError, match="agreement reproduction mismatch"):
+        audit.refit_core_candidates(memberships, folds, config)
+
+
+def test_audit_source_does_not_import_agreement_producer_scientific_functions() -> None:
+    tree = ast.parse(Path(audit.__file__).read_text(encoding="utf-8"))
+    prohibited = {
+        "assign_agreement_folds",
+        "evaluate_annual_agreement",
+        "score_annual_agreement_predictions",
+        "_agreement_prediction_rows",
+        "_agreement_metric_values",
+        "_agreement_score_row",
+    }
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    assert prohibited.isdisjoint(imported)

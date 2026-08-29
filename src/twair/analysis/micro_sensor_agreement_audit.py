@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import math
 import re
@@ -10,7 +11,11 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import polars as pl
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from twair.analysis.micro_sensor_annual_readiness import (
     ANNUAL_CALENDAR_SCHEMA,
@@ -22,6 +27,8 @@ from twair.analysis.micro_sensor_annual_readiness import (
 from twair.config import ConfigError, load_conf
 from twair.ingest.station_meta import resolve_station_geo
 from twair.net import sha256_file
+
+threadpool_limits: Any = importlib.import_module("threadpoolctl").threadpool_limits
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _ANNUAL_IDENTITY_FIELDS = (
@@ -201,6 +208,18 @@ _AGREEMENT_EXPECTED_ROWS = {
     "scores": 192,
     "deltas": 128,
 }
+CORE_FEATURES: dict[str, tuple[str, ...]] = {
+    "pooled_micro_ridge": ("micro_pm25_mean",),
+    "pooled_weather_ridge": (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+    ),
+}
+_CORE_MODELS = ("raw_micro", *CORE_FEATURES)
+_METRICS = ("rmse", "mae", "r2", "bias", "absolute_bias")
+_FOLD_COUNT = 5
+_QUARTERS = (1, 2, 3, 4)
 
 
 @dataclass(frozen=True, slots=True)
@@ -776,3 +795,600 @@ def load_frozen_agreement_audit_inputs(
         geography=geography,
         input_files=(*annual_files, *agreement_files, satellite_file),
     )
+
+
+def _frame_digest(frame: pl.DataFrame, *, truth: bool = False) -> str:
+    identity = (
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    columns = (*identity, "ground_pm25_mean") if truth else identity
+    records = (
+        frame.select(*columns)
+        .sort(*identity)
+        .with_columns(pl.col("date").cast(pl.String))
+        .to_dicts()
+    )
+    return canonical_hash(records)
+
+
+def _station_fold_membership(
+    paired_days: pl.DataFrame,
+    geography: pl.DataFrame,
+) -> pl.DataFrame:
+    stations = paired_days.select("station_name").unique()
+    inventory = stations.join(
+        geography.select("station_name", "airzone_official"),
+        on="station_name",
+        how="left",
+    )
+    if inventory["airzone_official"].null_count():
+        raise RuntimeError("agreement reproduction mismatch: cohort air-zone is missing")
+    rows: list[dict[str, object]] = []
+    position = 0
+    strata = sorted(
+        inventory["airzone_official"].unique().to_list(),
+        key=lambda value: (value is None, "" if value is None else str(value)),
+    )
+    for stratum in strata:
+        selected = inventory.filter(
+            pl.col("airzone_official").is_null()
+            if stratum is None
+            else pl.col("airzone_official") == stratum
+        ).sort("station_name")
+        for station in selected["station_name"]:
+            rows.append(
+                {
+                    "station_name": station,
+                    "airzone_official": stratum,
+                    "station_fold": position % _FOLD_COUNT,
+                }
+            )
+            position += 1
+    membership = pl.DataFrame(rows).sort("station_name")
+    if sorted(membership["station_fold"].unique().to_list()) != list(range(_FOLD_COUNT)):
+        raise RuntimeError("agreement reproduction mismatch: station fold is empty")
+    return membership
+
+
+def _eligible_agreement_rows(
+    inputs: FrozenAuditInputs,
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    required = {
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "quarter",
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+        "reason",
+    }
+    missing = sorted(required - set(inputs.agreement_paired_days.columns))
+    if missing:
+        raise RuntimeError(f"agreement reproduction mismatch: missing columns {missing}")
+    eligible = inputs.agreement_paired_days.filter(pl.col("reason") == "eligible")
+    if eligible.is_empty() or eligible.filter(
+        pl.col("radius_km") != config.primary_radius_km
+    ).height:
+        raise RuntimeError("agreement reproduction mismatch: primary cohort changed")
+    if eligible.select("radius_km", "date", "device_id").n_unique() != eligible.height:
+        raise RuntimeError("agreement reproduction mismatch: eligible identity is duplicated")
+    numeric = (
+        "micro_pm25_mean",
+        "micro_humidity_mean",
+        "micro_temperature_mean",
+        "ground_pm25_mean",
+    )
+    if eligible.filter(
+        pl.any_horizontal(
+            pl.col(column).is_null() | ~pl.col(column).is_finite() for column in numeric
+        )
+    ).height:
+        raise RuntimeError("agreement reproduction mismatch: model value is non-finite")
+    return eligible
+
+
+def _fold_state(train: pl.DataFrame, test: pl.DataFrame) -> str:
+    if train.is_empty():
+        return "unscored_empty_train"
+    if train.height < 2 or train["ground_pm25_mean"].n_unique() < 2:
+        return "unscored_insufficient_train"
+    if test.is_empty():
+        return "unscored_empty_test"
+    if test["ground_pm25_mean"].n_unique() < 2:
+        return "unscored_single_target"
+    return "scored"
+
+
+def _bind_source_predictions(
+    memberships: pl.DataFrame,
+    source: pl.DataFrame,
+) -> pl.DataFrame:
+    expected_models = set(_CORE_MODELS)
+    if set(source["model"].unique()) != expected_models:
+        raise RuntimeError("agreement reproduction mismatch: source model inventory changed")
+    keys = (
+        "evaluation",
+        "fold",
+        "radius_km",
+        "date",
+        "device_id",
+        "station_name",
+        "station_fold",
+        "quarter",
+    )
+    if source.select(*keys, "model").n_unique() != source.height:
+        raise RuntimeError("agreement reproduction mismatch: source prediction is duplicated")
+    truth = source.group_by(*keys).agg(
+        pl.col("y_true").n_unique().alias("_truth_values"),
+        pl.col("y_true").first().alias("source_y_true"),
+    )
+    if truth.filter(pl.col("_truth_values") != 1).height:
+        raise RuntimeError("agreement reproduction mismatch: source truth changed by model")
+    truth = truth.drop("_truth_values")
+    pivoted = source.select(*keys, "model", "y_pred").pivot(
+        on="model",
+        index=keys,
+        values="y_pred",
+    )
+    pivoted = pivoted.rename(
+        {model: f"source_{model}_y_pred" for model in _CORE_MODELS}
+    )
+    enriched = memberships.join(pivoted, on=keys, how="left").join(
+        truth, on=keys, how="left"
+    )
+    scored_test = enriched.filter(
+        (pl.col("fold_state") == "scored") & (pl.col("role") == "test")
+    )
+    reference_columns = ("source_y_true", *(f"source_{model}_y_pred" for model in _CORE_MODELS))
+    if scored_test.select(
+        pl.any_horizontal(pl.col(column).is_null() for column in reference_columns).any()
+    ).item():
+        raise RuntimeError("agreement reproduction mismatch: source prediction is missing")
+    return enriched
+
+
+def reconstruct_agreement_folds(
+    inputs: FrozenAuditInputs,
+    config: AgreementAuditConfig,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Return normalized fold-audit rows and independently rebuilt memberships."""
+    airzone_fields = (*_COORDINATE_FIELDS, "airzone_official")
+    geography = inputs.geography.select(*airzone_fields)
+    observed_airzone_hash = canonical_hash(geography.sort("station_name").to_dicts())
+    if observed_airzone_hash != config.reviewed_airzone_sha256:
+        raise RuntimeError("reviewed air-zone identity changed")
+    eligible = _eligible_agreement_rows(inputs, config)
+    station_folds = _station_fold_membership(inputs.agreement_paired_days, geography)
+    source = eligible.join(
+        station_folds.select("station_name", "station_fold"),
+        on="station_name",
+        how="left",
+    )
+    split_frames: list[pl.DataFrame] = []
+    for station_fold in range(_FOLD_COUNT):
+        split_frames.append(
+            source.with_columns(
+                pl.lit("held_station").alias("evaluation"),
+                pl.lit(f"held_station_{station_fold:02d}").alias("fold"),
+                pl.when(pl.col("station_fold") == station_fold)
+                .then(pl.lit("test"))
+                .otherwise(pl.lit("train"))
+                .alias("role"),
+            )
+        )
+    for quarter in _QUARTERS:
+        split_frames.append(
+            source.with_columns(
+                pl.lit("held_quarter").alias("evaluation"),
+                pl.lit(f"held_quarter_{quarter:02d}").alias("fold"),
+                pl.when(pl.col("quarter") == quarter)
+                .then(pl.lit("test"))
+                .otherwise(pl.lit("train"))
+                .alias("role"),
+            )
+        )
+    for station_fold in range(_FOLD_COUNT):
+        for quarter in _QUARTERS:
+            split_frames.append(
+                source.with_columns(
+                    pl.lit("joint").alias("evaluation"),
+                    pl.lit(f"joint_{station_fold:02d}_{quarter:02d}").alias("fold"),
+                    pl.when(
+                        (pl.col("station_fold") == station_fold)
+                        & (pl.col("quarter") == quarter)
+                    )
+                    .then(pl.lit("test"))
+                    .when(
+                        (pl.col("station_fold") != station_fold)
+                        & (pl.col("quarter") != quarter)
+                    )
+                    .then(pl.lit("train"))
+                    .otherwise(pl.lit("excluded"))
+                    .alias("role"),
+                )
+            )
+    memberships = pl.concat(split_frames).select(
+        "evaluation", "fold", "role", "station_fold", *eligible.columns
+    )
+    bound: list[pl.DataFrame] = []
+    audit_rows: list[dict[str, object]] = []
+    for split in memberships.partition_by("evaluation", "fold"):
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        state = _fold_state(train, test)
+        train_hash = _frame_digest(train)
+        test_hash = _frame_digest(test)
+        truth_hash = _frame_digest(test, truth=True)
+        train_targets = train["ground_pm25_mean"].n_unique()
+        test_targets = test["ground_pm25_mean"].n_unique()
+        enriched = split.with_columns(
+            pl.lit(state).alias("fold_state"),
+            pl.lit(state).alias("fold_reason"),
+            pl.lit(train.height, dtype=pl.Int64).alias("train_rows"),
+            pl.lit(test.height, dtype=pl.Int64).alias("test_rows"),
+            pl.lit(train_targets, dtype=pl.Int64).alias("train_unique_targets"),
+            pl.lit(test_targets, dtype=pl.Int64).alias("test_unique_targets"),
+            pl.lit(train_hash).alias("train_membership_sha256"),
+            pl.lit(test_hash).alias("test_membership_sha256"),
+            pl.lit(truth_hash).alias("test_truth_sha256"),
+        )
+        bound.append(enriched)
+        train_devices = set(train["device_id"])
+        test_devices = set(test["device_id"])
+        audit_rows.append(
+            {
+                "evaluation": split["evaluation"][0],
+                "fold": split["fold"][0],
+                "state": state,
+                "reason": state,
+                "train_rows": train.height,
+                "test_rows": test.height,
+                "train_unique_targets": train_targets,
+                "test_unique_targets": test_targets,
+                "train_membership_sha256": train_hash,
+                "test_membership_sha256": test_hash,
+                "test_truth_sha256": truth_hash,
+                "train_devices": len(train_devices),
+                "test_devices": len(test_devices),
+                "train_stations": train["station_name"].n_unique(),
+                "test_stations": test["station_name"].n_unique(),
+                "train_dates": train["date"].n_unique(),
+                "test_dates": test["date"].n_unique(),
+                "device_overlap": len(train_devices & test_devices),
+                "excluded_rows": split.filter(pl.col("role") == "excluded").height,
+            }
+        )
+    memberships = pl.concat(bound).sort(
+        "evaluation", "fold", "role", "radius_km", "date", "device_id"
+    )
+    fold_audit = pl.DataFrame(audit_rows).sort("evaluation", "fold")
+    source_memberships = inputs.agreement_fold_membership.sort(
+        "evaluation", "fold", "role", "radius_km", "date", "device_id"
+    )
+    if set(source_memberships.columns) - set(memberships.columns) or not memberships.select(
+        *source_memberships.columns
+    ).equals(source_memberships):
+        raise RuntimeError("agreement reproduction mismatch: fold membership changed")
+    source_folds = inputs.agreement_folds.sort("evaluation", "fold")
+    comparable_folds = fold_audit.rename(
+        {"state": "fold_state", "reason": "fold_reason"}
+    ).select(*source_folds.columns)
+    if not comparable_folds.equals(source_folds):
+        raise RuntimeError("agreement reproduction mismatch: fold ledger changed")
+    memberships = _bind_source_predictions(memberships, inputs.agreement_predictions)
+    return fold_audit, memberships
+
+
+def _training_weights(train: pl.DataFrame) -> np.ndarray[Any, np.dtype[np.float64]]:
+    counts = train.group_by("station_name", "date").len()
+    return (
+        train.select("station_name", "date")
+        .join(counts, on=("station_name", "date"), how="left")["len"]
+        .cast(pl.Float64)
+        .pow(-1)
+        .to_numpy()
+    )
+
+
+def refit_core_candidates(
+    memberships: pl.DataFrame,
+    folds: pl.DataFrame,
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    rows: list[pl.DataFrame] = []
+    for fold in folds.filter(pl.col("state") == "scored")["fold"]:
+        split = memberships.filter(pl.col("fold") == fold)
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        if _fold_state(train, test) != "scored":
+            raise RuntimeError("agreement reproduction mismatch: scored fold changed")
+        if not np.array_equal(
+            test["ground_pm25_mean"].to_numpy(), test["source_y_true"].to_numpy()
+        ):
+            raise RuntimeError("agreement reproduction mismatch: prediction truth changed")
+        base = test.select(
+            "evaluation",
+            "fold",
+            "fold_state",
+            "radius_km",
+            "date",
+            "device_id",
+            "station_name",
+            "station_fold",
+            "quarter",
+            "train_membership_sha256",
+            "test_membership_sha256",
+            "test_truth_sha256",
+        )
+        raw_prediction = test["micro_pm25_mean"].to_numpy()
+        if not np.array_equal(raw_prediction, test["source_raw_micro_y_pred"].to_numpy()):
+            raise RuntimeError("agreement reproduction mismatch: raw prediction changed")
+        rows.append(
+            base.with_columns(
+                pl.lit("raw_micro").alias("model"),
+                pl.lit("micro_pm25_mean").alias("model_features"),
+                test["ground_pm25_mean"].alias("y_true"),
+                pl.Series("y_pred", raw_prediction),
+            )
+        )
+        weights = _training_weights(train)
+        for model, features in CORE_FEATURES.items():
+            pipeline = Pipeline(
+                [("scale", StandardScaler()), ("ridge", Ridge(alpha=config.ridge_alpha))]
+            )
+            with threadpool_limits(limits=config.threads):
+                pipeline.fit(
+                    train.select(*features).to_numpy(),
+                    train["ground_pm25_mean"].to_numpy(),
+                    scale__sample_weight=weights,
+                    ridge__sample_weight=weights,
+                )
+                prediction = pipeline.predict(test.select(*features).to_numpy())
+            source_prediction = test[f"source_{model}_y_pred"].to_numpy()
+            if not np.allclose(prediction, source_prediction, rtol=0.0, atol=1e-12):
+                raise RuntimeError("agreement reproduction mismatch: Ridge prediction changed")
+            rows.append(
+                base.with_columns(
+                    pl.lit(model).alias("model"),
+                    pl.lit(",".join(features)).alias("model_features"),
+                    test["ground_pm25_mean"].alias("y_true"),
+                    pl.Series("y_pred", prediction),
+                )
+            )
+    if not rows:
+        raise RuntimeError("agreement reproduction mismatch: no scored fold")
+    return pl.concat(rows).sort("evaluation", "fold", "model", "date", "device_id")
+
+
+def _unit_predictions(predictions: pl.DataFrame, *, unit: str) -> pl.DataFrame:
+    if unit == "device_day":
+        return predictions
+    truth_counts = predictions.group_by(
+        "evaluation", "fold", "model", "station_name", "date"
+    ).agg(pl.col("y_true").n_unique().alias("_truth_values"))
+    if truth_counts.filter(pl.col("_truth_values") != 1).height:
+        raise RuntimeError("agreement reproduction mismatch: station-day truth is not unique")
+    return predictions.group_by(
+        "evaluation", "fold", "model", "station_name", "date"
+    ).agg(
+        pl.col("radius_km").first(),
+        pl.col("y_true").first(),
+        pl.col("y_pred").mean(),
+    )
+
+
+def _score_values(frame: pl.DataFrame) -> dict[str, float | None]:
+    truth = frame["y_true"].to_numpy()
+    prediction = frame["y_pred"].to_numpy()
+    residual = prediction - truth
+    bias = float(np.mean(residual))
+    denominator = float(np.sum((truth - np.mean(truth)) ** 2))
+    r2 = None if denominator == 0.0 else 1.0 - float(np.sum(residual**2)) / denominator
+    return {
+        "rmse": float(np.sqrt(np.mean(residual**2))),
+        "mae": float(np.mean(np.abs(residual))),
+        "r2": r2,
+        "bias": bias,
+        "absolute_bias": abs(bias),
+    }
+
+
+def _scored_identity(frame: pl.DataFrame, *, unit: str, truth: bool) -> str:
+    identity = ["evaluation", "fold", "station_name", "date"]
+    if unit == "device_day":
+        identity.append("device_id")
+    if truth:
+        identity.append("y_true")
+    records = (
+        frame.select(*identity)
+        .sort(*[column for column in identity if column != "y_true"])
+        .with_columns(pl.col("date").cast(pl.String))
+        .to_dicts()
+    )
+    return canonical_hash(records)
+
+
+def _score_rows(
+    predictions: pl.DataFrame,
+    folds: pl.DataFrame,
+) -> list[dict[str, object]]:
+    radii = predictions["radius_km"].unique().to_list()
+    if len(radii) != 1:
+        raise RuntimeError("agreement reproduction mismatch: score radius changed")
+    radius = float(radii[0])
+    rows: list[dict[str, object]] = []
+    for fold_row in folds.sort("evaluation", "fold").iter_rows(named=True):
+        evaluation = str(fold_row["evaluation"])
+        fold = str(fold_row["fold"])
+        state = str(fold_row["state"])
+        for unit in ("station_day", "device_day"):
+            for model in _CORE_MODELS:
+                selected = predictions.filter(
+                    (pl.col("evaluation") == evaluation)
+                    & (pl.col("fold") == fold)
+                    & (pl.col("model") == model)
+                )
+                scored = _unit_predictions(selected, unit=unit) if not selected.is_empty() else selected
+                values = _score_values(scored) if state == "scored" else dict.fromkeys(_METRICS)
+                membership_hash = (
+                    _scored_identity(scored, unit=unit, truth=False)
+                    if state == "scored"
+                    else str(fold_row["test_membership_sha256"])
+                )
+                truth_hash = (
+                    _scored_identity(scored, unit=unit, truth=True)
+                    if state == "scored"
+                    else str(fold_row["test_truth_sha256"])
+                )
+                for metric in _METRICS:
+                    rows.append(
+                        {
+                            "scope": "fold",
+                            "evaluation": evaluation,
+                            "fold": fold,
+                            "radius_km": radius,
+                            "model": model,
+                            "unit": unit,
+                            "metric": metric,
+                            "state": state,
+                            "primary": unit == "station_day",
+                            "n": scored.height if state == "scored" else 0,
+                            "intended_n": int(fold_row["test_rows"]),
+                            "membership_sha256": membership_hash,
+                            "truth_sha256": truth_hash,
+                            "total_folds": 1,
+                            "scored_folds": int(state == "scored"),
+                            "unscored_folds_sha256": canonical_hash(
+                                [] if state == "scored" else [{"fold": fold, "state": state}]
+                            ),
+                            "value": values[metric],
+                        }
+                    )
+    for evaluation in ("held_station", "held_quarter", "joint"):
+        evaluation_folds = folds.filter(pl.col("evaluation") == evaluation)
+        unscored = evaluation_folds.filter(pl.col("state") != "scored").select(
+            "fold", "state"
+        )
+        selected_evaluation = predictions.filter(pl.col("evaluation") == evaluation)
+        overall_state = "scored" if not selected_evaluation.is_empty() else "unscored_no_scored_folds"
+        for unit in ("station_day", "device_day"):
+            for model in _CORE_MODELS:
+                selected = selected_evaluation.filter(pl.col("model") == model)
+                scored = _unit_predictions(selected, unit=unit) if not selected.is_empty() else selected
+                values = (
+                    _score_values(scored)
+                    if overall_state == "scored"
+                    else dict.fromkeys(_METRICS)
+                )
+                membership_hash = _scored_identity(scored, unit=unit, truth=False)
+                truth_hash = _scored_identity(scored, unit=unit, truth=True)
+                for metric in _METRICS:
+                    rows.append(
+                        {
+                            "scope": "overall",
+                            "evaluation": evaluation,
+                            "fold": None,
+                            "radius_km": radius,
+                            "model": model,
+                            "unit": unit,
+                            "metric": metric,
+                            "state": overall_state,
+                            "primary": unit == "station_day",
+                            "n": scored.height,
+                            "intended_n": int(evaluation_folds["test_rows"].sum()),
+                            "membership_sha256": membership_hash,
+                            "truth_sha256": truth_hash,
+                            "total_folds": evaluation_folds.height,
+                            "scored_folds": evaluation_folds.filter(
+                                pl.col("state") == "scored"
+                            ).height,
+                            "unscored_folds_sha256": canonical_hash(unscored.to_dicts()),
+                            "value": values[metric],
+                        }
+                    )
+    return rows
+
+
+def score_audit_predictions(
+    predictions: pl.DataFrame,
+    folds: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    scores = pl.DataFrame(
+        _score_rows(predictions, folds),
+        schema_overrides={"fold": pl.String, "value": pl.Float64},
+    ).sort(
+        "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
+    )
+    key_columns = ("scope", "evaluation", "fold", "unit", "metric")
+    baseline = scores.filter(
+        (pl.col("model") == "raw_micro") & (pl.col("state") == "scored")
+    )
+    delta_rows: list[dict[str, object]] = []
+    for candidate in CORE_FEATURES:
+        candidate_rows = scores.filter(
+            (pl.col("model") == candidate) & (pl.col("state") == "scored")
+        )
+        paired = candidate_rows.join(
+            baseline.select(
+                *key_columns,
+                pl.col("membership_sha256").alias("_baseline_membership"),
+                pl.col("truth_sha256").alias("_baseline_truth"),
+                pl.col("value").alias("_baseline_value"),
+            ),
+            on=key_columns,
+            how="inner",
+            nulls_equal=True,
+        )
+        if paired.height != candidate_rows.height or paired.filter(
+            (pl.col("membership_sha256") != pl.col("_baseline_membership"))
+            | (pl.col("truth_sha256") != pl.col("_baseline_truth"))
+        ).height:
+            raise RuntimeError("agreement reproduction mismatch: score pairing changed")
+        for row in paired.iter_rows(named=True):
+            value = float(row["value"]) - float(row["_baseline_value"])
+            metric = str(row["metric"])
+            improved = value > 0.0 if metric == "r2" else value < 0.0
+            delta_rows.append(
+                {
+                    **{
+                        name: row[name]
+                        for name in (
+                            "scope",
+                            "evaluation",
+                            "fold",
+                            "radius_km",
+                            "unit",
+                            "state",
+                            "primary",
+                            "n",
+                            "intended_n",
+                            "membership_sha256",
+                            "truth_sha256",
+                            "total_folds",
+                            "scored_folds",
+                            "unscored_folds_sha256",
+                        )
+                    },
+                    "model": candidate,
+                    "baseline_model": "raw_micro",
+                    "metric": metric,
+                    "value": value,
+                    "improved": improved,
+                }
+            )
+    deltas = pl.DataFrame(
+        delta_rows,
+        schema_overrides={"fold": pl.String, "value": pl.Float64},
+    ).sort(
+        "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
+    )
+    return scores, deltas
