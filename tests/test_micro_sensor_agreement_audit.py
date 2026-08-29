@@ -1117,6 +1117,141 @@ def all_training_inside_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
     return membership.filter(pl.col("device_id") != "outside"), geography
 
 
+def fusion_gate_fixture() -> tuple[pl.DataFrame, ...]:
+    fold_audit = pl.DataFrame(
+        {
+            "evaluation": ["held_station"],
+            "fold": ["held_station_00"],
+            "state": ["scored"],
+        }
+    )
+    scores = pl.DataFrame(
+        [
+            {
+                "scope": "overall",
+                "evaluation": "held_station",
+                "fold": None,
+                "model": model,
+                "unit": "station_day",
+                "metric": "rmse",
+                "state": "scored",
+                "value": value,
+            }
+            for model, value in (
+                ("raw_micro", 4.1894040401),
+                ("pooled_micro_ridge", 4.6688480256),
+                ("pooled_weather_ridge", 4.7206675171),
+            )
+        ],
+        schema_overrides={"fold": pl.String, "value": pl.Float64},
+    )
+    deltas = pl.DataFrame(
+        [
+            {
+                "scope": "overall",
+                "evaluation": "held_station",
+                "fold": None,
+                "model": model,
+                "baseline_model": "raw_micro",
+                "unit": unit,
+                "metric": "rmse",
+                "state": "scored",
+                "value": value,
+            }
+            for unit, values in (
+                ("station_day", (0.4794439855, 0.5312634770)),
+                ("device_day", (-1.3275839999, -1.2511376286)),
+            )
+            for model, value in zip(
+                ("pooled_micro_ridge", "pooled_weather_ridge"), values, strict=True
+            )
+        ],
+        schema_overrides={"fold": pl.String, "value": pl.Float64},
+    )
+    uncertainty = pl.DataFrame(
+        [
+            {
+                "candidate": model,
+                "comparator": "raw_micro",
+                "unit": "station_day",
+                "state": "descriptive_station_cluster_bootstrap",
+                "observed_delta_rmse": observed,
+                "delta_rmse_ci_low": low,
+                "delta_rmse_ci_high": high,
+            }
+            for model, observed, low, high in (
+                ("pooled_micro_ridge", 0.4794439855, -0.35110, 1.13793),
+                ("pooled_weather_ridge", 0.5312634770, -0.29861, 1.17681),
+            )
+        ]
+    )
+    control_scores = pl.DataFrame(
+        {
+            "control": ["neighbor_exclusion"],
+            "state": ["scored"],
+            "value": [0.5312634770],
+        }
+    )
+    control_summary = pl.DataFrame(
+        {
+            "control": ["neighbor_exclusion"],
+            "state": ["complete"],
+            "value": [0.5312634770],
+        }
+    )
+    return fold_audit, scores, deltas, uncertainty, control_scores, control_summary
+
+
+def synthetic_gate_rows(state: str) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "condition_id": list(audit.FUSION_CONDITION_IDS),
+            "state": [state] * len(audit.FUSION_CONDITION_IDS),
+            "reason": ["synthetic"] * len(audit.FUSION_CONDITION_IDS),
+            "evidence_sha256": ["a" * 64] * len(audit.FUSION_CONDITION_IDS),
+            "overall_verdict": ["go" if state == "pass" else "stop"]
+            * len(audit.FUSION_CONDITION_IDS),
+        }
+    )
+
+
+def assembled_result_fixture() -> audit.AgreementAuditResult:
+    fold_audit, scores, deltas, uncertainty, control_scores, control_summary = (
+        fusion_gate_fixture()
+    )
+    gate = audit.evaluate_fusion_gate(
+        fold_audit, scores, deltas, uncertainty, control_scores, control_summary
+    )
+    summary = {
+        "primary_station_day_rmse": {
+            row["model"]: row["value"]
+            for row in scores.iter_rows(named=True)
+        },
+        "secondary_device_day_delta_rmse": {
+            row["model"]: row["value"]
+            for row in deltas.filter(pl.col("unit") == "device_day").iter_rows(
+                named=True
+            )
+        },
+        "overall_verdict": audit.overall_fusion_verdict(gate),
+    }
+    result = audit.AgreementAuditResult(
+        fold_audit=fold_audit,
+        scores=scores,
+        deltas=deltas,
+        uncertainty=uncertainty,
+        control_scores=control_scores,
+        control_summary=control_summary,
+        fusion_gate=gate,
+        summary=summary,
+        manifest={"schema_version": 1, "analysis": "micro_sensor_agreement_audit"},
+    )
+    return replace(
+        result,
+        manifest={**result.manifest, "generation_sha256": audit.result_identity(result)},
+    )
+
+
 def test_shipped_config_pins_the_audit_protocol() -> None:
     config = load_micro_sensor_agreement_audit_config()
     assert config.protocol_revision == 1
@@ -1409,3 +1544,61 @@ def test_neighbor_exclusion_persists_a_new_unestimable_fold_state() -> None:
     )
     assert evidence["state"][0] == "unscored_empty_train_after_neighbor_exclusion"
     assert evidence["remaining_train_rows"][0] == 0
+
+
+def test_fusion_gate_has_exactly_seven_unique_conditions() -> None:
+    gate = audit.evaluate_fusion_gate(*fusion_gate_fixture())
+    assert gate.height == 7
+    assert gate["condition_id"].n_unique() == 7
+    assert set(gate["condition_id"]) == set(audit.FUSION_CONDITION_IDS)
+
+
+def test_current_evidence_returns_stop_with_conditions_one_through_six_failed() -> None:
+    gate = audit.evaluate_fusion_gate(*fusion_gate_fixture())
+    states = dict(gate.select("condition_id", "state").iter_rows())
+    assert all(
+        states[condition] == "fail" for condition in audit.FUSION_CONDITION_IDS[:6]
+    )
+    assert states["field_spatial_buffer"] == "unmet"
+    assert gate["overall_verdict"].unique().to_list() == ["stop"]
+
+
+def test_fusion_gate_passes_only_when_every_condition_is_pass() -> None:
+    gate = synthetic_gate_rows(state="pass")
+    assert audit.overall_fusion_verdict(gate) == "go"
+    assert (
+        audit.overall_fusion_verdict(
+            gate.with_columns(
+                pl.when(pl.col("condition_id") == "multi_year_drift")
+                .then(pl.lit("unmet"))
+                .otherwise(pl.col("state"))
+                .alias("state")
+            )
+        )
+        == "stop"
+    )
+
+
+def test_summary_preserves_device_day_improvement_and_station_day_reversal() -> None:
+    result = assembled_result_fixture()
+    primary = result.summary["primary_station_day_rmse"]
+    secondary = result.summary["secondary_device_day_delta_rmse"]
+    assert primary["raw_micro"] == pytest.approx(4.189404, abs=1e-6)
+    assert primary["pooled_micro_ridge"] == pytest.approx(4.668848, abs=1e-6)
+    assert primary["pooled_weather_ridge"] == pytest.approx(4.720668, abs=1e-6)
+    assert secondary["pooled_micro_ridge"] < 0.0
+    assert secondary["pooled_weather_ridge"] < 0.0
+    assert result.summary["overall_verdict"] == "stop"
+
+
+@pytest.mark.parametrize("changed", ["scores", "control_scores"])
+def test_generation_identity_binds_scientific_table_content(changed: str) -> None:
+    result = assembled_result_fixture()
+    frame = getattr(result, changed).with_columns(
+        pl.when(pl.int_range(pl.len()) == 0)
+        .then(pl.col("value") + 1.0)
+        .otherwise(pl.col("value"))
+        .alias("value")
+    )
+    mutated = replace(result, **{changed: frame})
+    assert result.manifest["generation_sha256"] != audit.result_identity(mutated)

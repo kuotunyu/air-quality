@@ -6,8 +6,9 @@ import importlib
 import json
 import math
 import re
-from dataclasses import dataclass
-from datetime import timedelta
+import subprocess
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
@@ -233,6 +234,15 @@ DENSITY_FEATURES = (
     "trio_observed_hours",
 )
 EARTH_RADIUS_KM = 6371.0088
+FUSION_CONDITION_IDS = (
+    "colocated_truth",
+    "four_seasons",
+    "validation_regimes",
+    "multi_year_drift",
+    "prediction_location_time",
+    "primary_scale_improvement",
+    "field_spatial_buffer",
+)
 AUDIT_UNCERTAINTY_SCHEMA: tuple[
     tuple[str, pl.DataType | type[pl.DataType]], ...
 ] = (
@@ -252,6 +262,29 @@ AUDIT_UNCERTAINTY_SCHEMA: tuple[
     ("observed_delta_mae", pl.Float64),
     ("delta_mae_ci_low", pl.Float64),
     ("delta_mae_ci_high", pl.Float64),
+)
+AUDIT_CONTROL_SCORE_SCHEMA: tuple[
+    tuple[str, pl.DataType | type[pl.DataType]], ...
+] = (
+    ("control", pl.String),
+    ("variant", pl.String),
+    ("replicate", pl.Int64),
+    ("evaluation", pl.String),
+    ("fold", pl.String),
+    ("buffer_km", pl.Float64),
+    ("shift_days", pl.Int64),
+    ("state", pl.String),
+    ("reason", pl.String),
+    ("model", pl.String),
+    ("comparator", pl.String),
+    ("unit", pl.String),
+    ("metric", pl.String),
+    ("value", pl.Float64),
+    ("n", pl.Int64),
+    ("intended_n", pl.Int64),
+    ("membership_sha256", pl.String),
+    ("truth_sha256", pl.String),
+    ("details_sha256", pl.String),
 )
 
 
@@ -309,6 +342,19 @@ class FrozenAuditInputs:
     satellite_panel: pl.DataFrame
     geography: pl.DataFrame
     input_files: tuple[InputFile, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementAuditResult:
+    fold_audit: pl.DataFrame
+    scores: pl.DataFrame
+    deltas: pl.DataFrame
+    uncertainty: pl.DataFrame
+    control_scores: pl.DataFrame
+    control_summary: pl.DataFrame
+    fusion_gate: pl.DataFrame
+    summary: dict[str, Any]
+    manifest: dict[str, Any]
 
 
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
@@ -2104,6 +2150,8 @@ def _paired_diagnostic_rows(
         raise RuntimeError("diagnostic model pairing changed")
     rows: list[dict[str, object]] = []
     for unit in ("station_day", "device_day"):
+        membership_hash = _scored_identity(candidate, unit=unit, truth=False)
+        truth_hash = _scored_identity(candidate, unit=unit, truth=True)
         if unit == "station_day":
             scored = paired.group_by("evaluation", "fold", "station_name", "date").agg(
                 pl.col("y_true").n_unique().alias("_truth_values"),
@@ -2141,6 +2189,8 @@ def _paired_diagnostic_rows(
                     "metric": metric,
                     "value": value,
                     "n": scored.height,
+                    "membership_sha256": membership_hash,
+                    "truth_sha256": truth_hash,
                 }
             )
     return rows
@@ -2224,6 +2274,8 @@ def run_satellite_context_control(
         "metric": pl.String,
         "value": pl.Float64,
         "n": pl.Int64,
+        "membership_sha256": pl.String,
+        "truth_sha256": pl.String,
     }
     return pl.DataFrame(rows, schema=schema).sort(
         "variant", "replicate", "unit", "metric", nulls_last=True
@@ -2574,7 +2626,9 @@ def summarize_negative_controls(
     }
     family_complete = {
         "station_label": control_scores.filter(
-            (pl.col("control") == "station_label") & (pl.col("state") == "scored")
+            (pl.col("control") == "station_label")
+            & (pl.col("state") == "scored")
+            & pl.col("replicate").is_not_null()
         )["replicate"].n_unique()
         == config.permutation_draws,
         "target_shift": set(
@@ -2613,7 +2667,11 @@ def summarize_negative_controls(
         identity = group.select(*group_columns).row(0, named=True)
         control_name = str(identity["control"])
         observed = group.filter(pl.col("variant").str.starts_with("observed"))
-        null = group.filter(pl.col("variant").str.contains("permuted|within_airzone"))
+        null = (
+            group.filter(pl.col("replicate").is_not_null())
+            if control_name == "station_label"
+            else group.filter(pl.col("variant").str.contains("permuted"))
+        )
         finite = group.filter((pl.col("state") == "scored") & pl.col("value").is_finite())
         valid_null = null.filter(
             (pl.col("state") == "scored") & pl.col("value").is_finite()
@@ -2695,3 +2753,704 @@ def summarize_negative_controls(
             "empirical_lower_tail_p": pl.Float64,
         },
     ).sort(*group_columns)
+
+
+def _observed_satellite_predictions(
+    control: tuple[pl.DataFrame, ...],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    memberships, folds, geography, panel = control[:4]
+    with_month = memberships.with_columns(pl.col("date").dt.month_start().alias("month"))
+    eligible_months = (
+        with_month.select("station_name", "month")
+        .unique()
+        .join(geography.select("station_name", "airzone_official"), on="station_name")
+    )
+    context = build_satellite_context(panel, eligible_months)
+    joined = with_month.join(
+        context.select("station_name", "month", *SATELLITE_FEATURES),
+        on=("station_name", "month"),
+        how="left",
+    )
+    if joined.select(
+        pl.any_horizontal(pl.col(feature).is_null() for feature in SATELLITE_FEATURES).any()
+    ).item():
+        raise RuntimeError("observed satellite context is missing from memberships")
+    return _fit_named_ridge(
+        joined,
+        folds,
+        features=(*CORE_FEATURES["pooled_weather_ridge"], *SATELLITE_FEATURES),
+        model="pooled_weather_satellite_ridge",
+        config=config,
+    )
+
+
+def _density_control_score_rows(predictions: pl.DataFrame) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for model in sorted(str(value) for value in predictions["model"].unique()):
+        selected = predictions.filter(pl.col("model") == model)
+        feature_values = selected["model_features"].unique().to_list()
+        if len(feature_values) != 1:
+            raise RuntimeError("acquisition-density model feature identity changed")
+        for unit in ("station_day", "device_day"):
+            if unit == "station_day":
+                scored = selected.group_by(
+                    "evaluation", "fold", "station_name", "date"
+                ).agg(
+                    pl.col("y_true").n_unique().alias("_truth_values"),
+                    pl.col("y_true").first(),
+                    pl.col("y_pred").mean(),
+                )
+                if scored.filter(pl.col("_truth_values") != 1).height:
+                    raise RuntimeError("acquisition-density station-day truth changed")
+                scored = scored.drop("_truth_values").sort("station_name", "date")
+            else:
+                scored = selected.sort("station_name", "date", "device_id")
+            values = _score_values(scored)
+            for metric in ("rmse", "mae"):
+                rows.append(
+                    {
+                        "control": "acquisition_density",
+                        "variant": model,
+                        "replicate": None,
+                        "evaluation": "held_station",
+                        "fold": None,
+                        "buffer_km": None,
+                        "shift_days": None,
+                        "state": "scored",
+                        "reason": "scored",
+                        "model": model,
+                        "comparator": None,
+                        "unit": unit,
+                        "metric": metric,
+                        "value": values[metric],
+                        "n": scored.height,
+                        "intended_n": scored.height,
+                        "membership_sha256": _scored_identity(
+                            scored, unit=unit, truth=False
+                        ),
+                        "truth_sha256": _scored_identity(
+                            scored, unit=unit, truth=True
+                        ),
+                        "details_sha256": canonical_hash(
+                            {"model_features": feature_values[0]}
+                        ),
+                    }
+                )
+    return rows
+
+
+def _normalize_control_scores(
+    deltas: pl.DataFrame,
+    station_label: pl.DataFrame,
+    target_shift: pl.DataFrame,
+    satellite: pl.DataFrame,
+    density_predictions: pl.DataFrame,
+    neighbor: pl.DataFrame,
+) -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    observed = deltas.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "held_station")
+        & (pl.col("baseline_model") == "raw_micro")
+        & (pl.col("unit") == "station_day")
+        & pl.col("metric").is_in(("rmse", "mae"))
+        & (pl.col("state") == "scored")
+    )
+    for row in observed.iter_rows(named=True):
+        rows.append(
+            {
+                "control": "station_label",
+                "variant": "observed_targets",
+                "replicate": None,
+                "evaluation": "held_station",
+                "fold": None,
+                "buffer_km": None,
+                "shift_days": None,
+                "state": "scored",
+                "reason": "observed_unpermuted_targets",
+                "model": row["model"],
+                "comparator": "raw_micro",
+                "unit": row["unit"],
+                "metric": f"delta_{row['metric']}",
+                "value": row["value"],
+                "n": row["n"],
+                "intended_n": row["intended_n"],
+                "membership_sha256": row["membership_sha256"],
+                "truth_sha256": row["truth_sha256"],
+                "details_sha256": canonical_hash({"source": "audit_deltas"}),
+            }
+        )
+    for row in station_label.iter_rows(named=True):
+        rows.append(
+            {
+                "control": "station_label",
+                "variant": row["variant"],
+                "replicate": row["replicate"],
+                "evaluation": "held_station",
+                "fold": None,
+                "buffer_km": None,
+                "shift_days": None,
+                "state": row["state"],
+                "reason": row.get("reason") or row["state"],
+                "model": row["model"],
+                "comparator": row["comparator"],
+                "unit": row["unit"],
+                "metric": row["metric"],
+                "value": row["value"],
+                "n": row["scored_rows"],
+                "intended_n": row["intended_rows"],
+                "membership_sha256": row["membership_sha256"],
+                "truth_sha256": row["truth_sha256"],
+                "details_sha256": row.get("issue") or canonical_hash([]),
+            }
+        )
+    for row in target_shift.iter_rows(named=True):
+        rows.append(
+            {
+                "control": "target_shift",
+                "variant": row["variant"],
+                "replicate": None,
+                "evaluation": "held_station",
+                "fold": None,
+                "buffer_km": None,
+                "shift_days": row["shift_days"],
+                "state": row["state"],
+                "reason": row["state"],
+                "model": row["model"],
+                "comparator": row["comparator"],
+                "unit": row["unit"],
+                "metric": row["metric"],
+                "value": row["value"],
+                "n": row["scored_rows"],
+                "intended_n": row["intended_rows"],
+                "membership_sha256": row["membership_sha256"],
+                "truth_sha256": row["truth_sha256"],
+                "details_sha256": canonical_hash(
+                    {
+                        "intended_dates": row["intended_dates"],
+                        "scored_dates": row["scored_dates"],
+                        "stations": row["stations"],
+                        "folds": row["folds"],
+                    }
+                ),
+            }
+        )
+    for row in satellite.iter_rows(named=True):
+        rows.append(
+            {
+                "control": "satellite_context",
+                "variant": row["variant"],
+                "replicate": row["replicate"],
+                "evaluation": "held_station",
+                "fold": None,
+                "buffer_km": None,
+                "shift_days": None,
+                "state": row["state"],
+                "reason": row["state"],
+                "model": row["model"],
+                "comparator": row["comparator"],
+                "unit": row["unit"],
+                "metric": row["metric"],
+                "value": row["value"],
+                "n": row["n"],
+                "intended_n": row["n"],
+                "membership_sha256": row["membership_sha256"],
+                "truth_sha256": row["truth_sha256"],
+                "details_sha256": canonical_hash(
+                    {"satellite_features": SATELLITE_FEATURES}
+                ),
+            }
+        )
+    rows.extend(_density_control_score_rows(density_predictions))
+    evidence_columns = (
+        "coordinate_devices",
+        "source_train_rows",
+        "remaining_train_rows",
+        "test_rows",
+        "removed_devices",
+        "removed_train_rows",
+        "remaining_train_devices",
+        "remaining_train_stations",
+        "source_train_membership_sha256",
+        "train_membership_sha256",
+    )
+    for row in neighbor.iter_rows(named=True):
+        rows.append(
+            {
+                "control": "neighbor_exclusion",
+                "variant": row["variant"],
+                "replicate": None,
+                "evaluation": row["evaluation"],
+                "fold": row["fold"],
+                "buffer_km": row["buffer_km"],
+                "shift_days": None,
+                "state": row["state"],
+                "reason": row["reason"],
+                "model": row["model"],
+                "comparator": row["comparator"],
+                "unit": row["unit"],
+                "metric": row["metric"],
+                "value": row["value"],
+                "n": row["n"],
+                "intended_n": row["test_rows"],
+                "membership_sha256": row["test_membership_sha256"],
+                "truth_sha256": row["test_truth_sha256"],
+                "details_sha256": canonical_hash(
+                    {name: row[name] for name in evidence_columns}
+                ),
+            }
+        )
+    return pl.DataFrame(rows, schema=dict(AUDIT_CONTROL_SCORE_SCHEMA)).sort(
+        "control",
+        "variant",
+        "replicate",
+        "fold",
+        "model",
+        "unit",
+        "metric",
+        nulls_last=True,
+    )
+
+
+def _json_scalar(value: object) -> object:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _semantic_frame_hash(frame: pl.DataFrame) -> str:
+    if frame.is_empty():
+        rows: list[dict[str, object]] = []
+    else:
+        normalized = frame.sort(*frame.columns, nulls_last=True)
+        rows = [
+            {name: _json_scalar(value) for name, value in row.items()}
+            for row in normalized.to_dicts()
+        ]
+    return canonical_hash(
+        {
+            "schema": [(name, str(dtype)) for name, dtype in frame.schema.items()],
+            "rows": rows,
+        }
+    )
+
+
+def overall_fusion_verdict(gate: pl.DataFrame) -> str:
+    required = {"condition_id", "state"}
+    if required - set(gate.columns):
+        raise RuntimeError("fusion gate schema changed")
+    if (
+        gate.height != len(FUSION_CONDITION_IDS)
+        or gate["condition_id"].n_unique() != len(FUSION_CONDITION_IDS)
+        or set(gate["condition_id"]) != set(FUSION_CONDITION_IDS)
+    ):
+        raise RuntimeError("fusion gate condition inventory changed")
+    states = set(gate["state"])
+    if not states <= {"pass", "fail", "unmet"}:
+        raise RuntimeError("fusion gate state changed")
+    return "go" if states == {"pass"} else "stop"
+
+
+def evaluate_fusion_gate(
+    fold_audit: pl.DataFrame,
+    scores: pl.DataFrame,
+    deltas: pl.DataFrame,
+    uncertainty: pl.DataFrame,
+    control_scores: pl.DataFrame,
+    control_summary: pl.DataFrame,
+) -> pl.DataFrame:
+    required_deltas = {
+        "scope",
+        "evaluation",
+        "model",
+        "baseline_model",
+        "unit",
+        "metric",
+        "state",
+        "value",
+    }
+    required_uncertainty = {
+        "candidate",
+        "comparator",
+        "unit",
+        "state",
+        "delta_rmse_ci_high",
+    }
+    if required_deltas - set(deltas.columns) or required_uncertainty - set(
+        uncertainty.columns
+    ):
+        raise RuntimeError("fusion gate evidence schema changed")
+    regimes = set(
+        fold_audit.filter(pl.col("state") == "scored")["evaluation"].unique()
+    )
+    regimes_pass = regimes == {"held_station", "held_quarter", "joint"}
+    primary_deltas = deltas.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "held_station")
+        & (pl.col("baseline_model") == "raw_micro")
+        & (pl.col("unit") == "station_day")
+        & (pl.col("metric") == "rmse")
+        & (pl.col("state") == "scored")
+        & pl.col("model").is_in(CORE_FEATURES)
+    ).select("model", "value")
+    intervals = uncertainty.filter(
+        (pl.col("comparator") == "raw_micro")
+        & (pl.col("unit") == "station_day")
+        & pl.col("candidate").is_in(CORE_FEATURES)
+    ).select(
+        pl.col("candidate").alias("model"),
+        "delta_rmse_ci_high",
+    )
+    primary_evidence = primary_deltas.join(intervals, on="model", how="inner")
+    primary_pass = (
+        primary_evidence.height == len(CORE_FEATURES)
+        and primary_evidence.filter(
+            (pl.col("value") < 0.0) & (pl.col("delta_rmse_ci_high") < 0.0)
+        ).height
+        == len(CORE_FEATURES)
+    )
+    table_hashes = {
+        "fold_audit": _semantic_frame_hash(fold_audit),
+        "scores": _semantic_frame_hash(scores),
+        "deltas": _semantic_frame_hash(deltas),
+        "uncertainty": _semantic_frame_hash(uncertainty),
+        "control_scores": _semantic_frame_hash(control_scores),
+        "control_summary": _semantic_frame_hash(control_summary),
+    }
+    definitions = (
+        (
+            "colocated_truth",
+            "fail",
+            "nearest_reference_station_is_not_colocated_independent_truth",
+            ("scores",),
+        ),
+        (
+            "four_seasons",
+            "fail",
+            "frozen_evidence_is_q4_only",
+            ("fold_audit",),
+        ),
+        (
+            "validation_regimes",
+            "pass" if regimes_pass else "fail",
+            (
+                "all_validation_regimes_estimable"
+                if regimes_pass
+                else "held_time_station_and_joint_regimes_not_all_estimable"
+            ),
+            ("fold_audit",),
+        ),
+        (
+            "multi_year_drift",
+            "fail",
+            "no_multi_year_device_or_model_drift_evidence",
+            ("scores",),
+        ),
+        (
+            "prediction_location_time",
+            "fail",
+            "satellite_context_is_monthly_at_reference_station",
+            ("control_scores", "control_summary"),
+        ),
+        (
+            "primary_scale_improvement",
+            "pass" if primary_pass else "fail",
+            (
+                "station_day_candidates_improve_with_interval_below_zero"
+                if primary_pass
+                else "station_day_improvement_with_clustered_uncertainty_not_met"
+            ),
+            ("deltas", "uncertainty"),
+        ),
+        (
+            "field_spatial_buffer",
+            "unmet",
+            "no_field_product_exists_for_spatial_buffer_validation",
+            ("control_scores", "control_summary"),
+        ),
+    )
+    rows = [
+        {
+            "condition_id": condition_id,
+            "state": state,
+            "reason": reason,
+            "evidence_sha256": canonical_hash(
+                {name: table_hashes[name] for name in evidence_tables}
+            ),
+        }
+        for condition_id, state, reason, evidence_tables in definitions
+    ]
+    gate = pl.DataFrame(rows).sort("condition_id")
+    verdict = overall_fusion_verdict(gate)
+    return gate.with_columns(pl.lit(verdict).alias("overall_verdict")).sort(
+        "condition_id"
+    )
+
+
+def result_identity(result: AgreementAuditResult) -> str:
+    transient_manifest_fields = {
+        "generated_at",
+        "complete",
+        "generation_sha256",
+        "members",
+        "tables",
+    }
+    manifest_identity = {
+        key: value
+        for key, value in result.manifest.items()
+        if key not in transient_manifest_fields
+    }
+    return canonical_hash(
+        {
+            "manifest": manifest_identity,
+            "tables": {
+                name: _semantic_frame_hash(getattr(result, name))
+                for name in (
+                    "fold_audit",
+                    "scores",
+                    "deltas",
+                    "uncertainty",
+                    "control_scores",
+                    "control_summary",
+                    "fusion_gate",
+                )
+            },
+            "summary": result.summary,
+        }
+    )
+
+
+def _git_evidence() -> dict[str, object]:
+    repository = Path(__file__).resolve().parents[3]
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError("agreement audit git evidence is unavailable") from exc
+    if _SHA256.fullmatch(revision) is None and re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError("agreement audit git revision is invalid")
+    return {
+        "revision": revision,
+        "dirty": bool(status.strip()),
+        "status_sha256": canonical_hash(status.splitlines()),
+    }
+
+
+def _audit_summary(
+    scores: pl.DataFrame,
+    deltas: pl.DataFrame,
+    uncertainty: pl.DataFrame,
+    control_summary: pl.DataFrame,
+    fusion_gate: pl.DataFrame,
+    config: AgreementAuditConfig,
+) -> dict[str, Any]:
+    primary = scores.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "held_station")
+        & (pl.col("unit") == "station_day")
+        & (pl.col("metric") == "rmse")
+        & (pl.col("state") == "scored")
+        & pl.col("model").is_in(_CORE_MODELS)
+    ).select("model", "value")
+    secondary = deltas.filter(
+        (pl.col("scope") == "overall")
+        & (pl.col("evaluation") == "held_station")
+        & (pl.col("unit") == "device_day")
+        & (pl.col("metric") == "rmse")
+        & (pl.col("state") == "scored")
+        & pl.col("model").is_in(CORE_FEATURES)
+    ).select("model", "value")
+    if primary.height != len(_CORE_MODELS) or secondary.height != len(CORE_FEATURES):
+        raise RuntimeError("agreement audit summary score inventory changed")
+    family_states = (
+        control_summary.group_by("control")
+        .agg(
+            pl.col("state").eq("complete").all().alias("complete"),
+            pl.col("state").ne("complete").sum().alias("failed_rows"),
+        )
+        .sort("control")
+    )
+    return {
+        "schema_version": 1,
+        "analysis": "micro_sensor_agreement_audit",
+        "protocol_revision": config.protocol_revision,
+        "scope": "frozen_q4_nearby_reference_agreement",
+        "primary_unit": "station_day",
+        "secondary_unit": "device_day",
+        "primary_station_day_rmse": dict(primary.iter_rows()),
+        "secondary_device_day_delta_rmse": dict(secondary.iter_rows()),
+        "station_cluster_uncertainty": uncertainty.sort(
+            "candidate", "comparator"
+        ).to_dicts(),
+        "negative_control_families": family_states.to_dicts(),
+        "fusion_gate": fusion_gate.select(
+            "condition_id", "state", "reason", "evidence_sha256"
+        ).sort("condition_id").to_dicts(),
+        "overall_verdict": overall_fusion_verdict(fusion_gate),
+        "claim_boundary": dict(config.claim_boundary),
+    }
+
+
+def _manifest_table_identity(frame: pl.DataFrame) -> dict[str, object]:
+    return {
+        "rows": frame.height,
+        "schema": {name: str(dtype) for name, dtype in frame.schema.items()},
+        "semantic_sha256": _semantic_frame_hash(frame),
+    }
+
+
+def run_micro_sensor_agreement_audit(
+    data_root: Path,
+    config: AgreementAuditConfig | None = None,
+) -> AgreementAuditResult:
+    selected_config = config or load_micro_sensor_agreement_audit_config()
+    inputs = load_frozen_agreement_audit_inputs(data_root, selected_config)
+    fold_audit, memberships = reconstruct_agreement_folds(inputs, selected_config)
+    predictions = refit_core_candidates(memberships, fold_audit, selected_config)
+    scores, deltas = score_audit_predictions(predictions, fold_audit)
+    control = (
+        memberships,
+        fold_audit,
+        inputs.geography,
+        inputs.satellite_panel,
+    )
+    density_predictions = run_acquisition_density_baselines(control, selected_config)
+    satellite_predictions = _observed_satellite_predictions(control, selected_config)
+    shared_prediction_columns = (
+        "evaluation",
+        "fold",
+        "station_name",
+        "date",
+        "device_id",
+        "model",
+        "y_true",
+        "y_pred",
+    )
+    uncertainty_predictions = pl.concat(
+        [
+            predictions.select(*shared_prediction_columns),
+            density_predictions.select(*shared_prediction_columns),
+            satellite_predictions.select(*shared_prediction_columns),
+        ]
+    ).sort("evaluation", "fold", "model", "station_name", "date", "device_id")
+    uncertainty_pairs = (
+        ("pooled_micro_ridge", "raw_micro"),
+        ("pooled_weather_ridge", "raw_micro"),
+        ("pooled_micro_ridge", "training_mean"),
+        ("pooled_weather_ridge", "training_mean"),
+        ("pooled_weather_satellite_ridge", "training_mean"),
+        ("acquisition_density_ridge", "training_mean"),
+    )
+    uncertainty = station_cluster_bootstrap(
+        uncertainty_predictions, uncertainty_pairs, selected_config
+    )
+    station_label = run_station_label_control(control, selected_config)
+    target_shift = run_target_shift_controls(control, selected_config)
+    satellite = run_satellite_context_control(control, selected_config)
+    neighbor = run_neighbor_exclusion_controls(control, selected_config)
+    control_scores = _normalize_control_scores(
+        deltas,
+        station_label,
+        target_shift,
+        satellite,
+        density_predictions,
+        neighbor,
+    )
+    control_summary = summarize_negative_controls(control_scores, selected_config)
+    fusion_gate = evaluate_fusion_gate(
+        fold_audit,
+        scores,
+        deltas,
+        uncertainty,
+        control_scores,
+        control_summary,
+    )
+    summary = _audit_summary(
+        scores,
+        deltas,
+        uncertainty,
+        control_summary,
+        fusion_gate,
+        selected_config,
+    )
+    reloaded = load_frozen_agreement_audit_inputs(data_root, selected_config)
+    original_identity = tuple(
+        (item.role, item.relative_path, item.bytes, item.sha256)
+        for item in inputs.input_files
+    )
+    reloaded_identity = tuple(
+        (item.role, item.relative_path, item.bytes, item.sha256)
+        for item in reloaded.input_files
+    )
+    if original_identity != reloaded_identity:
+        raise RuntimeError("frozen audit inputs changed during computation")
+    input_identity = [
+        {
+            "role": item.role,
+            "relative_path": item.relative_path,
+            "bytes": item.bytes,
+            "sha256": item.sha256,
+        }
+        for item in inputs.input_files
+    ]
+    manifest = {
+        "schema_version": 1,
+        "analysis": "micro_sensor_agreement_audit",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "complete": False,
+        "config": asdict(selected_config),
+        "inputs": input_identity,
+        "git": _git_evidence(),
+        "claim_boundary": dict(selected_config.claim_boundary),
+    }
+    provisional = AgreementAuditResult(
+        fold_audit=fold_audit.sort("evaluation", "fold"),
+        scores=scores.sort(
+            "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
+        ),
+        deltas=deltas.sort(
+            "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
+        ),
+        uncertainty=uncertainty.sort("candidate", "comparator"),
+        control_scores=control_scores,
+        control_summary=control_summary,
+        fusion_gate=fusion_gate,
+        summary=summary,
+        manifest=manifest,
+    )
+    tables = {
+        name: _manifest_table_identity(getattr(provisional, name))
+        for name in (
+            "fold_audit",
+            "scores",
+            "deltas",
+            "uncertainty",
+            "control_scores",
+            "control_summary",
+            "fusion_gate",
+        )
+    }
+    generation_sha256 = result_identity(provisional)
+    return replace(
+        provisional,
+        manifest={
+            **manifest,
+            "tables": tables,
+            "generation_sha256": generation_sha256,
+        },
+    )
