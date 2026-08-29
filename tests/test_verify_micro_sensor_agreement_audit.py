@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import polars as pl
@@ -16,8 +17,41 @@ from twair.net import sha256_file
 
 @pytest.fixture
 def generation(tmp_path: Path) -> Path:
+    result = assembled_result_fixture()
+    control_families = (
+        "station_label",
+        "target_shift",
+        "satellite_context",
+        "acquisition_density",
+        "neighbor_exclusion",
+    )
+    result = replace(
+        result,
+        control_scores=pl.DataFrame(
+            {
+                "control": list(control_families),
+                "state": ["scored"] * len(control_families),
+                "value": [0.1] * len(control_families),
+            }
+        ),
+        control_summary=pl.DataFrame(
+            {
+                "control": list(control_families),
+                "state": ["complete"] * len(control_families),
+                "observed_value": [0.1] * len(control_families),
+            }
+        ),
+        manifest={
+            "schema_version": 1,
+            "analysis": "micro_sensor_agreement_audit",
+        },
+    )
+    result = replace(
+        result,
+        manifest={**result.manifest, "generation_sha256": audit.result_identity(result)},
+    )
     written = audit.write_micro_sensor_agreement_audit_result(
-        assembled_result_fixture(), output_root=tmp_path / "audit"
+        result, output_root=tmp_path / "audit"
     )
     return written["manifest.json"].parent
 

@@ -1462,7 +1462,7 @@ def analyze_micro_sensor_agreement_audit(
     for condition_id in FUSION_CONDITION_IDS:
         console.print(f"gate {condition_id}: {states[condition_id]}")
     console.print(f"verdict: {summary['overall_verdict']}")
-    console.print(f"generation: {published.directory}")
+    console.print(f"generation: {published.directory}", soft_wrap=True)
 
 
 @analysis_app.command("micro-sensor-benchmark")

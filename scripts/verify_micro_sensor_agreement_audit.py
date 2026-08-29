@@ -325,11 +325,23 @@ def _validate_uncertainty(frame: pl.DataFrame, deltas: pl.DataFrame) -> None:
 
 def _validate_controls(scores: pl.DataFrame, summary: pl.DataFrame) -> None:
     _require_columns(scores, {"control", "state", "value"}, label="control scores")
-    _require_columns(summary, {"control", "state", "value"}, label="control summary")
+    _require_columns(
+        summary,
+        {"control", "state", "observed_value"},
+        label="control summary",
+    )
     if scores.is_empty() or summary.is_empty():
         raise VerificationError("control row inventory changed")
     if set(scores["control"]) != set(summary["control"]):
         raise VerificationError("control family inventory changed")
+    if set(summary["control"]) != {
+        "station_label",
+        "target_shift",
+        "satellite_context",
+        "acquisition_density",
+        "neighbor_exclusion",
+    }:
+        raise VerificationError("production control family inventory changed")
     if not set(summary["state"]) <= {"complete"}:
         raise VerificationError("control summary is incomplete")
     _validate_hash_columns(scores, label="control scores")

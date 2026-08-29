@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -108,6 +109,11 @@ def test_success_text_reports_primary_scale_and_stop_verdict(
     assert result.stdout.index("station-day") < result.stdout.index("device-day")
     assert "verdict: stop" in result.stdout
     assert "generation:" in result.stdout
+    generation_lines = [
+        line for line in result.stdout.splitlines() if line.startswith("generation: ")
+    ]
+    assert len(generation_lines) == 1
+    assert re.search(r"[0-9a-f]{64}$", generation_lines[0])
 
 
 def test_failed_run_prints_no_generation_or_success_claim(
