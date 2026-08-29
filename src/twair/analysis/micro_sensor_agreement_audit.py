@@ -3077,7 +3077,7 @@ def _normalize_audit_floats(frame: pl.DataFrame) -> pl.DataFrame:
     for name, dtype in frame.schema.items():
         if dtype not in {pl.Float32, pl.Float64}:
             continue
-        rounded = pl.col(name).round(12)
+        rounded = pl.col(name).round(13)
         expressions.append(
             pl.when(rounded == 0.0)
             .then(pl.lit(0.0).cast(dtype))
