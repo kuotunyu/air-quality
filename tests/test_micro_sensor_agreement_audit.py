@@ -5,6 +5,8 @@ import copy
 import json
 import math
 import re
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import date, timedelta
 from hashlib import sha256
@@ -1252,6 +1254,37 @@ def assembled_result_fixture() -> audit.AgreementAuditResult:
     )
 
 
+@pytest.fixture
+def prepared_audit_result() -> audit.AgreementAuditResult:
+    return assembled_result_fixture()
+
+
+def run_lock_subprocess(path: Path) -> subprocess.CompletedProcess[str]:
+    script = (
+        "from pathlib import Path\n"
+        "from twair.analysis.micro_sensor_agreement_audit import "
+        "agreement_audit_run_lock\n"
+        "try:\n"
+        "    with agreement_audit_run_lock(Path(__import__('sys').argv[1])):\n"
+        "        pass\n"
+        "except RuntimeError as exc:\n"
+        "    print(f'already running: {exc}', file=__import__('sys').stderr)\n"
+        "    raise SystemExit(1)\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script, str(path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def interrupted_write(
+    _frame: pl.DataFrame, _path: Path, *_args: object, **_kwargs: object
+) -> None:
+    raise KeyboardInterrupt
+
+
 def test_shipped_config_pins_the_audit_protocol() -> None:
     config = load_micro_sensor_agreement_audit_config()
     assert config.protocol_revision == 1
@@ -1602,3 +1635,69 @@ def test_generation_identity_binds_scientific_table_content(changed: str) -> Non
     )
     mutated = replace(result, **{changed: frame})
     assert result.manifest["generation_sha256"] != audit.result_identity(mutated)
+
+
+def test_writer_publishes_the_exact_nine_member_inventory_atomically(
+    prepared_audit_result: audit.AgreementAuditResult, tmp_path: Path
+) -> None:
+    written = audit.write_micro_sensor_agreement_audit_result(
+        prepared_audit_result, output_root=tmp_path / "audit"
+    )
+    assert set(written) == set(audit.AUDIT_MEMBER_NAMES)
+    assert {path.name for path in written.values()} == set(audit.AUDIT_MEMBER_NAMES)
+    assert json.loads(written["manifest.json"].read_text(encoding="utf-8"))[
+        "complete"
+    ] is True
+
+
+def test_writer_reuses_only_a_byte_identical_existing_generation(
+    prepared_audit_result: audit.AgreementAuditResult, tmp_path: Path
+) -> None:
+    first = audit.write_micro_sensor_agreement_audit_result(
+        prepared_audit_result, output_root=tmp_path
+    )
+    second = audit.write_micro_sensor_agreement_audit_result(
+        prepared_audit_result, output_root=tmp_path
+    )
+    assert first == second
+    assert {name: path.read_bytes() for name, path in first.items()} == {
+        name: path.read_bytes() for name, path in second.items()
+    }
+
+
+def test_writer_never_overwrites_a_mutated_existing_generation(
+    prepared_audit_result: audit.AgreementAuditResult, tmp_path: Path
+) -> None:
+    written = audit.write_micro_sensor_agreement_audit_result(
+        prepared_audit_result, output_root=tmp_path
+    )
+    written["scores.parquet"].write_bytes(b"mutated")
+    with pytest.raises(RuntimeError, match="existing generation is not reusable"):
+        audit.write_micro_sensor_agreement_audit_result(
+            prepared_audit_result, output_root=tmp_path
+        )
+
+
+def test_one_run_lock_rejects_a_second_process(tmp_path: Path) -> None:
+    with audit.agreement_audit_run_lock(tmp_path / "audit.lock"):
+        completed = run_lock_subprocess(tmp_path / "audit.lock")
+    assert completed.returncode != 0
+    assert "already running" in completed.stderr
+
+
+def test_interrupted_staging_leaves_no_final_or_invocation_residue(
+    prepared_audit_result: audit.AgreementAuditResult,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(pl.DataFrame, "write_parquet", interrupted_write)
+    with pytest.raises(KeyboardInterrupt):
+        audit.write_micro_sensor_agreement_audit_result(
+            prepared_audit_result, output_root=tmp_path
+        )
+    assert not list(
+        (tmp_path / "generations").glob(
+            ".micro-sensor-agreement-audit.staging-*"
+        )
+    )
+    assert not list((tmp_path / "generations").glob("[0-9a-f]" * 64))

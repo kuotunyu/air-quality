@@ -5,13 +5,18 @@ from __future__ import annotations
 import importlib
 import json
 import math
+import os
 import re
+import shutil
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
+from uuid import uuid4
 
 import numpy as np
 import polars as pl
@@ -29,6 +34,7 @@ from twair.analysis.micro_sensor_annual_readiness import (
 from twair.config import ConfigError, load_conf
 from twair.ingest.station_meta import resolve_station_geo
 from twair.net import sha256_file
+from twair.paths import data_root as configured_data_root
 
 threadpool_limits: Any = importlib.import_module("threadpoolctl").threadpool_limits
 
@@ -286,6 +292,20 @@ AUDIT_CONTROL_SCORE_SCHEMA: tuple[
     ("truth_sha256", pl.String),
     ("details_sha256", pl.String),
 )
+_AUDIT_TABLE_MEMBERS = {
+    "fold_audit": "fold_audit.parquet",
+    "scores": "scores.parquet",
+    "deltas": "deltas.parquet",
+    "uncertainty": "uncertainty.parquet",
+    "control_scores": "control_scores.parquet",
+    "control_summary": "control_summary.parquet",
+    "fusion_gate": "fusion_gate.parquet",
+}
+AUDIT_MEMBER_NAMES = (
+    *_AUDIT_TABLE_MEMBERS.values(),
+    "summary.json",
+    "manifest.json",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,6 +375,26 @@ class AgreementAuditResult:
     fusion_gate: pl.DataFrame
     summary: dict[str, Any]
     manifest: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class AgreementAuditRunPlan:
+    data_root: Path
+    annual_generation_sha256: str
+    agreement_generation_sha256: str
+    satellite_generation_sha256: str
+    output_root: Path
+    permutation_draws: int
+    bootstrap_draws: int
+    threads: int
+    memory_limit_gb: int
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedAgreementAudit:
+    result: AgreementAuditResult
+    directory: Path
+    written: dict[str, Path]
 
 
 def _mapping(value: object, *, label: str) -> dict[str, Any]:
@@ -3454,3 +3494,382 @@ def run_micro_sensor_agreement_audit(
             "generation_sha256": generation_sha256,
         },
     )
+
+
+def agreement_audit_run_plan() -> AgreementAuditRunPlan:
+    config = load_micro_sensor_agreement_audit_config()
+    root = configured_data_root().absolute()
+    return AgreementAuditRunPlan(
+        data_root=root,
+        annual_generation_sha256=config.annual_generation_sha256,
+        agreement_generation_sha256=config.agreement_generation_sha256,
+        satellite_generation_sha256=config.satellite_generation_sha256,
+        output_root=root / "outputs" / "micro_sensor_agreement_audit",
+        permutation_draws=config.permutation_draws,
+        bootstrap_draws=config.bootstrap_draws,
+        threads=config.threads,
+        memory_limit_gb=config.memory_limit_gb,
+    )
+
+
+def _lock_byte(handle: BinaryIO) -> None:
+    handle.seek(0, os.SEEK_END)
+    if handle.tell() == 0:
+        handle.write(b"\0")
+        handle.flush()
+        os.fsync(handle.fileno())
+    handle.seek(0)
+
+
+@contextmanager
+def agreement_audit_run_lock(path: Path) -> Iterator[None]:
+    path = path.absolute()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if _is_link_like(path.parent) or (path.exists() and _is_link_like(path)):
+        raise RuntimeError("agreement audit lock path is linked or outside")
+    handle = path.open("a+b")
+    acquired = False
+    try:
+        _lock_byte(handle)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl_module: Any = importlib.import_module("fcntl")
+                fcntl_module.flock(
+                    handle.fileno(), fcntl_module.LOCK_EX | fcntl_module.LOCK_NB
+                )
+            acquired = True
+        except OSError:
+            raise RuntimeError(
+                "another micro-sensor agreement audit is active"
+            ) from None
+        try:
+            yield
+        finally:
+            if acquired:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl_module = importlib.import_module("fcntl")
+                    fcntl_module.flock(handle.fileno(), fcntl_module.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def _write_output_json(path: Path, value: object) -> None:
+    payload = (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
+    with path.open("xb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _read_output_json(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=_reject_json_constant,
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"agreement audit {label} is unreadable") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"agreement audit {label} must be an object")
+    return value
+
+
+def _sync_file(path: Path) -> None:
+    with path.open("r+b") as handle:
+        os.fsync(handle.fileno())
+
+
+def _output_member_identity(path: Path, *, parent: Path) -> dict[str, object]:
+    size, digest = _ordinary_file_identity(
+        path, parent=parent, label=f"agreement audit {path.name}"
+    )
+    return {"path": path.name, "bytes": size, "sha256": digest}
+
+
+def _published_paths(directory: Path) -> dict[str, Path]:
+    return {name: directory / name for name in AUDIT_MEMBER_NAMES}
+
+
+def _validate_published_inventory(directory: Path) -> dict[str, Path]:
+    try:
+        resolved = directory.resolve(strict=True)
+        entries = tuple(directory.iterdir())
+    except OSError as exc:
+        raise RuntimeError("agreement audit generation is unreadable") from exc
+    if _is_link_like(directory) or resolved != directory.absolute() or not directory.is_dir():
+        raise RuntimeError("agreement audit generation is linked or outside")
+    if {entry.name for entry in entries} != set(AUDIT_MEMBER_NAMES):
+        raise RuntimeError("agreement audit member inventory changed")
+    written = _published_paths(directory)
+    for path in written.values():
+        _ordinary_file_identity(
+            path, parent=resolved, label=f"agreement audit {path.name}"
+        )
+    return written
+
+
+def _declared_output_member(
+    value: object,
+    *,
+    expected_path: str,
+) -> tuple[int, str]:
+    if not isinstance(value, dict) or set(value) != {"path", "bytes", "sha256"}:
+        raise RuntimeError("agreement audit member declaration changed")
+    size = value.get("bytes")
+    digest = value.get("sha256")
+    if value.get("path") != expected_path:
+        raise RuntimeError("agreement audit member path changed")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        raise RuntimeError("agreement audit member byte count changed")
+    if not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
+        raise RuntimeError("agreement audit member hash changed")
+    return size, digest
+
+
+def _validate_summary_relationships(result: AgreementAuditResult) -> None:
+    summary = result.summary
+    if summary.get("overall_verdict") != overall_fusion_verdict(result.fusion_gate):
+        raise RuntimeError("agreement audit summary contradicts fusion gate")
+    primary = summary.get("primary_station_day_rmse")
+    if isinstance(primary, dict):
+        scores = result.scores.filter(
+            (pl.col("scope") == "overall")
+            & (pl.col("evaluation") == "held_station")
+            & (pl.col("unit") == "station_day")
+            & (pl.col("metric") == "rmse")
+            & (pl.col("state") == "scored")
+        )
+        observed = dict(scores.select("model", "value").iter_rows())
+        if primary != observed:
+            raise RuntimeError("agreement audit summary contradicts station-day scores")
+    secondary = summary.get("secondary_device_day_delta_rmse")
+    if isinstance(secondary, dict):
+        deltas = result.deltas.filter(
+            (pl.col("scope") == "overall")
+            & (pl.col("evaluation") == "held_station")
+            & (pl.col("unit") == "device_day")
+            & (pl.col("metric") == "rmse")
+            & (pl.col("state") == "scored")
+        )
+        observed = dict(deltas.select("model", "value").iter_rows())
+        if secondary != observed:
+            raise RuntimeError("agreement audit summary contradicts device-day deltas")
+
+
+def _load_micro_sensor_agreement_audit_result_unlocked(
+    directory: Path,
+) -> PublishedAgreementAudit:
+    directory = directory.absolute()
+    written = _validate_published_inventory(directory)
+    before = {
+        name: _ordinary_file_identity(
+            path, parent=directory, label=f"agreement audit {name}"
+        )
+        for name, path in written.items()
+    }
+    manifest = _read_output_json(written["manifest.json"], label="manifest")
+    summary = _read_output_json(written["summary.json"], label="summary")
+    generation = manifest.get("generation_sha256")
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("analysis") != "micro_sensor_agreement_audit"
+        or manifest.get("complete") is not True
+        or not isinstance(generation, str)
+        or _SHA256.fullmatch(generation) is None
+        or directory.name != generation
+    ):
+        raise RuntimeError("agreement audit manifest contract changed")
+    members = manifest.get("members")
+    expected_physical_members = set(AUDIT_MEMBER_NAMES) - {"manifest.json"}
+    if not isinstance(members, dict) or set(members) != expected_physical_members:
+        raise RuntimeError("agreement audit member declaration changed")
+    for name in expected_physical_members:
+        declared = _declared_output_member(members[name], expected_path=name)
+        observed = _ordinary_file_identity(
+            written[name], parent=directory, label=f"agreement audit {name}"
+        )
+        if declared != observed:
+            raise RuntimeError(f"agreement audit member changed: {name}")
+    tables = manifest.get("tables")
+    if not isinstance(tables, dict) or set(tables) != set(_AUDIT_TABLE_MEMBERS):
+        raise RuntimeError("agreement audit table declaration changed")
+    frames: dict[str, pl.DataFrame] = {}
+    for table_name, member_name in _AUDIT_TABLE_MEMBERS.items():
+        declaration = tables[table_name]
+        if not isinstance(declaration, dict) or set(declaration) != {
+            "rows",
+            "schema",
+            "semantic_sha256",
+        }:
+            raise RuntimeError("agreement audit table declaration changed")
+        try:
+            frame = pl.read_parquet(written[member_name])
+        except (OSError, pl.exceptions.PolarsError) as exc:
+            raise RuntimeError(f"agreement audit table is unreadable: {member_name}") from exc
+        observed_schema = {name: str(dtype) for name, dtype in frame.schema.items()}
+        if (
+            declaration.get("rows") != frame.height
+            or declaration.get("schema") != observed_schema
+            or declaration.get("semantic_sha256") != _semantic_frame_hash(frame)
+        ):
+            raise RuntimeError(f"agreement audit table changed: {member_name}")
+        frames[table_name] = frame
+    result = AgreementAuditResult(
+        fold_audit=frames["fold_audit"],
+        scores=frames["scores"],
+        deltas=frames["deltas"],
+        uncertainty=frames["uncertainty"],
+        control_scores=frames["control_scores"],
+        control_summary=frames["control_summary"],
+        fusion_gate=frames["fusion_gate"],
+        summary=summary,
+        manifest=manifest,
+    )
+    if result_identity(result) != generation:
+        raise RuntimeError("agreement audit generation identity changed")
+    _validate_summary_relationships(result)
+    after = {
+        name: _ordinary_file_identity(
+            path, parent=directory, label=f"agreement audit {name}"
+        )
+        for name, path in written.items()
+    }
+    if before != after:
+        raise RuntimeError("agreement audit generation changed during read")
+    _validate_published_inventory(directory)
+    return PublishedAgreementAudit(result=result, directory=directory, written=written)
+
+
+def load_micro_sensor_agreement_audit_result(
+    directory: Path,
+) -> PublishedAgreementAudit:
+    requested = directory.absolute()
+    if requested.parent.name != "generations":
+        raise RuntimeError("agreement audit generation is outside its generations root")
+    output_root = requested.parent.parent
+    with agreement_audit_run_lock(
+        output_root / ".micro-sensor-agreement-audit.lock"
+    ):
+        return _load_micro_sensor_agreement_audit_result_unlocked(requested)
+
+
+def _write_micro_sensor_agreement_audit_result_unlocked(
+    result: AgreementAuditResult,
+    *,
+    output_root: Path,
+) -> dict[str, Path]:
+    output_root = output_root.absolute()
+    output_root.mkdir(parents=True, exist_ok=True)
+    try:
+        resolved_output_root = output_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("agreement audit output root is unreadable") from exc
+    if _is_link_like(output_root) or resolved_output_root != output_root:
+        raise RuntimeError("agreement audit output root is linked or outside")
+    generations = output_root / "generations"
+    generations.mkdir(exist_ok=True)
+    if _is_link_like(generations) or generations.resolve(strict=True).parent != output_root:
+        raise RuntimeError("agreement audit generations root is linked or outside")
+    generation = result_identity(result)
+    if result.manifest.get("generation_sha256") != generation:
+        raise RuntimeError("prepared agreement audit generation identity changed")
+    destination = generations / generation
+    if destination.exists():
+        try:
+            existing = _load_micro_sensor_agreement_audit_result_unlocked(destination)
+        except RuntimeError as exc:
+            raise RuntimeError("existing generation is not reusable") from exc
+        if existing.result.summary != result.summary or any(
+            _semantic_frame_hash(getattr(existing.result, name))
+            != _semantic_frame_hash(getattr(result, name))
+            for name in _AUDIT_TABLE_MEMBERS
+        ):
+            raise RuntimeError("existing generation is not reusable")
+        return existing.written
+    staged = generations / f".micro-sensor-agreement-audit.staging-{uuid4().hex}"
+    staged.mkdir()
+    promoted = False
+    try:
+        physical_members: dict[str, dict[str, object]] = {}
+        tables: dict[str, dict[str, object]] = {}
+        for table_name, member_name in _AUDIT_TABLE_MEMBERS.items():
+            frame = getattr(result, table_name)
+            path = staged / member_name
+            frame.write_parquet(path)
+            _sync_file(path)
+            physical_members[member_name] = _output_member_identity(path, parent=staged)
+            tables[table_name] = _manifest_table_identity(frame)
+        summary_path = staged / "summary.json"
+        _write_output_json(summary_path, result.summary)
+        physical_members["summary.json"] = _output_member_identity(
+            summary_path, parent=staged
+        )
+        manifest = {
+            **result.manifest,
+            "complete": False,
+            "generated_at": result.manifest.get("generated_at")
+            or datetime.now(UTC).isoformat(),
+            "generation_sha256": generation,
+            "tables": tables,
+            "members": physical_members,
+        }
+        _write_output_json(staged / "manifest.json", manifest)
+        staged.replace(destination)
+        promoted = True
+        complete_manifest = {**manifest, "complete": True}
+        temporary_manifest = destination / f".manifest.complete-{uuid4().hex}.json"
+        _write_output_json(temporary_manifest, complete_manifest)
+        temporary_manifest.replace(destination / "manifest.json")
+        published = _load_micro_sensor_agreement_audit_result_unlocked(destination)
+        return published.written
+    except BaseException:
+        if promoted and destination.exists():
+            shutil.rmtree(destination)
+        raise
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+
+
+def write_micro_sensor_agreement_audit_result(
+    result: AgreementAuditResult,
+    *,
+    output_root: Path,
+) -> dict[str, Path]:
+    root = output_root.absolute()
+    with agreement_audit_run_lock(root / ".micro-sensor-agreement-audit.lock"):
+        return _write_micro_sensor_agreement_audit_result_unlocked(
+            result, output_root=root
+        )
+
+
+def run_and_write_micro_sensor_agreement_audit() -> PublishedAgreementAudit:
+    config = load_micro_sensor_agreement_audit_config()
+    plan = agreement_audit_run_plan()
+    lock_path = plan.output_root / ".micro-sensor-agreement-audit.lock"
+    with agreement_audit_run_lock(lock_path):
+        result = run_micro_sensor_agreement_audit(plan.data_root, config)
+        written = _write_micro_sensor_agreement_audit_result_unlocked(
+            result, output_root=plan.output_root
+        )
+        return _load_micro_sensor_agreement_audit_result_unlocked(
+            written["manifest.json"].parent
+        )
