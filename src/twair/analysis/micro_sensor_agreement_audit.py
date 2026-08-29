@@ -7,6 +7,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
+from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -220,6 +221,7 @@ _CORE_MODELS = ("raw_micro", *CORE_FEATURES)
 _METRICS = ("rmse", "mae", "r2", "bias", "absolute_bias")
 _FOLD_COUNT = 5
 _QUARTERS = (1, 2, 3, 4)
+CONTROL_CODES = {"station_label": 1, "target_shift": 2, "satellite_context": 3}
 AUDIT_UNCERTAINTY_SCHEMA: tuple[
     tuple[str, pl.DataType | type[pl.DataType]], ...
 ] = (
@@ -1109,12 +1111,10 @@ def reconstruct_agreement_folds(
 
 
 def _training_weights(train: pl.DataFrame) -> np.ndarray[Any, np.dtype[np.float64]]:
-    counts = train.group_by("station_name", "date").len()
     return (
-        train.select("station_name", "date")
-        .join(counts, on=("station_name", "date"), how="left")["len"]
-        .cast(pl.Float64)
-        .pow(-1)
+        train.select(
+            (1.0 / pl.len().over("station_name", "date")).alias("_sample_weight")
+        )["_sample_weight"]
         .to_numpy()
     )
 
@@ -1440,11 +1440,16 @@ def _station_day_prediction_table(predictions: pl.DataFrame) -> pl.DataFrame:
     )
     if truth.filter(pl.col("_truth_values") != 1).height:
         raise RuntimeError("clustered uncertainty truth changes by model")
-    return grouped.drop("y_true").pivot(
-        on="model",
-        index=("station_name", "date"),
-        values="y_pred",
-    ).join(truth.drop("_truth_values"), on=("station_name", "date"), how="left")
+    return (
+        grouped.drop("y_true")
+        .pivot(
+            on="model",
+            index=("station_name", "date"),
+            values="y_pred",
+        )
+        .join(truth.drop("_truth_values"), on=("station_name", "date"), how="left")
+        .sort("station_name", "date")
+    )
 
 
 def _bootstrap_identity(frame: pl.DataFrame, *, truth: bool) -> str:
@@ -1542,3 +1547,396 @@ def station_cluster_bootstrap(
     return pl.DataFrame(rows, schema=dict(AUDIT_UNCERTAINTY_SCHEMA)).sort(
         "candidate", "comparator"
     )
+
+
+def permute_station_day_targets(
+    station_days: pl.DataFrame,
+    geography: pl.DataFrame,
+    *,
+    replicate: int,
+    seed: int,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    if isinstance(replicate, bool) or not isinstance(replicate, int) or replicate < 0:
+        raise ValueError("station-label replicate must be a non-negative integer")
+    required = {"station_name", "date", "ground_pm25_mean"}
+    if required - set(station_days.columns):
+        raise RuntimeError("station-label control target schema changed")
+    if station_days.select("station_name", "date").n_unique() != station_days.height:
+        raise RuntimeError("station-label control target rows are duplicated")
+    if station_days.filter(
+        pl.col("ground_pm25_mean").is_null() | ~pl.col("ground_pm25_mean").is_finite()
+    ).height:
+        raise RuntimeError("station-label control target is non-finite")
+    station_geography = geography.select("station_name", "airzone_official")
+    if station_geography["station_name"].n_unique() != station_geography.height:
+        raise RuntimeError("station-label control geography is duplicated")
+    joined = station_days.join(station_geography, on="station_name", how="left")
+    if joined["airzone_official"].null_count():
+        raise RuntimeError("station-label control air zone is missing")
+    rng = np.random.default_rng(
+        np.random.SeedSequence([seed, CONTROL_CODES["station_label"], replicate])
+    )
+    rows: list[pl.DataFrame] = []
+    issues: list[dict[str, object]] = []
+    groups = joined.sort("date", "airzone_official", "station_name").partition_by(
+        "date", "airzone_official", maintain_order=True
+    )
+    for group in groups:
+        stations = group["station_name"].n_unique()
+        if stations < 2:
+            issues.append(
+                {
+                    "replicate": replicate,
+                    "date": group["date"][0],
+                    "airzone_official": group["airzone_official"][0],
+                    "state": "unpermutable_group",
+                    "n_stations": stations,
+                }
+            )
+            rows.append(
+                group.with_columns(
+                    pl.lit(None, dtype=pl.Float64).alias("ground_pm25_mean")
+                )
+            )
+            continue
+        permuted = rng.permutation(group["ground_pm25_mean"].to_numpy())
+        rows.append(
+            group.with_columns(pl.Series("ground_pm25_mean", permuted, dtype=pl.Float64))
+        )
+    issue_schema = {
+        "replicate": pl.Int64,
+        "date": pl.Date,
+        "airzone_official": pl.String,
+        "state": pl.String,
+        "n_stations": pl.Int64,
+    }
+    issue_frame = pl.DataFrame(issues, schema=issue_schema)
+    return (
+        pl.concat(rows)
+        .with_columns(pl.lit(replicate, dtype=pl.Int64).alias("replicate"))
+        .sort("date", "airzone_official", "station_name"),
+        issue_frame.sort("date", "airzone_official"),
+    )
+
+
+def _fit_control_predictions(
+    memberships: pl.DataFrame,
+    folds: pl.DataFrame,
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    rows: list[pl.DataFrame] = []
+    scored_folds = folds.filter(
+        (pl.col("state") == "scored") & (pl.col("evaluation") == "held_station")
+    )
+    for fold in scored_folds["fold"]:
+        split = memberships.filter(pl.col("fold") == fold).sort(
+            "role", "station_name", "date", "device_id"
+        )
+        train = split.filter(pl.col("role") == "train")
+        test = split.filter(pl.col("role") == "test")
+        if _fold_state(train, test) != "scored":
+            continue
+        base = test.select("evaluation", "fold", "station_name", "date", "device_id")
+        rows.append(
+            base.with_columns(
+                pl.lit("raw_micro").alias("model"),
+                test["ground_pm25_mean"].alias("y_true"),
+                test["micro_pm25_mean"].alias("y_pred"),
+            )
+        )
+        weights = _training_weights(train)
+        for model, features in CORE_FEATURES.items():
+            pipeline = Pipeline(
+                [("scale", StandardScaler()), ("ridge", Ridge(alpha=config.ridge_alpha))]
+            )
+            with threadpool_limits(limits=config.threads):
+                pipeline.fit(
+                    train.select(*features).to_numpy(),
+                    train["ground_pm25_mean"].to_numpy(),
+                    scale__sample_weight=weights,
+                    ridge__sample_weight=weights,
+                )
+                prediction = pipeline.predict(test.select(*features).to_numpy())
+            rows.append(
+                base.with_columns(
+                    pl.lit(model).alias("model"),
+                    test["ground_pm25_mean"].alias("y_true"),
+                    pl.Series("y_pred", prediction, dtype=pl.Float64),
+                )
+            )
+    if not rows:
+        return pl.DataFrame(
+            schema={
+                "evaluation": pl.String,
+                "fold": pl.String,
+                "station_name": pl.String,
+                "date": pl.Date,
+                "device_id": pl.String,
+                "model": pl.String,
+                "y_true": pl.Float64,
+                "y_pred": pl.Float64,
+            }
+        )
+    return pl.concat(rows)
+
+
+def _control_metric_rows(
+    predictions: pl.DataFrame,
+    *,
+    replicate: int,
+) -> list[dict[str, object]]:
+    station_day = _station_day_prediction_table(predictions)
+    membership_hash = _bootstrap_identity(station_day, truth=False)
+    truth_hash = _bootstrap_identity(station_day, truth=True)
+    rows: list[dict[str, object]] = []
+    raw_error = station_day["raw_micro"].to_numpy() - station_day["y_true"].to_numpy()
+    raw_metrics = {
+        "rmse": float(np.sqrt(np.mean(raw_error**2))),
+        "mae": float(np.mean(np.abs(raw_error))),
+    }
+    for model in CORE_FEATURES:
+        error = station_day[model].to_numpy() - station_day["y_true"].to_numpy()
+        candidate_metrics = {
+            "rmse": float(np.sqrt(np.mean(error**2))),
+            "mae": float(np.mean(np.abs(error))),
+        }
+        for metric in ("rmse", "mae"):
+            rows.append(
+                {
+                    "control": "station_label",
+                    "variant": "within_date_airzone_bijection",
+                    "replicate": replicate,
+                    "state": "scored",
+                    "model": model,
+                    "comparator": "raw_micro",
+                    "unit": "station_day",
+                    "metric": f"delta_{metric}",
+                    "value": candidate_metrics[metric] - raw_metrics[metric],
+                    "intended_rows": station_day.height,
+                    "scored_rows": station_day.height,
+                    "membership_sha256": membership_hash,
+                    "truth_sha256": truth_hash,
+                    "issue": None,
+                }
+            )
+    return rows
+
+
+def run_station_label_control(
+    control: tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    memberships, folds, geography = control
+    truth_counts = memberships.group_by("station_name", "date").agg(
+        pl.col("ground_pm25_mean").n_unique().alias("_truth_values"),
+        pl.col("ground_pm25_mean").first(),
+    )
+    if truth_counts.filter(pl.col("_truth_values") != 1).height:
+        raise RuntimeError("station-label control truth is not unique")
+    station_days = truth_counts.drop("_truth_values")
+    rows: list[dict[str, object]] = []
+    for replicate in range(config.permutation_draws):
+        permuted, issues = permute_station_day_targets(
+            station_days,
+            geography,
+            replicate=replicate,
+            seed=config.permutation_seed,
+        )
+        if not issues.is_empty():
+            rows.append(
+                {
+                    "control": "station_label",
+                    "variant": "within_date_airzone_bijection",
+                    "replicate": replicate,
+                    "state": "unpermutable_group",
+                    "model": None,
+                    "comparator": None,
+                    "unit": "station_day",
+                    "metric": "delta_rmse",
+                    "value": None,
+                    "intended_rows": station_days.height,
+                    "scored_rows": 0,
+                    "membership_sha256": canonical_hash([]),
+                    "truth_sha256": canonical_hash([]),
+                    "issue": canonical_hash(
+                        issues.with_columns(pl.col("date").cast(pl.String)).to_dicts()
+                    ),
+                }
+            )
+            continue
+        rebound = memberships.drop("ground_pm25_mean").join(
+            permuted.select("station_name", "date", "ground_pm25_mean"),
+            on=("station_name", "date"),
+            how="left",
+        )
+        predictions = _fit_control_predictions(rebound, folds, config)
+        rows.extend(_control_metric_rows(predictions, replicate=replicate))
+    schema = {
+        "control": pl.String,
+        "variant": pl.String,
+        "replicate": pl.Int64,
+        "state": pl.String,
+        "model": pl.String,
+        "comparator": pl.String,
+        "unit": pl.String,
+        "metric": pl.String,
+        "value": pl.Float64,
+        "intended_rows": pl.Int64,
+        "scored_rows": pl.Int64,
+        "membership_sha256": pl.String,
+        "truth_sha256": pl.String,
+        "issue": pl.String,
+    }
+    return pl.DataFrame(rows, schema=schema).sort("replicate", "model", "metric")
+
+
+def shift_station_day_targets(
+    station_days: pl.DataFrame,
+    *,
+    shift_days: int,
+) -> pl.DataFrame:
+    if isinstance(shift_days, bool) or not isinstance(shift_days, int) or shift_days <= 0:
+        raise ValueError("target shift must be a positive integer")
+    required = {"station_name", "date", "ground_pm25_mean"}
+    if required - set(station_days.columns):
+        raise RuntimeError("target-shift control schema changed")
+    if station_days.select("station_name", "date").n_unique() != station_days.height:
+        raise RuntimeError("target-shift control station-days are duplicated")
+    source = station_days.select(
+        "station_name",
+        pl.col("date").alias("_wanted_source"),
+        pl.col("date").alias("source_date"),
+        pl.col("ground_pm25_mean").alias("shifted_ground_pm25_mean"),
+    )
+    shifted = (
+        station_days.with_columns(
+            (pl.col("date") + timedelta(days=shift_days)).alias("_wanted_source")
+        )
+        .join(source, on=("station_name", "_wanted_source"), how="inner")
+        .drop("_wanted_source")
+        .sort("station_name", "date")
+    )
+    membership_records = shifted.select("station_name", "date").with_columns(
+        pl.col("date").cast(pl.String)
+    )
+    truth_records = shifted.select(
+        "station_name", "date", "shifted_ground_pm25_mean"
+    ).with_columns(pl.col("date").cast(pl.String))
+    return shifted.with_columns(
+        pl.lit(canonical_hash(membership_records.to_dicts())).alias("membership_sha256"),
+        pl.lit(canonical_hash(truth_records.to_dicts())).alias("truth_sha256"),
+    )
+
+
+def run_target_shift_controls(
+    control: tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    memberships, folds, _geography = control
+    truth_counts = memberships.group_by("station_name", "date").agg(
+        pl.col("ground_pm25_mean").n_unique().alias("_truth_values"),
+        pl.col("ground_pm25_mean").first(),
+    )
+    if truth_counts.filter(pl.col("_truth_values") != 1).height:
+        raise RuntimeError("target-shift control truth is not unique")
+    station_days = truth_counts.drop("_truth_values")
+    rows: list[dict[str, object]] = []
+    for shift_days in config.target_time_shifts_days:
+        shifted = shift_station_day_targets(station_days, shift_days=shift_days)
+        rebound = memberships.drop("ground_pm25_mean").join(
+            shifted.select(
+                "station_name",
+                "date",
+                pl.col("shifted_ground_pm25_mean").alias("ground_pm25_mean"),
+            ),
+            on=("station_name", "date"),
+            how="inner",
+        )
+        predictions = _fit_control_predictions(rebound, folds, config)
+        if predictions.is_empty():
+            rows.append(
+                {
+                    "control": "target_shift",
+                    "variant": f"shift_{shift_days:02d}d",
+                    "shift_days": shift_days,
+                    "state": "unscored_empty_shift",
+                    "model": None,
+                    "comparator": None,
+                    "unit": "station_day",
+                    "metric": "delta_rmse",
+                    "value": None,
+                    "intended_rows": station_days.height,
+                    "scored_rows": 0,
+                    "intended_dates": station_days["date"].n_unique(),
+                    "scored_dates": 0,
+                    "stations": 0,
+                    "folds": 0,
+                    "membership_sha256": canonical_hash([]),
+                    "truth_sha256": canonical_hash([]),
+                }
+            )
+            continue
+        station_predictions = _station_day_prediction_table(predictions)
+        membership_hash = _bootstrap_identity(station_predictions, truth=False)
+        truth_hash = _bootstrap_identity(station_predictions, truth=True)
+        truth = station_predictions["y_true"].to_numpy()
+        raw_error = station_predictions["raw_micro"].to_numpy() - truth
+        raw_metrics = {
+            "rmse": float(np.sqrt(np.mean(raw_error**2))),
+            "mae": float(np.mean(np.abs(raw_error))),
+        }
+        for model in CORE_FEATURES:
+            error = station_predictions[model].to_numpy() - truth
+            candidate_metrics = {
+                "rmse": float(np.sqrt(np.mean(error**2))),
+                "mae": float(np.mean(np.abs(error))),
+            }
+            for metric in ("rmse", "mae"):
+                rows.append(
+                    {
+                        "control": "target_shift",
+                        "variant": f"shift_{shift_days:02d}d",
+                        "shift_days": shift_days,
+                        "state": "scored",
+                        "model": model,
+                        "comparator": "raw_micro",
+                        "unit": "station_day",
+                        "metric": f"delta_{metric}",
+                        "value": candidate_metrics[metric] - raw_metrics[metric],
+                        "intended_rows": station_days.height,
+                        "scored_rows": station_predictions.height,
+                        "intended_dates": station_days["date"].n_unique(),
+                        "scored_dates": station_predictions["date"].n_unique(),
+                        "stations": station_predictions["station_name"].n_unique(),
+                        "folds": predictions["fold"].n_unique(),
+                        "membership_sha256": membership_hash,
+                        "truth_sha256": truth_hash,
+                    }
+                )
+    schema = {
+        "control": pl.String,
+        "variant": pl.String,
+        "shift_days": pl.Int64,
+        "state": pl.String,
+        "model": pl.String,
+        "comparator": pl.String,
+        "unit": pl.String,
+        "metric": pl.String,
+        "value": pl.Float64,
+        "intended_rows": pl.Int64,
+        "scored_rows": pl.Int64,
+        "intended_dates": pl.Int64,
+        "scored_dates": pl.Int64,
+        "stations": pl.Int64,
+        "folds": pl.Int64,
+        "membership_sha256": pl.String,
+        "truth_sha256": pl.String,
+    }
+    return pl.DataFrame(rows, schema=schema).sort("shift_days", "model", "metric")
+
+
+def empirical_lower_tail_p(observed: float, null_values: np.ndarray[Any, Any]) -> float:
+    values = np.asarray(null_values, dtype=np.float64)
+    if not math.isfinite(observed) or values.ndim != 1 or not np.isfinite(values).all():
+        raise ValueError("empirical lower-tail inputs must be finite")
+    return float((1 + np.count_nonzero(values <= observed)) / (values.size + 1))

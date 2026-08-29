@@ -6,11 +6,12 @@ import json
 import math
 import re
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import polars as pl
 import pytest
 from sklearn.linear_model import Ridge
@@ -943,6 +944,69 @@ def one_station_fixture() -> pl.DataFrame:
     return clustered_prediction_fixture().filter(pl.col("station_name") == "alpha")
 
 
+def permutation_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
+    geography = pl.DataFrame(
+        {
+            "station_name": ["alpha", "beta", "gamma", "delta"],
+            "airzone_official": ["north", "north", "south", "south"],
+        }
+    )
+    station_days = pl.DataFrame(
+        [
+            {
+                "station_name": station,
+                "date": date(2025, 10, day),
+                "ground_pm25_mean": float(index * 10 + day),
+            }
+            for day in (1, 2)
+            for index, station in enumerate(("alpha", "beta", "gamma", "delta"), start=1)
+        ]
+    )
+    return station_days, geography
+
+
+def control_fixture() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    source = _agreement_frames()
+    folds = source["folds"].rename(
+        {"fold_state": "state", "fold_reason": "reason"}
+    ).with_columns(
+        pl.when(pl.col("fold") == "held_station_00")
+        .then(pl.lit("scored"))
+        .otherwise(pl.lit("unscored_empty_test"))
+        .alias("state")
+    )
+    return source["fold_membership"], folds, _geography()
+
+
+def singleton_zone_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
+    station_days = pl.DataFrame(
+        {
+            "station_name": ["singleton"],
+            "date": [date(2025, 10, 1)],
+            "ground_pm25_mean": [17.0],
+        }
+    )
+    geography = pl.DataFrame(
+        {"station_name": ["singleton"], "airzone_official": ["island"]}
+    )
+    return station_days, geography
+
+
+def target_shift_fixture() -> pl.DataFrame:
+    return pl.DataFrame(
+        [
+            {
+                "station_name": station,
+                "date": date(2025, 10, 1) + timedelta(days=offset),
+                "ground_pm25_mean": float(offset + station_index),
+                "fold": f"held_station_{station_index:02d}",
+            }
+            for station_index, station in enumerate(("alpha", "beta"))
+            for offset in range(61)
+        ]
+    )
+
+
 def test_shipped_config_pins_the_audit_protocol() -> None:
     config = load_micro_sensor_agreement_audit_config()
     assert config.protocol_revision == 1
@@ -1112,3 +1176,54 @@ def test_station_cluster_bootstrap_resamples_stations_not_device_rows() -> None:
 def test_station_cluster_bootstrap_fails_closed_below_two_clusters() -> None:
     with pytest.raises(RuntimeError, match="at least two station clusters"):
         audit.station_cluster_bootstrap(one_station_fixture(), bootstrap_pairs(), audit_config())
+
+
+def test_station_label_permutation_is_a_date_zone_bijection() -> None:
+    station_days, geography = permutation_fixture()
+    permuted, issues = audit.permute_station_day_targets(
+        station_days, geography, replicate=17, seed=20260829
+    )
+    keys = ["date", "airzone_official"]
+    expected = station_days.join(geography, on="station_name").group_by(*keys).agg(
+        pl.col("ground_pm25_mean").sort()
+    )
+    observed = permuted.group_by(*keys).agg(pl.col("ground_pm25_mean").sort())
+    assert observed.sort(*keys).equals(expected.sort(*keys))
+    assert issues.is_empty()
+
+
+def test_station_label_control_emits_exactly_999_deterministic_draws() -> None:
+    first = audit.run_station_label_control(control_fixture(), audit_config())
+    second = audit.run_station_label_control(control_fixture(), audit_config())
+    assert first.equals(second)
+    assert first.select("replicate").n_unique() == 999
+    assert first["replicate"].min() == 0
+    assert first["replicate"].max() == 998
+
+
+def test_station_label_control_marks_a_singleton_zone_unpermutable() -> None:
+    station_days, geography = singleton_zone_fixture()
+    _, issues = audit.permute_station_day_targets(
+        station_days, geography, replicate=0, seed=20260829
+    )
+    assert issues.select("state").to_series().to_list() == ["unpermutable_group"]
+    assert issues["n_stations"].to_list() == [1]
+
+
+@pytest.mark.parametrize("shift_days", [7, 14, 28])
+def test_target_shift_is_non_circular_and_records_changed_denominators(
+    shift_days: int,
+) -> None:
+    original = target_shift_fixture()
+    shifted = audit.shift_station_day_targets(original, shift_days=shift_days)
+    assert shifted["date"].min() == original["date"].min()
+    assert shifted["source_date"].min() == original["date"].min() + timedelta(days=shift_days)
+    assert shifted.height < original.height
+    assert shifted["membership_sha256"].n_unique() == 1
+    assert shifted["truth_sha256"].n_unique() == 1
+
+
+def test_empirical_lower_tail_p_includes_observed_and_null_pseudocounts() -> None:
+    assert audit.empirical_lower_tail_p(-2.0, np.array([-3.0, -1.0, 0.0])) == pytest.approx(
+        0.5
+    )
