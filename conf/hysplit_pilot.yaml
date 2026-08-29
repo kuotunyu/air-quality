@@ -1,0 +1,36 @@
+"schema_version": 1
+"analysis":
+  "year": 2025
+  "pollutant": "PM2.5"
+  "receptors": ["富貴角", "麥寮", "楠梓", "花蓮"]
+  "event_percentile": 90.0
+  "control_percentile": 50.0
+  "max_events_per_station": 30
+  "event_separation_hours": 72
+  "calm_threshold_ms": 0.5
+  "direction_sector_degrees": 30
+  "speed_bins_ms": [0.5, 1.5, 2.5, 4.0, 6.0, 8.0]
+  "matching":
+    "same_month": true
+    "same_local_hour": true
+    "same_direction_sector": true
+    "same_speed_bin": true
+    "without_replacement": true
+    "allow_relaxation": false
+  "duration_hours": -72
+  "start_heights_m_agl": [100, 300, 500]
+  "vertical_motion": 0
+  "model_top_m_agl": 10000.0
+  "meteorology_dataset": "gdas1"
+  "official_sources":
+    "download": "https://www.ready.noaa.gov/HYSPLIT_hytrial.php"
+    "control_format": "https://www.ready.noaa.gov/hysplitusersguide/S262.htm"
+    "endpoint_format": "https://www.ready.noaa.gov/hysplitusersguide/S263.htm"
+    "gdas1": "https://www.ready.noaa.gov/gdas1.php"
+  "claim_boundary":
+    "pathway_only": true
+    "source_identity": false
+    "source_location": false
+    "source_contribution": false
+    "causal_attribution": false
+    "concentration_field": false
