@@ -220,6 +220,26 @@ _CORE_MODELS = ("raw_micro", *CORE_FEATURES)
 _METRICS = ("rmse", "mae", "r2", "bias", "absolute_bias")
 _FOLD_COUNT = 5
 _QUARTERS = (1, 2, 3, 4)
+AUDIT_UNCERTAINTY_SCHEMA: tuple[
+    tuple[str, pl.DataType | type[pl.DataType]], ...
+] = (
+    ("candidate", pl.String),
+    ("comparator", pl.String),
+    ("unit", pl.String),
+    ("state", pl.String),
+    ("draws", pl.Int64),
+    ("seed", pl.Int64),
+    ("clusters", pl.Int64),
+    ("station_days", pl.Int64),
+    ("membership_sha256", pl.String),
+    ("truth_sha256", pl.String),
+    ("observed_delta_rmse", pl.Float64),
+    ("delta_rmse_ci_low", pl.Float64),
+    ("delta_rmse_ci_high", pl.Float64),
+    ("observed_delta_mae", pl.Float64),
+    ("delta_mae_ci_low", pl.Float64),
+    ("delta_mae_ci_high", pl.Float64),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1392,3 +1412,133 @@ def score_audit_predictions(
         "scope", "evaluation", "fold", "unit", "model", "metric", nulls_last=True
     )
     return scores, deltas
+
+
+def _station_day_prediction_table(predictions: pl.DataFrame) -> pl.DataFrame:
+    required = {"station_name", "date", "device_id", "model", "y_true", "y_pred"}
+    missing = sorted(required - set(predictions.columns))
+    if missing:
+        raise RuntimeError(f"clustered uncertainty is missing columns: {missing}")
+    if predictions.is_empty() or predictions.filter(
+        pl.any_horizontal(
+            pl.col(column).is_null() | ~pl.col(column).is_finite()
+            for column in ("y_true", "y_pred")
+        )
+    ).height:
+        raise RuntimeError("clustered uncertainty contains invalid predictions")
+    grouped = predictions.group_by("station_name", "date", "model").agg(
+        pl.col("y_true").n_unique().alias("_truth_values"),
+        pl.col("y_true").first(),
+        pl.col("y_pred").mean(),
+    )
+    if grouped.filter(pl.col("_truth_values") != 1).height:
+        raise RuntimeError("clustered uncertainty has non-unique station-day truth")
+    grouped = grouped.drop("_truth_values")
+    truth = grouped.group_by("station_name", "date").agg(
+        pl.col("y_true").n_unique().alias("_truth_values"),
+        pl.col("y_true").first(),
+    )
+    if truth.filter(pl.col("_truth_values") != 1).height:
+        raise RuntimeError("clustered uncertainty truth changes by model")
+    return grouped.drop("y_true").pivot(
+        on="model",
+        index=("station_name", "date"),
+        values="y_pred",
+    ).join(truth.drop("_truth_values"), on=("station_name", "date"), how="left")
+
+
+def _bootstrap_identity(frame: pl.DataFrame, *, truth: bool) -> str:
+    columns = ["station_name", "date"]
+    if truth:
+        columns.append("y_true")
+    return canonical_hash(
+        frame.select(*columns)
+        .sort("station_name", "date")
+        .with_columns(pl.col("date").cast(pl.String))
+        .to_dicts()
+    )
+
+
+def station_cluster_bootstrap(
+    predictions: pl.DataFrame,
+    pairs: tuple[tuple[str, str], ...],
+    config: AgreementAuditConfig,
+) -> pl.DataFrame:
+    station_days = _station_day_prediction_table(predictions)
+    stations = sorted(str(value) for value in station_days["station_name"].unique())
+    if len(stations) < 2:
+        raise RuntimeError("station-cluster bootstrap requires at least two station clusters")
+    normalized_pairs = tuple(sorted(pairs))
+    if not normalized_pairs or len(set(normalized_pairs)) != len(normalized_pairs):
+        raise RuntimeError("station-cluster bootstrap pairs must be unique and non-empty")
+    available_models = set(station_days.columns) - {"station_name", "date", "y_true"}
+    if any(
+        candidate == comparator
+        or candidate not in available_models
+        or comparator not in available_models
+        for candidate, comparator in normalized_pairs
+    ):
+        raise RuntimeError("station-cluster bootstrap pair is unavailable")
+    rng = np.random.default_rng(config.bootstrap_seed)
+    rows: list[dict[str, object]] = []
+    for candidate, comparator in normalized_pairs:
+        paired = station_days.select(
+            "station_name", "date", "y_true", candidate, comparator
+        )
+        if paired.select(
+            pl.any_horizontal(pl.col(candidate).is_null(), pl.col(comparator).is_null()).any()
+        ).item():
+            raise RuntimeError("station-cluster bootstrap pair has missing station-days")
+        truth = paired["y_true"].to_numpy()
+        candidate_error = paired[candidate].to_numpy() - truth
+        comparator_error = paired[comparator].to_numpy() - truth
+        observed_delta_rmse = float(
+            np.sqrt(np.mean(candidate_error**2))
+            - np.sqrt(np.mean(comparator_error**2))
+        )
+        observed_delta_mae = float(
+            np.mean(np.abs(candidate_error)) - np.mean(np.abs(comparator_error))
+        )
+        blocks = {
+            station: paired.filter(pl.col("station_name") == station)
+            for station in stations
+        }
+        rmse_draws = np.empty(config.bootstrap_draws, dtype=np.float64)
+        mae_draws = np.empty(config.bootstrap_draws, dtype=np.float64)
+        for draw in range(config.bootstrap_draws):
+            sampled = rng.integers(0, len(stations), size=len(stations))
+            selected = pl.concat([blocks[stations[index]] for index in sampled])
+            selected_truth = selected["y_true"].to_numpy()
+            selected_candidate_error = selected[candidate].to_numpy() - selected_truth
+            selected_comparator_error = selected[comparator].to_numpy() - selected_truth
+            rmse_draws[draw] = np.sqrt(np.mean(selected_candidate_error**2)) - np.sqrt(
+                np.mean(selected_comparator_error**2)
+            )
+            mae_draws[draw] = np.mean(np.abs(selected_candidate_error)) - np.mean(
+                np.abs(selected_comparator_error)
+            )
+        rmse_interval = np.percentile(rmse_draws, (2.5, 97.5))
+        mae_interval = np.percentile(mae_draws, (2.5, 97.5))
+        rows.append(
+            {
+                "candidate": candidate,
+                "comparator": comparator,
+                "unit": "station_day",
+                "state": "descriptive_station_cluster_bootstrap",
+                "draws": config.bootstrap_draws,
+                "seed": config.bootstrap_seed,
+                "clusters": len(stations),
+                "station_days": paired.height,
+                "membership_sha256": _bootstrap_identity(paired, truth=False),
+                "truth_sha256": _bootstrap_identity(paired, truth=True),
+                "observed_delta_rmse": observed_delta_rmse,
+                "delta_rmse_ci_low": float(rmse_interval[0]),
+                "delta_rmse_ci_high": float(rmse_interval[1]),
+                "observed_delta_mae": observed_delta_mae,
+                "delta_mae_ci_low": float(mae_interval[0]),
+                "delta_mae_ci_high": float(mae_interval[1]),
+            }
+        )
+    return pl.DataFrame(rows, schema=dict(AUDIT_UNCERTAINTY_SCHEMA)).sort(
+        "candidate", "comparator"
+    )

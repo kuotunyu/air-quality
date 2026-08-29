@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import math
 import re
 from dataclasses import replace
 from datetime import date
@@ -879,6 +880,69 @@ def scored_prediction_fixture() -> tuple[pl.DataFrame, pl.DataFrame]:
     return predictions, folds
 
 
+def audit_config() -> AgreementAuditConfig:
+    return load_micro_sensor_agreement_audit_config()
+
+
+def bootstrap_pairs() -> tuple[tuple[str, str], ...]:
+    return (("candidate", "comparator"),)
+
+
+def clustered_prediction_fixture() -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for station_index, station in enumerate(("alpha", "beta", "gamma")):
+        for day in (1, 2):
+            truth = float(10 + station_index + day)
+            for model, error in (("comparator", 1.0), ("candidate", station_index / 2)):
+                rows.append(
+                    {
+                        "station_name": station,
+                        "date": date(2025, 10, day),
+                        "device_id": f"{station}-{day}",
+                        "model": model,
+                        "y_true": truth,
+                        "y_pred": truth + error,
+                    }
+                )
+    return pl.DataFrame(rows)
+
+
+def duplicated_device_fixture() -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for device in ("alpha-1", "alpha-2", "alpha-3", "alpha-4"):
+        for model in ("comparator", "candidate"):
+            rows.append(
+                {
+                    "station_name": "alpha",
+                    "date": date(2025, 10, 1),
+                    "device_id": device,
+                    "model": model,
+                    "y_true": 0.0,
+                    "y_pred": 0.0,
+                }
+            )
+    for model, prediction in (("comparator", 0.0), ("candidate", 2.0)):
+        rows.append(
+            {
+                "station_name": "beta",
+                "date": date(2025, 10, 1),
+                "device_id": "beta-1",
+                "model": model,
+                "y_true": 0.0,
+                "y_pred": prediction,
+            }
+        )
+    return pl.DataFrame(rows)
+
+
+def expected_station_equal_delta() -> float:
+    return math.sqrt(2.0)
+
+
+def one_station_fixture() -> pl.DataFrame:
+    return clustered_prediction_fixture().filter(pl.col("station_name") == "alpha")
+
+
 def test_shipped_config_pins_the_audit_protocol() -> None:
     config = load_micro_sensor_agreement_audit_config()
     assert config.protocol_revision == 1
@@ -1025,3 +1089,26 @@ def test_audit_source_does_not_import_agreement_producer_scientific_functions() 
         for alias in node.names
     }
     assert prohibited.isdisjoint(imported)
+
+
+def test_station_cluster_bootstrap_is_deterministic_for_1999_draws() -> None:
+    first = audit.station_cluster_bootstrap(
+        clustered_prediction_fixture(), bootstrap_pairs(), audit_config()
+    )
+    second = audit.station_cluster_bootstrap(
+        clustered_prediction_fixture(), bootstrap_pairs(), audit_config()
+    )
+    assert first.equals(second)
+    assert set(first["draws"]) == {1999}
+
+
+def test_station_cluster_bootstrap_resamples_stations_not_device_rows() -> None:
+    result = audit.station_cluster_bootstrap(
+        duplicated_device_fixture(), bootstrap_pairs(), audit_config()
+    )
+    assert result["observed_delta_rmse"][0] == pytest.approx(expected_station_equal_delta())
+
+
+def test_station_cluster_bootstrap_fails_closed_below_two_clusters() -> None:
+    with pytest.raises(RuntimeError, match="at least two station clusters"):
+        audit.station_cluster_bootstrap(one_station_fixture(), bootstrap_pairs(), audit_config())
