@@ -26,7 +26,7 @@ from twair.paths import REPO_ROOT
 
 Executor = Callable[..., subprocess.CompletedProcess[str]]
 _RUN_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
-_RESERVED_RUN_NAMES = {"CONTROL", "MESSAGE", "tdump"}
+_RESERVED_RUN_NAMES = {"ASCDATA.CFG", "CONTROL", "MESSAGE", "tdump"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,9 +41,11 @@ class HysplitInstallation:
     root: Path
     hyts_std: Path
     hyts_ens: Path
+    ascdata: Path
     sample_traj: Path
     hyts_std_identity: ObservedFile
     hyts_ens_identity: ObservedFile
+    ascdata_identity: ObservedFile
     sample_traj_identity: ObservedFile
 
 
@@ -132,6 +134,11 @@ def inspect_hysplit_installation(root: Path) -> HysplitInstallation:
         root=selected,
         label="exec/hyts_ens.exe",
     )
+    ascdata = _validated_regular_file(
+        selected / "bdyfiles" / "ASCDATA.CFG",
+        root=selected,
+        label="bdyfiles/ASCDATA.CFG",
+    )
     sample_traj = _validated_regular_file(
         selected / "working" / "sample_traj",
         root=selected,
@@ -141,9 +148,11 @@ def inspect_hysplit_installation(root: Path) -> HysplitInstallation:
         root=selected,
         hyts_std=hyts_std,
         hyts_ens=hyts_ens,
+        ascdata=ascdata,
         sample_traj=sample_traj,
         hyts_std_identity=_identity(hyts_std, relative_to=selected),
         hyts_ens_identity=_identity(hyts_ens, relative_to=selected),
+        ascdata_identity=_identity(ascdata, relative_to=selected),
         sample_traj_identity=_identity(sample_traj, relative_to=selected),
     )
 
@@ -154,7 +163,7 @@ def _verify_observed(
     *,
     root: Path,
     label: str,
-) -> None:
+) -> bytes:
     if path != root / Path(expected.relative_path):
         raise RuntimeError(f"{label} path changed after inspection")
     if _is_link_like(path) or not path.is_file():
@@ -162,6 +171,7 @@ def _verify_observed(
     payload = path.read_bytes()
     if len(payload) != expected.bytes or hashlib.sha256(payload).hexdigest() != expected.sha256:
         raise RuntimeError(f"{label} identity changed after inspection")
+    return payload
 
 
 def _meteorology_payload(member: MeteorologyFile) -> tuple[Path, bytes]:
@@ -231,6 +241,12 @@ def prepare_external_run(
             raise RuntimeError("HYSPLIT per-run directory is non-empty")
         raise RuntimeError("HYSPLIT per-run directory already exists")
 
+    ascdata_payload = _verify_observed(
+        installation.ascdata,
+        installation.ascdata_identity,
+        root=installation.root,
+        label="HYSPLIT boundary data",
+    )
     sources = [_meteorology_payload(member) for member in meteorology]
     if any(member.filename in _RESERVED_RUN_NAMES for member in meteorology):
         raise ValueError("HYSPLIT meteorology filename collides with a run output")
@@ -253,6 +269,7 @@ def prepare_external_run(
 
     run_directory.mkdir()
     try:
+        _write_payload(run_directory / "ASCDATA.CFG", ascdata_payload)
         for member, (_, payload) in zip(staged_members, sources, strict=True):
             _write_payload(run_directory / member.filename, payload)
         _write_payload(run_directory / "CONTROL", control)
@@ -329,6 +346,12 @@ def execute_prepared_run(
             root=prepared.installation.root,
             label="HYSPLIT standard executable",
         )
+        _verify_observed(
+            prepared.installation.ascdata,
+            prepared.installation.ascdata_identity,
+            root=prepared.installation.root,
+            label="HYSPLIT boundary data",
+        )
         control = prepared.directory / "CONTROL"
         if (
             not control.is_file()
@@ -336,7 +359,21 @@ def execute_prepared_run(
             or hashlib.sha256(prepared.control_bytes).hexdigest() != prepared.control_sha256
         ):
             raise RuntimeError("HYSPLIT prepared CONTROL identity changed")
-        expected_before = {"CONTROL", *(member.filename for member in prepared.meteorology)}
+        staged_ascdata = prepared.directory / "ASCDATA.CFG"
+        if (
+            _is_link_like(staged_ascdata)
+            or not staged_ascdata.is_file()
+            or len(ascdata_payload := staged_ascdata.read_bytes())
+            != prepared.installation.ascdata_identity.bytes
+            or hashlib.sha256(ascdata_payload).hexdigest()
+            != prepared.installation.ascdata_identity.sha256
+        ):
+            raise RuntimeError("HYSPLIT prepared boundary data identity changed")
+        expected_before = {
+            "ASCDATA.CFG",
+            "CONTROL",
+            *(member.filename for member in prepared.meteorology),
+        }
         if {path.name for path in prepared.directory.iterdir()} != expected_before:
             raise RuntimeError("HYSPLIT prepared directory has unexpected members")
         for member in prepared.meteorology:
@@ -409,6 +446,7 @@ def execute_prepared_run(
             stderr=stderr,
         )
     expected_after = {
+        "ASCDATA.CFG",
         "CONTROL",
         "MESSAGE",
         "tdump",

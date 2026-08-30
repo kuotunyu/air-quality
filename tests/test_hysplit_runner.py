@@ -20,9 +20,11 @@ from twair.analysis.hysplit_runner import (
 
 def _installation(root: Path) -> HysplitInstallation:
     (root / "exec").mkdir(parents=True)
+    (root / "bdyfiles").mkdir()
     (root / "working").mkdir()
     (root / "exec" / "hyts_std.exe").write_bytes(b"synthetic-standard-executable")
     (root / "exec" / "hyts_ens.exe").write_bytes(b"synthetic-ensemble-executable")
+    (root / "bdyfiles" / "ASCDATA.CFG").write_bytes(b"synthetic-boundary-data")
     (root / "working" / "sample_traj").write_bytes(b"synthetic-sample-meteorology")
     return inspect_hysplit_installation(root)
 
@@ -91,14 +93,27 @@ def test_installation_inspection_is_read_only_and_binds_executable_identity(
         == hashlib.sha256(b"synthetic-standard-executable").hexdigest()
     )
     assert installation.hyts_ens_identity.bytes == len(b"synthetic-ensemble-executable")
+    assert installation.ascdata == tmp_path / "hysplit" / "bdyfiles" / "ASCDATA.CFG"
+    assert installation.ascdata_identity.bytes == len(b"synthetic-boundary-data")
+    assert (
+        installation.ascdata_identity.sha256
+        == hashlib.sha256(b"synthetic-boundary-data").hexdigest()
+    )
     assert not list(tmp_path.rglob("*.copied"))
 
 
-@pytest.mark.parametrize("missing", ["hyts_std.exe", "hyts_ens.exe", "sample_traj"])
+@pytest.mark.parametrize(
+    "missing", ["hyts_std.exe", "hyts_ens.exe", "sample_traj", "ASCDATA.CFG"]
+)
 def test_installation_inspection_rejects_missing_members(tmp_path: Path, missing: str) -> None:
     root = tmp_path / "hysplit"
     installation = _installation(root)
-    target = root / "working" / missing if missing == "sample_traj" else root / "exec" / missing
+    if missing == "sample_traj":
+        target = root / "working" / missing
+    elif missing == "ASCDATA.CFG":
+        target = root / "bdyfiles" / missing
+    else:
+        target = root / "exec" / missing
     target.unlink()
     assert installation.root == root
 
@@ -191,7 +206,11 @@ def test_injected_execution_uses_no_shell_and_binds_all_outputs(tmp_path: Path) 
         assert kwargs["text"] is True
         cwd = kwargs["cwd"]
         assert isinstance(cwd, Path)
-        assert {path.name for path in cwd.iterdir()} == {"CONTROL", "gdas1.mar25.w1"}
+        assert {path.name for path in cwd.iterdir()} == {
+            "ASCDATA.CFG",
+            "CONTROL",
+            "gdas1.mar25.w1",
+        }
         (cwd / "tdump").write_text(_endpoint(), encoding="ascii")
         (cwd / "MESSAGE").write_text("synthetic success", encoding="ascii")
         return subprocess.CompletedProcess(command, 0, "synthetic stdout", "")
@@ -210,6 +229,28 @@ def test_injected_execution_uses_no_shell_and_binds_all_outputs(tmp_path: Path) 
     assert result.endpoint_sha256 == hashlib.sha256(result.endpoint_bytes).hexdigest()
     assert result.endpoints is not None
     assert result.endpoints.height == 3 * 73
+
+
+def test_execution_rejects_boundary_identity_change_after_inspection(
+    tmp_path: Path,
+) -> None:
+    installation = _installation(tmp_path / "hysplit")
+    work_root = tmp_path / "work"
+    work_root.mkdir()
+    prepared = prepare_external_run(
+        installation,
+        _run(),
+        _meteorology(tmp_path / "met"),
+        work_root=work_root,
+    )
+    installation.ascdata.write_bytes(b"changed-after-inspection")
+
+    result = execute_prepared_run(prepared)
+
+    assert result.success is False
+    assert result.problem is not None
+    assert "boundary data identity changed" in result.problem
+    assert result.returncode is None
 
 
 @pytest.mark.parametrize(
