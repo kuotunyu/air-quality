@@ -360,7 +360,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     <Fragment slot="caption">
       均方根誤差（RMSE），越低越好。兩條基準線都是規則不是模型：
       <strong>persistence 說「下一小時就跟現在一樣」</strong>，
-      <strong>climatology 那條是平的</strong>——
+      <strong>climatology 那條是平的</strong>—
       它根本不看今天發生什麼事，所以期距對它毫無影響，
       因此它是這張圖裡唯一固定不動的參考線。
     </Fragment>
@@ -400,8 +400,8 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
   </p>
 
   <p>
-    做法是給模型 PM2.5 自己的歷史——落後 1、2、3、6、12、24、48、168 小時的值，
-    滾動平均與最大值，還有變化率——然後問它 h 小時之後會是多少。
+    做法是給模型 PM2.5 自己的歷史—落後 1、2、3、6、12、24、48、168 小時的值，
+    滾動平均與最大值，還有變化率—然後問它 h 小時之後會是多少。
     驗證用 rolling-origin：<strong>過去訓練、未來測試，切點往前走</strong>。
     隨機切分會讓模型用星期二預測星期一，那是沒有預報員做得到的事。
     {n(totalRows / 1e6, 2)} 百萬列測試資料，{totalStations} 站，2015–2025。
@@ -611,7 +611,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
       <div class="note caveat">
         <p>
           <strong>那一欄「最差分割」是後來才加的，因為第一版少了它。</strong>
-          程式印出來的摘要是「4/4 期距贏過 persistence」——對四個平均值而言是真的。
+          程式印出來的摘要是「4/4 期距贏過 persistence」—對四個平均值而言是真的。
           但 16 個「期距 × 分割」格子裡有一個是
           <strong>{n(worst.skill_persistence_worst, 3)}</strong>
           （{worst.horizon} 小時、<code>rolling_1</code>）。rolling_1 是訓練資料最少的分割，
@@ -631,7 +631,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     點預測不會說它有多確定。這裡的區間用 <strong>split conformal</strong> 產生：
     在每個切分裡，模型只用訓練期的前 80% 擬合，剩下最靠近測試期的一段拿來量
     絕對殘差，取修正後的分位數當半寬。
-    <strong>校準集取尾段而不是隨機抽</strong>——共形假設校準與測試可交換，
+    <strong>校準集取尾段而不是隨機抽</strong>—共形假設校準與測試可交換，
     而逐時 PM2.5 不是；隨機抽會讓 2025 年的區間有一部分校準在 2016 年上。
   </p>
 
@@ -679,7 +679,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
       測試在 2023-01 到 2024-07；它的半寬相對於自己面對的誤差是四個分割裡最窄的
       （半寬÷RMSE 約 1.05，其餘三個是 1.21 到 1.28）。
       <strong>校準期比測試期安靜，所以區間校得太窄。</strong>
-      這裡不宣稱原因——那需要另一項分析——只報告它一致地發生。
+      這裡不宣稱原因—那需要另一項分析—只報告它一致地發生。
     </p>
     <p>
       區間是繞著<strong>用 80% 訓練資料擬合的模型</strong>校準的，不是上面表格裡的頭條模型。
@@ -707,7 +707,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 
   <p class="lede">
     SARIMA 常被以「太麻煩、不實用」為由略過。問題從來不是這個結論，
-    而是它通常不附任何數字——那句話可以是工程判斷，
+    而是它通常不附任何數字—那句話可以是工程判斷，
     也可以是個人偏好，讀者無法分辨是哪一種。
     一個附了秒數的表格只能是前者。
   </p>
@@ -852,7 +852,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     <Fragment slot="caption">
       均方根誤差（μg/m³），越低越好。三種方法評分在<strong>完全相同的預測原點</strong>上，
       每個期距約 {sar.horizons[0].origins.toLocaleString()} 個原點。
-      SARIMA 是<strong>固定階數</strong>，不是搜尋出來的——搜尋的代價就是上面那張表。
+      SARIMA 是<strong>固定階數</strong>，不是搜尋出來的—搜尋的代價就是上面那張表。
     </Fragment>
   </EvidenceFigure>
 
@@ -869,7 +869,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
         <p>
           它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但勝出的幅度為：
           {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}
-          ——到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
+          —到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
           <strong>兩天後任何方法都退化成 climatology</strong>。
         </p>
       </div>
@@ -890,7 +890,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
   <div class="note caveat">
     <strong>這是一個作品集裡的模型，不是空品預報。</strong>
     它只用測站自己的歷史與同時刻的其他測項，沒有數值天氣預報、沒有衛星、
-    沒有境外傳輸的前導資訊——而那些正是官方預報用的東西。
+    沒有境外傳輸的前導資訊—而那些正是官方預報用的東西。
     這裡量的是「用公開的歷史觀測，靠自己能走多遠」，答案大約是一天。
   </div>
 

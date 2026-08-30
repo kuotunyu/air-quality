@@ -297,7 +297,7 @@ const taiwanAnnualGuide = (
       primaryPlot
     />
     <Fragment slot="caption">
-      全台 PM2.5 年均值。線在中斷處是真的斷開——那一年沒有足以計算的資料，
+      全台 PM2.5 年均值。線在中斷處是真的斷開—那一年沒有足以計算的資料，
       而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
     </Fragment>
   </EvidenceFigure>
@@ -330,7 +330,7 @@ const taiwanAnnualGuide = (
   <h2 id="trend-weather-adjustment">把各年的天氣條件調整成相同水準</h2>
 
   <p>
-    上一個校正量到的差異在誤差範圍內。這一個不是——它改變下降幅度的解讀。
+    上一個校正量到的差異在誤差範圍內。這一個不是—它改變下降幅度的解讀。
   </p>
 
   <p>
@@ -407,11 +407,11 @@ const taiwanAnnualGuide = (
 
   <p>
     這個比例還可以用完全不同的方式再問一次。上面是全國面板的水準差；
-    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「氣象標準化斜率差額比例」的中位數——
+    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「氣象標準化斜率差額比例」的中位數—
     那個答案是 {n(dw.median_weather_share * 100, 1)}%，
     與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
     兩種聚合方式互相獨立，一致比任何單一數字更值得相信。
-    跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%——
+    跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%—
     {dw.n_significant} 個獨立配適的模型落在同一個窄帶裡，
     是因為整座島共用同一套季風通風機制。
   </p>
@@ -424,7 +424,7 @@ const taiwanAnnualGuide = (
     <p>
       另有一點需要說明：<strong>正規化後的序列在年內幾乎是平的</strong>，
       因為重抽樣連日序與小時一起換掉了，季節循環也跟著被移除。
-      那是預期行為，所以這張圖只畫年度——畫成逐月會看起來像繪圖錯誤。
+      那是預期行為，所以這張圖只畫年度—畫成逐月會看起來像繪圖錯誤。
     </p>
   </div>
 
@@ -448,7 +448,7 @@ const taiwanAnnualGuide = (
     {" "}{n(azSpread.min, 0)}% 到 {n(azSpread.max, 0)}% 之間。
     起點最高的{azTop.label}降幅也最大（{n(azTop.first, 1)} → {n(azTop.last, 1)} μg/m³）
     {azStillTop && <>，而且排序幾乎沒有動：它當年最高，現在仍然最高</>}。
-    真正換了位置的是{azLeast.label}——它的降幅最小（{n(azLeast.drop, 0)}%），
+    真正換了位置的是{azLeast.label}—它的降幅最小（{n(azLeast.drop, 0)}%），
     於是從中段升到全台第 {azLeastRank} 高。
   </p>
 

@@ -407,13 +407,13 @@ const legend = BREAKS.map((b, i) => ({
     <Fragment slot="caption"><span id="cbpf-caption">
       <strong id="cbpf-where">{initial}</strong>的 CBPF 極座標圖。<strong
         >沒有填色的格子代表該格觀測不足 {data.min_bin_count} 小時，機率不予報告</strong
-      >——那是「不知道」，不是「乾淨」。
+      >—那是「不知道」，不是「乾淨」。
       全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
     </span></Fragment>
   </EvidenceFigure>
 
   <p>
-    這張圖叫 CBPF。角度是風吹來的方位，半徑是風速——
+    這張圖叫 CBPF。角度是風吹來的方位，半徑是風速—
     圓心附近是微風，外圈是強風。每一格的顏色是：風從這個方位、以這個速度吹來時，
     該小時的 PM2.5 落在最高四分之一的機率。
   </p>
@@ -474,7 +474,7 @@ const legend = BREAKS.map((b, i) => ({
 
   <div class="note">
     <strong>靜風時數被排除，但沒有被忽略。</strong>
-    沒有風就沒有方位，那些小時上不了極座標圖——但停滯正是污染累積的時候。
+    沒有風就沒有方位，那些小時上不了極座標圖—但停滯正是污染累積的時候。
     全台靜風時數的中位數佔比是 {n(data.median_calm_fraction * 100, 1)}%，
     列在每張圖旁邊的讀數欄裡。<strong>圖上沒有，不代表問題沒有。</strong>
   </div>

@@ -1365,7 +1365,7 @@ def load_data_provenance_contract() -> DataProvenanceContract:
         ),
         "L2": (
             f"{hourly_observations / 1e8:.2f} 億筆完整逐時觀測，含每一筆的品管旗標。"
-            "不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
+            "不發布— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
         ),
     }
     return DataProvenanceContract(descriptions=descriptions, downloads=tuple(downloads))
@@ -2111,7 +2111,7 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
         f"{_health_number(first_range[1] * 100)}%，{headline['last_year']} 年是 "
         f"{_health_number(last_range[0] * 100)}–{_health_number(last_range[1] * 100)}%。"
         "無論選哪個基準，都下降了大約一半到三分之二。"
-        "這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。"
+        "這一點跟第五章的政策效應不一樣—那裡的訊號被方法的噪音蓋過去，這裡沒有。"
     )
     # The two concentrations the range actually spans, resolved from the range
     # rather than read by name.
@@ -2141,7 +2141,7 @@ def _health_expected_evidence_from_payload(payload: object) -> HealthExpectedEvi
         f"{headline['last_year']} 年的答案是 {_health_number(last_range[0] * 100)}% 還是 "
         f"{_health_number(last_range[1] * 100)}%，差了將近一倍，而唯一的差別是把 "
         f"{_health_number(range_ends[0])} 還是 "
-        f"{_health_number(range_ends[1])} μg/m³ 當作比較基準——"
+        f"{_health_number(range_ends[1])} μg/m³ 當作比較基準—"
         f"這是上圖 {len(series)} 條假設線的兩個極端，落差來自方法選擇，不是來自資料。"
     )
 
@@ -4989,7 +4989,7 @@ def _run_preflight() -> None:
         "L1": "Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。",
         "L2": (
             "3.40 億筆完整逐時觀測，含每一筆的品管旗標。"
-            "不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
+            "不發布— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
         ),
     }
     data_expected_downloads = tuple(
@@ -5012,7 +5012,7 @@ def _run_preflight() -> None:
 <dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span><span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>
 <dd data-data-layer-description="L1">Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。</dd>
 <dt data-data-layer="L2"><span data-data-layer-term>L2 站-時</span><span data-data-layer-use>重現者 · 逐時稽核與管線重建</span></dt>
-<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>—— 只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加 <code>twair build</code> 即可獨立重建。</dd>
+<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>— 只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加 <code>twair build</code> 即可獨立重建。</dd>
 </dl>
 <h2>下載</h2>
 <a href="/data/meta.json" download>資料與產製資訊</a>
@@ -5436,8 +5436,8 @@ def _run_preflight() -> None:
 </ol>
 <section data-primary-evidence><p class="evidence-title">比較基準如何改變可歸因比例？</p><div data-primary-plot>Chart</div><figcaption>Caption</figcaption></section>
 <div data-health-reading-band>
-<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>
-<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 5.9 還是 0 μg/m³ 當作比較基準——這是上圖 4 條假設線的兩個極端，落差來自方法選擇，不是來自資料。</p></section>
+<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣—那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>
+<section data-health-reading="sensitive"><h2>當前水準對比較基準敏感</h2><p>2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 5.9 還是 0 μg/m³ 當作比較基準—這是上圖 4 條假設線的兩個極端，落差來自方法選擇，不是來自資料。</p></section>
 </div>
 <section><p class="evidence-title">比較基準造成的落差佔估計值多少？</p></section>
 <div data-health-inference-boundaries>
@@ -5453,8 +5453,8 @@ def _run_preflight() -> None:
         deaths="沒有死亡人數。",
         exposure="測站平均不是人口加權暴露。",
         reading_bodies=(
-            "2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。",
-            "2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 5.9 還是 0 μg/m³ 當作比較基準——這是上圖 4 條假設線的兩個極端，落差來自方法選擇，不是來自資料。",
+            "2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣—那裡的訊號被方法的噪音蓋過去，這裡沒有。",
+            "2025 年的答案是 5% 還是 10%，差了將近一倍，而唯一的差別是把 5.9 還是 0 μg/m³ 當作比較基準—這是上圖 4 條假設線的兩個極端，落差來自方法選擇，不是來自資料。",
         ),
     )
     valid_health_failures = health_assumption_ledger_failures_for_text(
@@ -5586,7 +5586,7 @@ def _run_preflight() -> None:
         "missing reading row": (
             "health reading row inventory changed",
             valid_health_brief.replace(
-                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>\n',
+                '<section data-health-reading="robust"><h2>下降幅度對比較基準穩健</h2><p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣—那裡的訊號被方法的噪音蓋過去，這裡沒有。</p></section>\n',
                 "",
                 1,
             ),
@@ -5594,7 +5594,7 @@ def _run_preflight() -> None:
         "missing reading body": (
             "health reading row body changed",
             valid_health_brief.replace(
-                "<p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。</p>",
+                "<p>2024 年是 12–20%，2025 年是 5–10%。無論選哪個基準，都下降了大約一半到三分之二。這一點跟第五章的政策效應不一樣—那裡的訊號被方法的噪音蓋過去，這裡沒有。</p>",
                 "",
                 1,
             ),

@@ -712,7 +712,7 @@ def _export_sarima(root: Path) -> list[Path]:
                 "why_it_loses_at_one_hour": (
                     "(1,0,1)(1,0,1)₂₄ 沒有差分項，一步預測會往均值回歸，"
                     "而不是承諾「跟剛才一樣」。在 PM2.5 的一小時尺度上，"
-                    "承諾比回歸準——所以這不是實作問題，是這個模型的性質。"
+                    "承諾比回歸準—所以這不是實作問題，是這個模型的性質。"
                 ),
                 # No headline sentence here. The component supplies one in
                 # markup, and a payload that also states it makes the site print
@@ -1222,7 +1222,7 @@ def _deweather_series() -> tuple[list[dict[str, Any]], dict[str, Any]]:
         ),
         "why_same_source": (
             "兩條線都出自 M4 的同一批逐月輸出。拿正規化序列去跟第一章既有的"
-            "趨勢線比會多一個差異來源——那條線來自日聚合、68 站的面板，"
+            "趨勢線比會多一個差異來源—那條線來自日聚合、68 站的面板，"
             "而 M4 配適的是 74 站。"
         ),
         "observed_fall": _round(observed_fall, 2),
@@ -1617,7 +1617,7 @@ def _forecast_reading(horizons: list[dict[str, Any]]) -> list[dict[str, str]]:
             "detail": (
                 f"R² 從 {first_r2:.3f} 掉到 {last_r2:.3f}，而 skill 收在比起點更高的地方。"
                 "R² 衡量的是「這個目標本來多好預測」，而 PM2.5 一小時後"
-                "任何人都很好預測——包括一條說「跟現在一樣」的規則。"
+                "任何人都很好預測—包括一條說「跟現在一樣」的規則。"
                 "skill 問的是不同的問題：模型有沒有加到東西。"
                 f"它不是單調上升的（{hours} 小時分別是 {ladder}），"
                 "但確實沒有隨 R² 一起崩，因為 persistence 衰退得比模型快。"
@@ -1628,19 +1628,19 @@ def _forecast_reading(horizons: list[dict[str, Any]]) -> list[dict[str, str]]:
             "detail": (
                 f"vs persistence 在 {last['horizon']} 小時最高，單看這條會讀成「愈遠愈好」。"
                 f"但 vs climatology 在同一段從 {_signed(_needed(first, 'skill_climatology'), 2)} 崩到 "
-                f"{_signed(_needed(last, 'skill_climatology'), 2)}——"
+                f"{_signed(_needed(last, 'skill_climatology'), 2)}—"
                 "兩天後模型已經大致退化成「這站、這個月、這個小時的平均」。"
                 "在 persistence 已經輸給長期平均的地方贏過 persistence，不算成就。"
                 "實用範圍大約到 24 小時。"
             ),
         },
         {
-            "claim": "平均值會藏掉一個輸掉的分割——而且真的藏過一次",
+            "claim": "平均值會藏掉一個輸掉的分割—而且真的藏過一次",
             "detail": (
                 f"第一次回測時，{cells} 個「期距 × 分割」格子裡有一個是 −0.111"
                 "（6 小時、訓練資料最少的 rolling_1），四個期距的平均卻全是正的。"
                 "這跟「R² 藏掉一個爛模型」是同一個錯，只是高了一層。"
-                f"現在這張表{negative}，最差是 {_signed(worst)}，仍在同一格——"
+                f"現在這張表{negative}，最差是 {_signed(worst)}，仍在同一格—"
                 "讓它變號的是修掉 features/lags.py 裡一個跟預測無關的洩漏"
                 "（每個測站的前 167 小時帶著前一個測站的歷史）。"
                 "所以最差分割照畫：第一次也沒有任何東西提醒過我們。"
@@ -1652,7 +1652,7 @@ def _forecast_reading(horizons: list[dict[str, Any]]) -> list[dict[str, str]]:
                 f"{widest['horizon']} 小時的四個分割是 {_signed(min(widest_values))} 到 "
                 f"{_signed(max(widest_values))}，跨度 {spread_of(widest):.3f}，"
                 f"仍是四個期距裡最大的（{others[0]}）。"
-                "但這一章原本寫的是「兩批獨立資料都說 6 小時會輸」——"
+                "但這一章原本寫的是「兩批獨立資料都說 6 小時會輸」—"
                 "回測有一格 −0.111，互動 demo 的 6 小時 skill 是 −0.043、"
                 "六個測站沒有一個明顯為正。兩批都翻面了："
                 "同一個 demo 在修好洩漏後重跑，6 小時 skill 是 +0.256，"
@@ -1700,12 +1700,12 @@ def _deweather_caveat(median_holdout_r2: float | None) -> str:
     # double negative that reads as a typo, and a sentence nobody can parse is
     # not more honest than one nobody checked.
     finding = (
-        "所以逐時變異有一半以上不是本地氣象能解釋的——境外傳輸就在其中，並會留在剩餘趨勢裡。"
+        "所以逐時變異有一半以上不是本地氣象能解釋的—境外傳輸就在其中，並會留在剩餘趨勢裡。"
         if median_holdout_r2 < 0.5
         else "所以本地氣象能解釋逐時變異的一半以上，剩下的部分才是境外傳輸等因素的去處。"
     )
     return (
-        f"{opening}holdout R² 中位數 {median_holdout_r2:g}——「holdout」是把一段資料"
+        f"{opening}holdout R² 中位數 {median_holdout_r2:g}—「holdout」是把一段資料"
         "留著不給模型學、事後拿來考它，「R²」是它在那段資料上解釋掉的變異比例，"
         f"1 是全部解釋、0 是完全解釋不了。{finding}{closing}"
     )

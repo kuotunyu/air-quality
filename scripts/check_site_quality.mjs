@@ -2003,12 +2003,12 @@ function healthExpectedEvidenceFromPayload(payload) {
     `${healthNumber(headline.last_range[0] * 100)}–` +
     `${healthNumber(headline.last_range[1] * 100)}%。` +
     "無論選哪個基準，都下降了大約一半到三分之二。" +
-    "這一點跟第五章的政策效應不一樣——那裡的訊號被方法的噪音蓋過去，這裡沒有。";
+    "這一點跟第五章的政策效應不一樣—那裡的訊號被方法的噪音蓋過去，這裡沒有。";
   const sensitiveBody =
     `${headline.last_year} 年的答案是 ${healthNumber(headline.last_range[0] * 100)}% 還是 ` +
     `${healthNumber(headline.last_range[1] * 100)}%，差了將近一倍，而唯一的差別是把 ` +
     `${healthNumber(rangeEnds[0].value)} 還是 ${healthNumber(rangeEnds[1].value)} μg/m³ ` +
-    `當作比較基準——這是上圖 ${payload.series.length} 條假設線的兩個極端，落差來自方法選擇，不是來自資料。`;
+    `當作比較基準—這是上圖 ${payload.series.length} 條假設線的兩個極端，落差來自方法選擇，不是來自資料。`;
   if (!healthExactKeys(payload.not_reported, ["deaths", "exposure"])) {
     throw new Error("health payload no-inference boundary changed");
   }
@@ -2191,7 +2191,7 @@ function loadDataProvenanceContract() {
   const layers = [
     ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。"],
     ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", `Pages 目前發布 ${publishedL1Codes.join("、")} 的 Parquet，共 ${dataMegabytes(l1Total)}；其餘測項可由本機管線產生。`],
-    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。`],
+    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。`],
   ].map((row) => Object.freeze(row));
   return Object.freeze({ layers: Object.freeze(layers), downloads: Object.freeze(downloads) });
 }
@@ -7088,7 +7088,7 @@ async function lifecycleSelfTest() {
   const detectionBoundaryText =
     "「測不到」不等於「等於零」。" +
     "每個事件的實際通過數都低於各自純靠機率的預期。噪音底線高於訊號。" +
-    "這批資料與這個方法，無法分辨這種大小的效應——不是「這些事件沒有影響」。" +
+    "這批資料與這個方法，無法分辨這種大小的效應—不是「這些事件沒有影響」。" +
     "非偵測不是「事件沒有發生」或「介入無效」的證明。" +
     "本分析沒有驗證機組的逐時操作或燃料狀態。";
   const completeDetectionBrief = {
@@ -8963,7 +8963,7 @@ async function lifecycleSelfTest() {
     ],
     [
       "/space/",
-      "其中萬里的座標不是來自環境部現行測站清冊——該站已停用而從清冊消失，" +
+      "其中萬里的座標不是來自環境部現行測站清冊—該站已停用而從清冊消失，" +
         "位置改依審閱過的環境部歷史測站紀錄補上，來源與查證日期記在 " +
         "conf/station_geo_historical.yaml。本章結果是在納入之後重算的。",
     ],
@@ -13962,6 +13962,7 @@ async function main() {
         ),
         mainText: document.querySelector("main")?.innerText
           .replace(/\\s+/g, " ").trim() ?? "",
+        mainSourceText: document.querySelector("main")?.textContent ?? "",
         detectionEstimateTable: ${DETECTION_ESTIMATE_TABLE_PROBE},
         sourcesAtlas: ${SOURCES_ATLAS_STATE_PROBE},
       };
@@ -13972,6 +13973,9 @@ async function main() {
     }
     if (noScript?.visibleToggles) {
       failures.push(`${route}: theme toggle controls remain visible without JavaScript`);
+    }
+    if (noScript?.mainSourceText?.includes("——")) {
+      failures.push(`${route}: main copy still contains a double em dash`);
     }
     if (route === "/") {
       if (noScript?.startLinks !== 4 || noScript?.chapterLinks !== 10) {

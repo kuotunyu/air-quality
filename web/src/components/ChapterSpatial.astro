@@ -165,7 +165,7 @@ const readingMap = [
   <ChapterIntro slug="space">
   <p class="lede">
     常見的批評是「有這麼多測站，空間維度卻沒用上」。
-    動手量了之後，這句話需要修正：按空品區分層、每區各跑一次本來就用了空間——所以誠實的問題不是「有沒有用空間」，而是<strong>那個分層是不是足夠的空間控制</strong>。
+    動手量了之後，這句話需要修正：按空品區分層、每區各跑一次本來就用了空間—所以誠實的問題不是「有沒有用空間」，而是<strong>那個分層是不是足夠的空間控制</strong>。
   </p>
   <ChapterReadingMap slot="reading-map" items={readingMap} />
   </ChapterIntro>
@@ -247,7 +247,7 @@ const readingMap = [
       站均殘差的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。
       殘差是扣掉模型已經解釋掉的部分之後、每站每月還差多少。10 公里內同號相聚
       （I = +{correlogram[0].i.toFixed(3)}），100 公里外反號
-      （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）——
+      （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）—
       北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
     </Fragment>
   </EvidenceFigure>
@@ -257,14 +257,14 @@ const readingMap = [
   </p>
 
   <p>
-    量測對象是第八章那個基準模型的殘差，不是 PM2.5 本身——
+    量測對象是第八章那個基準模型的殘差，不是 PM2.5 本身—
     濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
     還會不會沿著地圖聚集：會，就表示它把 {n(network.stations * network.months / 1000, 1)}{" "}
     千筆站月當獨立樣本的推論是錯的。網路是 {network.stations} 站 × {network.months} 個月，
     {network.placed} 站有座標、{network.complete} 站每月都有值；
     {network.historical.length > 0 && (
       <>
-        其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊——
+        其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊—
         該站已停用而從清冊消失，位置改依審閱過的環境部歷史測站紀錄補上，
         來源與查證日期記在 <code>conf/station_geo_historical.yaml</code>。
         本章結果是在納入之後重算的；
@@ -275,13 +275,13 @@ const readingMap = [
         {network.unplaced.join("、")}仍無任何官方來源可定位，照實排除；
       </>
     )}
-    虛無分布——「如果空間上其實沒有結構，這個統計量會長成什麼樣」——
+    虛無分布—「如果空間上其實沒有結構，這個統計量會長成什麼樣」—
     一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
     不可交換，所以不能用排列檢定），權重 {network.weights}。
   </p>
 
   <p>
-    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變——
+    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變—
     這就是為什麼本章不發表單一的「空間自相關係數」：
   </p>
 
@@ -289,7 +289,7 @@ const readingMap = [
 
   <p>
     同一個設計矩陣、同一批資料，只換空間控制的強度。報告的是每月殘差 I 的平均
-    與塊狀 bootstrap 區間——寫成差值、不寫成比例，因為 I 是正規化的相關係數，
+    與塊狀 bootstrap 區間—寫成差值、不寫成比例，因為 I 是正規化的相關係數，
     沒有可加分解的性質：
   </p>
 
@@ -347,13 +347,13 @@ const readingMap = [
           +{n(literal.mean_i, 3)}，顯著月數從 {pooled.months_significant_bh} 降到
           {" "}{literal.months_significant_bh}。
         </strong>
-        它比測站固定效果還有效——因為它讓每個係數都隨區改變，不只截距。
+        它比測站固定效果還有效—因為它讓每個係數都隨區改變，不只截距。
         那個被指控「沒用空間」的做法，其實移除了大部分的空間相依。
       </p>
       <p>
         但「大部分」不是全部：站均殘差場的 I 仍是
         +{n(spatial.station_mean_i.i as number, 3)}（z = {n(spatial.station_mean_i.z as number, 2)}，
-        p = {n(spatial.station_mean_i.p as number, 3)}）。更要緊的是——
+        p = {n(spatial.station_mean_i.p as number, 3)}）。更要緊的是—
         但要注意 t 統計量通常報自合併式模型，
         也就是上圖最上面那一列，而不是分層之後的那個版本。
       </p>
@@ -363,7 +363,7 @@ const readingMap = [
   <h3>官方分區比純地理多知道什麼？</h3>
 
   <p>
-    這個檢定的虛無不是隨機重貼標籤——任何連續的分割都會勝過它，勝出並不具鑑別力。
+    這個檢定的虛無不是隨機重貼標籤—任何連續的分割都會勝過它，勝出並不具鑑別力。
     對照組是 {n(partition.ensemble_draws, 0)} 個只知道地理、別的什麼都不知道的隨機
     Voronoi 分割：官方分區必須攜帶「超出鄰接性」的資訊才能勝出。
   </p>
@@ -371,12 +371,12 @@ const readingMap = [
   <p>
     結果兩面都有。時代的 {partition.groups} 組分區在「區內−區間相關差」上得
     +{n(partition.separation_r, 2)}，落在地理 ensemble 的{" "}
-    {n(partition.pct_separation * 100, 1)} 百分位——分區確實載有
-    超出地理的資訊，不是任意劃定的。但它的 silhouette——每個測站
-    離自己這一區、比離最近的另一區近多少——只有 +{n(partition.silhouette, 2)}，
+    {n(partition.pct_separation * 100, 1)} 百分位—分區確實載有
+    超出地理的資訊，不是任意劃定的。但它的 silhouette—每個測站
+    離自己這一區、比離最近的另一區近多少—只有 +{n(partition.silhouette, 2)}，
     而資料自己偏好的分群數是 k = {partition.best_k}
     （silhouette +{n(partition.best_k_silhouette, 2)}）：北部一群、南部一群，
-    彼此反向共變——正是上面 correlogram 的偶極。官方分區數下的資料分群與官方劃法
+    彼此反向共變—正是上面 correlogram 的偶極。官方分區數下的資料分群與官方劃法
     的一致性只有 ARI {n(partition.ari_at_official_k ?? 0, 2)}。
     一句話：<strong>分區不是任意劃定、但比資料支持的粒度細</strong>。
   </p>
@@ -384,7 +384,7 @@ const readingMap = [
   <div class="note">
     <p>
       <strong>相關算在距全島均值的異常量上，這一步是檢定成立的前提。</strong>
-      生料月均值在全島高度相關——那是共用的冬季高峰，不是分區的性質；用它來測，
+      生料月均值在全島高度相關—那是共用的冬季高峰，不是分區的性質；用它來測，
       任何分區方式都會看起來同樣有效。減掉逐月島均之後平均相關趨近於零，剩下的才是
       「這一站如何偏離全國」，分區的資訊到這裡才量得出來。兩個值每次執行重算，
       現值印在 <a href={repoFile("reports/03-spatial.md")}>reports/03-spatial.md</a>；
@@ -398,7 +398,7 @@ const readingMap = [
     LISA（局部 Moran，同一套模擬虛無）逐站檢查殘差相依的所在位置：{lisa.stations} 站中
     raw 顯著 {lisa.significant_raw} 站，BH 校正後 {lisa.significant_bh} 站。
     象限分布 HH {lisa.quadrants.HH}、HL {lisa.quadrants.HL}、LH {lisa.quadrants.LH}、
-    LL {lisa.quadrants.LL}——<strong>沒有任何單站足以擔負「熱點」之名</strong>，
+    LL {lisa.quadrants.LL}—<strong>沒有任何單站足以擔負「熱點」之名</strong>，
     相依是整個場的性質。這也是為什麼上面的修正必須動整個共變異矩陣，
     而不是排除幾個「異常站」即可。
   </p>
@@ -408,7 +408,7 @@ const readingMap = [
   <h3>把 t 統計量重新標價</h3>
 
   <p>
-    係數完全不動、設計完全不動，只換共變異估計量——這樣前後對照才只反映相依性
+    係數完全不動、設計完全不動，只換共變異估計量—這樣前後對照才只反映相依性
     這一個變因。聚類月允許同月內任意站間相依（空間的修正）；聚類站允許
     同站內任意月間相依（時間的修正）；two-way 兩者皆允許：
   </p>
@@ -426,7 +426,7 @@ const readingMap = [
         {inference.rows.map((r) => (
           <tr>
             <td>
-              {r.cov_type === "iid" && "iid——基準模型的假設"}
+              {r.cov_type === "iid" && "iid—基準模型的假設"}
               {r.cov_type === "cluster_month" && "聚類月（空間）"}
               {r.cov_type === "cluster_station" && "聚類站（時間）"}
               {r.cov_type === "cluster_twoway" && "two-way（CGM）"}
@@ -445,12 +445,12 @@ const readingMap = [
         假設誤差互相獨立時 t(PM10) = {n(iidRow?.t ?? 0, 2)}；
         two-way 之下是 {n(twoWayRow?.t ?? 0, 2)}。
       </strong>
-      係數沒有變，變的只有標準誤——同一個估計值，換一個關於相依性的假設，
+      係數沒有變，變的只有標準誤—同一個估計值，換一個關於相依性的假設，
       顯著性就差了數倍。
     </p>
     <p>
       two-way 下失去顯著的有四項：{inference.flips_two_way.join("、")}。
-      其中 <strong>WD_HR 就是第八章的錯誤三</strong>——風向被當成線性連續變數。
+      其中 <strong>WD_HR 就是第八章的錯誤三</strong>—風向被當成線性連續變數。
       「風向顯著」於是錯了兩次：編碼錯了，而顯著性本身也是相依性造出來的。
       兩個問題疊在同一個係數上。
     </p>
@@ -463,7 +463,7 @@ const readingMap = [
       <p>
         全台 1 公里濃度場是計畫書上的目標，但測站最近鄰距離從 0.6 到 67 公里，
         1 公里的格子宣稱了網路給不起的解析度。所以先量「補值的技巧」本身：
-        留一站交叉驗證，並加上 20 與 40 公里的緩衝——把目標站周圍整圈都藏起來，
+        留一站交叉驗證，並加上 20 與 40 公里的緩衝—把目標站周圍整圈都藏起來，
         因為那才是「地圖上兩站之間那片空白」真正的問題。變異圖在每個 fold 內重配，
         兩種變異圖家族並列（correlogram 會變號，球型不一定是對的模型）。
       </p>
@@ -494,7 +494,7 @@ const readingMap = [
 
       <p class="small">
         每格為 MAE（μg/m³），月×站逐一預測後彙整；<strong>留一站是樂觀上界</strong>
-        ——600 公尺外就有鄰站時，它量到的是近重複點之間的內插。
+        —600 公尺外就有鄰站時，它量到的是近重複點之間的內插。
         {field.failed_folds > 0 && (
           <>
             {" "}緩衝把西部網路挖掉大半時 fold 會失敗，共 {n(field.failed_folds, 0)}

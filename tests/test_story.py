@@ -734,7 +734,7 @@ class TestChapterOnesBoundaryParagraph:
 
     def test_a_whole_number_median_does_not_render_as_a_float(self) -> None:
         """`:g` rather than `str`, so a median of 1.0 reads as 1 and not 1.0."""
-        assert "中位數 1——" in story._deweather_caveat(1.0)
+        assert "中位數 1—" in story._deweather_caveat(1.0)
 
 
 class TestTheSourcesPayload:
