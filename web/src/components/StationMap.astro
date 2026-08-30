@@ -98,22 +98,39 @@ const project = (lon: number, lat: number) => ({
   y: height / 2 - (lat - (MAIN.latMin + MAIN.latMax) / 2) * scale,
 });
 
-const counties = COUNTIES.map((county) => ({
-  name: county.name,
-  area: county.area,
-  anchors: county.anchors.map(([lon, lat]) => project(lon, lat)),
-  d: county.rings
-    .map(
-      (ring) =>
-        ring
-          .map(([lon, lat], i) => {
-            const { x, y } = project(lon, lat);
-            return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
-          })
-          .join(" ") + " Z",
-    )
-    .join(" "),
-}));
+/*
+ * This is a station overview, not a cadastral map. The official Yunlin county
+ * geometry carries four detached rings for 外傘頂洲 and its neighbouring
+ * sandbars. At the map's 260–360px rendered width those moving, unmonitored
+ * landforms read as a broken chunk beside Chiayi rather than useful context.
+ *
+ * Keep the generated source complete — `build_taiwan_geo.py` orders exterior
+ * rings largest first, so ring 0 is Yunlin's mainland — and simplify only this
+ * presentation. A global area threshold would also erase familiar islands in
+ * other counties, which is outside the reported defect.
+ */
+const overviewRingLimits = new Map([["雲林縣", 1]]);
+
+const counties = COUNTIES.map((county) => {
+  const ringLimit = overviewRingLimits.get(county.name);
+  const overviewRings = ringLimit == null ? county.rings : county.rings.slice(0, ringLimit);
+  return {
+    name: county.name,
+    area: county.area,
+    anchors: county.anchors.map(([lon, lat]) => project(lon, lat)),
+    d: overviewRings
+      .map(
+        (ring) =>
+          ring
+            .map(([lon, lat], i) => {
+              const { x, y } = project(lon, lat);
+              return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+            })
+            .join(" ") + " Z",
+      )
+      .join(" "),
+  };
+});
 
 /*
  * Which counties get a name printed on them.
@@ -415,7 +432,8 @@ const dots = main.map((s) => {
     縣市界為內政部國土測繪中心「直轄市、縣市界線（TWD97 經緯度）」1140318 版，
     原始比例尺 1:5000，依政府資料開放授權條款第 1 版使用。
     此圖為簡化後的衍生成果：輪廓簡化至約 165 公尺，
-    並<strong>移除面積小於 1.2 平方公里的離岸島礁</strong>。
+    並<strong>移除面積小於 1.2 平方公里的離岸島礁</strong>；
+    作為測站概覽，另省略無測站的雲林離岸沙洲（外傘頂洲及相鄰沙洲）。
     {
       offshoreCounties.length > 0 && (
         <>

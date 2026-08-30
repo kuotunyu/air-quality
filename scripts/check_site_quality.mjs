@@ -12264,6 +12264,12 @@ async function main() {
       const descriptionStyle = description ? getComputedStyle(description) : null;
       const titles = [...(svg?.querySelectorAll(".county > title") ?? [])]
         .map((title) => title.textContent.trim()).filter(Boolean).sort();
+      const countyPathSubpaths = Object.fromEntries(
+        [...(svg?.querySelectorAll(".county") ?? [])].map((path) => [
+          path.querySelector("title")?.textContent.trim() ?? "",
+          (path.getAttribute("d")?.match(/\\bM/g) ?? []).length,
+        ]),
+      );
       const describedNames = [...(description?.querySelectorAll("[data-homepage-map-county]") ?? [])]
         .map((name) => name.textContent.trim()).filter(Boolean).sort();
       const overlays = [...(map?.querySelectorAll(".county-label") ?? [])];
@@ -12280,6 +12286,7 @@ async function main() {
       );
       return {
         titleNames: titles,
+        countyPathSubpaths,
         describedNames,
         descriptionIds,
         descriptionExposed: Boolean(
@@ -12302,6 +12309,7 @@ async function main() {
           levelSummary && map.getBoundingClientRect().bottom <=
             levelSummary.getBoundingClientRect().top + 1
         ),
+        notesText: notes?.textContent.replace(/\s+/g, " ").trim() ?? "",
       };
     })()`);
     const problems = [];
@@ -12316,6 +12324,16 @@ async function main() {
     }
     if (!structure?.visualLabelsHiddenFromAccessibility) {
       problems.push("homepage visual county labels are exposed as duplicate accessible names");
+    }
+    if (structure?.countyPathSubpaths?.["雲林縣"] !== 1) {
+      problems.push(
+        `homepage Yunlin overview draws ${
+          structure?.countyPathSubpaths?.["雲林縣"] ?? "unknown"
+        } subpaths instead of the mainland outline only`,
+      );
+    }
+    if (!structure?.notesText?.includes("省略無測站的雲林離岸沙洲")) {
+      problems.push("homepage map notes do not disclose the omitted Yunlin offshore sandbars");
     }
     if (
       enhanced &&
