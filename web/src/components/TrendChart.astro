@@ -426,7 +426,7 @@ const pickCss = pick
             </svg>
             <span>互動篩選</span>
           </div>
-          <p class="key-hint">勾選想比較的空品區，沒勾的線會留在圖上，以淡色對照。</p>
+          <p class="key-hint">勾選的空品區會強調顯示；取消勾選只會淡化成背景對照，不會隱藏。</p>
         </div>
         <ul class="chart-key chart-key-picker" role="group" aria-label={pick.label}>
           {keyed.map((s, i) => (
@@ -1336,12 +1336,13 @@ const pickCss = pick
    * together, and a reader who has picked two still needs to see them against
    * the other six. Same reading as the reference site's 「灰色為其他五都，供對照」.
    *
-   * Hue is kept, not drained to grey. At 0.16 the line is a ghost either way,
-   * and keeping it means the six in the background stay individually
-   * traceable — drained, the離島 crossing in 2015 becomes an unreadable knot.
+   * Hue is kept, not drained to grey. At 0.28 the line stays subordinate while
+   * remaining visible, and keeping its hue means the six background series
+   * stay individually traceable — drained, the 離島 crossing in 2015 becomes
+   * an unreadable knot.
    */
   .chart {
-    --pick-off-alpha: 0.16;
+    --pick-off-alpha: 0.28;
     --pick-off-weight: 1.6;
   }
 

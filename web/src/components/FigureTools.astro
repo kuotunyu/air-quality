@@ -93,10 +93,10 @@
       bigger.dataset.figAct = "zoom";
       bigger.addEventListener("click", () => open(root, name, bigger));
 
-      // 下載 on the face, 下載 PNG in the accessible name: two characters beside
-      // 放大 make a pair a reader takes in at a glance, and the format still has
-      // to be said to anyone who cannot see what arrives.
-      const png = control("下載", name, "下載 PNG");
+      // The format is visible on the face: the button produces an image, not
+      // the figure's underlying rows, and that distinction matters before a
+      // reader presses it as much as after the file arrives.
+      const png = control("下載 PNG", name);
       png.addEventListener("click", () => save(root, png, index));
 
       tools.append(bigger, png);
@@ -517,7 +517,7 @@
       button: HTMLButtonElement,
       index: number,
     ) {
-      const settled = button.textContent ?? "下載";
+      const settled = button.textContent ?? "下載 PNG";
       button.disabled = true;
       button.textContent = "產生中…";
       try {

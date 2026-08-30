@@ -261,6 +261,7 @@ const CHART_TEXT_CONTRACTS = [
   },
 ];
 const CHART_STROKE_EPSILON = 0.01;
+const TREND_MUTED_SERIES_ALPHA = 0.28;
 
 function trendPickerInteractionProblems(state) {
   if (!state) return ["air-zone picker state is missing"];
@@ -268,7 +269,10 @@ function trendPickerInteractionProblems(state) {
   const dimmed = state.filtered?.opacities?.slice(0, 2) ?? [];
   const retained = state.filtered?.opacities?.slice(2) ?? [];
   if (state.filtered?.checked !== 6) problems.push("filtered checkbox count changed");
-  if (dimmed.length !== 2 || dimmed.some((opacity) => Math.abs(opacity - 0.16) > 0.01)) {
+  if (
+    dimmed.length !== 2 ||
+    dimmed.some((opacity) => Math.abs(opacity - TREND_MUTED_SERIES_ALPHA) > 0.01)
+  ) {
     problems.push("unchecked paths are not both dimmed");
   }
   if (retained.length !== 6 || retained.some((opacity) => Math.abs(opacity - 1) > 0.01)) {
@@ -294,7 +298,8 @@ function trendNoScriptPickerProblems(state) {
   if (state.filtered?.checked !== 6) problems.push("native picker did not uncheck two series");
   if (
     opacities.length !== 8 ||
-    opacities.slice(0, 2).some((opacity) => Math.abs(opacity - 0.16) > 0.01) ||
+    opacities.slice(0, 2)
+      .some((opacity) => Math.abs(opacity - TREND_MUTED_SERIES_ALPHA) > 0.01) ||
     opacities.slice(2).some((opacity) => Math.abs(opacity - 1) > 0.01)
   ) {
     problems.push("native picker did not dim only the two unchecked paths");
@@ -318,7 +323,8 @@ function trendFilteredExportProblems(state) {
   }
   if (
     opacities.length !== 8 ||
-    opacities.slice(0, 2).some((opacity) => Math.abs(opacity - 0.16) > 0.01) ||
+    opacities.slice(0, 2)
+      .some((opacity) => Math.abs(opacity - TREND_MUTED_SERIES_ALPHA) > 0.01) ||
     opacities.slice(2).some((opacity) => Math.abs(opacity - 1) > 0.01)
   ) {
     problems.push("serialized path state does not preserve the six-series filter");
@@ -1047,6 +1053,77 @@ function homepageStationTypeBoundaryProblems(state) {
     `${HOMEPAGE_EXTREMA.ratio}×是測站觀測值對比`,
     "不是純空間",
   ]);
+}
+
+function figureDownloadLabelProblems(state) {
+  const problems = [];
+  if (!Number.isInteger(state?.toolbarCount) || !Array.isArray(state?.downloadLabels)) {
+    return ["figure download-label state is invalid"];
+  }
+  if (state.toolbarCount && state.downloadLabels.length !== state.toolbarCount) {
+    problems.push("figure download control inventory changed");
+  }
+  if (state.downloadLabels.some((label) => label !== "下載 PNG")) {
+    problems.push("figure download format is not visible");
+  }
+  return problems;
+}
+
+function trendControlClarificationProblems(state) {
+  const problems = [];
+  if (state?.hintCount !== 1 || !state?.hintVisible) {
+    problems.push("trend zone-emphasis instruction is not visible");
+  }
+  if (
+    !String(state?.hintText ?? "").includes("取消勾選只會淡化成背景對照") ||
+    !String(state?.hintText ?? "").includes("不會隱藏")
+  ) {
+    problems.push("trend zone-emphasis instruction changed");
+  }
+  const pickOffAlpha = Number(state?.pickOffAlpha);
+  if (
+    !Number.isFinite(pickOffAlpha) ||
+    Math.abs(pickOffAlpha - TREND_MUTED_SERIES_ALPHA) > 0.001
+  ) {
+    problems.push("trend muted-series alpha changed");
+  }
+  return problems;
+}
+
+function stationFilterHelperProblems(state) {
+  const problems = [];
+  if (state?.count !== 1 || !state?.visible) {
+    problems.push("station filter helper is not visible");
+  }
+  if (
+    !String(state?.text ?? "").includes("搜尋只會縮小") ||
+    !String(state?.text ?? "").includes("再從選單選擇")
+  ) {
+    problems.push("station filter helper text changed");
+  }
+  const describedBy = new Set(String(state?.describedBy ?? "").split(/\s+/u).filter(Boolean));
+  if (!describedBy.has("station-filter-help") || !describedBy.has("station-filter-count")) {
+    problems.push("station filter helper is not programmatically described");
+  }
+  return problems;
+}
+
+function homepageMapStationRouteProblems(state) {
+  const problems = [];
+  if (state?.count !== 1 || !state?.visible) {
+    problems.push("homepage map station route is not visible");
+  }
+  if (!String(state?.text ?? "").includes("前往第二章查一個測站")) {
+    problems.push("homepage map station route text changed");
+  }
+  try {
+    if (!new URL(state?.href ?? "https://invalid.example/").pathname.endsWith("/stations/")) {
+      problems.push("homepage map station route destination changed");
+    }
+  } catch {
+    problems.push("homepage map station route destination changed");
+  }
+  return problems;
 }
 
 function sourcesClaimBoundaryProblems(text) {
@@ -6198,6 +6275,75 @@ async function lifecycleSelfTest() {
     throw new Error("the homepage station-type predicate accepts a deleted boundary");
   }
 
+  const completeFigureDownloadLabels = { toolbarCount: 2, downloadLabels: ["下載 PNG", "下載 PNG"] };
+  if (figureDownloadLabelProblems(completeFigureDownloadLabels).length) {
+    throw new Error("the figure download-label predicate rejects its control");
+  }
+  if (!figureDownloadLabelProblems({ toolbarCount: 2, downloadLabels: ["下載", "下載 PNG"] })
+    .some((problem) => problem.includes("format is not visible"))) {
+    throw new Error("the figure download-label predicate accepts an unlabelled format");
+  }
+
+  const completeTrendControlClarification = {
+    hintCount: 1,
+    hintVisible: true,
+    hintText: "勾選的空品區會強調顯示；取消勾選只會淡化成背景對照，不會隱藏。",
+    pickOffAlpha: "0.28",
+  };
+  if (trendControlClarificationProblems(completeTrendControlClarification).length) {
+    throw new Error("the trend control-clarification predicate rejects its control");
+  }
+  if (!trendControlClarificationProblems({
+    ...completeTrendControlClarification,
+    pickOffAlpha: "0.16",
+  }).some((problem) => problem.includes("muted-series alpha"))) {
+    throw new Error("the trend control-clarification predicate accepts the old alpha");
+  }
+  if (!trendControlClarificationProblems({
+    ...completeTrendControlClarification,
+    pickOffAlpha: "not-a-number",
+  }).some((problem) => problem.includes("muted-series alpha"))) {
+    throw new Error("the trend control-clarification predicate accepts a non-numeric alpha");
+  }
+  if (!trendControlClarificationProblems({
+    ...completeTrendControlClarification,
+    hintText: "勾選想比較的空品區。",
+  }).some((problem) => problem.includes("instruction changed"))) {
+    throw new Error("the trend control-clarification predicate accepts ambiguous instructions");
+  }
+
+  const completeStationFilterHelper = {
+    count: 1,
+    visible: true,
+    text: "搜尋只會縮小下方測站選單；請再從選單選擇一站。",
+    describedBy: "station-filter-help station-filter-count",
+  };
+  if (stationFilterHelperProblems(completeStationFilterHelper).length) {
+    throw new Error("the station filter-helper predicate rejects its control");
+  }
+  if (!stationFilterHelperProblems({
+    ...completeStationFilterHelper,
+    text: "輸入站名或縣市。",
+  }).some((problem) => problem.includes("helper text changed"))) {
+    throw new Error("the station filter-helper predicate accepts ambiguous instructions");
+  }
+
+  const completeHomepageMapStationRoute = {
+    count: 1,
+    visible: true,
+    text: "前往第二章查一個測站 →",
+    href: "https://example.test/air-quality/stations/",
+  };
+  if (homepageMapStationRouteProblems(completeHomepageMapStationRoute).length) {
+    throw new Error("the homepage map station-route predicate rejects its control");
+  }
+  if (!homepageMapStationRouteProblems({
+    ...completeHomepageMapStationRoute,
+    href: "https://example.test/air-quality/data/",
+  }).some((problem) => problem.includes("destination changed"))) {
+    throw new Error("the homepage map station-route predicate accepts the wrong destination");
+  }
+
   const completeChapterOpening = {
     viewport: { width: 1280, height: 720 },
     smallestVisibleText: 18,
@@ -9485,7 +9631,7 @@ async function main() {
   const completePickerState = {
     filtered: {
       checked: 6,
-      opacities: [0.16, 0.16, 1, 1, 1, 1, 1, 1],
+      opacities: [TREND_MUTED_SERIES_ALPHA, TREND_MUTED_SERIES_ALPHA, 1, 1, 1, 1, 1, 1],
       rows: 6,
       resetVisible: true,
       announcement: "顯示 6 條",
@@ -9501,7 +9647,7 @@ async function main() {
     throw new Error("the trend picker predicate rejected the complete interaction");
   }
   const allDimmedPickerState = structuredClone(completePickerState);
-  allDimmedPickerState.filtered.opacities.fill(0.16);
+  allDimmedPickerState.filtered.opacities.fill(TREND_MUTED_SERIES_ALPHA);
   if (
     !trendPickerInteractionProblems(allDimmedPickerState).some((problem) =>
       problem.includes("checked paths are not all fully visible"))
@@ -9510,7 +9656,10 @@ async function main() {
   }
   const completeNoScriptPicker = {
     resetVisibleBeforeFiltering: true,
-    filtered: { checked: 6, opacities: [0.16, 0.16, 1, 1, 1, 1, 1, 1] },
+    filtered: {
+      checked: 6,
+      opacities: [TREND_MUTED_SERIES_ALPHA, TREND_MUTED_SERIES_ALPHA, 1, 1, 1, 1, 1, 1],
+    },
     restored: { checked: 8, resetVisible: true, focusStayedOnReset: true },
   };
   if (trendNoScriptPickerProblems(completeNoScriptPicker).length) {
@@ -9524,7 +9673,7 @@ async function main() {
   }
   const completeFilteredExport = {
     checkedAttributes: [false, false, true, true, true, true, true, true],
-    pathOpacities: [0.16, 0.16, 1, 1, 1, 1, 1, 1],
+    pathOpacities: [TREND_MUTED_SERIES_ALPHA, TREND_MUTED_SERIES_ALPHA, 1, 1, 1, 1, 1, 1],
   };
   if (trendFilteredExportProblems(completeFilteredExport).length) {
     throw new Error("the filtered PNG predicate rejected the complete export");
@@ -11942,6 +12091,58 @@ async function main() {
       count: nodes.length,
       visible: nodes.length === 1 && rendered(nodes[0]),
       text: nodes.length === 1 ? nodes[0].innerText.replace(/\\s+/g, " ").trim() : "",
+    };
+  })()`);
+
+  const interactionClarificationSnapshot = async () => evaluate(`(() => {
+    const rendered = (element) => {
+      if (!element) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse" || Number(style.opacity) === 0
+        ) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const toolbars = [...document.querySelectorAll(".fig-tools")];
+    const downloadButtons = toolbars.flatMap((toolbar) => {
+      const button = [...toolbar.querySelectorAll(":scope > .fig-tool")]
+        .find((item) => item.getAttribute("aria-label")?.startsWith("下載 PNG"));
+      return button ? [button] : [];
+    });
+    const trendChart = document.querySelector(".chart:has([data-series-switch])");
+    const trendHint = document.querySelector(".key-hint");
+    const stationHelper = document.querySelector("#station-filter-help");
+    const stationFilter = document.querySelector("#station-filter");
+    const mapRoutes = [...document.querySelectorAll("[data-homepage-map-station-route]")];
+    return {
+      figure: {
+        toolbarCount: toolbars.length,
+        downloadLabels: downloadButtons.map((button) => button.textContent.trim()),
+      },
+      trend: {
+        hintCount: document.querySelectorAll(".key-hint").length,
+        hintVisible: rendered(trendHint),
+        hintText: trendHint?.innerText.replace(/\\s+/g, " ").trim() ?? "",
+        pickOffAlpha: trendChart
+          ? getComputedStyle(trendChart).getPropertyValue("--pick-off-alpha").trim()
+          : "",
+      },
+      station: {
+        count: document.querySelectorAll("#station-filter-help").length,
+        visible: rendered(stationHelper),
+        text: stationHelper?.innerText.replace(/\\s+/g, " ").trim() ?? "",
+        describedBy: stationFilter?.getAttribute("aria-describedby") ?? "",
+      },
+      map: {
+        count: mapRoutes.length,
+        visible: mapRoutes.length === 1 && rendered(mapRoutes[0]),
+        text: mapRoutes.length === 1 ? mapRoutes[0].innerText.replace(/\\s+/g, " ").trim() : "",
+        href: mapRoutes.length === 1 ? mapRoutes[0].href : "",
+      },
     };
   })()`);
 
@@ -14564,6 +14765,27 @@ async function main() {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
         }
+        const clarification = await interactionClarificationSnapshot();
+        if (clarification?.figure?.toolbarCount) {
+          for (const problem of figureDownloadLabelProblems(clarification.figure)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/trend/") {
+          for (const problem of trendControlClarificationProblems(clarification?.trend)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/stations/") {
+          for (const problem of stationFilterHelperProblems(clarification?.station)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/") {
+          for (const problem of homepageMapStationRouteProblems(clarification?.map)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
         if (route === "/sources/") {
           const mainText = await evaluate(
             'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',
@@ -15676,7 +15898,7 @@ async function main() {
             const dialog = document.querySelector(".fig-zoom");
             const toolbar = dialog?.querySelector(".fig-tools") ?? null;
             const download = [...(toolbar?.querySelectorAll(".fig-tool") ?? [])]
-              .find((item) => item.textContent?.trim() === "下載");
+              .find((item) => item.textContent?.trim() === "下載 PNG");
             const plotArea = dialog?.querySelector(".plot-area") ?? null;
             const openState = {
               open: Boolean(dialog?.open),
@@ -15709,7 +15931,7 @@ async function main() {
             const shell = [...document.querySelectorAll("main .evidence-figure")][2];
             const root = shell?.matches("figure") ? shell : shell?.querySelector("figure");
             const button = [...(root?.querySelectorAll(".fig-tool") ?? [])]
-              .find((item) => item.textContent?.trim() === "下載");
+              .find((item) => item.textContent?.trim() === "下載 PNG");
             const pills = [...(root?.querySelectorAll(".key-pill") ?? [])];
             if (!root || !button || pills.length !== 8) return null;
             pills[0].click();

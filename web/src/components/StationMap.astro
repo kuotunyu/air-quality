@@ -30,6 +30,7 @@
  */
 import { concentrationColour, concentrationLegend, PM25_LEGEND_BREAKS } from "../lib/chart";
 import { COUNTIES, TAIWAN_BOUNDS } from "../lib/taiwan";
+import { href } from "../lib/chapters";
 import type { Station, StationCard } from "../lib/data";
 
 interface Props {
@@ -391,6 +392,9 @@ const dots = main.map((s) => {
       ))}
     </div>
   </div>
+  <p class="map-station-route">
+    地圖是全台概覽，不在圖上選站。<a href={href("stations")} data-homepage-map-station-route>前往第二章查一個測站 →</a>
+  </p>
 </div>
 
 <slot name="after-map" />
@@ -682,6 +686,16 @@ const dots = main.map((s) => {
     top: 0.15em;
     line-height: 1.2;
     transform: translateX(-50%);
+  }
+
+  .map-station-route {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    text-align: left;
+  }
+  .map-station-route a {
+    margin-inline-start: 0.35em;
   }
 
   .county-label {
