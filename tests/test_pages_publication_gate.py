@@ -8,7 +8,6 @@ from pathlib import Path
 
 from twair.paths import REPO_ROOT
 
-
 GATE = REPO_ROOT / "scripts" / "check_pages_publication.mjs"
 REGISTER = REPO_ROOT / "web" / "src" / "data" / "pages-publication.json"
 
@@ -43,9 +42,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         },
     )
     (dist / "index.html").write_text(
-        "".join(
-            f'<a download href="/air-quality/data/{member}">x</a>' for member in members
-        ),
+        "".join(f'<a download href="/air-quality/data/{member}">x</a>' for member in members),
         encoding="utf-8",
     )
     return register, public, dist

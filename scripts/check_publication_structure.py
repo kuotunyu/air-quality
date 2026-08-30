@@ -525,7 +525,7 @@ SPACE_SUPPORTING_HEADINGS = (
 )
 
 STATION_STAT_KEYS = ("annual-mean", "who-annual", "who-days", "taiwan-days")
-STATION_COMPARISON_KEYS = ("conversion", "rank", "worst-day")
+STATION_COMPARISON_KEYS = ("rank", "worst-day")
 
 
 def station_dossier_failures_for_text(html: str) -> list[str]:
@@ -699,21 +699,13 @@ def station_dossier_failures_for_text(html: str) -> list[str]:
     ]
     if len(standard_notes) != 1:
         failures.append(f"station standard-note inventory changed: {len(standard_notes)}")
-    if len(conversion_notes) != 1:
-        failures.append(f"station conversion-note inventory changed: {len(conversion_notes)}")
-    if reports and len(standard_notes) == 1 and len(conversion_notes) == 1:
+    if conversion_notes:
+        failures.append(f"station conversion-note returned: {len(conversion_notes)}")
+    if reports and len(standard_notes) == 1:
         standard_note = standard_notes[0]
-        conversion_note = conversion_notes[0]
         final_report_end = max(report.end_order or report.start_order for report in reports)
-        if (
-            standard_note.parent is not picker
-            or conversion_note.parent is not picker
-            or standard_note.start_order <= final_report_end
-            or standard_note.end_order is None
-        ):
+        if standard_note.parent is not picker or standard_note.start_order <= final_report_end:
             failures.append("station interpretation notes do not follow reports")
-        elif standard_note.end_order >= conversion_note.start_order:
-            failures.append("station interpretation note order changed")
     if any(
         element.visible
         and "data-chapter-reading-map" in element.attributes
@@ -3762,7 +3754,6 @@ def _run_preflight() -> None:
 <div data-station-stat="taiwan-days">3</div>
 </div>
 <div data-station-comparisons>
-<p data-station-comparison="conversion">1</p>
 <p data-station-comparison="rank">2</p>
 <p data-station-comparison="worst-day">30</p>
 </div>
@@ -3776,13 +3767,11 @@ def _run_preflight() -> None:
 <div data-station-stat="taiwan-days">4</div>
 </div>
 <div data-station-comparisons>
-<p data-station-comparison="conversion">1</p>
 <p data-station-comparison="rank">3</p>
 <p data-station-comparison="worst-day">31</p>
 </div>
 </article>
 <p data-station-standard-note>同一把尺</p>
-<p data-station-conversion-note>粗略換算</p>
 </div>
 """
     valid_station_failures = station_dossier_failures_for_text(valid_station_dossier)
@@ -3807,7 +3796,6 @@ def _run_preflight() -> None:
 <div data-station-stat="taiwan-days">3</div>
 </div>"""
     first_comparisons = """<div data-station-comparisons>
-<p data-station-comparison="conversion">1</p>
 <p data-station-comparison="rank">2</p>
 <p data-station-comparison="worst-day">30</p>
 </div>"""
@@ -3823,7 +3811,6 @@ def _run_preflight() -> None:
 <div data-station-stat="taiwan-days">4</div>
 </div>
 <div data-station-comparisons>
-<p data-station-comparison="conversion">1</p>
 <p data-station-comparison="rank">3</p>
 <p data-station-comparison="worst-day">31</p>
 </div>
@@ -3831,10 +3818,9 @@ def _run_preflight() -> None:
     annual_stat = '<div data-station-stat="annual-mean">10</div>'
     rank_comparison = '<p data-station-comparison="rank">2</p>'
     standard_note = "<p data-station-standard-note>同一把尺</p>"
-    conversion_note = "<p data-station-conversion-note>粗略換算</p>"
     without_standard_note = valid_station_dossier.replace(
-        "\n" + standard_note + "\n" + conversion_note,
-        "\n" + conversion_note,
+        "\n" + standard_note,
+        "",
         1,
     )
     station_mutations = {
@@ -3962,9 +3948,13 @@ def _run_preflight() -> None:
             "station standard-note inventory changed",
             valid_station_dossier.replace(standard_note, standard_note + standard_note, 1),
         ),
-        "missing conversion note": (
-            "station conversion-note inventory changed",
-            valid_station_dossier.replace(conversion_note, "", 1),
+        "conversion note returned": (
+            "station conversion-note returned",
+            valid_station_dossier.replace(
+                standard_note,
+                standard_note + "<p data-station-conversion-note>粗略換算</p>",
+                1,
+            ),
         ),
         "note before reports": (
             "station interpretation notes do not follow reports",
@@ -3977,14 +3967,6 @@ def _run_preflight() -> None:
             without_standard_note.replace(
                 second_report_block,
                 second_report_block.replace("</article>", standard_note + "</article>", 1),
-                1,
-            ),
-        ),
-        "reversed interpretation notes": (
-            "station interpretation note order changed",
-            valid_station_dossier.replace(
-                standard_note + "\n" + conversion_note,
-                conversion_note + "\n" + standard_note,
                 1,
             ),
         ),
