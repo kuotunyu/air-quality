@@ -1,16 +1,13 @@
 ---
 import "../styles/global.css";
 import {
-  generatedAt,
-  gitDirty,
-  gitSha,
   hourlyObservationsFull,
   hourlyObservationsShort,
   recordSpan,
   stations,
 } from "../lib/data";
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
-import { repoCommit, repoUrl } from "../lib/repo";
+import { repoUrl } from "../lib/repo";
 import FigureTools from "../components/FigureTools.astro";
 import TableTools from "../components/TableTools.astro";
 import PlotReadout from "../components/PlotReadout.astro";
@@ -315,56 +312,13 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         <footer>
           <div class="page">
             {/*
-              The claim carries the link, and the sha carries its own.
-
-              This paragraph asserted 「管線與分析全部開源」 and printed a commit
-              hash, and no page on the site linked to the repository — a reader
-              was shown a sha and told the work was open with no way to reach
-              either. The two links go to different places on purpose: the claim
-              goes to the source, the sha goes to the commit the DATA was
-              exported at, which is usually older than the code rendering the
-              page around it.
+              The openness claim carries the link to the source. Detailed export
+              provenance remains in the downloadable data metadata, where it is
+              useful for reproduction without becoming reader-facing build status.
             */}
             <p class="mono">
               資料：環境部空氣品質監測網 {recordSpan.first}–{recordSpan.last} 逐時觀測，{hourlyObservationsFull} 筆。
               管線與分析<a href={repoUrl}>全部開源</a>。
-            </p>
-            {/*
-              "資料匯出於", not "匯出於". The commit is the one the *data layers*
-              were exported at, and the page is rebuilt on every push — so on any
-              given day this sha is usually older than the code that rendered the
-              page around it. Unqualified, it reads as the build's provenance and
-              quietly overstates what is being traced.
-            */}
-            {/*
-              The sha is a link only when it is the whole story.
-
-              The export stamps `rev-parse HEAD` — the last COMMIT, not the
-              tree — and it necessarily runs before the commit that carries its
-              own output, so the sha names the code as it stood BEFORE the
-              change that produced this data. Linking that unconditionally
-              hands the reader a commit which cannot have made what they are
-              looking at, and an audit found exactly that: the payload recorded
-              a0d4260 for content that only exists from 309f74a onward.
-
-              So a clean export gets the link, and a dirty one gets the sha
-              plainly with a word saying what it is. `check_web_export.py`
-              reports the same flag, and does not fail on it — the dirty case is
-              normal, the silence was the defect.
-            */}
-            <p class="mono dim">
-              資料匯出於 {generatedAt.slice(0, 10)}
-              {
-                gitSha ? (
-                  gitDirty ? (
-                    <>{" · "}{gitSha}{" 之後（匯出時尚有未提交的變更）"}</>
-                  ) : (
-                    <>{" · "}<a href={repoCommit(gitSha)}>{gitSha}</a></>
-                  )
-                ) : (
-                  ""
-                )
-              }
             </p>
           </div>
         </footer>
@@ -843,18 +797,8 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       }
       footer p {
         margin: 0 0 0.4rem;
-        /* Not `none`. Unbounded, the provenance line ran the full 1,145px
-           column at about 50 characters — the longest measure on the page, in
-           the smallest type on it. It is prose, so it reads at the same width
-           as prose. */
+        /* The source sentence is prose, so it keeps the site's reading measure. */
         max-width: var(--measure);
-      }
-      footer .dim {
-        /* No alpha. `--text-faint` is already tuned to clear 4.5:1 against the
-           page; knocking 30% off it composited to 3.10, and this line carries
-           the export time and the commit the figures came from — the one thing
-           on the page a reader might need to quote. */
-        color: var(--text-faint);
       }
     </style>
   </body>

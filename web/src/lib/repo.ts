@@ -1,10 +1,9 @@
 /**
- * Where this site's source lives, and the two links that need it.
+ * Where this site's source lives, and the links that need it.
  *
- * The footer has always said 「管線與分析全部開源」 and printed the git sha the
- * data layer was exported at — and nothing on any of the twelve pages linked to
- * the repository. A reader was shown a commit hash and told the work was open,
- * with no way to reach it. `git grep github.com -- web/src` returned nothing.
+ * The footer says 「管線與分析全部開源」, so that claim links directly to the
+ * repository. File-level citations use the same base rather than duplicating
+ * the project URL across components.
  *
  * From the environment with a default, for the same reason `site` and `base` are
  * in `astro.config.mjs`: a fork should build without editing a file. CI passes
@@ -32,13 +31,4 @@ export const repoUrl: string = RAW.replace(/\/+$/, "");
  */
 export function repoFile(path: string, sha: string | null = null): string {
   return `${repoUrl}/blob/${sha ?? "HEAD"}/${path.replace(/^\/+/, "")}`;
-}
-
-/**
- * The commit the data layer says it was exported at. The footer already prints
- * it, so linking it costs nothing and makes the claim checkable — including
- * when it is wrong, which is the case worth being able to see.
- */
-export function repoCommit(sha: string): string {
-  return `${repoUrl}/commit/${sha}`;
 }

@@ -254,23 +254,6 @@ export const hourlyObservationsShort = `${(hourlyObservations / 1e8).toFixed(2)}
 
 /** Full digits, grouped: 「340,371,384」. */
 export const hourlyObservationsFull = hourlyObservations.toLocaleString("en-US");
-export const gitSha = meta.git_sha as string | null;
-
-/**
- * Whether the tree had uncommitted changes when this data was exported.
- *
- * The export stamps `rev-parse HEAD`, which names the last COMMIT, not the
- * tree. Running it over uncommitted work — which is what happens every time,
- * since the export necessarily precedes the commit that carries its own output
- * — records the commit BEFORE the change that produced the data. The footer
- * prints that sha and links it, so without this flag the link is an assertion
- * nobody checked and the audit found it pointing at the wrong commit.
- *
- * `?? true` because the honest default for an unknown tree state is the one
- * that claims less. A payload exported before this field existed cannot prove
- * it was clean.
- */
-export const gitDirty = ((meta as { git_dirty?: boolean }).git_dirty ?? true) as boolean;
 
 export const pollutantIndex = l0Index.pollutants as {
   pollutant: string;

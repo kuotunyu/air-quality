@@ -57,6 +57,21 @@ const ROUTES = [
   "/data/",
 ];
 const FORBIDDEN_CIGARETTE_ANALOGY = /\u652f\u83f8|\u9999\u83f8|cigarette/iu;
+const PUBLIC_OPERATIONAL_METADATA_RULES = Object.freeze([
+  ["data export timestamp", /\u8cc7\u6599\u532f\u51fa\u65bc/u],
+  ["uncommitted worktree state", /\u672a\u63d0\u4ea4(?:\u7684)?\u8b8a\u66f4|dirty worktree/iu],
+  ["Git metadata field", /\bgit[_ -]?(?:sha|dirty)\b/iu],
+  ["bare revision hash", /\b(?=[0-9a-f]{7,40}\b)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/iu],
+  ["local development address", /\b(?:localhost|127\.0\.0\.1)(?::\d{1,5})?\b/iu],
+  ["local filesystem path", /(?:file:\/\/|\b[A-Z]:\\(?:Users|AI-Portfolio)\\)/iu],
+]);
+
+function publicOperationalMetadataProblems(text) {
+  const copy = String(text ?? "");
+  return PUBLIC_OPERATIONAL_METADATA_RULES
+    .filter(([, pattern]) => pattern.test(copy))
+    .map(([label]) => `public copy exposes ${label}`);
+}
 const STATION_TYPE_LABELS = Object.freeze({
   general: "一般站",
   traffic: "交通站",
@@ -9083,6 +9098,23 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality sources conditional-atlas self-test passed");
 
+  const operationalMetadataFixtures = [
+    ["reader-facing provenance", "\u8cc7\u6599\uff1a\u74b0\u5883\u90e8\u7a7a\u6c23\u54c1\u8cea\u76e3\u6e2c\u7db2 1982\u20132025 \u9010\u6642\u89c0\u6e2c\uff0c340,371,384 \u7b46\u3002\u7ba1\u7dda\u8207\u5206\u6790\u5168\u90e8\u958b\u6e90\u3002", []],
+    ["export timestamp", "\u8cc7\u6599\u532f\u51fa\u65bc 2026-08-17", ["data export timestamp"]],
+    ["dirty export", "\u532f\u51fa\u6642\u5c1a\u6709\u672a\u63d0\u4ea4\u7684\u8b8a\u66f4", ["uncommitted worktree state"]],
+    ["bare revision", "723d9dc", ["bare revision hash"]],
+    ["local preview", "http://127.0.0.1:4328/trend/", ["local development address"]],
+    ["local path", "C:\\Users\\reader\\site", ["local filesystem path"]],
+  ];
+  for (const [name, text, expectedLabels] of operationalMetadataFixtures) {
+    const problems = publicOperationalMetadataProblems(text);
+    const expected = expectedLabels.map((label) => `public copy exposes ${label}`);
+    if (JSON.stringify(problems) !== JSON.stringify(expected)) {
+      throw new Error(`public operational-copy predicate misses ${name}`);
+    }
+  }
+  console.log("site quality public operational copy self-test passed");
+
   const restartOrder = [];
   const replacement = await replaceBrowser(
     { close: async () => restartOrder.push("close") },
@@ -15198,6 +15230,9 @@ async function main() {
         const bodyText = await evaluate("document.body.innerText");
         if (FORBIDDEN_CIGARETTE_ANALOGY.test(bodyText ?? "")) {
           failures.push(`${route} @${width} ${theme}: cigarette analogy remains`);
+        }
+        for (const problem of publicOperationalMetadataProblems(bodyText)) {
+          failures.push(`${route} @${width} ${theme}: ${problem}`);
         }
         if (route === "/") {
           const boundary = await semanticBoundarySnapshot(
