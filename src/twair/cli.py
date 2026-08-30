@@ -1009,7 +1009,7 @@ def analyze_hysplit_plan() -> None:
     console.print(f"{summary['standard_runs']} standard trajectories planned")
     console.print("pathway evidence only; no source identity, contribution, or attribution")
     console.print("no HYSPLIT binary or GDAS1 data downloaded or executed")
-    console.print(f"generation: {written['manifest'].parent}")
+    typer.echo(f"generation: {written['manifest'].parent}")
 
 
 @analysis_app.command("m1")

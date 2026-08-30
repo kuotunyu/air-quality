@@ -34,6 +34,7 @@ def test_hysplit_plan_command_states_counts_and_external_stop_boundary(
         "write_hysplit_pilot_plan",
         lambda prepared: {"manifest": manifest},
     )
+    monkeypatch.setattr(cli.console, "width", 60)
 
     result = CliRunner().invoke(cli.app, ["analyze", "hysplit-plan"])
 
