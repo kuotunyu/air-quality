@@ -60,12 +60,8 @@ jobs:
           PUBLIC_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: npm run build
 
-      - name: Verify the data layer made it into the build
-        working-directory: web
-        run: |
-          test -f dist/data/meta.json || { echo "meta.json missing from build"; exit 1; }
-          test -f dist/data/story/pitfalls.json || { echo "chapter 5 evidence missing"; exit 1; }
-          echo "data layer present: $(du -sh dist/data | cut -f1)"
+      - name: Verify the complete Pages publication boundary
+        run: node scripts/check_pages_publication.mjs
 
       # A source newline is whitespace in HTML, and Chinese has no inter-word
       # spaces — so every wrapped source line used to become a visible gap

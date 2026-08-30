@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "metadata": [
+    "meta.json"
+  ],
+  "l0": [
+    "l0/index.json",
+    "l0/so2.json",
+    "l0/co.json",
+    "l0/o3.json",
+    "l0/pm10.json",
+    "l0/pm25.json",
+    "l0/nox.json",
+    "l0/no.json",
+    "l0/no2.json",
+    "l0/thc.json",
+    "l0/nmhc.json",
+    "l0/ch4.json",
+    "l0/uvb.json",
+    "l0/amb_temp.json",
+    "l0/rainfall.json",
+    "l0/rh.json",
+    "l0/wind_speed.json",
+    "l0/wind_direc.json",
+    "l0/ws_hr.json",
+    "l0/wd_hr.json",
+    "l0/ph_rain.json",
+    "l0/rain_cond.json"
+  ],
+  "l1": [
+    "l1/pm10.parquet",
+    "l1/pm25.parquet"
+  ],
+  "l2": []
+}

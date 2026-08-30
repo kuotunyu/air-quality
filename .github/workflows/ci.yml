@@ -239,6 +239,9 @@ jobs:
         working-directory: web
         run: npm run build
 
+      - name: Every Pages download is registered and built
+        run: node scripts/check_pages_publication.mjs
+
       # A source newline is whitespace in HTML, and Chinese has no inter-word
       # spaces, so a wrapped source line becomes a visible gap mid-sentence.
       # Checked on the built output because the middleware that closes them only
