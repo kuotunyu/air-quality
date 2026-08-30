@@ -134,8 +134,8 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     n: 10,
     slug: "data",
-    nav: "資料與方法",
-    title: "資料與方法",
+    nav: "資料下載與方法",
+    title: "資料下載與方法",
     question: "哪些資料可下載、如何重建，以及缺值為何保留？",
     claim: "三層資料的內容、授權，以及這個專案為什麼不補值。",
   },

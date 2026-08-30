@@ -34,6 +34,7 @@ HEALTH_STORY = ROOT / "web" / "public" / "data" / "story" / "health.json"
 DATA_INDEX = ROOT / "web" / "public" / "data" / "l0" / "index.json"
 DATA_MANIFEST = ROOT / "web" / "public" / "data" / "manifest.json"
 DATA_META = ROOT / "web" / "public" / "data" / "meta.json"
+DATA_PUBLICATION = ROOT / "web" / "src" / "data" / "pages-publication.json"
 TYPESCRIPT_COMPILER = ROOT / "web" / "node_modules" / "typescript" / "lib" / "typescript.js"
 EXPECTED_CHAPTERS = 10
 REQUIRED_START_HERE_DESTINATIONS = {"/trend/", "/stations/", "/methods/"}
@@ -1249,8 +1250,9 @@ class DataDownloadRow:
     period: str
     l0_href: str
     l0_size: str
-    l1_href: str
+    l1_href: str | None
     l1_size: str
+    l1_label: str
 
 
 @dataclass(frozen=True)
@@ -1277,10 +1279,16 @@ def load_data_provenance_contract() -> DataProvenanceContract:
     index = _data_json_object(DATA_INDEX)
     manifest = _data_json_object(DATA_MANIFEST)
     meta = _data_json_object(DATA_META)
+    publication = _data_json_object(DATA_PUBLICATION)
     manifest_rows = manifest.get("files")
     pollutant_rows = index.get("pollutants")
     hourly_observations = meta.get("hourly_observations")
-    if not isinstance(manifest_rows, list) or not isinstance(pollutant_rows, list):
+    publication_layers = [publication.get(key) for key in ("metadata", "l0", "l1", "l2")]
+    if (
+        not isinstance(manifest_rows, list)
+        or not isinstance(pollutant_rows, list)
+        or any(not isinstance(layer, list) for layer in publication_layers)
+    ):
         raise ValueError("data provenance sources have invalid row inventories")
     if type(hourly_observations) is not int or hourly_observations <= 0:
         raise ValueError("data provenance meta hourly_observations is invalid")
@@ -1301,8 +1309,16 @@ def load_data_provenance_contract() -> DataProvenanceContract:
             raise ValueError("data manifest file identity is invalid")
         manifest_bytes[file] = size
 
+    published = {
+        file
+        for layer in publication_layers
+        for file in cast(list[Any], layer)
+        if isinstance(file, str)
+    }
+
     downloads: list[DataDownloadRow] = []
     l1_total = 0
+    published_l1_codes: list[str] = []
     for row in pollutant_rows:
         if not isinstance(row, dict):
             raise ValueError("data index pollutant row is invalid")
@@ -1325,28 +1341,36 @@ def load_data_provenance_contract() -> DataProvenanceContract:
             or type(l0_size) is not int
             or l0_size < 0
             or manifest_bytes.get(file) != l0_size
+            or file not in published
         ):
             raise ValueError("data index pollutant identity is invalid")
         stem = file.removeprefix("l0/").removesuffix(".json")
         l1_file = f"l1/{stem}.parquet"
         l1_size = manifest_bytes.get(l1_file)
-        if l1_size is None:
+        l1_selected = l1_file in published
+        if l1_selected and l1_size is None:
             raise ValueError(f"data manifest is missing {l1_file}")
-        l1_total += l1_size
+        if l1_selected:
+            l1_total += cast(int, l1_size)
+            published_l1_codes.append(pollutant)
         downloads.append(
             DataDownloadRow(
                 name=f"{name}{pollutant}",
                 period=f"{months[0]}–{months[1]}",
                 l0_href=f"/data/{file}",
                 l0_size=_data_mb(l0_size),
-                l1_href=f"/data/{l1_file}",
-                l1_size=_data_mb(l1_size),
+                l1_href=f"/data/{l1_file}" if l1_selected else None,
+                l1_size=_data_mb(cast(int, l1_size)) if l1_selected else "",
+                l1_label="Parquet" if l1_selected else "Pages 未發布",
             )
         )
 
     descriptions = {
         "L0": "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。",
-        "L1": (f"每個測項一個 Parquet，共 {_data_mb(l1_total)}。供 DuckDB-WASM 或桌面工具使用。"),
+        "L1": (
+            f"Pages 目前發布 {'、'.join(published_l1_codes)} 的 Parquet，共 {_data_mb(l1_total)}；"
+            "其餘測項可由本機管線產生。"
+        ),
         "L2": (
             f"{hourly_observations / 1e8:.2f} 億筆完整逐時觀測，含每一筆的品管旗標。"
             "不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
@@ -1475,9 +1499,8 @@ def data_provenance_register_failures_for_text(
         for element in elements
         if element.visible and element.tag == "a" and "download" in element.attributes
     ]
-    if len(downloads) != 42 or any(
-        table is None or not link.is_inside(table) for link in downloads
-    ):
+    table_downloads = [link for link in downloads if table is not None and link.is_inside(table)]
+    if len(downloads) != 25 or len(table_downloads) != 23:
         failures.append(f"data download link inventory changed: {len(downloads)}")
 
     if len(expected_downloads) != 21:
@@ -1489,8 +1512,8 @@ def data_provenance_register_failures_for_text(
         cells = [child for child in row.children if child.visible]
         observed: DataDownloadRow | None = None
         if len(cells) == 4 and all(cell.tag == "td" for cell in cells):
-            l0_links = [link for link in downloads if link.is_inside(cells[2])]
-            l1_links = [link for link in downloads if link.is_inside(cells[3])]
+            l0_links = [link for link in table_downloads if link.is_inside(cells[2])]
+            l1_links = [link for link in table_downloads if link.is_inside(cells[3])]
             l0_sizes = [
                 element
                 for element in elements
@@ -1501,20 +1524,43 @@ def data_provenance_register_failures_for_text(
                 for element in elements
                 if element.visible and "size" in element.classes and element.is_inside(cells[3])
             ]
-            if len(l0_links) == len(l1_links) == len(l0_sizes) == len(l1_sizes) == 1:
+            unavailable = [
+                element
+                for element in elements
+                if element.visible
+                and "data-pages-unavailable" in element.attributes
+                and element.is_inside(cells[3])
+            ]
+            l0_label = " ".join("".join(l0_links[0].text).split()) if len(l0_links) == 1 else ""
+            l1_label = " ".join("".join(l1_links[0].text).split()) if len(l1_links) == 1 else ""
+            if (
+                len(l0_links) == len(l0_sizes) == 1
+                and l0_label == "JSON"
+                and (
+                    (
+                        expected.l1_href is not None
+                        and len(l1_links) == len(l1_sizes) == 1
+                        and not unavailable
+                        and l1_label == "Parquet"
+                    )
+                    or (
+                        expected.l1_href is None
+                        and not l1_links
+                        and not l1_sizes
+                        and len(unavailable) == 1
+                        and unavailable[0].rendered_text() == "Pages 未發布"
+                    )
+                )
+            ):
                 observed = DataDownloadRow(
                     name=cells[0].rendered_text(),
                     period=cells[1].rendered_text(),
                     l0_href=l0_links[0].attributes.get("href") or "",
                     l0_size=l0_sizes[0].rendered_text(),
-                    l1_href=l1_links[0].attributes.get("href") or "",
-                    l1_size=l1_sizes[0].rendered_text(),
+                    l1_href=(l1_links[0].attributes.get("href") or "") if l1_links else None,
+                    l1_size=l1_sizes[0].rendered_text() if l1_sizes else "",
+                    l1_label="Parquet" if l1_links else "Pages 未發布",
                 )
-                if (
-                    l0_links[0].rendered_text() != "JSON"
-                    or l1_links[0].rendered_text() != "Parquet"
-                ):
-                    observed = None
         if observed != expected:
             failures.append(f"data download row {index + 1} changed")
 
@@ -4946,15 +4992,19 @@ def _run_preflight() -> None:
 
     data_download_rows = "".join(
         f"<tr><td>測項 {index:02d}</td><td>1982–2025</td>"
-        f'<td><a href="/data/l0/{index:02d}.json" download>JSON</a>'
-        f'<span class="size">0.{index:02d} MB</span></td>'
-        f'<td><a href="/data/l1/{index:02d}.parquet" download>Parquet</a>'
-        f'<span class="size">1.{index:02d} MB</span></td></tr>'
+        f'<td><a href="/data/l0/{index:02d}.json" download>JSON'
+        f'<span class="size">0.{index:02d} MB</span></a></td>'
+        + (
+            f'<td><a href="/data/l1/{index:02d}.parquet" download>Parquet'
+            f'<span class="size">1.{index:02d} MB</span></a></td></tr>'
+            if index <= 2
+            else "<td><span data-pages-unavailable>Pages 未發布</span></td></tr>"
+        )
         for index in range(1, 22)
     )
     data_expected_descriptions = {
         "L0": "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。",
-        "L1": "每個測項一個 Parquet，共 54.6 MB。供 DuckDB-WASM 或桌面工具使用。",
+        "L1": "Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。",
         "L2": (
             "3.40 億筆完整逐時觀測，含每一筆的品管旗標。"
             "不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
@@ -4966,8 +5016,9 @@ def _run_preflight() -> None:
             period="1982–2025",
             l0_href=f"/data/l0/{index:02d}.json",
             l0_size=f"0.{index:02d} MB",
-            l1_href=f"/data/l1/{index:02d}.parquet",
-            l1_size=f"1.{index:02d} MB",
+            l1_href=f"/data/l1/{index:02d}.parquet" if index <= 2 else None,
+            l1_size=f"1.{index:02d} MB" if index <= 2 else "",
+            l1_label="Parquet" if index <= 2 else "Pages 未發布",
         )
         for index in range(1, 22)
     )
@@ -4977,11 +5028,13 @@ def _run_preflight() -> None:
 <dt data-data-layer="L0"><span data-data-layer-term>L0 站-月</span><span data-data-layer-use>閱讀者 · 快速查值與網站圖表</span></dt>
 <dd data-data-layer-description="L0">每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。</dd>
 <dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span><span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>
-<dd data-data-layer-description="L1">每個測項一個 Parquet，共 54.6 MB。供 DuckDB-WASM 或桌面工具使用。</dd>
+<dd data-data-layer-description="L1">Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。</dd>
 <dt data-data-layer="L2"><span data-data-layer-term>L2 站-時</span><span data-data-layer-use>重現者 · 逐時稽核與管線重建</span></dt>
 <dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>—— 只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加 <code>twair build</code> 即可獨立重建。</dd>
 </dl>
 <h2>下載</h2>
+<a href="/data/meta.json" download>資料與產製資訊</a>
+<a href="/data/l0/index.json" download>L0 測項索引</a>
 <table class="dense"><caption>三層資料的 L0 與 L1，逐測項。</caption><tbody>{data_download_rows}</tbody></table>
 <h2>授權與再散布</h2>
 <p><strong>L2 不發布，理由不是檔案太大。</strong></p>
@@ -5005,18 +5058,18 @@ def _run_preflight() -> None:
     data_l1_pair = (
         '<dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span>'
         "<span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>\n"
-        '<dd data-data-layer-description="L1">每個測項一個 Parquet，共 54.6 MB。'
-        "供 DuckDB-WASM 或桌面工具使用。</dd>"
+        '<dd data-data-layer-description="L1">Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；'
+        "其餘測項可由本機管線產生。</dd>"
     )
     data_row_1 = (
         "<tr><td>測項 01</td><td>1982–2025</td>"
-        '<td><a href="/data/l0/01.json" download>JSON</a><span class="size">0.01 MB</span></td>'
-        '<td><a href="/data/l1/01.parquet" download>Parquet</a><span class="size">1.01 MB</span></td></tr>'
+        '<td><a href="/data/l0/01.json" download>JSON<span class="size">0.01 MB</span></a></td>'
+        '<td><a href="/data/l1/01.parquet" download>Parquet<span class="size">1.01 MB</span></a></td></tr>'
     )
     data_row_2 = (
         "<tr><td>測項 02</td><td>1982–2025</td>"
-        '<td><a href="/data/l0/02.json" download>JSON</a><span class="size">0.02 MB</span></td>'
-        '<td><a href="/data/l1/02.parquet" download>Parquet</a><span class="size">1.02 MB</span></td></tr>'
+        '<td><a href="/data/l0/02.json" download>JSON<span class="size">0.02 MB</span></a></td>'
+        '<td><a href="/data/l1/02.parquet" download>Parquet<span class="size">1.02 MB</span></a></td></tr>'
     )
     data_table = (
         '<table class="dense"><caption>三層資料的 L0 與 L1，逐測項。</caption>'
@@ -5085,7 +5138,7 @@ def _run_preflight() -> None:
         ),
         "lost download": (
             "data download link inventory changed",
-            valid_data_register.replace(" download>JSON</a>", ">JSON</a>", 1),
+            valid_data_register.replace(" download>JSON", ">JSON", 1),
         ),
         "changed download destination": (
             "data download row 1 changed",

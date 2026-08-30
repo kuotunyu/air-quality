@@ -19,10 +19,20 @@
  * used here comes from the air-quality stations' own instruments. Crediting a
  * source the work never used is worse than crediting none.
  */
-import { asset, dataFiles, hourlyObservationsShort, layerBytes, mb } from "../lib/data";
+import {
+  asset,
+  dataFiles,
+  hourlyObservationsShort,
+  layerBytes,
+  mb,
+  publishedL1Codes,
+} from "../lib/data";
+import { href } from "../lib/chapters";
+import { pagesPublication } from "../lib/publication";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 
+import manifest from "../../public/data/manifest.json";
 import meta from "../../public/data/meta.json";
 
 interface PublicationConflictRecord {
@@ -51,6 +61,19 @@ const wanliPm25Conflict =
       )
     : undefined;
 const integer = new Intl.NumberFormat("zh-TW");
+const manifestBytes = new Map(
+  (manifest.files as { file: string; bytes: number }[]).map((file) => [file.file, file.bytes]),
+);
+const supportingFiles = [
+  ...pagesPublication.metadata.map((file) => ({ file, label: "資料與產製資訊" })),
+  ...pagesPublication.l0
+    .filter((file) => file === "l0/index.json")
+    .map((file) => ({ file, label: "L0 測項索引" })),
+].map(({ file, label }) => {
+  const bytes = manifestBytes.get(file);
+  if (bytes === undefined) throw new Error(`Pages register member ${file} is absent from manifest.json`);
+  return { file, label, bytes };
+});
 const zhDate = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return `${year} 年 ${month} 月 ${day} 日`;
@@ -65,17 +88,17 @@ const zhDate = (value: string) => {
   </p>
   </ChapterIntro>
 
-  {/*
-    A list, not three cards.
+  <div class="primary-register task-register" data-primary-evidence data-data-task-register>
+    <h2>先按用途選資料</h2>
+    <ol>
+      <li><a href="#downloads"><strong>快速查看月資料</strong></a><span>下載 L0 JSON；網站圖表使用同一層。</span></li>
+      <li><a href="#downloads"><strong>分析 PM10／PM2.5 日資料</strong></a><span>下載 Pages 已發布的 L1 Parquet。</span></li>
+      <li><a href={href("explore")}><strong>依測站或日期查詢，再匯出 CSV</strong></a><span>前往第九章，從六個範例開始。</span></li>
+      <li><a href="#rebuild"><strong>重建完整逐時資料</strong></a><span>執行 twair ingest 與 twair build；L2 不轉散布。</span></li>
+    </ol>
+  </div>
 
-    Three cards across this column gave each description 298px, which is
-    eleven Chinese characters a line — the narrowest measure on the site, in a
-    section whose whole job is explaining what you can download. And the three
-    are a sequence rather than a set of alternatives: the same observations at
-    coarsening resolution. A term-and-description list says that, and gives the
-    prose a width it can be read at.
-  */}
-  <div class="primary-register" data-primary-evidence>
+  <div class="primary-register">
     <h2>三層資料</h2>
 
     <dl class="layers" data-data-layer-register>
@@ -89,13 +112,16 @@ const zhDate = (value: string) => {
         <span data-data-layer-term>L1 站-日</span>
         <span class="layer-use" data-data-layer-use>分析者 · 逐日查詢與桌面分析</span>
       </dt>
-      <dd data-data-layer-description="L1">每個測項一個 Parquet，共 {mb(layerBytes.l1)}。供 DuckDB-WASM 或桌面工具使用。</dd>
+      <dd data-data-layer-description="L1">
+        Pages 目前發布 {publishedL1Codes.join("、")} 的 Parquet，共 {mb(layerBytes.l1)}；
+        其餘測項可由本機管線產生。
+      </dd>
 
       <dt data-data-layer="L2">
         <span data-data-layer-term>L2 站-時</span>
         <span class="layer-use" data-data-layer-use>重現者 · 逐時稽核與管線重建</span>
       </dt>
-      <dd data-data-layer-description="L2">
+      <dd id="rebuild" data-data-layer-description="L2">
         {hourlyObservationsShort}筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>——
         只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加{" "}
         <code>twair build</code> 即可獨立重建。
@@ -103,12 +129,29 @@ const zhDate = (value: string) => {
     </dl>
   </div>
 
-  <h2>下載</h2>
+  <h2 id="downloads">下載</h2>
 
   <p>
-    二十一個測項，每個測項兩層。全部 {mb(layerBytes.l0 + layerBytes.l1)}，
-    直接從這個網站取得，不需要註冊也不經過任何伺服器端處理。
+    Pages 目前發布 PM10、PM2.5 的 L1；其餘測項可由本機管線產生，
+    留待最後的 Hugging Face 發布階段處理。下列已發布檔案可直接取得，
+    不需要註冊也不經過任何伺服器端處理。
   </p>
+
+  <ul class="supporting-downloads">
+    {supportingFiles.map((file) => (
+      <li>
+        <a href={asset(`data/${file.file}`)} download>{file.label}</a>
+        <span class="size">{file.file} · {mb(file.bytes)}</span>
+      </li>
+    ))}
+  </ul>
+
+  <dl class="schemas" data-data-schema-register>
+    <dt>L0 JSON</dt>
+    <dd><code>pollutant</code>、<code>name_zh</code>、<code>unit</code>、<code>precision</code>、<code>months</code>、<code>stations</code>、<code>mean</code>、<code>n_days</code>；<code>mean</code> 的 null 不是零。</dd>
+    <dt>L1 Parquet</dt>
+    <dd><code>station_name</code>、<code>date</code>、<code>mean</code>、<code>n_valid</code>；<code>n_valid</code> 是形成日均值的有效小時數。</dd>
+  </dl>
 
   {/*
     A table, because there are three things to compare per row and 21 rows of
@@ -137,24 +180,26 @@ const zhDate = (value: string) => {
         {
           dataFiles.map((f) => (
             <tr>
-              <td>
+              <td data-label="測項" aria-label="測項">
                 {f.name_zh}
                 <span class="code">{f.pollutant}</span>
               </td>
-              <td class="span">
+              <td class="span" data-label="涵蓋期間" aria-label="涵蓋期間">
                 {f.months[0]}–{f.months[1]}
               </td>
-              <td>
+              <td data-label="L0 站-月" aria-label="L0 站-月">
                 <a href={asset(f.l0.path)} download>
-                  JSON
+                  JSON<span class="size">{mb(f.l0.bytes)}</span>
                 </a>
-                <span class="size">{mb(f.l0.bytes)}</span>
               </td>
-              <td>
-                <a href={asset(f.l1.path)} download>
-                  Parquet
-                </a>
-                <span class="size">{mb(f.l1.bytes)}</span>
+              <td data-label="L1 站-日" aria-label="L1 站-日">
+                {f.l1 ? (
+                  <a href={asset(f.l1.path)} download>
+                    Parquet<span class="size">{mb(f.l1.bytes)}</span>
+                  </a>
+                ) : (
+                  <span class="unavailable" data-pages-unavailable>Pages 未發布</span>
+                )}
               </td>
             </tr>
           ))
@@ -283,12 +328,95 @@ const zhDate = (value: string) => {
   border-top: 1px solid var(--line-soft);
   text-wrap: pretty;
 }
+
+.task-register ol {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.task-register li {
+  display: grid;
+  gap: var(--space-1);
+}
+.task-register li span,
+.schemas dd,
+.unavailable {
+  color: var(--text-muted);
+}
+.supporting-downloads {
+  display: grid;
+  gap: var(--space-3);
+  max-width: var(--measure);
+  padding: 0;
+  list-style: none;
+}
+.supporting-downloads li {
+  display: grid;
+  gap: var(--space-1);
+}
+.schemas {
+  display: grid;
+  grid-template-columns: max-content minmax(0, var(--measure));
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-5) 0;
+}
+.schemas dt {
+  font-weight: 650;
+}
+.schemas dd {
+  margin: 0;
+}
 /* On one column the term and its description are one row, so only the term
    carries the rule. */
 @media (max-width: 39.999rem) {
   .layers dd {
     border-top: 0;
     padding-top: 0;
+  }
+  .schemas {
+    grid-template-columns: 1fr;
+  }
+  .schemas dd + dt {
+    margin-top: var(--space-2);
+  }
+  .table-wrap {
+    overflow: visible;
+  }
+  .dense,
+  .dense tbody,
+  .dense tr,
+  .dense td {
+    display: block;
+    width: 100%;
+  }
+  .dense thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .dense th {
+    padding: var(--space-1) 0;
+  }
+  .dense tr {
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  .dense td {
+    border: 0;
+    padding: var(--space-1) 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .dense td::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-inline-size: 6.5rem;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
   }
 }
 

@@ -21,9 +21,9 @@ const paths = [
     primary: false,
   },
   {
-    path: "explore",
-    label: "直接查資料",
-    claim: "在瀏覽器內以 SQL 查詢公開 Parquet。",
+    path: "data",
+    label: "下載或查詢資料",
+    claim: "先按用途選檔，也可前往瀏覽器查詢並匯出 CSV。",
     primary: false,
   },
 ] as const;
@@ -55,5 +55,12 @@ const paths = [
   .start-here-intro {
     margin: 0 0 var(--space-2);
     color: var(--text-muted);
+  }
+
+  @media (min-width: 46rem) {
+    .start-here-list a {
+      grid-template-columns: max-content minmax(0, 1fr) auto;
+      column-gap: var(--space-2);
+    }
   }
 </style>

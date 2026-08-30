@@ -19,6 +19,7 @@ import imputation from "../../public/data/story/imputation.json";
 import deweather from "../../public/data/story/deweather.json";
 import sarima from "../../public/data/story/sarima.json";
 import { COUNTIES } from "./taiwan";
+import { publishedFileSet } from "./publication";
 
 /**
  * Stations grouped by county, counties running north to south.
@@ -466,7 +467,7 @@ export interface MeasurandFiles {
   unit: string;
   months: [string, string];
   l0: DataFile;
-  l1: DataFile;
+  l1: DataFile | null;
 }
 
 const manifestBytes = new Map(
@@ -475,27 +476,40 @@ const manifestBytes = new Map(
   ),
 );
 
+const selected = (file: string): DataFile | null => {
+  if (!publishedFileSet.has(file)) return null;
+  const bytes = manifestBytes.get(file);
+  if (bytes === undefined) {
+    throw new Error(`Pages register member ${file} is absent from manifest.json`);
+  }
+  return { path: `data/${file}`, file, bytes };
+};
+
 export const dataFiles: MeasurandFiles[] = pollutantIndex.map((p) => {
   const stem = p.file.replace(/^l0\//, "").replace(/\.json$/, "");
   const l1File = `l1/${stem}.parquet`;
-  const l1Bytes = manifestBytes.get(l1File);
-  if (l1Bytes === undefined) {
-    throw new Error(`${p.pollutant}: ${l1File} is not in manifest.json`);
+  const l0 = selected(p.file);
+  if (!l0) {
+    throw new Error(`${p.pollutant}: ${p.file} is absent from the Pages register`);
   }
   return {
     pollutant: p.pollutant,
     name_zh: p.name_zh,
     unit: p.unit,
     months: p.months,
-    l0: { path: `data/${p.file}`, file: p.file, bytes: p.bytes },
-    l1: { path: `data/${l1File}`, file: l1File, bytes: l1Bytes },
+    l0,
+    l1: selected(l1File),
   };
 });
+
+export const publishedL1Codes = dataFiles
+  .filter((file) => file.l1)
+  .map((file) => file.pollutant);
 
 /** Layer totals, summed from the same manifest the page links to. */
 export const layerBytes = {
   l0: dataFiles.reduce((a, f) => a + f.l0.bytes, 0),
-  l1: dataFiles.reduce((a, f) => a + f.l1.bytes, 0),
+  l1: dataFiles.reduce((a, f) => a + (f.l1?.bytes ?? 0), 0),
 };
 
 /**

@@ -67,7 +67,7 @@ const COMPACT_IDENTITY_ACCESSIBLE_NAMES = new Map([
   ["/health/", "第七章　健康負擔與它的假設"],
   ["/methods/", "第八章　方法選擇的量化代價"],
   ["/explore/", "第九章　資料查詢"],
-  ["/data/", "第十章　資料與方法"],
+  ["/data/", "第十章　資料下載與方法"],
 ]);
 const CHAPTER_ROUTES = ROUTES.filter((route) => route !== "/");
 const CHAPTER_OPENING_VIEWPORTS = [
@@ -1941,10 +1941,17 @@ function dataMegabytes(value) {
 
 function loadDataProvenanceContract() {
   const root = join(process.cwd(), "web", "public", "data");
+  const publication = JSON.parse(readFileSync(
+    join(process.cwd(), "web", "src", "data", "pages-publication.json"),
+    "utf8",
+  ));
   const index = JSON.parse(readFileSync(join(root, "l0", "index.json"), "utf8"));
   const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
   const meta = JSON.parse(readFileSync(join(root, "meta.json"), "utf8"));
-  if (!Array.isArray(index?.pollutants) || !Array.isArray(manifest?.files)) {
+  if (
+    !Array.isArray(index?.pollutants) || !Array.isArray(manifest?.files) ||
+    !["metadata", "l0", "l1", "l2"].every((key) => Array.isArray(publication?.[key]))
+  ) {
     throw new Error("data provenance source inventory is invalid");
   }
   if (!Number.isInteger(meta?.hourly_observations) || meta.hourly_observations <= 0) {
@@ -1961,7 +1968,14 @@ function loadDataProvenanceContract() {
     }
     manifestBytes.set(row.file, row.bytes);
   }
+  const published = new Set([
+    ...publication.metadata,
+    ...publication.l0,
+    ...publication.l1,
+    ...publication.l2,
+  ]);
   let l1Total = 0;
+  const publishedL1Codes = [];
   const downloads = index.pollutants.map((row) => {
     if (
       !row || typeof row !== "object" || Array.isArray(row) ||
@@ -1970,29 +1984,35 @@ function loadDataProvenanceContract() {
       typeof row.file !== "string" || !row.file.startsWith("l0/") ||
       !row.file.endsWith(".json") || !Array.isArray(row.months) ||
       row.months.length !== 2 || row.months.some((month) => typeof month !== "string" || !month) ||
-      !Number.isInteger(row.bytes) || row.bytes < 0 || manifestBytes.get(row.file) !== row.bytes
+      !Number.isInteger(row.bytes) || row.bytes < 0 || manifestBytes.get(row.file) !== row.bytes ||
+      !published.has(row.file)
     ) {
       throw new Error("data index pollutant identity is invalid");
     }
     const stem = row.file.slice(3, -5);
     const l1File = `l1/${stem}.parquet`;
     const l1Bytes = manifestBytes.get(l1File);
-    if (!Number.isInteger(l1Bytes) || l1Bytes < 0) {
+    const l1Selected = published.has(l1File);
+    if (l1Selected && (!Number.isInteger(l1Bytes) || l1Bytes < 0)) {
       throw new Error(`data manifest is missing ${l1File}`);
     }
-    l1Total += l1Bytes;
+    if (l1Selected) {
+      l1Total += l1Bytes;
+      publishedL1Codes.push(row.pollutant);
+    }
     return Object.freeze({
       name: `${row.name_zh} ${row.pollutant}`,
       period: `${row.months[0]}–${row.months[1]}`,
       l0Href: `/data/${row.file}`,
       l0Size: dataMegabytes(row.bytes),
-      l1Href: `/data/${l1File}`,
-      l1Size: dataMegabytes(l1Bytes),
+      l1Href: l1Selected ? `/data/${l1File}` : null,
+      l1Size: l1Selected ? dataMegabytes(l1Bytes) : "",
+      l1Label: l1Selected ? `Parquet ${dataMegabytes(l1Bytes)}` : "Pages 未發布",
     });
   });
   const layers = [
     ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。"],
-    ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", `每個測項一個 Parquet，共 ${dataMegabytes(l1Total)}。供 DuckDB-WASM 或桌面工具使用。`],
+    ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", `Pages 目前發布 ${publishedL1Codes.join("、")} 的 Parquet，共 ${dataMegabytes(l1Total)}；其餘測項可由本機管線產生。`],
     ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布—— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。`],
   ].map((row) => Object.freeze(row));
   return Object.freeze({ layers: Object.freeze(layers), downloads: Object.freeze(downloads) });
@@ -2667,6 +2687,8 @@ function dataProvenanceRegisterProblems(state, viewport) {
   }
   const scope = modeLabels[state.mode];
   const problems = [];
+  if (state?.counts?.taskRegisters !== 1) problems.push(`${scope}task register changed`);
+  if (state?.counts?.schemaRegisters !== 1) problems.push(`${scope}schema register changed`);
   if (state?.counts?.registers !== 1) {
     problems.push(`${scope}register count is ${String(state?.counts?.registers)}, expected 1`);
   }
@@ -2755,9 +2777,8 @@ function dataProvenanceRegisterProblems(state, viewport) {
   if (state?.counts?.bodyRows !== 21) {
     problems.push(`${scope}download row count is ${String(state?.counts?.bodyRows)}, expected 21`);
   }
-  if (state?.counts?.downloads !== 42) {
-    problems.push(`${scope}download link count is ${String(state?.counts?.downloads)}, expected 42`);
-  }
+  if (state?.counts?.downloads !== 25) problems.push(`${scope}registered download count changed`);
+  if (state?.counts?.unavailable !== 19) problems.push(`${scope}unavailable L1 count changed`);
   if (!Array.isArray(state?.downloadRows) || state.downloadRows.length !== DATA_DOWNLOAD_ROWS.length) {
     problems.push(`${scope}download row evidence inventory changed`);
   } else {
@@ -2770,6 +2791,7 @@ function dataProvenanceRegisterProblems(state, viewport) {
         l0Size: healthTextIdentity(row?.l0Size),
         l1Href: row?.l1Href,
         l1Size: healthTextIdentity(row?.l1Size),
+        l1Label: healthTextIdentity(row?.l1Label),
       };
       const expectedIdentity = {
         name: healthTextIdentity(expected.name),
@@ -2778,6 +2800,7 @@ function dataProvenanceRegisterProblems(state, viewport) {
         l0Size: healthTextIdentity(expected.l0Size),
         l1Href: expected.l1Href,
         l1Size: healthTextIdentity(expected.l1Size),
+        l1Label: healthTextIdentity(expected.l1Label),
       };
       if (JSON.stringify(observedIdentity) !== JSON.stringify(expectedIdentity)) {
         problems.push(`${scope}download row ${index + 1} changed`);
@@ -2790,16 +2813,23 @@ function dataProvenanceRegisterProblems(state, viewport) {
           {},
         ),
       );
-      for (const [linkIndex, label] of ["JSON", "Parquet"].entries()) {
+      const actionLabels = [
+        `JSON ${expected.l0Size}`,
+        expected.l1Href ? `Parquet ${expected.l1Size}` : null,
+      ];
+      for (const [linkIndex, label] of actionLabels.entries()) {
         problems.push(
           ...healthInspectionProblems(
             row?.downloadInspections?.[linkIndex],
             `download row ${index + 1} link ${linkIndex + 1}`,
             scope,
-            {},
+            viewport?.width <= 610 ? viewport : {},
           ),
         );
-        if (healthTextIdentity(row?.downloadAccessibleTexts?.[linkIndex]) !== label) {
+        if (
+          label !== null &&
+          healthTextIdentity(row?.downloadAccessibleTexts?.[linkIndex]) !== healthTextIdentity(label)
+        ) {
           problems.push(`${scope}download row ${index + 1} link ${linkIndex + 1} accessible name changed`);
         }
       }
@@ -2819,12 +2849,17 @@ function dataProvenanceRegisterProblems(state, viewport) {
       ),
     );
   }
+  const compactTable = viewport?.width <= 610;
   if (
     !tableWrapper ||
     !Number.isFinite(tableWrapper.clientWidth) ||
     !Number.isFinite(tableWrapper.scrollWidth) ||
     tableWrapper.scrollWidth < tableWrapper.clientWidth ||
-    (tableWrapper.scrollWidth > tableWrapper.clientWidth &&
+    (compactTable && (
+      tableWrapper.scrollWidth > tableWrapper.clientWidth + 1 ||
+      ["auto", "scroll"].includes(tableWrapper.overflowX)
+    )) ||
+    (!compactTable && tableWrapper.scrollWidth > tableWrapper.clientWidth &&
       !["auto", "scroll"].includes(tableWrapper.overflowX))
   ) {
     problems.push(`${scope}download table local scroller changed`);
@@ -2848,6 +2883,7 @@ function dataProvenanceRegisterProblems(state, viewport) {
   const landmarks = state?.landmarks ?? {};
   const ordered = [
     landmarks.lede,
+    landmarks.primary,
     landmarks.register,
     landmarks.table,
     landmarks.licensing,
@@ -2865,9 +2901,9 @@ function dataProvenanceRegisterProblems(state, viewport) {
   if (
     ((viewport?.width === 375 && viewport?.height === 812) ||
       (viewport?.width === 1280 && viewport?.height === 720)) &&
-    (!Number.isFinite(landmarks.register?.top) || landmarks.register.top >= viewport.height)
+    (!Number.isFinite(landmarks.primary?.top) || landmarks.primary.top >= viewport.height)
   ) {
-    problems.push(`${scope}register does not enter the first viewport`);
+    problems.push(`${scope}task register does not enter the first viewport`);
   }
   if (
     !Number.isFinite(state?.document?.clientWidth) ||
@@ -3093,7 +3129,8 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
     problems.push(`${scope}explore SQL disclosure text changed`);
   }
   if (
-    !healthTextIdentity(state.caveat.text).includes("查得到哪些測項，取決於這個站台放了哪些檔案") ||
+    !healthTextIdentity(state.caveat.text).includes("Pages目前公開PM10、PM2.5兩張L1表") ||
+    !healthTextIdentity(state.caveat.text).includes("不是目前GitHubPages的發布承諾") ||
     !healthTextIdentity(state.caveat.text).includes("逐時原始資料另有授權問題待確認")
   ) {
     problems.push(`${scope}explore caveat text changed`);
@@ -4215,6 +4252,8 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
       detailsAncestor,
     };
   };
+  const taskRegisters = [...document.querySelectorAll("[data-data-task-register]")];
+  const schemaRegisters = [...document.querySelectorAll("[data-data-schema-register]")];
   const registers = [...document.querySelectorAll("[data-data-layer-register]")];
   const terms = [...document.querySelectorAll("[data-data-layer]")];
   const uses = [...document.querySelectorAll("[data-data-layer-use]")];
@@ -4226,6 +4265,7 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
     const cells = [...row.querySelectorAll(":scope > td")];
     const l0Link = cells[2]?.querySelector("a[download]") ?? null;
     const l1Link = cells[3]?.querySelector("a[download]") ?? null;
+    const l1Action = l1Link ?? cells[3]?.querySelector("[data-pages-unavailable]") ?? null;
     return {
       name: compact(cells[0]?.innerText),
       period: compact(cells[1]?.innerText),
@@ -4233,8 +4273,9 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
       l0Size: compact(cells[2]?.querySelector(".size")?.innerText),
       l1Href: l1Link?.getAttribute("href") ?? null,
       l1Size: compact(cells[3]?.querySelector(".size")?.innerText),
+      l1Label: compact(l1Action?.innerText),
       rowInspection: inspect(row, tableWrapper),
-      downloadInspections: [inspect(l0Link, tableWrapper), inspect(l1Link, tableWrapper)],
+      downloadInspections: [inspect(l0Link, tableWrapper), inspect(l1Action, tableWrapper)],
       downloadAccessibleTexts: [null, null],
     };
   });
@@ -4249,13 +4290,16 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
   return {
     mode,
     counts: {
+      taskRegisters: taskRegisters.length,
+      schemaRegisters: schemaRegisters.length,
       registers: registers.length,
       terms: terms.length,
       uses: uses.length,
       descriptions: descriptions.length,
       tables: tables.length,
       bodyRows: table?.querySelectorAll("tbody > tr").length ?? 0,
-      downloads: table?.querySelectorAll("a[download]").length ?? 0,
+      downloads: document.querySelectorAll("main a[download]").length,
+      unavailable: document.querySelectorAll("[data-pages-unavailable]").length,
       l2Downloads: document.querySelectorAll(
         '[data-data-layer="L2"] a[download], [data-data-layer="L2"] + [data-data-layer-description="L2"] a[download]'
       ).length,
@@ -4291,6 +4335,7 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
     l2Boundary: inspect(boundaries[0] ?? null),
     landmarks: {
       lede: inspect(lede),
+      primary: inspect(taskRegisters[0] ?? null),
       register: inspect(register),
       table: inspect(table, tableWrapper),
       licensing: inspect(licensing),
@@ -7932,17 +7977,30 @@ async function lifecycleSelfTest() {
     healthPart(top, sourceIndex, { left: 20, right: 620, width: 600, height: 48, ...extra });
   const completeDataRegister = {
     mode: "normal",
-    counts: { registers: 1, terms: 3, uses: 3, descriptions: 3, tables: 1, bodyRows: 21, downloads: 42, l2Downloads: 0, boundaries: 1 },
-    register: dataPart(180, 20, { height: 270 }),
+    counts: {
+      taskRegisters: 1,
+      schemaRegisters: 1,
+      registers: 1,
+      terms: 3,
+      uses: 3,
+      descriptions: 3,
+      tables: 1,
+      bodyRows: 21,
+      downloads: 25,
+      unavailable: 19,
+      l2Downloads: 0,
+      boundaries: 1,
+    },
+    register: dataPart(460, 30, { height: 270 }),
     layers: DATA_LAYER_ROWS.map(([level, term, useText, descriptionText], index) => ({
       level,
       term,
       useText,
       accessibleUse: useText,
       descriptionText,
-      termInspection: dataPart(240 + index * 70, 30 + index * 3),
-      useInspection: dataPart(270 + index * 70, 31 + index * 3, { height: 24 }),
-      descriptionInspection: dataPart(300 + index * 70, 32 + index * 3),
+      termInspection: dataPart(500 + index * 70, 40 + index * 3),
+      useInspection: dataPart(530 + index * 70, 41 + index * 3, { height: 24 }),
+      descriptionInspection: dataPart(560 + index * 70, 42 + index * 3),
     })),
     table: dataPart(540, 100, { height: 900 }),
     tableWrapper: { inspection: dataPart(520, 99, { height: 940 }), clientWidth: 600, scrollWidth: 900, overflowX: "auto" },
@@ -7953,13 +8011,17 @@ async function lifecycleSelfTest() {
         dataPart(560 + index * 40, 121 + index * 3),
         dataPart(560 + index * 40, 122 + index * 3),
       ],
-      downloadAccessibleTexts: ["JSON", "Parquet"],
+      downloadAccessibleTexts: [
+        `JSON ${row.l0Size}`,
+        row.l1Href ? `Parquet ${row.l1Size}` : "Pages 未發布",
+      ],
     })),
     l2BoundaryText: "L2 不發布，理由不是檔案太大。這個專案繞過這個矛盾而不是解決它。",
     l2Boundary: dataPart(1620, 110, { height: 140 }),
     landmarks: {
       lede: dataPart(100, 10),
-      register: dataPart(180, 20, { height: 270 }),
+      primary: dataPart(180, 20, { height: 230 }),
+      register: dataPart(460, 30, { height: 270 }),
       table: dataPart(540, 100, { height: 900 }),
       licensing: dataPart(1500, 105, { height: 80 }),
       l2Boundary: dataPart(1620, 110, { height: 140 }),
@@ -7972,6 +8034,8 @@ async function lifecycleSelfTest() {
   if (dataControlProblems.length) dataPreflightMisses.push(`complete control: ${dataControlProblems.join(", ")}`);
   const dataMutations = [
     ["invalid mode", "mode is invalid", (state) => { state.mode = "other"; }],
+    ["missing task register", "task register changed", (state) => { state.counts.taskRegisters = 0; }],
+    ["missing schema register", "schema register changed", (state) => { state.counts.schemaRegisters = 0; }],
     ["missing register", "register count is 0", (state) => { state.counts.registers = 0; state.register = null; }],
     ["hidden register", "register is hidden", (state) => { state.register.hidden = true; }],
     ["register disclosure", "register is user-collapsible", (state) => { state.register.detailsAncestor = true; }],
@@ -7990,16 +8054,28 @@ async function lifecycleSelfTest() {
     ["visual level reorder", "layer visual order changed", (state) => { state.layers[0].termInspection.top = 800; }],
     ["missing table", "download table count is 0", (state) => { state.counts.tables = 0; state.table = null; }],
     ["lost table row", "download row count is 20", (state) => { state.counts.bodyRows = 20; }],
-    ["lost download", "download link count is 41", (state) => { state.counts.downloads = 41; }],
+    ["lost download", "registered download count changed", (state) => { state.counts.downloads = 24; }],
+    ["lost unavailable state", "unavailable L1 count changed", (state) => { state.counts.unavailable = 18; }],
     ["changed download destination", "download row 1 changed", (state) => { state.downloadRows[0].l0Href = "/data/l0/wrong.json"; }],
     ["reordered download rows", "download row 1 changed", (state) => { [state.downloadRows[0], state.downloadRows[1]] = [state.downloadRows[1], state.downloadRows[0]]; }],
     ["hidden download", "download row 1 link 1 is hidden", (state) => { state.downloadRows[0].downloadInspections[0].hidden = true; }],
+    ["compact off-canvas action", "download row 1 link 1 is horizontally off-canvas", (state) => {
+      state.viewport = { width: 610, height: 900 };
+      state.downloadRows[0].downloadInspections[0].left = 620;
+      state.downloadRows[0].downloadInspections[0].right = 720;
+    }],
     ["L2 download", "L2 unexpectedly has 1 download", (state) => { state.counts.l2Downloads = 1; }],
     ["broken local scroller", "download table local scroller changed", (state) => { state.tableWrapper.overflowX = "visible"; }],
+    ["compact horizontal scroller", "download table local scroller changed", (state) => {
+      state.viewport = { width: 610, height: 900 };
+      state.tableWrapper.overflowX = "auto";
+      state.tableWrapper.clientWidth = 580;
+      state.tableWrapper.scrollWidth = 900;
+    }],
     ["missing L2 boundary", "L2 boundary count is 0", (state) => { state.counts.boundaries = 0; state.l2Boundary = null; }],
     ["changed L2 boundary", "L2 boundary text changed", (state) => { state.l2BoundaryText = "L2 不發布。"; }],
     ["source reorder", "provenance source order changed", (state) => { state.landmarks.register.sourceIndex = 106; }],
-    ["register below viewport", "register does not enter the first viewport", (state) => { state.landmarks.register.top = 720; }],
+    ["task register below viewport", "task register does not enter the first viewport", (state) => { state.landmarks.primary.top = 720; }],
     ["document overflow", "document scrolls sideways", (state) => { state.document.scrollWidth = 1281; }],
     ["no-JavaScript hidden use", "no-JavaScript layer 1 use is hidden", (state) => { state.mode = "no-js"; state.layers[0].useInspection.hidden = true; }],
     ["print disclosure", "print register is user-collapsible", (state) => { state.mode = "print"; state.register.detailsAncestor = true; }],
@@ -8110,7 +8186,7 @@ async function lifecycleSelfTest() {
         focused: terminal,
       },
       caveat: {
-        text: "查得到哪些測項，取決於這個站台放了哪些檔案。逐時原始資料另有授權問題待確認。",
+        text: "Pages 目前公開 PM10、PM2.5 兩張 L1 表。本機匯出可產生完整 21 個測項，但那不是目前 GitHub Pages 的發布承諾。逐時原始資料另有授權問題待確認。",
         inspection: explorerPart(640, 70),
       },
       noJs: {
@@ -9900,7 +9976,7 @@ async function main() {
     if (!state) return state;
     const [useTexts, downloadTexts] = await accessibilityTextsForSelectors([
       "[data-data-layer-use]",
-      ".table-wrap tbody a[download]",
+      ".table-wrap tbody td:nth-child(3) a[download], .table-wrap tbody td:nth-child(4) > :is(a[download], [data-pages-unavailable])",
     ]);
     for (const [index, row] of state.layers.entries()) {
       row.accessibleUse = useTexts[index] ?? null;
@@ -10880,7 +10956,7 @@ async function main() {
       { name: "extended contradictory description", expected: "layer 1 description changed", script: `document.querySelector('[data-data-layer-description="L0"]').append("但內容規格已改變")` },
       { name: "disclosure around register", expected: "register is user-collapsible", script: `(() => { const e=document.querySelector("[data-data-layer-register]"); const d=document.createElement("details"); d.open=true; e.before(d); d.append(e); })()` },
       { name: "table relocation", expected: "provenance source order changed", script: `document.querySelector("[data-data-layer-register]").before(document.querySelector(".table-wrap"))` },
-      { name: "lost download", expected: "download link count is 41", script: `document.querySelector(".table-wrap a[download]").remove()` },
+      { name: "lost download", expected: "registered download count changed", script: `document.querySelector(".table-wrap a[download]").remove()` },
       { name: "changed download destination", expected: "download row 1 changed", script: `document.querySelector(".table-wrap a[download]").setAttribute("href", "/data/l0/wrong.json")` },
       { name: "reordered download rows", expected: "download row 1 changed", script: `(() => { const rows=document.querySelectorAll(".table-wrap tbody > tr"); rows[1].after(rows[0]); })()` },
       { name: "hidden download", expected: "download row 1 link 1 is hidden", script: `document.querySelector(".table-wrap a[download]").hidden=true` },

@@ -12,7 +12,7 @@
  * The table list is filled in after probing what is actually deployed, not
  * from what happened to exist on the machine that built the page.
  */
-import { pollutantIndex } from "../lib/data";
+import { dataFiles, publishedL1Codes } from "../lib/data";
 import ChapterIntro from "./ChapterIntro.astro";
 
 const EXAMPLES = [
@@ -91,13 +91,13 @@ ORDER BY year;`,
   },
 ];
 
-// Everything the export *can* produce. Which of these is actually served is
-// settled at runtime by a HEAD request per file.
-const candidates = pollutantIndex.map((p) => ({
-  code: p.pollutant,
-  name: p.name_zh,
-  file: `l1/${p.file.slice(3).replace(/\.json$/, ".parquet")}`,
-}));
+// The committed register decides what Pages intends to expose. A runtime HEAD
+// request still confirms that each selected file actually reached the host.
+const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
+  code: entry.pollutant,
+  name: entry.name_zh,
+  file: entry.l1.file,
+}] : []);
 ---
 
 <section id="explore" class="page" data-explorer-workspace data-explorer-state="initial">
@@ -207,9 +207,10 @@ const candidates = pollutantIndex.map((p) => ({
   <div id="result" class="result" tabindex="-1" data-explorer-result></div>
 
   <div class="note caveat" data-explorer-caveat>
-    <strong>查得到哪些測項，取決於這個站台放了哪些檔案。</strong>
-    完整的 21 個測項共 54.6 MB，沒有全部進版本庫。
-    要在本機拿到全部：<code>uv run twair export web</code>。
+    <strong>Pages 目前公開 {publishedL1Codes.join("、")} 兩張 L1 表。</strong>
+    執行查詢時仍會逐檔確認主機回應；本機匯出可產生完整 21 個測項，
+    但那不是目前 GitHub Pages 的發布承諾。要在本機產生全部資料：
+    <code>uv run twair export web</code>。
     逐時原始資料另有授權問題待確認，見 <code>docs/legal.md</code>。
   </div>
 </section>
