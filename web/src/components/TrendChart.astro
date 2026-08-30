@@ -371,10 +371,10 @@ const keyed = series.map((s) => {
 
 /*
  * One rule per series, written here because CSS cannot ask "is the switch that
- * shares my index unchecked".
+ * shares my index unchecked" and then address a path with that same index.
  *
  * `:has()` is anchored on `.chart` and not on `:root`: the switch ids are
- * unique, so a bare `:root:has(#id-3:not(:checked)) .plot-line` would dim the
+ * unique, so a bare `:root:has(#id-3:not(:checked)) .plot-line` would hide the
  * fourth line of every chart on the page. Anchored on the ancestor both the
  * switch and the line share, only the chart that owns the switch matches.
  *
@@ -388,7 +388,7 @@ const pickCss = pick
       .map(
         (_, i) =>
           `.chart:has(#${pick.id}-${i}:not(:checked)) .plot-line[data-series-index="${i}"]` +
-          `{opacity:var(--pick-off-alpha);stroke-width:var(--pick-off-weight)}`,
+          `{display:none}`,
       )
       .join("\n")
   : "";
@@ -419,9 +419,8 @@ const pickCss = pick
 
           The caption said this and the caption is under the figure — which is
           the wrong side of a chart to learn that the thing above it can be
-          pressed. It says what the press DOES as well as that it can be
-          pressed: a reader who tries one and sees the line still there, in
-          pale ink, would otherwise read that as the control not working.
+          pressed. It states the checkbox's literal effect before the reader
+          uses it.
         */}
         <div class="key-filter-bar">
           <div class="key-filter-badge" aria-hidden="true">
@@ -430,7 +429,7 @@ const pickCss = pick
             </svg>
             <span>互動篩選</span>
           </div>
-          <p class="key-hint">勾選的空品區會強調顯示；取消勾選只會淡化成背景對照，不會隱藏。</p>
+          <p class="key-hint">勾選以顯示空品區；取消勾選會隱藏該線。</p>
         </div>
         <ul class="chart-key chart-key-picker" role="group" aria-label={pick.label}>
           {keyed.map((s, i) => (
@@ -911,7 +910,7 @@ const pickCss = pick
         on.length === switches.length
           ? `顯示全部 ${switches.length} 條`
           : on.length === 0
-            ? "沒有選取任何一條，全部淡化顯示"
+            ? "目前未顯示任何空品區"
             : `顯示 ${on.length} 條：${on.map(nameOf).filter(Boolean).join("、")}`;
     };
 
@@ -1335,34 +1334,10 @@ const pickCss = pick
    * remove — so the legend IS the control. Nothing new is named; the thing that
    * already identified a line is now the thing that switches it.
    *
-   * How a switched-off line is drawn, and the one place to tune it. Dimmed and
-   * thinned rather than removed, which is the choice the figure's own question
-   * makes for us: 「各空品區的長期趨勢是否一致？」 is a question about the eight
-   * together, and a reader who has picked two still needs to see them against
-   * the other six. Same reading as the reference site's 「灰色為其他五都，供對照」.
-   *
-   * Hue is kept, not drained to grey. At 0.28 the line stays subordinate while
-   * remaining visible, and keeping its hue means the six background series
-   * stay individually traceable — drained, the 離島 crossing in 2015 becomes
-   * an unreadable knot.
+   * The generated inline rules above map each native checkbox directly to its
+   * own SVG path. Unchecked means absent, matching the control's literal
+   * semantics while leaving the axes and reference guide in place.
    */
-  .chart {
-    --pick-off-alpha: 0.28;
-    --pick-off-weight: 1.6;
-  }
-
-  .plot-line {
-    transition:
-      opacity 160ms cubic-bezier(0.22, 1, 0.36, 1),
-      stroke-width 160ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .plot-line {
-      transition: none;
-    }
-  }
-
   /*
    * ---------- the control steps outside the frame ----------
    *

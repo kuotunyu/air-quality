@@ -261,28 +261,35 @@ const CHART_TEXT_CONTRACTS = [
   },
 ];
 const CHART_STROKE_EPSILON = 0.01;
-const TREND_MUTED_SERIES_ALPHA = 0.28;
 const IDLE_READOUT_BLANK_LIMIT_PX = 96;
 
 function trendPickerInteractionProblems(state) {
   if (!state) return ["air-zone picker state is missing"];
   const problems = [];
-  const dimmed = state.filtered?.opacities?.slice(0, 2) ?? [];
-  const retained = state.filtered?.opacities?.slice(2) ?? [];
+  const hidden = state.filtered?.displays?.slice(0, 2) ?? [];
+  const retained = state.filtered?.displays?.slice(2) ?? [];
   if (state.filtered?.checked !== 6) problems.push("filtered checkbox count changed");
-  if (
-    dimmed.length !== 2 ||
-    dimmed.some((opacity) => Math.abs(opacity - TREND_MUTED_SERIES_ALPHA) > 0.01)
-  ) {
-    problems.push("unchecked paths are not both dimmed");
+  if (hidden.length !== 2 || hidden.some((display) => display !== "none")) {
+    problems.push("unchecked paths are not both hidden");
   }
-  if (retained.length !== 6 || retained.some((opacity) => Math.abs(opacity - 1) > 0.01)) {
-    problems.push("checked paths are not all fully visible");
+  if (retained.length !== 6 || retained.some((display) => display === "none")) {
+    problems.push("checked paths are not all rendered");
   }
   if (state.filtered?.rows !== 6) problems.push("filtered readout row count changed");
   if (!state.filtered?.resetVisible) problems.push("filtered reset control is hidden");
   if (!state.filtered?.announcement?.includes("顯示 6 條")) {
     problems.push("filtered announcement changed");
+  }
+  if (state.empty?.checked !== 0) problems.push("empty checkbox count changed");
+  if (
+    state.empty?.displays?.length !== 8 ||
+    state.empty.displays.some((display) => display !== "none")
+  ) {
+    problems.push("empty selection leaves a series path rendered");
+  }
+  if (state.empty?.rows !== 0) problems.push("empty readout still lists a series");
+  if (state.empty?.announcement !== "目前未顯示任何空品區") {
+    problems.push("empty announcement changed");
   }
   if (state.restored?.checked !== 8) problems.push("reset checkbox count changed");
   if (state.restored?.rows !== 8) problems.push("reset readout row count changed");
@@ -294,16 +301,15 @@ function trendPickerInteractionProblems(state) {
 function trendNoScriptPickerProblems(state) {
   if (!state) return ["no-JavaScript air-zone picker state is missing"];
   const problems = [];
-  const opacities = state.filtered?.opacities ?? [];
+  const displays = state.filtered?.displays ?? [];
   if (!state.resetVisibleBeforeFiltering) problems.push("native reset is hidden before filtering");
   if (state.filtered?.checked !== 6) problems.push("native picker did not uncheck two series");
   if (
-    opacities.length !== 8 ||
-    opacities.slice(0, 2)
-      .some((opacity) => Math.abs(opacity - TREND_MUTED_SERIES_ALPHA) > 0.01) ||
-    opacities.slice(2).some((opacity) => Math.abs(opacity - 1) > 0.01)
+    displays.length !== 8 ||
+    displays.slice(0, 2).some((display) => display !== "none") ||
+    displays.slice(2).some((display) => display === "none")
   ) {
-    problems.push("native picker did not dim only the two unchecked paths");
+    problems.push("native picker did not hide only the two unchecked paths");
   }
   if (state.restored?.checked !== 8) problems.push("native reset did not restore all series");
   if (!state.restored?.resetVisible) problems.push("native reset disappeared after reset");
@@ -315,7 +321,7 @@ function trendFilteredExportProblems(state) {
   if (!state) return ["filtered PNG state is missing"];
   const problems = [];
   const checked = state.checkedAttributes ?? [];
-  const opacities = state.pathOpacities ?? [];
+  const displays = state.pathDisplays ?? [];
   if (
     checked.length !== 8 || checked.slice(0, 2).some(Boolean) ||
     checked.slice(2).some((value) => !value)
@@ -323,10 +329,9 @@ function trendFilteredExportProblems(state) {
     problems.push("serialized checkbox state does not preserve the six-series filter");
   }
   if (
-    opacities.length !== 8 ||
-    opacities.slice(0, 2)
-      .some((opacity) => Math.abs(opacity - TREND_MUTED_SERIES_ALPHA) > 0.01) ||
-    opacities.slice(2).some((opacity) => Math.abs(opacity - 1) > 0.01)
+    displays.length !== 8 ||
+    displays.slice(0, 2).some((display) => display !== "none") ||
+    displays.slice(2).some((display) => display === "none")
   ) {
     problems.push("serialized path state does not preserve the six-series filter");
   }
@@ -1188,17 +1193,15 @@ function trendControlClarificationProblems(state) {
     problems.push("trend zone-emphasis instruction is not visible");
   }
   if (
-    !String(state?.hintText ?? "").includes("取消勾選只會淡化成背景對照") ||
-    !String(state?.hintText ?? "").includes("不會隱藏")
+    !String(state?.hintText ?? "").includes("取消勾選會隱藏該線")
   ) {
     problems.push("trend zone-emphasis instruction changed");
   }
-  const pickOffAlpha = Number(state?.pickOffAlpha);
-  if (
-    !Number.isFinite(pickOffAlpha) ||
-    Math.abs(pickOffAlpha - TREND_MUTED_SERIES_ALPHA) > 0.001
-  ) {
-    problems.push("trend muted-series alpha changed");
+  if (state?.uncheckedLineDisplay !== "none") {
+    problems.push("trend unchecked series remains rendered");
+  }
+  if (!state?.checkedLineDisplay || state.checkedLineDisplay === "none") {
+    problems.push("trend checked series is hidden");
   }
   return problems;
 }
@@ -6400,23 +6403,24 @@ async function lifecycleSelfTest() {
   const completeTrendControlClarification = {
     hintCount: 1,
     hintVisible: true,
-    hintText: "勾選的空品區會強調顯示；取消勾選只會淡化成背景對照，不會隱藏。",
-    pickOffAlpha: "0.28",
+    hintText: "勾選以顯示空品區；取消勾選會隱藏該線。",
+    uncheckedLineDisplay: "none",
+    checkedLineDisplay: "inline",
   };
   if (trendControlClarificationProblems(completeTrendControlClarification).length) {
     throw new Error("the trend control-clarification predicate rejects its control");
   }
   if (!trendControlClarificationProblems({
     ...completeTrendControlClarification,
-    pickOffAlpha: "0.16",
-  }).some((problem) => problem.includes("muted-series alpha"))) {
-    throw new Error("the trend control-clarification predicate accepts the old alpha");
+    uncheckedLineDisplay: "inline",
+  }).some((problem) => problem.includes("unchecked series remains rendered"))) {
+    throw new Error("the trend control-clarification predicate accepts a rendered unchecked line");
   }
   if (!trendControlClarificationProblems({
     ...completeTrendControlClarification,
-    pickOffAlpha: "not-a-number",
-  }).some((problem) => problem.includes("muted-series alpha"))) {
-    throw new Error("the trend control-clarification predicate accepts a non-numeric alpha");
+    checkedLineDisplay: "none",
+  }).some((problem) => problem.includes("checked series is hidden"))) {
+    throw new Error("the trend control-clarification predicate accepts a hidden checked line");
   }
   if (!trendControlClarificationProblems({
     ...completeTrendControlClarification,
@@ -9818,10 +9822,16 @@ async function main() {
   const completePickerState = {
     filtered: {
       checked: 6,
-      opacities: [TREND_MUTED_SERIES_ALPHA, TREND_MUTED_SERIES_ALPHA, 1, 1, 1, 1, 1, 1],
+      displays: ["none", "none", "inline", "inline", "inline", "inline", "inline", "inline"],
       rows: 6,
       resetVisible: true,
       announcement: "顯示 6 條",
+    },
+    empty: {
+      checked: 0,
+      displays: Array(8).fill("none"),
+      rows: 0,
+      announcement: "目前未顯示任何空品區",
     },
     restored: {
       checked: 8,
@@ -9833,19 +9843,19 @@ async function main() {
   if (trendPickerInteractionProblems(completePickerState).length) {
     throw new Error("the trend picker predicate rejected the complete interaction");
   }
-  const allDimmedPickerState = structuredClone(completePickerState);
-  allDimmedPickerState.filtered.opacities.fill(TREND_MUTED_SERIES_ALPHA);
+  const retainedUncheckedPickerState = structuredClone(completePickerState);
+  retainedUncheckedPickerState.filtered.displays[0] = "inline";
   if (
-    !trendPickerInteractionProblems(allDimmedPickerState).some((problem) =>
-      problem.includes("checked paths are not all fully visible"))
+    !trendPickerInteractionProblems(retainedUncheckedPickerState).some((problem) =>
+      problem.includes("unchecked paths are not both hidden"))
   ) {
-    throw new Error("the trend picker predicate accepts all eight paths dimming together");
+    throw new Error("the trend picker predicate accepts a rendered unchecked path");
   }
   const completeNoScriptPicker = {
     resetVisibleBeforeFiltering: true,
     filtered: {
       checked: 6,
-      opacities: [TREND_MUTED_SERIES_ALPHA, TREND_MUTED_SERIES_ALPHA, 1, 1, 1, 1, 1, 1],
+      displays: ["none", "none", "inline", "inline", "inline", "inline", "inline", "inline"],
     },
     restored: { checked: 8, resetVisible: true, focusStayedOnReset: true },
   };
@@ -9854,20 +9864,20 @@ async function main() {
   }
   const inertNoScriptPicker = structuredClone(completeNoScriptPicker);
   inertNoScriptPicker.filtered.checked = 8;
-  inertNoScriptPicker.filtered.opacities.fill(1);
+  inertNoScriptPicker.filtered.displays.fill("inline");
   if (trendNoScriptPickerProblems(inertNoScriptPicker).length !== 2) {
     throw new Error("the no-JavaScript trend picker predicate accepts inert label activation");
   }
   const completeFilteredExport = {
     checkedAttributes: [false, false, true, true, true, true, true, true],
-    pathOpacities: [TREND_MUTED_SERIES_ALPHA, TREND_MUTED_SERIES_ALPHA, 1, 1, 1, 1, 1, 1],
+    pathDisplays: ["none", "none", "inline", "inline", "inline", "inline", "inline", "inline"],
   };
   if (trendFilteredExportProblems(completeFilteredExport).length) {
     throw new Error("the filtered PNG predicate rejected the complete export");
   }
   const unsynchronisedExport = structuredClone(completeFilteredExport);
   unsynchronisedExport.checkedAttributes.fill(true);
-  unsynchronisedExport.pathOpacities.fill(1);
+  unsynchronisedExport.pathDisplays.fill("inline");
   if (trendFilteredExportProblems(unsynchronisedExport).length !== 2) {
     throw new Error("the filtered PNG predicate accepts unsynchronised checkbox or path state");
   }
@@ -12363,6 +12373,16 @@ async function main() {
     });
     const trendChart = document.querySelector(".chart:has([data-series-switch])");
     const trendHint = document.querySelector(".key-hint");
+    const trendSwitches = [...(trendChart?.querySelectorAll("[data-series-switch]") ?? [])];
+    const trendLines = [...(trendChart?.querySelectorAll("path.plot-line") ?? [])];
+    let uncheckedLineDisplay = null;
+    let checkedLineDisplay = null;
+    if (trendSwitches.length === 8 && trendLines.length === 8) {
+      trendSwitches[0].click();
+      uncheckedLineDisplay = getComputedStyle(trendLines[0]).display;
+      checkedLineDisplay = getComputedStyle(trendLines[1]).display;
+      trendSwitches[0].click();
+    }
     const stationHelper = document.querySelector("#station-filter-help");
     const stationFilter = document.querySelector("#station-filter");
     const mapRoutes = [...document.querySelectorAll("[data-homepage-map-station-route]")];
@@ -12375,9 +12395,8 @@ async function main() {
         hintCount: document.querySelectorAll(".key-hint").length,
         hintVisible: rendered(trendHint),
         hintText: trendHint?.innerText.replace(/\\s+/g, " ").trim() ?? "",
-        pickOffAlpha: trendChart
-          ? getComputedStyle(trendChart).getPropertyValue("--pick-off-alpha").trim()
-          : "",
+        uncheckedLineDisplay,
+        checkedLineDisplay,
       },
       station: {
         count: document.querySelectorAll("#station-filter-help").length,
@@ -14222,7 +14241,7 @@ async function main() {
         await new Promise((resolve) => setTimeout(resolve, 180));
         const filtered = {
           checked: switches.filter((input) => input.checked).length,
-          opacities: paths.map((path) => Number(getComputedStyle(path).opacity)),
+          displays: paths.map((path) => getComputedStyle(path).display),
         };
         reset.focus();
         reset.click();
@@ -16222,9 +16241,17 @@ async function main() {
             plot.focus();
             const filtered = {
               checked: switches.filter((input) => input.checked).length,
-              opacities: paths.map((path) => Number(getComputedStyle(path).opacity)),
+              displays: paths.map((path) => getComputedStyle(path).display),
               rows: chart.querySelectorAll(".readout-row").length,
               resetVisible: visible(reset),
+              announcement: chart.querySelector("[data-pick-say]")?.textContent ?? "",
+            };
+            for (const pill of pills.slice(2)) pill.click();
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            const empty = {
+              checked: switches.filter((input) => input.checked).length,
+              displays: paths.map((path) => getComputedStyle(path).display),
+              rows: chart.querySelectorAll(".readout-row").length,
               announcement: chart.querySelector("[data-pick-say]")?.textContent ?? "",
             };
             reset.focus();
@@ -16237,7 +16264,7 @@ async function main() {
               resetVisible: visible(reset),
               focusReturned: document.activeElement === switches[0],
             };
-            return { filtered, restored };
+            return { filtered, empty, restored };
           })()`);
           const pickerProblems = trendPickerInteractionProblems(pickerState);
           if (pickerProblems.length) {
@@ -16339,8 +16366,8 @@ async function main() {
               filteredState = {
                 checkedAttributes: [...sandbox.querySelectorAll("[data-series-switch]")]
                   .map((input) => input.hasAttribute("checked")),
-                pathOpacities: [...sandbox.querySelectorAll("path.plot-line")]
-                  .map((path) => Number(getComputedStyle(path).opacity)),
+                pathDisplays: [...sandbox.querySelectorAll("path.plot-line")]
+                  .map((path) => getComputedStyle(path).display),
               };
               sandbox.remove();
               return originalSerialize.call(this, node);
