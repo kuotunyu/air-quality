@@ -172,6 +172,8 @@ def test_endpoint_parser_follows_supported_s263_versions_and_preserves_diagnosti
 def test_endpoint_parser_rejects_unsupported_format_version() -> None:
     with pytest.raises(RuntimeError, match="version 1 or 2"):
         parse_trajectory_endpoints(_ENDPOINT.replace("1 2\n", "1 3\n", 1))
+    with pytest.raises(RuntimeError, match="grid count and format version"):
+        parse_trajectory_endpoints(_ENDPOINT.replace("1 2\n", "1\n", 1))
 
 
 def test_endpoint_parser_rejects_missing_pressure_diagnostic() -> None:

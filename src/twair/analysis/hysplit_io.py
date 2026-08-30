@@ -200,7 +200,7 @@ def parse_trajectory_endpoints(text: str) -> pl.DataFrame:
     record_one = lines[cursor].split()
     cursor += 1
     if len(record_one) != 2:
-        raise RuntimeError("HYSPLIT endpoint record 1 must use format version 2")
+        raise RuntimeError("HYSPLIT endpoint record 1 must contain grid count and format version")
     grid_count = _parse_int(record_one[0], label="meteorology grid count")
     format_version = _parse_int(record_one[1], label="endpoint format version")
     if grid_count < 1 or format_version not in {1, 2}:
