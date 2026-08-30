@@ -257,6 +257,27 @@ class TestSilenceIsNotAPass:
         assert len(problems) == 1
         assert "no longer matches" in problems[0]
 
+    def test_the_weather_contrast_claim_matches_noncausal_wording(self) -> None:
+        pattern = (
+            r"降幅比觀測值少\s*(\d+)%|"
+            r"decline is\s*(\d+)%\s*smaller than the observed decline"
+        )
+        published = next(
+            claim for claim in headline.build_claims() if claim.what == "weather share of the fall"
+        )
+        assert published.pattern.pattern == pattern
+
+        claim = headline.Claim("weather contrast", pattern, 43.0, 0)
+        assert claim.check("README.md", "氣象標準化後的降幅比觀測值少 43%。") == []
+        assert (
+            claim.check(
+                "README.en.md",
+                "The standardised decline is 43% smaller than the observed decline.",
+            )
+            == []
+        )
+        assert claim.check("README.md", "氣象標準化把其中 43% 歸於天氣")
+
 
 class TestTypographyIsNotADisagreement:
     def test_a_unicode_minus_parses_as_a_negative_number(self) -> None:
@@ -523,10 +544,15 @@ class TestTheWebsiteIsAProseSurfaceToo:
 
     def test_a_measurand_count_is_compared_exactly(self) -> None:
         """`places=None`. Twenty against twenty-one is the drift, not slack."""
-        claim = site_prose.Claim("Explorer.astro", "measurands", r"完整的\s*(\d+)\s*個測項", None)
+        claim = site_prose.Claim(
+            "Explorer.astro",
+            "measurands",
+            r"本機匯出可產生完整\s*(\d+)\s*個\s*L1\s*測項",
+            None,
+        )
 
-        assert claim.check("完整的 21 個測項共 54.6 MB。", 21.0) == []
-        assert claim.check("完整的 20 個測項共 54.6 MB。", 21.0)
+        assert claim.check("本機匯出可產生完整 21 個 L1 測項，共 54.6 MB。", 21.0) == []
+        assert claim.check("本機匯出可產生完整 20 個 L1 測項，共 54.6 MB。", 21.0)
 
     def test_a_report_that_stops_stating_its_truth_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

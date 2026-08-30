@@ -208,8 +208,8 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
 
   <div class="note caveat" data-explorer-caveat>
     <strong>Pages 目前公開 {publishedL1Codes.join("、")} 兩張 L1 表。</strong>
-    執行查詢時仍會逐檔確認主機回應；本機匯出可產生完整 21 個測項，
-    但那不是目前 GitHub Pages 的發布承諾。要在本機產生全部資料：
+    執行查詢時仍會逐檔確認主機回應；本機匯出可產生完整 21 個 L1 測項，共 54.6 MB，
+    但那不是目前 GitHub Pages 的發布承諾。這個容量只計 L1，不含 L0。要在本機產生全部資料：
     <code>uv run twair export web</code>。
     逐時原始資料另有授權問題待確認，見 <code>docs/legal.md</code>。
   </div>

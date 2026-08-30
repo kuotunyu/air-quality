@@ -6,11 +6,12 @@
 > 340 million measurements, quality-flagged rather than quietly repaired,
 > with an open pipeline and an interactive site on top.
 
-### Taiwan's PM2.5 fell 60% between 2008 and 2025; meteorological normalisation assigns 43% of that fall to weather the model can see.
+### Taiwan's PM2.5 fell 60% between 2008 and 2025; the meteorologically standardised decline is 43% smaller than the observed decline.
 
-Measured by normalising out meteorological conditions — 61 stations, one set of rows, two lines.
+That 43% is a contrast between two estimated declines, not causal proof that weather produced 43% of the change; the remainder is not an emissions or policy estimate.
+Measured by standardising meteorological conditions — 61 stations, one set of rows, two lines.
 Asked again by a completely different aggregation (the median of per-station slope ratios), the answer is 42.2%.
-This is a model decomposition, not causal attribution to policy or emissions; the published M4 does not yet use ERA5 BLH, and long-range transport remains a limitation.
+The published M4 does not yet use ERA5 BLH, and long-range transport remains a limitation.
 [See the chart →](https://kuotunyu.github.io/air-quality/trend/)
 
 [繁體中文](README.md) ·

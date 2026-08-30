@@ -383,14 +383,16 @@ const taiwanAnnualGuide = (
   </EvidenceFigure>
 
   <div class="note caveat">
-    <p>
-      <strong>那個交叉點就是答案。</strong>
+    <p data-deweather-contrast-boundary>
+      <strong>氣象標準化差額。</strong>
       實際觀測從 {n(dwObserved[0], 1)} 降到 {n(dwObserved[dwObserved.length - 1], 1)} μg/m³，
       降了 {n(dw.panel.observed_fall, 1)}。但在平均天氣之下，
       同一批測站只從 {n(dwNormalised[0], 1)} 降到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
       降了 {n(dw.panel.normalised_fall, 1)}。
-      差額 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
-      佔了整個下降的 {n(dwShare, 0)}%</strong>。
+      兩條序列的下降幅度相差 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
+      相當於觀測下降幅度的 {n(dwShare, 0)}%</strong>。這是觀測序列與模型標準化序列的
+      下降幅度差，不是「天氣造成 {n(dwShare, 0)}%」的因果證明；剩餘比例也不是排放或
+      政策貢獻估計。長程傳輸、未量測氣象、模型誤差與其他同期變化仍留在比較裡。
     </p>
     <p>
       換句話說：{dwYears[0]} 年的實際濃度比「相同天氣條件下」的估計高，
@@ -403,7 +405,7 @@ const taiwanAnnualGuide = (
 
   <p>
     這個比例還可以用完全不同的方式再問一次。上面是全國面板的水準差；
-    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「天氣佔比」的中位數——
+    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「氣象標準化斜率差額比例」的中位數——
     那個答案是 {n(dw.median_weather_share * 100, 1)}%，
     與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
     兩種聚合方式互相獨立，一致比任何單一數字更值得相信。

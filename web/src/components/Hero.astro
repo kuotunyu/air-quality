@@ -17,6 +17,7 @@ import {
   trend,
 } from "../lib/data";
 import { concentrationInk, n } from "../lib/chart";
+import { stationType } from "../lib/labels";
 
 const latestYear = Math.max(...cards.map((c) => c.year));
 const latest = cards.filter((c) => c.year >= latestYear - 1);
@@ -33,6 +34,7 @@ const overTaiwan = latest.filter((c) => c.annual_mean > TAIWAN_PM25_ANNUAL).leng
 const sorted = [...latest].sort((a, b) => b.annual_mean - a.annual_mean);
 const dirtiest = sorted[0];
 const cleanest = sorted[sorted.length - 1];
+const extremaRatio = dirtiest.annual_mean / cleanest.annual_mean;
 
 const lastValue = trend.all_stations[trend.all_stations.length - 1] as number;
 const balancedSince = trend.panel.balanced_since as number;
@@ -128,13 +130,19 @@ const opening = [
           </dd>
         </div>
         <div class="figure">
-          <dt>{n(dirtiest.annual_mean / cleanest.annual_mean, 1)}×</dt>
+          <dt>{n(extremaRatio, 1)}×</dt>
           <dd>
             島內最高與最低的倍數
             <span class="figure-note">直線距離不到 300 公里</span>
           </dd>
         </div>
       </dl>
+
+      <p class="aside" data-homepage-station-type-boundary>
+        最高與最低來自不同監測類型（{dirtiest.station_name}：{stationType(dirtiest.station_type)}；
+        {cleanest.station_name}：{stationType(cleanest.station_type)}）。{n(extremaRatio, 1)}× 是測站觀測值對比，
+        不是純空間、土地使用或因果效果。
+      </p>
 
       {/*
         In the column beside the figure rather than below the whole grid.

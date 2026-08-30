@@ -57,6 +57,34 @@ const ROUTES = [
   "/data/",
 ];
 const FORBIDDEN_CIGARETTE_ANALOGY = /\u652f\u83f8|\u9999\u83f8|cigarette/iu;
+const STATION_TYPE_LABELS = Object.freeze({
+  general: "一般站",
+  traffic: "交通站",
+  industrial: "工業站",
+  background: "背景站",
+  national_park: "國家公園站",
+  reference: "參考站",
+});
+const HOMEPAGE_STATION_CARDS = JSON.parse(
+  readFileSync(
+    join(process.cwd(), "web", "public", "data", "story", "station-cards.json"),
+    "utf8",
+  ),
+).cards;
+const HOMEPAGE_LATEST_YEAR = Math.max(...HOMEPAGE_STATION_CARDS.map((card) => card.year));
+const HOMEPAGE_LATEST_CARDS = HOMEPAGE_STATION_CARDS
+  .filter((card) => card.year >= HOMEPAGE_LATEST_YEAR - 1)
+  .sort((first, second) => second.annual_mean - first.annual_mean);
+const HOMEPAGE_EXTREMA = Object.freeze({
+  dirtiest: HOMEPAGE_LATEST_CARDS[0].station_name,
+  dirtiestType: STATION_TYPE_LABELS[HOMEPAGE_LATEST_CARDS[0].station_type]
+    ?? HOMEPAGE_LATEST_CARDS[0].station_type,
+  cleanest: HOMEPAGE_LATEST_CARDS.at(-1).station_name,
+  cleanestType: STATION_TYPE_LABELS[HOMEPAGE_LATEST_CARDS.at(-1).station_type]
+    ?? HOMEPAGE_LATEST_CARDS.at(-1).station_type,
+  ratio: (HOMEPAGE_LATEST_CARDS[0].annual_mean / HOMEPAGE_LATEST_CARDS.at(-1).annual_mean)
+    .toFixed(1),
+});
 const COMPACT_IDENTITY_ACCESSIBLE_NAMES = new Map([
   ["/", "台灣空氣品質再分析"],
   ["/trend/", "第一章　長期趨勢與氣象校正"],
@@ -987,6 +1015,38 @@ function homepageMobileTypeProblems({
     }
   }
   return problems;
+}
+
+function semanticBoundaryProblems(state, label, required) {
+  const problems = [];
+  if (state?.count !== 1) problems.push(`${label} boundary inventory changed`);
+  if (!state?.visible) problems.push(`${label} boundary is not visible`);
+  const compact = String(state?.text ?? "").replace(/[「」\s]/gu, "");
+  for (const phrase of required) {
+    if (!compact.includes(phrase.replace(/\s/gu, ""))) {
+      problems.push(`${label} boundary claim changed: missing ${JSON.stringify(phrase)}`);
+    }
+  }
+  return problems;
+}
+
+function deweatherContrastBoundaryProblems(state) {
+  return semanticBoundaryProblems(state, "trend deweather contrast", [
+    "氣象標準化差額",
+    "不是天氣造成",
+    "不是排放或政策貢獻估計",
+  ]);
+}
+
+function homepageStationTypeBoundaryProblems(state) {
+  return semanticBoundaryProblems(state, "homepage station-type", [
+    HOMEPAGE_EXTREMA.dirtiest,
+    HOMEPAGE_EXTREMA.dirtiestType,
+    HOMEPAGE_EXTREMA.cleanest,
+    HOMEPAGE_EXTREMA.cleanestType,
+    `${HOMEPAGE_EXTREMA.ratio}×是測站觀測值對比`,
+    "不是純空間",
+  ]);
 }
 
 function sourcesClaimBoundaryProblems(text) {
@@ -6091,6 +6151,52 @@ async function lifecycleSelfTest() {
     );
   }
   console.log("site quality homepage mobile type self-test passed");
+
+  const completeDeweatherBoundary = {
+    count: 1,
+    visible: true,
+    text: "氣象標準化差額。不是「天氣造成 43%」的因果證明；剩餘比例也不是排放或政策貢獻估計。",
+  };
+  if (deweatherContrastBoundaryProblems(completeDeweatherBoundary).length) {
+    throw new Error("the trend deweather-contrast predicate rejects its control");
+  }
+  const missingDeweatherBoundary = deweatherContrastBoundaryProblems({
+    ...completeDeweatherBoundary,
+    count: 0,
+    visible: false,
+    text: "",
+  });
+  if (
+    !missingDeweatherBoundary.some((problem) => problem.includes("inventory changed")) ||
+    !missingDeweatherBoundary.some((problem) => problem.includes("is not visible")) ||
+    !missingDeweatherBoundary.some((problem) => problem.includes("boundary claim changed"))
+  ) {
+    throw new Error("the trend deweather-contrast predicate accepts a deleted boundary");
+  }
+
+  const completeHomepageStationTypeBoundary = {
+    count: 1,
+    visible: true,
+    text: `最高與最低來自不同監測類型（${HOMEPAGE_EXTREMA.dirtiest}：${HOMEPAGE_EXTREMA.dirtiestType}；` +
+      `${HOMEPAGE_EXTREMA.cleanest}：${HOMEPAGE_EXTREMA.cleanestType}）。` +
+      `${HOMEPAGE_EXTREMA.ratio}× 是測站觀測值對比，不是純空間、土地使用或因果效果。`,
+  };
+  if (homepageStationTypeBoundaryProblems(completeHomepageStationTypeBoundary).length) {
+    throw new Error("the homepage station-type predicate rejects its control");
+  }
+  const missingHomepageStationTypeBoundary = homepageStationTypeBoundaryProblems({
+    ...completeHomepageStationTypeBoundary,
+    count: 0,
+    visible: false,
+    text: "",
+  });
+  if (
+    !missingHomepageStationTypeBoundary.some((problem) => problem.includes("inventory changed")) ||
+    !missingHomepageStationTypeBoundary.some((problem) => problem.includes("is not visible")) ||
+    !missingHomepageStationTypeBoundary.some((problem) => problem.includes("boundary claim changed"))
+  ) {
+    throw new Error("the homepage station-type predicate accepts a deleted boundary");
+  }
 
   const completeChapterOpening = {
     viewport: { width: 1280, height: 720 },
@@ -11818,6 +11924,27 @@ async function main() {
     return result;
   })()`);
 
+  const semanticBoundarySnapshot = async (selector) => evaluate(`(() => {
+    const nodes = [...document.querySelectorAll(${JSON.stringify(selector)})];
+    const rendered = (element) => {
+      if (!element) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse" || Number(style.opacity) === 0
+        ) return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    return {
+      count: nodes.length,
+      visible: nodes.length === 1 && rendered(nodes[0]),
+      text: nodes.length === 1 ? nodes[0].innerText.replace(/\\s+/g, " ").trim() : "",
+    };
+  })()`);
+
   const stationRegisterSnapshot = async () => evaluate(`(() => {
     const rendered = (element) => {
       if (!element) return false;
@@ -13574,6 +13701,10 @@ async function main() {
       ) {
         failures.push("/: chapter-one summary equates the normalised residual with emissions");
       }
+      const boundary = await semanticBoundarySnapshot("[data-homepage-station-type-boundary]");
+      for (const problem of homepageStationTypeBoundaryProblems(boundary)) {
+        failures.push(`/: no-JavaScript ${problem}`);
+      }
     } else {
       const incompleteIntro = ["container", "heading", "thesis"].filter(
         (part) => !noScript?.intro?.[part],
@@ -13591,6 +13722,10 @@ async function main() {
         !noScript?.mainText?.includes("不是直接量測排放")
       ) {
         failures.push("/trend/: weather-normalised comparison is described as direct emissions");
+      }
+      const boundary = await semanticBoundarySnapshot("[data-deweather-contrast-boundary]");
+      for (const problem of deweatherContrastBoundaryProblems(boundary)) {
+        failures.push(`/trend/: no-JavaScript ${problem}`);
       }
       const pickerState = await evaluate(`(async () => {
         const chart = [...document.querySelectorAll("main .evidence-figure")][2];
@@ -14414,6 +14549,20 @@ async function main() {
         const bodyText = await evaluate("document.body.innerText");
         if (FORBIDDEN_CIGARETTE_ANALOGY.test(bodyText ?? "")) {
           failures.push(`${route} @${width} ${theme}: cigarette analogy remains`);
+        }
+        if (route === "/") {
+          const boundary = await semanticBoundarySnapshot(
+            "[data-homepage-station-type-boundary]",
+          );
+          for (const problem of homepageStationTypeBoundaryProblems(boundary)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
+        }
+        if (route === "/trend/") {
+          const boundary = await semanticBoundarySnapshot("[data-deweather-contrast-boundary]");
+          for (const problem of deweatherContrastBoundaryProblems(boundary)) {
+            failures.push(`${route} @${width} ${theme}: ${problem}`);
+          }
         }
         if (route === "/sources/") {
           const mainText = await evaluate(

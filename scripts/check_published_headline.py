@@ -210,7 +210,7 @@ def build_claims() -> list[Claim]:
         ),
         Claim(
             "weather share of the fall",
-            r"其中\s*(\d+)%\s*歸於|assigns\s*(\d+)%\s*of that fall",
+            r"降幅比觀測值少\s*(\d+)%|decline is\s*(\d+)%\s*smaller than the observed decline",
             float(deweather["panel"]["weather_share_of_fall"]),
             0,
             scale=100.0,

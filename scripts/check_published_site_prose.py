@@ -735,8 +735,8 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     (
         Claim(
             "Explorer.astro",
-            "published measurand count",
-            r"完整的\s*(\d+)\s*個測項",
+            "local L1 measurand count",
+            r"本機匯出可產生完整\s*(\d+)\s*個\s*L1\s*測項",
             None,
         ),
         "manifest",
@@ -745,8 +745,8 @@ CLAIMS: tuple[tuple[Claim, str, str], ...] = (
     (
         Claim(
             "Explorer.astro",
-            "published bundle size",
-            r"個測項共\s*([\d.]+)\s*MB",
+            "local L1 bundle size",
+            r"L1\s*測項，共\s*([\d.]+)\s*MB",
             1,
         ),
         "manifest",
