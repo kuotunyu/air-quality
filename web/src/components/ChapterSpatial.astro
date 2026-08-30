@@ -17,6 +17,7 @@ import { axisNumber, n, nFixed, ticks } from "../lib/chart";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const network = spatial.network as {
@@ -251,6 +252,36 @@ const readingMap = [
       北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
     </Fragment>
   </EvidenceFigure>
+
+  <ConceptFlow
+    title="空間相依如何一路影響到結論"
+    summary="這裡分析的是模型尚未解釋的殘差；分區能移除一部分結構，但剩餘相依仍會改變推論與空白區預測。"
+    steps={[
+      {
+        label: "分析對象",
+        title: "取得每站每月的模型殘差",
+        detail: "不是再證明濃度有空間差異，而是檢查模型解釋後還剩下什麼。",
+      },
+      {
+        label: "距離結構",
+        title: "按測站距離比較同號與反號聚集",
+        detail: "Moran's I 隨距離改變，能顯示近距離聚集與長距離偶極。",
+        tone: "cool",
+      },
+      {
+        label: "控制比較",
+        title: "比較官方分區與純地理分群",
+        detail: "在同一批資料上量化不同空間控制移除了多少相依。",
+        tone: "warm",
+      },
+      {
+        label: "推論代價",
+        title: "剩餘相依不能當成獨立樣本",
+        detail: "顯著性可能被高估，測站之間的空白也不能假裝已有可靠預測。",
+        tone: "boundary",
+      },
+    ]}
+  />
 
   <p>
     這個問題有數字可答，而且答案比那句批評公平。

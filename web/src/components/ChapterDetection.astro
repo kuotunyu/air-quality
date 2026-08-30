@@ -15,6 +15,7 @@ import detection from "../../public/data/story/detection-limit.json";
 import { axisNumber, linear, n, ticks } from "../lib/chart";
 import { href } from "../lib/chapters";
 import ChapterIntro from "./ChapterIntro.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const events = detection.events as {
@@ -395,6 +396,37 @@ const estimandLabel = (kind: string) => {
     }
   </Fragment>
   </EvidenceFigure>
+
+  <ConceptFlow
+    title="事件效應要先越過方法本身的噪音"
+    summary="事件估計值只有在離開同一程序產生的安慰劑散布後，才算被這套資料與方法辨識。"
+    variant="timeline"
+    steps={[
+      {
+        label: "事件窗口",
+        title: "先定義要檢驗的日曆期間",
+        detail: "窗口只是待檢驗標記，還不是已成立的因果介入。",
+      },
+      {
+        label: "站別估計",
+        title: "計算觀測值與模型預測的差額",
+        detail: "每個測站得到一個事件窗口內的候選效應量。",
+        tone: "cool",
+      },
+      {
+        label: "安慰劑比較",
+        title: "把同一程序套到未標記事件的窗口",
+        detail: "這個散布量出沒有事件標記時，方法仍會算出多大的差額。",
+        tone: "warm",
+      },
+      {
+        label: "可辨識範圍",
+        title: "未檢出不等於事件無效",
+        detail: "結果只表示目前訊號沒有越過噪音底線，不能證明真實效應為零。",
+        tone: "boundary",
+      },
+    ]}
+  />
 
   <dl class="detection-comparison" data-detection-comparison>
     {

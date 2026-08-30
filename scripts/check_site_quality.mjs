@@ -139,27 +139,29 @@ const TEXT_ZOOM_ROUTES = [
 
 /**
  * 2026-08-03 — measured from the built route DOM, before these inventories
- * became assertions. Native figures/captions total 14; secondary disclosures
+ * became assertions. Native figures/captions originally totalled 14; the seven
+ * 2026-08-31 semantic concept figures raise that inventory to 21 without
+ * turning the Explore and Data chapters into chart routes. Secondary disclosures
  * total 8 (Detection 2, Methods 6); Explorer contributes the one SQL
  * disclosure. Keeping every zero is deliberate: a route cannot silently gain
  * or lose an object while the site-wide sum happens to stay constant.
  */
 const STATIC_NATIVE_FIGURES = new Map([
   ["/", 0],
-  ["/trend/", 3],
+  ["/trend/", 4],
   ["/stations/", 0],
-  ["/space/", 2],
-  ["/sources/", 1],
-  ["/detection/", 1],
+  ["/space/", 3],
+  ["/sources/", 2],
+  ["/detection/", 2],
   ["/forecast/", 3],
-  ["/health/", 2],
+  ["/health/", 3],
   ["/methods/", 2],
-  ["/explore/", 0],
-  ["/data/", 0],
+  ["/explore/", 1],
+  ["/data/", 1],
 ]);
-const CHART_ROUTES = new Set(
-  [...STATIC_NATIVE_FIGURES].filter(([, count]) => count > 0).map(([route]) => route),
-);
+const CHART_ROUTES = new Set([
+  "/trend/", "/space/", "/sources/", "/detection/", "/forecast/", "/health/", "/methods/",
+]);
 const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/", 0],
   ["/trend/", 0],
@@ -174,7 +176,20 @@ const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/data/", 1],
 ]);
 const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, route === "/explore/" ? 1 : 0]));
-const EXPECTED_NATIVE_FIGURES = 14;
+const STATIC_CONCEPT_DIAGRAMS = new Map([
+  ["/", 0],
+  ["/trend/", 1],
+  ["/stations/", 0],
+  ["/space/", 1],
+  ["/sources/", 1],
+  ["/detection/", 1],
+  ["/forecast/", 0],
+  ["/health/", 1],
+  ["/methods/", 0],
+  ["/explore/", 1],
+  ["/data/", 1],
+]);
+const EXPECTED_NATIVE_FIGURES = 21;
 // 2026-08-17: 9 -> 7. /methods/ lost two <details> — the transcribed K-S table
 // and the published-vs-reproduced comparison table.
 const EXPECTED_SECONDARY_DISCLOSURES = 7;
@@ -763,6 +778,278 @@ function chapterEndingProblems(state, viewport) {
   }
   return problems;
 }
+
+function conceptDiagramProblems(state, expectedCount, viewport) {
+  const problems = [];
+  const diagrams = state?.diagrams;
+  if (!Array.isArray(diagrams)) return ["concept diagram snapshot is missing"];
+  if (diagrams.length !== expectedCount) {
+    problems.push(
+      `concept diagram inventory is ${diagrams.length}, expected ${expectedCount}`,
+    );
+  }
+  if (!Number.isFinite(state?.documentOverflow) || state.documentOverflow > 0) {
+    problems.push(`concept diagram page scrolls sideways by ${state?.documentOverflow ?? "unknown"}px`);
+  }
+  for (const [index, diagram] of diagrams.entries()) {
+    const name = `concept diagram ${index + 1}`;
+    if (diagram?.tagName !== "FIGURE") problems.push(`${name} is not a native figure`);
+    if (!diagram?.visible || diagram.width <= 0 || diagram.height <= 0) {
+      problems.push(`${name} is not visibly rendered`);
+    }
+    if (diagram?.captionCount !== 1) problems.push(`${name} lacks exactly one direct figcaption`);
+    if (!diagram?.title) problems.push(`${name} has no visible title`);
+    if (!diagram?.summary) problems.push(`${name} has no visible reading summary`);
+    if (!['process', 'timeline', 'layers'].includes(diagram?.variant)) {
+      problems.push(`${name} has an invalid layout variant`);
+    }
+    if (!Number.isFinite(diagram?.stepCount) || diagram.stepCount < 3 || diagram.stepCount > 5) {
+      problems.push(`${name} has ${diagram?.stepCount ?? "unknown"} steps; expected 3–5`);
+    }
+    if (diagram?.orderedListCount !== 1) problems.push(`${name} lacks one direct ordered sequence`);
+    if (diagram?.listRoleAttribute !== "list") {
+      problems.push(`${name} lacks an explicit list role for markerless-list accessibility`);
+    }
+    if (diagram?.listAxRole !== "list") {
+      problems.push(`${name} ordered sequence is missing from the accessibility tree`);
+    }
+    if (diagram?.directItemCount !== diagram?.stepCount) {
+      problems.push(`${name} has untracked or non-direct ordered-list items`);
+    }
+    if (diagram?.nonListSteps !== 0) {
+      problems.push(`${name} has ${diagram?.nonListSteps ?? "unknown"} steps that are not list items`);
+    }
+    if (
+      !Array.isArray(diagram?.stepAxRoles) ||
+      diagram.stepAxRoles.length !== diagram.stepCount ||
+      diagram.stepAxRoles.some((role) => role !== "listitem")
+    ) {
+      problems.push(`${name} steps are not exposed as accessibility-tree list items`);
+    }
+    if (diagram?.incompleteSteps !== 0) {
+      problems.push(`${name} has ${diagram?.incompleteSteps ?? "unknown"} incomplete steps`);
+    }
+    if (diagram?.hiddenSteps !== 0) {
+      problems.push(`${name} has ${diagram?.hiddenSteps ?? "unknown"} hidden steps`);
+    }
+    if (diagram?.clippedSteps !== 0) {
+      problems.push(`${name} has ${diagram?.clippedSteps ?? "unknown"} clipped steps`);
+    }
+    if (diagram?.selfOverflowX > 1 || diagram?.selfOverflowY > 1) {
+      problems.push(`${name} clips its own diagram content`);
+    }
+    if (diagram?.stepOverflowCount !== 0) {
+      problems.push(`${name} has ${diagram?.stepOverflowCount ?? "unknown"} internally clipped steps`);
+    }
+    if (diagram?.hiddenOptions !== 0 || diagram?.clippedOptions !== 0) {
+      problems.push(
+        `${name} has ${diagram?.hiddenOptions ?? "unknown"} hidden and ` +
+        `${diagram?.clippedOptions ?? "unknown"} clipped branch options`,
+      );
+    }
+    if (diagram?.connectorCount !== Math.max(0, diagram.stepCount - 1)) {
+      problems.push(`${name} connector inventory does not match its sequence`);
+    }
+    if (diagram?.hiddenConnectors !== 0) {
+      problems.push(`${name} has ${diagram?.hiddenConnectors ?? "unknown"} invisible connectors`);
+    }
+    if (diagram?.outOfOrderSteps !== 0) {
+      problems.push(`${name} has ${diagram?.outOfOrderSteps ?? "unknown"} visually reordered steps`);
+    }
+    if (viewport?.width <= 768 && diagram?.nonVerticalTransitions !== 0) {
+      problems.push(`${name} does not reflow to one vertical sequence`);
+    }
+    if (viewport?.width <= 768 && diagram?.gridColumnCount !== 1) {
+      problems.push(`${name} keeps multiple columns at the narrow-layout boundary`);
+    }
+    if (
+      viewport?.width > 768 &&
+      diagram?.gridColumnCount !== (diagram?.variant === "layers" ? 1 : diagram?.stepCount)
+    ) {
+      problems.push(`${name} has the wrong desktop/tablet column count`);
+    }
+  }
+  return problems;
+}
+
+const transparentCssColour = (value) =>
+  ["transparent", "rgba(0, 0, 0, 0)"].includes(String(value ?? "").trim());
+
+function conceptDiagramPrintProblems(state) {
+  const problems = [];
+  for (const [index, diagram] of (state?.diagrams ?? []).entries()) {
+    const name = `concept diagram ${index + 1}`;
+    const media = diagram?.media;
+    if (media?.printMarker !== "ready") problems.push(`${name} print rules are not active`);
+    if (!["avoid", "avoid-page"].includes(media?.breakInside)) {
+      problems.push(`${name} can split across printed pages`);
+    }
+    if (!transparentCssColour(media?.figureBackground)) {
+      problems.push(`${name} keeps its screen surface in print`);
+    }
+    if (media?.stepBackgrounds?.some((colour) => !transparentCssColour(colour))) {
+      problems.push(`${name} keeps step surfaces in print`);
+    }
+    if (media?.indexBackgrounds?.some((colour) => !transparentCssColour(colour))) {
+      problems.push(`${name} keeps index surfaces in print`);
+    }
+    if (media?.stepBreakInside?.some((value) => !["avoid", "avoid-page"].includes(value))) {
+      problems.push(`${name} permits a printed step to split`);
+    }
+  }
+  return problems;
+}
+
+function conceptDiagramForcedColorsProblems(state) {
+  const problems = [];
+  for (const [index, diagram] of (state?.diagrams ?? []).entries()) {
+    const name = `concept diagram ${index + 1}`;
+    const media = diagram?.media;
+    if (!media?.forcedColorsActive) problems.push(`${name} forced-colors emulation is inactive`);
+    if (media?.forcedMarker !== "active") problems.push(`${name} forced-colors rules are not active`);
+    if (transparentCssColour(media?.figureBackground)) {
+      problems.push(`${name} has no forced-colors Canvas surface`);
+    }
+    if (
+      !media?.canvasText ||
+      media.borderColors?.some((colour) => colour !== media.canvasText) ||
+      media.connectorColors?.some((colour) => colour !== media.canvasText) ||
+      media.textColors?.some((colour) => colour !== media.canvasText)
+    ) {
+      problems.push(`${name} does not use CanvasText for forced-colors structure`);
+    }
+    if (
+      media?.stepBackgrounds?.some((colour) => colour !== media.figureBackground) ||
+      media?.indexBackgrounds?.some((colour) => colour !== media.figureBackground)
+    ) {
+      problems.push(`${name} does not use one forced-colors Canvas surface`);
+    }
+  }
+  return problems;
+}
+
+const CONCEPT_DIAGRAM_PROBE = `(() => {
+  const visible = (element) => {
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" &&
+      Number(style.opacity) > 0 && rect.width > 0 && rect.height > 0;
+  };
+  const diagrams = [...document.querySelectorAll("[data-concept-diagram]")].map((diagram) => {
+    const rect = diagram.getBoundingClientRect();
+    const captions = diagram.querySelectorAll(":scope > figcaption");
+    const title = diagram.querySelector("[data-concept-title]");
+    const summary = diagram.querySelector("[data-concept-summary]");
+    const orderedLists = diagram.querySelectorAll(":scope > ol");
+    const steps = [...diagram.querySelectorAll(":scope > ol > [data-concept-step]")];
+    const directItems = diagram.querySelectorAll(":scope > ol > li");
+    const stepRects = steps.map((step) => step.getBoundingClientRect());
+    const optionItems = [...diagram.querySelectorAll(":scope > ol > li > ul > li")];
+    const diagramStyle = getComputedStyle(diagram);
+    const stepStyles = steps.map((step) => getComputedStyle(step));
+    const indexStyles = steps.map((step) =>
+      getComputedStyle(step.querySelector(".concept-index"))
+    );
+    const connectorStyles = steps.slice(0, -1).map((step) => getComputedStyle(step, "::after"));
+    const incompleteSteps = steps.filter((step) =>
+      !step.querySelector("[data-concept-label]")?.textContent.trim() ||
+      !step.querySelector("[data-concept-step-title]")?.textContent.trim() ||
+      !step.querySelector("[data-concept-detail]")?.textContent.trim()
+    ).length;
+    const hiddenSteps = steps.filter((step) => !visible(step)).length;
+    // Measure real content children rather than the step's scroll box. The
+    // sequence arrow is an intentionally outboard pseudo-element; it expands
+    // scrollWidth on every non-final card even when neither the arrow nor the
+    // card content is clipped.
+    const stepOverflowCount = steps.filter((step) => {
+      const stepRect = step.getBoundingClientRect();
+      return [...step.children].some((child) => {
+        const childRect = child.getBoundingClientRect();
+        return childRect.left < stepRect.left - 1 || childRect.right > stepRect.right + 1 ||
+          childRect.top < stepRect.top - 1 || childRect.bottom > stepRect.bottom + 1;
+      });
+    }).length;
+    const clippedSteps = stepRects.filter((stepRect) =>
+      stepRect.left < rect.left - 1 || stepRect.right > rect.right + 1 ||
+      stepRect.top < rect.top - 1 || stepRect.bottom > rect.bottom + 1
+    ).length;
+    const outOfOrderSteps = stepRects.slice(1).filter((stepRect, stepIndex) => {
+      const previous = stepRects[stepIndex];
+      return stepRect.top < previous.top - 1 ||
+        (Math.abs(stepRect.top - previous.top) <= 1 && stepRect.left < previous.left - 1);
+    }).length;
+    const nonVerticalTransitions = stepRects.slice(1).filter((stepRect, stepIndex) => {
+      const previous = stepRects[stepIndex];
+      return stepRect.top < previous.bottom - 1 || Math.abs(stepRect.left - previous.left) > 1;
+    }).length;
+    const clippedOptions = optionItems.filter((option) => {
+      const optionRect = option.getBoundingClientRect();
+      const stepRect = option.closest("[data-concept-step]")?.getBoundingClientRect();
+      return !stepRect || optionRect.left < stepRect.left - 1 ||
+        optionRect.right > stepRect.right + 1 || optionRect.top < stepRect.top - 1 ||
+        optionRect.bottom > stepRect.bottom + 1 ||
+        option.scrollWidth - option.clientWidth > 1 || option.scrollHeight - option.clientHeight > 1;
+    }).length;
+    const hiddenConnectors = connectorStyles.filter((style) =>
+      !style || style.content === "none" || style.content === "normal" ||
+      style.display === "none" || style.visibility === "hidden" ||
+      Number(style.opacity) <= 0 || style.color === "rgba(0, 0, 0, 0)"
+    ).length;
+    return {
+      tagName: diagram.tagName,
+      visible: visible(diagram),
+      width: rect.width,
+      height: rect.height,
+      captionCount: captions.length,
+      title: title && visible(title) ? title.textContent.trim() : "",
+      summary: summary && visible(summary) ? summary.textContent.trim() : "",
+      variant: diagram.dataset.variant ?? "",
+      orderedListCount: orderedLists.length,
+      listRoleAttribute: orderedLists[0]?.getAttribute("role") ?? null,
+      stepCount: steps.length,
+      directItemCount: directItems.length,
+      nonListSteps: steps.filter((step) => step.tagName !== "LI").length,
+      gridColumnCount: orderedLists[0]
+        ? getComputedStyle(orderedLists[0]).gridTemplateColumns.trim().split(/\\s+/u).length
+        : 0,
+      incompleteSteps,
+      hiddenSteps,
+      clippedSteps,
+      selfOverflowX: diagram.scrollWidth - diagram.clientWidth,
+      selfOverflowY: diagram.scrollHeight - diagram.clientHeight,
+      stepOverflowCount,
+      optionCount: optionItems.length,
+      hiddenOptions: optionItems.filter((option) => !visible(option)).length,
+      clippedOptions,
+      connectorCount: connectorStyles.length,
+      hiddenConnectors,
+      outOfOrderSteps,
+      nonVerticalTransitions,
+      media: {
+        printMarker: diagramStyle.getPropertyValue("--concept-print").trim(),
+        forcedMarker: diagramStyle.getPropertyValue("--concept-forced-colors").trim(),
+        forcedColorsActive: matchMedia("(forced-colors: active)").matches,
+        breakInside: diagramStyle.breakInside,
+        figureBackground: diagramStyle.backgroundColor,
+        stepBackgrounds: stepStyles.map((style) => style.backgroundColor),
+        indexBackgrounds: indexStyles.map((style) => style.backgroundColor),
+        stepBreakInside: stepStyles.map((style) => style.breakInside),
+        borderColors: [diagramStyle, ...stepStyles, ...indexStyles]
+          .map((style) => style.borderTopColor),
+        connectorColors: connectorStyles.map((style) => style.color),
+        textColors: steps.flatMap((step) => [
+          getComputedStyle(step.querySelector("[data-concept-step-title]")).color,
+          getComputedStyle(step.querySelector("[data-concept-detail]")).color,
+        ]),
+        canvasText: getComputedStyle(document.body).color,
+      },
+    };
+  });
+  return {
+    documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    diagrams,
+  };
+})()`;
 
 const TREND_READING_MAP_CONTRACT = Object.freeze({
   label: "trend",
@@ -8776,6 +9063,159 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality explore guided local workspace self-test passed");
 
+  const completeConceptDiagram = {
+    documentOverflow: 0,
+    diagrams: [{
+      tagName: "FIGURE",
+      visible: true,
+      width: 980,
+      height: 260,
+      captionCount: 1,
+      title: "從觀測走到可以支持的結論",
+      summary: "依序讀取資料、方法、結果與界線。",
+      variant: "process",
+      orderedListCount: 1,
+      listRoleAttribute: "list",
+      listAxRole: "list",
+      stepCount: 4,
+      directItemCount: 4,
+      nonListSteps: 0,
+      stepAxRoles: ["listitem", "listitem", "listitem", "listitem"],
+      gridColumnCount: 4,
+      incompleteSteps: 0,
+      hiddenSteps: 0,
+      clippedSteps: 0,
+      selfOverflowX: 0,
+      selfOverflowY: 0,
+      stepOverflowCount: 0,
+      optionCount: 0,
+      hiddenOptions: 0,
+      clippedOptions: 0,
+      connectorCount: 3,
+      hiddenConnectors: 0,
+      outOfOrderSteps: 0,
+      nonVerticalTransitions: 0,
+      media: {},
+    }],
+  };
+  if (conceptDiagramProblems(completeConceptDiagram, 1, { width: 1440 }).length) {
+    throw new Error("the concept-diagram predicate rejects complete diagram evidence");
+  }
+  if (conceptDiagramProblems({ documentOverflow: 0, diagrams: [] }, 0, { width: 375 }).length) {
+    throw new Error("the concept-diagram predicate rejects an intentional zero-diagram route");
+  }
+  const conceptDiagramMutations = [
+    ["missing diagram", "inventory is 0", (state) => { state.diagrams = []; }],
+    ["wrong element", "not a native figure", (state) => { state.diagrams[0].tagName = "DIV"; }],
+    ["missing caption", "exactly one direct figcaption", (state) => { state.diagrams[0].captionCount = 0; }],
+    ["duplicate caption", "exactly one direct figcaption", (state) => { state.diagrams[0].captionCount = 2; }],
+    ["missing title", "no visible title", (state) => { state.diagrams[0].title = ""; }],
+    ["missing summary", "no visible reading summary", (state) => { state.diagrams[0].summary = ""; }],
+    ["missing ordered list", "one direct ordered sequence", (state) => { state.diagrams[0].orderedListCount = 0; }],
+    ["too few steps", "expected 3–5", (state) => { state.diagrams[0].stepCount = 2; }],
+    ["missing list role", "explicit list role", (state) => { state.diagrams[0].listRoleAttribute = null; }],
+    ["missing AX list", "missing from the accessibility tree", (state) => { state.diagrams[0].listAxRole = null; }],
+    ["untracked list item", "untracked or non-direct", (state) => { state.diagrams[0].directItemCount = 5; }],
+    ["non-list step", "steps that are not list items", (state) => { state.diagrams[0].nonListSteps = 1; }],
+    ["missing AX list item", "accessibility-tree list items", (state) => { state.diagrams[0].stepAxRoles[0] = null; }],
+    ["incomplete step", "incomplete steps", (state) => { state.diagrams[0].incompleteSteps = 1; }],
+    ["hidden step", "hidden steps", (state) => { state.diagrams[0].hiddenSteps = 1; }],
+    ["clipped step", "clipped steps", (state) => { state.diagrams[0].clippedSteps = 1; }],
+    ["self-clipped diagram", "clips its own", (state) => { state.diagrams[0].selfOverflowX = 2; }],
+    ["internally clipped step", "internally clipped", (state) => { state.diagrams[0].stepOverflowCount = 1; }],
+    ["hidden option", "hidden and", (state) => { state.diagrams[0].hiddenOptions = 1; }],
+    ["clipped option", "clipped branch options", (state) => { state.diagrams[0].clippedOptions = 1; }],
+    ["missing connector", "connector inventory", (state) => { state.diagrams[0].connectorCount = 2; }],
+    ["hidden connector", "invisible connectors", (state) => { state.diagrams[0].hiddenConnectors = 1; }],
+    ["reordered step", "visually reordered", (state) => { state.diagrams[0].outOfOrderSteps = 1; }],
+    ["phone row", "vertical sequence", (state) => { state.diagrams[0].nonVerticalTransitions = 1; }],
+    ["phone columns", "narrow-layout boundary", (state) => { state.diagrams[0].gridColumnCount = 4; }],
+    ["tablet columns", "desktop/tablet column count", (state) => { state.diagrams[0].gridColumnCount = 1; }],
+    ["document overflow", "scrolls sideways", (state) => { state.documentOverflow = 1; }],
+  ];
+  const conceptDiagramPreflightMisses = [];
+  for (const [name, expectedProblem, mutate] of conceptDiagramMutations) {
+    const state = structuredClone(completeConceptDiagram);
+    mutate(state);
+    const viewport = name === "tablet columns" ? { width: 769 } : { width: 375 };
+    if (viewport.width <= 768 && name !== "phone columns" && state.diagrams[0]) {
+      state.diagrams[0].gridColumnCount = 1;
+    }
+    const problems = conceptDiagramProblems(state, 1, viewport);
+    if (!problems.some((problem) => problem.includes(expectedProblem))) {
+      conceptDiagramPreflightMisses.push(name);
+    }
+  }
+  if (conceptDiagramPreflightMisses.length) {
+    throw new Error(
+      `the concept-diagram predicate accepts ${conceptDiagramPreflightMisses.join(", ")}`,
+    );
+  }
+
+  const completePrintConceptDiagram = structuredClone(completeConceptDiagram);
+  completePrintConceptDiagram.diagrams[0].media = {
+    printMarker: "ready",
+    breakInside: "avoid",
+    figureBackground: "rgba(0, 0, 0, 0)",
+    stepBackgrounds: Array(4).fill("rgba(0, 0, 0, 0)"),
+    indexBackgrounds: Array(4).fill("rgba(0, 0, 0, 0)"),
+    stepBreakInside: Array(4).fill("avoid"),
+  };
+  if (conceptDiagramPrintProblems(completePrintConceptDiagram).length) {
+    throw new Error("the concept-diagram print predicate rejects complete print evidence");
+  }
+  const printMutations = [
+    ["missing print marker", "print rules are not active", (media) => { media.printMarker = ""; }],
+    ["splittable figure", "split across printed pages", (media) => { media.breakInside = "auto"; }],
+    ["screen figure fill", "screen surface in print", (media) => { media.figureBackground = "rgb(250, 250, 250)"; }],
+    ["screen step fill", "step surfaces in print", (media) => { media.stepBackgrounds[0] = "rgb(250, 250, 250)"; }],
+    ["screen index fill", "index surfaces in print", (media) => { media.indexBackgrounds[0] = "rgb(250, 250, 250)"; }],
+    ["splittable step", "printed step to split", (media) => { media.stepBreakInside[0] = "auto"; }],
+  ];
+  for (const [name, expectedProblem, mutate] of printMutations) {
+    const state = structuredClone(completePrintConceptDiagram);
+    mutate(state.diagrams[0].media);
+    if (!conceptDiagramPrintProblems(state).some((problem) => problem.includes(expectedProblem))) {
+      conceptDiagramPreflightMisses.push(name);
+    }
+  }
+
+  const completeForcedConceptDiagram = structuredClone(completeConceptDiagram);
+  completeForcedConceptDiagram.diagrams[0].media = {
+    forcedColorsActive: true,
+    forcedMarker: "active",
+    figureBackground: "rgb(255, 255, 255)",
+    stepBackgrounds: Array(4).fill("rgb(255, 255, 255)"),
+    indexBackgrounds: Array(4).fill("rgb(255, 255, 255)"),
+    borderColors: Array(9).fill("rgb(0, 0, 0)"),
+    connectorColors: Array(3).fill("rgb(0, 0, 0)"),
+    textColors: Array(8).fill("rgb(0, 0, 0)"),
+    canvasText: "rgb(0, 0, 0)",
+  };
+  if (conceptDiagramForcedColorsProblems(completeForcedConceptDiagram).length) {
+    throw new Error("the concept-diagram forced-colors predicate rejects complete evidence");
+  }
+  const forcedMutations = [
+    ["inactive forced colors", "emulation is inactive", (media) => { media.forcedColorsActive = false; }],
+    ["missing forced marker", "rules are not active", (media) => { media.forcedMarker = ""; }],
+    ["transparent Canvas", "no forced-colors Canvas", (media) => { media.figureBackground = "transparent"; }],
+    ["wrong structure color", "CanvasText", (media) => { media.connectorColors[0] = "rgb(1, 2, 3)"; }],
+    ["wrong surface color", "one forced-colors Canvas", (media) => { media.stepBackgrounds[0] = "rgb(1, 2, 3)"; }],
+  ];
+  for (const [name, expectedProblem, mutate] of forcedMutations) {
+    const state = structuredClone(completeForcedConceptDiagram);
+    mutate(state.diagrams[0].media);
+    if (!conceptDiagramForcedColorsProblems(state).some((problem) => problem.includes(expectedProblem))) {
+      conceptDiagramPreflightMisses.push(name);
+    }
+  }
+  if (conceptDiagramPreflightMisses.length) {
+    throw new Error(
+      `the concept-diagram media predicates accept ${conceptDiagramPreflightMisses.join(", ")}`,
+    );
+  }
+  console.log("site quality concept diagrams self-test passed");
+
   const completeCompactIdentity = {
     visible: true,
     accessibleText: "台灣空氣品質再分析",
@@ -10386,6 +10826,52 @@ async function main() {
         return accessibleText(byBackendId.get(backendNodeId));
       }),
     );
+  };
+
+  const accessibilityRolesForSelectors = async (selectors) => {
+    const documentResult = await send("DOM.getDocument", { depth: 0, pierce: true });
+    const documentNodeId = documentResult.result?.root?.nodeId;
+    if (!documentNodeId) return selectors.map(() => []);
+    const backendNodeGroups = [];
+    for (const selector of selectors) {
+      const queryResult = await send("DOM.querySelectorAll", {
+        nodeId: documentNodeId,
+        selector,
+      });
+      const backendNodeIds = [];
+      for (const nodeId of queryResult.result?.nodeIds ?? []) {
+        const described = await send("DOM.describeNode", { nodeId });
+        backendNodeIds.push(described.result?.node?.backendNodeId ?? null);
+      }
+      backendNodeGroups.push(backendNodeIds);
+    }
+    const tree = await send("Accessibility.getFullAXTree", {});
+    const byBackendId = new Map(
+      (tree.result?.nodes ?? [])
+        .filter((node) => node.backendDOMNodeId)
+        .map((node) => [node.backendDOMNodeId, node]),
+    );
+    return backendNodeGroups.map((backendNodeIds) =>
+      backendNodeIds.map((backendNodeId) =>
+        backendNodeId ? byBackendId.get(backendNodeId)?.role?.value ?? null : null
+      ),
+    );
+  };
+
+  const conceptDiagramSnapshot = async () => {
+    const state = await evaluate(CONCEPT_DIAGRAM_PROBE);
+    if (!state) return state;
+    const [listRoles, stepRoles] = await accessibilityRolesForSelectors([
+      "[data-concept-diagram] > ol",
+      "[data-concept-diagram] > ol > [data-concept-step]",
+    ]);
+    let stepOffset = 0;
+    for (const [index, diagram] of state.diagrams.entries()) {
+      diagram.listAxRole = listRoles[index] ?? null;
+      diagram.stepAxRoles = stepRoles.slice(stepOffset, stepOffset + diagram.stepCount);
+      stepOffset += diagram.stepCount;
+    }
+    return state;
   };
 
   const accessibilityTextForSelector = async (selector) => {
@@ -14428,6 +14914,14 @@ async function main() {
         failures.push(`${route}: ${problem}`);
       }
     }
+    const conceptState = await conceptDiagramSnapshot();
+    for (const problem of conceptDiagramProblems(
+      conceptState,
+      STATIC_CONCEPT_DIAGRAMS.get(route),
+      { width: 375, height: 800 },
+    )) {
+      failures.push(`${route}: no-JavaScript ${problem}`);
+    }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       for (const problem of historicalStationCopyProblems(route, noScript?.mainText ?? "")) {
         failures.push(`${route}: no-JavaScript ${problem}`);
@@ -15113,6 +15607,55 @@ async function main() {
     }
   }
 
+  for (const [route, expectedCount] of STATIC_CONCEPT_DIAGRAMS) {
+    if (expectedCount === 0) continue;
+    await send("Page.navigate", { url: `${origin}${route}` });
+    if (!(await settled(evaluate, 8000, `${route} print concept diagram`))) {
+      failures.push(`${route} print concept diagram never finished styling`);
+      continue;
+    }
+    const conceptState = await conceptDiagramSnapshot();
+    for (const problem of conceptDiagramProblems(
+      conceptState,
+      expectedCount,
+      { width: 1440, height: 900 },
+    )) {
+      failures.push(`${route} print: ${problem}`);
+    }
+    for (const problem of conceptDiagramPrintProblems(conceptState)) {
+      failures.push(`${route} print: ${problem}`);
+    }
+  }
+
+  console.log("site-quality stage: forced-colors concept diagrams");
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1024,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [
+      { name: "forced-colors", value: "active" },
+      { name: "prefers-color-scheme", value: "light" },
+    ],
+  });
+  for (const route of ["/trend/", "/data/"]) {
+    await send("Page.navigate", { url: `${origin}${route}` });
+    if (!(await settled(evaluate, 8000, `${route} forced-colors concept diagram`))) {
+      failures.push(`${route} forced-colors concept diagram never finished styling`);
+      continue;
+    }
+    const conceptState = await conceptDiagramSnapshot();
+    for (const problem of conceptDiagramProblems(conceptState, 1, { width: 1024, height: 900 })) {
+      failures.push(`${route} forced-colors: ${problem}`);
+    }
+    for (const problem of conceptDiagramForcedColorsProblems(conceptState)) {
+      failures.push(`${route} forced-colors: ${problem}`);
+    }
+  }
+
   console.log("site-quality stage: 610px trend idle-readout use");
   await send("Emulation.setDeviceMetricsOverride", {
     width: 610,
@@ -15190,6 +15733,37 @@ async function main() {
     }
   }
 
+  console.log("site-quality stage: concept diagram breakpoint boundaries");
+  await evaluate('localStorage.setItem("twair-theme", "light")');
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  for (const width of [769, 1024]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    for (const [route, expectedCount] of STATIC_CONCEPT_DIAGRAMS) {
+      if (expectedCount === 0) continue;
+      await send("Page.navigate", { url: `${origin}${route}` });
+      if (!(await settled(evaluate, 8000, `${route} @${width}px concept diagram`))) {
+        failures.push(`${route} @${width}px concept diagram never finished styling`);
+        continue;
+      }
+      const conceptState = await conceptDiagramSnapshot();
+      for (const problem of conceptDiagramProblems(
+        conceptState,
+        expectedCount,
+        { width, height: 900 },
+      )) {
+        failures.push(`${route} @${width}px concept diagram: ${problem}`);
+      }
+    }
+  }
+
   // 768 is here for one defect only: two axis labels landing on each other.
   // The marks are positioned in percentages inside a fluid figure, so a strip
   // that reads cleanly at both ends can pile up in the middle — and the two
@@ -15232,6 +15806,14 @@ async function main() {
           failures.push(`${route} @${width} ${theme}: cigarette analogy remains`);
         }
         for (const problem of publicOperationalMetadataProblems(bodyText)) {
+          failures.push(`${route} @${width} ${theme}: ${problem}`);
+        }
+        const conceptState = await conceptDiagramSnapshot();
+        for (const problem of conceptDiagramProblems(
+          conceptState,
+          STATIC_CONCEPT_DIAGRAMS.get(route),
+          { width, height },
+        )) {
           failures.push(`${route} @${width} ${theme}: ${problem}`);
         }
         if (route === "/") {

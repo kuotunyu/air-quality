@@ -20,6 +20,7 @@
 import health from "../../public/data/story/health.json";
 import { axisNumber, linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const series = health.series as {
@@ -309,6 +310,40 @@ const langOf = (s: string | null | undefined) =>
       標籤上的數字就是那個基準。
     </Fragment>
   </EvidenceFigure>
+
+  <ConceptFlow
+    title="同一批濃度如何變成一段可歸因比例"
+    summary="資料沒有改變；改變的是比較基準。網站因此報告一段範圍，而不是把其中一個假設包裝成唯一答案。"
+    steps={[
+      {
+        label: "觀測",
+        title: "固定測站的年均濃度",
+        detail: "同一批濃度序列是四種估計共同的起點。",
+      },
+      {
+        label: "反事實選擇",
+        title: "指定拿哪個濃度作為比較基準",
+        detail: "基準不是資料自己決定的，而是估計之前必須公開的假設。",
+        tone: "cool",
+        options: series.map((item) => ({
+          title: `${n(item.value, 1)} μg/m³`,
+          detail: item.label,
+        })),
+      },
+      {
+        label: "估計",
+        title: "套用暴露反應函數，得到比例範圍",
+        detail: "下降幅度可以跨基準比較；當前年份的絕對水準對基準較敏感。",
+        tone: "warm",
+      },
+      {
+        label: "可報告範圍",
+        title: "不延伸成死亡人數或個人暴露",
+        detail: "本專案沒有人口、基礎死亡率與人口加權暴露，不能補出這兩種結論。",
+        tone: "boundary",
+      },
+    ]}
+  />
 
   <p>
     第三個這個專案沒有資料回答，前兩個有—這一章量的是<strong>這兩個選擇把答案推動多少</strong>。

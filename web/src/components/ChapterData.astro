@@ -31,6 +31,7 @@ import { href } from "../lib/chapters";
 import { pagesPublication } from "../lib/publication";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 
 import manifest from "../../public/data/manifest.json";
 import meta from "../../public/data/meta.json";
@@ -97,6 +98,37 @@ const zhDate = (value: string) => {
       <li><a href="#rebuild"><strong>重建完整逐時資料</strong></a><span>執行 twair ingest 與 twair build；L2 不轉散布。</span></li>
     </ol>
   </div>
+
+  <ConceptFlow
+    title="資料從逐時觀測走到網站圖表"
+    summary="三層資料保留不同時間尺度；發布邊界與用途一起標示，避免把未發布的重建層誤認成下載承諾。"
+    variant="layers"
+    steps={[
+      {
+        label: "L2 · 站－時",
+        title: "完整逐時觀測與品管旗標",
+        detail: "不轉散布；以公開原始檔與 twair ingest、twair build 管線獨立重建。",
+        tone: "boundary",
+      },
+      {
+        label: "L1 · 站－日",
+        title: "供查詢與桌面分析的日資料",
+        detail: `Pages 目前發布 ${publishedL1Codes.join("、")}；其餘測項可由本機管線產生。`,
+        tone: "warm",
+      },
+      {
+        label: "L0 · 站－月",
+        title: "供快速查值與網站圖表的月資料",
+        detail: "每個測項一個 JSON，保留月均值與有效天數。",
+        tone: "cool",
+      },
+      {
+        label: "讀者使用",
+        title: "網站圖表、直接下載或瀏覽器查詢",
+        detail: "先按用途選時間尺度，再依檔案格式或第九章查詢工具取得資料。",
+      },
+    ]}
+  />
 
   <div class="primary-register">
     <h2>三層資料</h2>

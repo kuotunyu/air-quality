@@ -14,6 +14,7 @@
  */
 import { dataFiles, publishedL1Codes } from "../lib/data";
 import ChapterIntro from "./ChapterIntro.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 
 const EXAMPLES = [
   {
@@ -128,6 +129,36 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
         <span>把表格、空結果或錯誤，和下方限制一起讀。</span>
       </li>
     </ol>
+
+    <ConceptFlow
+      title="查詢在你的瀏覽器裡如何完成"
+      summary="網站只提供公開檔案與查詢程式；SQL、暫存結果與匯出動作都留在目前這個瀏覽器分頁。"
+      steps={[
+        {
+          label: "公開資料",
+          title: "讀取已發布的 L1 Parquet",
+          detail: "只在執行查詢後，按需要取得目前網站公開的站日資料。",
+        },
+        {
+          label: "本機引擎",
+          title: "載入 DuckDB-WASM",
+          detail: "資料庫引擎在瀏覽器內執行，不需要查詢伺服器或 API 金鑰。",
+          tone: "cool",
+        },
+        {
+          label: "執行位置",
+          title: "SQL 與資料都不離開瀏覽器",
+          detail: "這裡沒有上傳步驟，也不把查詢內容送到另一台伺服器。",
+          tone: "boundary",
+        },
+        {
+          label: "輸出",
+          title: "讀表格，必要時匯出 CSV",
+          detail: "結果、空結果與錯誤都在本頁呈現，供讀者檢查後下載。",
+          tone: "warm",
+        },
+      ]}
+    />
 
     <p>資料是站-日層級。</p>
 

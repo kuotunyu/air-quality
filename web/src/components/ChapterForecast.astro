@@ -372,21 +372,24 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     data-forecast-decision-sheet
   >
     <h2 id="forecast-decision-title">三步決定這個預測還值不值得用</h2>
-    <ol>
+    <ol role="list">
       <li data-forecast-decision="error">
         <a href="#evidence-6-1-title">
+          <span class="forecast-decision-index" aria-hidden="true">01</span>
           <strong>誤差</strong>
           <p>先看圖 6.1：模型、persistence 與 climatology 的 RMSE 隨期距如何變化。</p>
         </a>
       </li>
       <li data-forecast-decision="skill">
         <a href="#evidence-6-2-title">
+          <span class="forecast-decision-index" aria-hidden="true">02</span>
           <strong>基準優勢</strong>
           <p>再看圖 6.2：同一批預測相對 persistence 與 climatology 還剩多少優勢。</p>
         </a>
       </li>
       <li data-forecast-decision="cost">
         <a href="#forecast-cost">
+          <span class="forecast-decision-index" aria-hidden="true">03</span>
           <strong>計算代價</strong>
           <p>最後看成本表與圖 6.3：額外計算是否換得可用的準確度。</p>
         </a>
@@ -908,7 +911,13 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
 </section>
 
 <style>
-  .forecast-decision-sheet,
+  .forecast-decision-sheet {
+    container-type: inline-size;
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    border: 1px solid var(--line);
+    background: var(--bg-sunken);
+  }
   .forecast-band {
     container-type: inline-size;
     margin: var(--space-3) 0;
@@ -916,28 +925,60 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
   }
   .forecast-decision-sheet > h2 {
     margin: 0;
-    padding: var(--space-2) 0;
-    border-block-end: 1px solid var(--line);
+    padding: 0 0 var(--space-2);
   }
   .forecast-decision-sheet ol {
-    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
     margin: 0;
     padding: 0;
+    list-style: none;
   }
-  .forecast-decision-sheet li + li,
   .forecast-band > section + section {
     border-block-start: 1px solid var(--line);
   }
-  .forecast-decision-sheet a,
-  .forecast-band > section {
-    display: grid;
-    grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.3fr);
-    gap: var(--space-3);
-    padding: var(--space-2) 0;
+  .forecast-decision-sheet li {
+    --decision-mark: var(--diagram-neutral);
+    min-width: 0;
+  }
+  .forecast-decision-sheet li:nth-child(2) {
+    --decision-mark: var(--diagram-cool);
+  }
+  .forecast-decision-sheet li:nth-child(3) {
+    --decision-mark: var(--diagram-warm);
   }
   .forecast-decision-sheet a {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    gap: 0.22rem var(--space-2);
+    min-height: 100%;
+    padding: var(--space-3);
+    border: 1px solid color-mix(in oklab, var(--decision-mark) 52%, var(--line));
+    border-block-start-width: 3px;
     color: inherit;
+    background: color-mix(in oklab, var(--decision-mark) 7%, var(--bg-raised));
     text-decoration-color: transparent;
+  }
+  .forecast-decision-index {
+    display: grid;
+    grid-row: 1 / span 2;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--decision-mark);
+    border-radius: 50%;
+    background: var(--bg-raised);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .forecast-decision-sheet a strong {
+    align-self: end;
+  }
+  .forecast-decision-sheet a p {
+    grid-column: 2;
   }
   .forecast-decision-sheet a:hover,
   .forecast-decision-sheet a:focus-visible {
@@ -951,7 +992,11 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     margin: 0;
   }
   .forecast-band > section {
+    display: grid;
+    grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.3fr);
+    gap: var(--space-3);
     align-items: start;
+    padding: var(--space-2) 0;
   }
   [data-forecast-baseline] {
     grid-template-areas:
@@ -968,9 +1013,14 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     grid-area: why;
   }
   @container (max-width: 42rem) {
-    .forecast-decision-sheet a,
+    .forecast-decision-sheet ol,
     .forecast-band > section {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .forecast-decision-sheet a {
+      min-height: auto;
+    }
+    .forecast-band > section {
       gap: var(--space-1);
     }
     [data-forecast-baseline] {

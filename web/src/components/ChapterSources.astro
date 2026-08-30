@@ -18,6 +18,7 @@ import { bearingName, compass, WIND_PEAK_CLASS } from "../lib/labels";
 import { n } from "../lib/chart";
 import { groupByCountyNorthToSouth } from "../lib/data";
 import ChapterIntro from "./ChapterIntro.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const data = sourcesData as {
@@ -411,6 +412,36 @@ const legend = BREAKS.map((b, i) => ({
       全部測站合計有 {data.n_suppressed_bins} 格因此被扣住。
     </span></Fragment>
   </EvidenceFigure>
+
+  <ConceptFlow
+    title="從風向條件到來源歸因，中間還缺哪些證據"
+    summary="CBPF 是形成來源假說的工具；它把值得追查的條件指出來，但不會替污染源命名。"
+    steps={[
+      {
+        label: "觀測條件",
+        title: "把風向、風速與高濃度小時配對",
+        detail: "每一格回答特定風向與風速下，PM2.5 落在高值的條件機率。",
+      },
+      {
+        label: "可支持",
+        title: "辨認高值較常出現的來風條件",
+        detail: "這是測站與氣象條件的關聯，可用來比較模式並提出問題。",
+        tone: "cool",
+      },
+      {
+        label: "待檢驗假說",
+        title: "列出可能的傳送或局地機制",
+        detail: "低風速與高風速高值都可能對應多種機制，不能只挑一個故事。",
+        tone: "warm",
+      },
+      {
+        label: "來源歸因",
+        title: "CBPF 不識別污染來源",
+        detail: "還需要軌跡或擴散模式、排放清冊、化學組成與跨站一致證據。",
+        tone: "boundary",
+      },
+    ]}
+  />
 
   <p>
     這張圖叫 CBPF。角度是風吹來的方位，半徑是風速—

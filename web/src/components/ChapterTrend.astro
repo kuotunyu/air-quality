@@ -9,6 +9,7 @@
 import TrendChart from "./TrendChart.astro";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
+import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
@@ -301,6 +302,36 @@ const taiwanAnnualGuide = (
       而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
     </Fragment>
   </EvidenceFigure>
+
+  <ConceptFlow
+    title="從觀測下降走到可以支持的結論"
+    summary="依序排除測站組成與氣象差異；最後一步是科學界線，不是把剩餘趨勢改名為排放效果。"
+    steps={[
+      {
+        label: "觀測",
+        title: "先讀實際年均",
+        detail: "全體測站呈現長期下降，但監測網組成也在同期間改變。",
+      },
+      {
+        label: "樣本控制",
+        title: "固定同一批測站",
+        detail: "排除後期新增測站可能改變全台平均的影響。",
+        tone: "cool",
+      },
+      {
+        label: "氣象控制",
+        title: "把各年天氣調成相同水準",
+        detail: "比較觀測趨勢與氣象標準化趨勢的下降幅度。",
+        tone: "warm",
+      },
+      {
+        label: "可支持的結論",
+        title: "改善成立，歸因仍未完成",
+        detail: "剩餘趨勢不是直接量測排放，也不是政策貢獻估計。",
+        tone: "boundary",
+      },
+    ]}
+  />
 
   <p>
     這個數字要能成立，必須先排除一個混淆來源：

@@ -2858,7 +2858,15 @@ def analytical_figure_failures_for_text(
     parser.close()
     parser.finish()
     visible = [element for element in parser.elements if element.visible]
-    figures = [element for element in visible if element.tag == "figure"]
+    # Native <figure> is also the right semantic container for a reading guide,
+    # but only EvidenceFigure instances belong to the numbered analytical
+    # inventory below. Concept diagrams have their own browser-level contract
+    # in check_site_quality.mjs and must not shift Figure 1.2 into slot 1.3.
+    figures = [
+        element
+        for element in visible
+        if element.tag == "figure" and "data-concept-diagram" not in element.attributes
+    ]
     failures: list[str] = []
 
     if expected is not None and len(figures) != len(expected):
@@ -5801,6 +5809,17 @@ def _run_preflight() -> None:
         raise RuntimeError(
             "analytical figure preflight counted hidden or template figures: "
             f"{ignored_figure_failures}"
+        )
+    concept_figure_failures = analytical_figure_failures_for_text(
+        valid_evidence + '<figure data-concept-diagram data-variant="process">'
+        "<figcaption><strong>Reading guide</strong><span>Summary</span></figcaption>"
+        "<ol><li>One</li><li>Two</li><li>Three</li></ol></figure>",
+        expected_evidence,
+    )
+    if concept_figure_failures:
+        raise RuntimeError(
+            "analytical figure preflight counted a semantic concept diagram: "
+            f"{concept_figure_failures}"
         )
 
     evidence_mutations = {

@@ -138,6 +138,13 @@
   --text-muted: oklch(0.392 0.016 210); /* #3c484a */
   --text-faint: oklch(0.482 0.014 210); /* #556063 */
   --editorial-accent: oklch(0.490 0.130 34);
+  /* Diagram colours are structural labels, never data scales. Their pale
+     surfaces are mixed locally in ConceptFlow; the marks reuse the measured
+     categorical family so light and dark themes retain the same meaning. */
+  --diagram-neutral: var(--rule);
+  --diagram-cool: var(--k0);
+  --diagram-warm: var(--k1);
+  --diagram-boundary: var(--editorial-accent);
 
   /*
    * Concentration ramp, low to high — and the one place on this page where
@@ -1038,8 +1045,9 @@ html {
    * the border colour together, so all seventeen of them became ordinary notes
    * — every computed property identical to `.note`. Weight on the leading edge
    * is the one distinction that survives a palette the reader chose.
-   */
+  */
   .note.caveat {
+    /* impeccable-disable-next-line side-tab: forced-colors semantic distinction, not decorative card accent */
     border-inline-start-width: 3px !important;
   }
 }
@@ -2114,7 +2122,9 @@ main {
  * chapter 5 did it: the strip ran to 1985px against a 1905px viewport, and
  * /detection was the one page on the site that scrolled sideways.
  */
-.page > figure {
+/* ConceptFlow is prose-sized explanatory structure, not a data graphic. Keep
+ * those figures on the reading spine while allowing charts to use the bleed. */
+.page > figure:not([data-concept-diagram]) {
   --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
   /* Less 1.5rem so the figure never runs to the column's own edge, and capped
      at 8rem so a 4K display gets a wide chart rather than a stretched one. */
