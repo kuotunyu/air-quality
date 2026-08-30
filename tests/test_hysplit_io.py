@@ -154,9 +154,7 @@ GDAS 25 03 01 00 00
 def test_endpoint_parser_follows_supported_s263_versions_and_preserves_diagnostics(
     format_version: int,
 ) -> None:
-    frame = parse_trajectory_endpoints(
-        _ENDPOINT.replace("1 2\n", f"1 {format_version}\n", 1)
-    )
+    frame = parse_trajectory_endpoints(_ENDPOINT.replace("1 2\n", f"1 {format_version}\n", 1))
 
     assert frame["trajectory_id"].unique().sort().to_list() == [1, 2, 3]
     assert frame["meteorology_grid_id"].unique().to_list() == [1]

@@ -102,9 +102,7 @@ def test_installation_inspection_is_read_only_and_binds_executable_identity(
     assert not list(tmp_path.rglob("*.copied"))
 
 
-@pytest.mark.parametrize(
-    "missing", ["hyts_std.exe", "hyts_ens.exe", "sample_traj", "ASCDATA.CFG"]
-)
+@pytest.mark.parametrize("missing", ["hyts_std.exe", "hyts_ens.exe", "sample_traj", "ASCDATA.CFG"])
 def test_installation_inspection_rejects_missing_members(tmp_path: Path, missing: str) -> None:
     root = tmp_path / "hysplit"
     installation = _installation(root)
@@ -213,6 +211,8 @@ def test_injected_execution_uses_no_shell_and_binds_all_outputs(tmp_path: Path) 
         }
         (cwd / "tdump").write_text(_endpoint(), encoding="ascii")
         (cwd / "MESSAGE").write_text("synthetic success", encoding="ascii")
+        (cwd / "TRAJ.CFG").write_text("synthetic trajectory configuration", encoding="ascii")
+        (cwd / "WARNING").write_text("synthetic warning record", encoding="ascii")
         return subprocess.CompletedProcess(command, 0, "synthetic stdout", "")
 
     result = execute_prepared_run(prepared, executor=fake_executor)
@@ -227,6 +227,13 @@ def test_injected_execution_uses_no_shell_and_binds_all_outputs(tmp_path: Path) 
     assert result.message_sha256 == hashlib.sha256(result.message_bytes).hexdigest()
     assert result.endpoint_bytes == (prepared.directory / "tdump").read_bytes()
     assert result.endpoint_sha256 == hashlib.sha256(result.endpoint_bytes).hexdigest()
+    assert result.trajectory_config_bytes == b"synthetic trajectory configuration"
+    assert (
+        result.trajectory_config_sha256
+        == hashlib.sha256(result.trajectory_config_bytes).hexdigest()
+    )
+    assert result.warning_bytes == b"synthetic warning record"
+    assert result.warning_sha256 == hashlib.sha256(result.warning_bytes).hexdigest()
     assert result.endpoints is not None
     assert result.endpoints.height == 3 * 73
 
@@ -259,6 +266,8 @@ def test_execution_rejects_boundary_identity_change_after_inspection(
         ("nonzero", "exit code"),
         ("missing_message", "MESSAGE"),
         ("missing_tdump", "tdump"),
+        ("missing_traj_cfg", "TRAJ.CFG"),
+        ("missing_warning", "WARNING"),
         ("early", "complete"),
         ("extra", "unexpected"),
     ],
@@ -288,6 +297,10 @@ def test_execution_marks_partial_or_unexpected_results_failed(
             (cwd / "tdump").write_text(endpoint, encoding="ascii")
         if scenario != "missing_message" and scenario != "nonzero":
             (cwd / "MESSAGE").write_text("diagnostic", encoding="ascii")
+        if scenario != "missing_traj_cfg" and scenario != "nonzero":
+            (cwd / "TRAJ.CFG").write_text("configuration", encoding="ascii")
+        if scenario != "missing_warning" and scenario != "nonzero":
+            (cwd / "WARNING").write_text("warning", encoding="ascii")
         if scenario == "extra":
             (cwd / "unexpected.bin").write_bytes(b"unexpected")
         return subprocess.CompletedProcess(command, 7 if scenario == "nonzero" else 0, "", "bad")

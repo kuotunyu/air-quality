@@ -26,7 +26,14 @@ from twair.paths import REPO_ROOT
 
 Executor = Callable[..., subprocess.CompletedProcess[str]]
 _RUN_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?")
-_RESERVED_RUN_NAMES = {"ASCDATA.CFG", "CONTROL", "MESSAGE", "tdump"}
+_RESERVED_RUN_NAMES = {
+    "ASCDATA.CFG",
+    "CONTROL",
+    "MESSAGE",
+    "TRAJ.CFG",
+    "WARNING",
+    "tdump",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +80,10 @@ class HysplitExecution:
     message_sha256: str | None
     endpoint_bytes: bytes | None
     endpoint_sha256: str | None
+    trajectory_config_bytes: bytes | None
+    trajectory_config_sha256: str | None
+    warning_bytes: bytes | None
+    warning_sha256: str | None
     endpoints: pl.DataFrame | None
 
 
@@ -317,6 +328,8 @@ def _execution_result(
 ) -> HysplitExecution:
     message, message_sha256 = _optional_payload(prepared.directory / "MESSAGE")
     endpoint, endpoint_sha256 = _optional_payload(prepared.directory / "tdump")
+    trajectory_config, trajectory_config_sha256 = _optional_payload(prepared.directory / "TRAJ.CFG")
+    warning, warning_sha256 = _optional_payload(prepared.directory / "WARNING")
     return HysplitExecution(
         success=success,
         problem=problem,
@@ -329,6 +342,10 @@ def _execution_result(
         message_sha256=message_sha256,
         endpoint_bytes=endpoint,
         endpoint_sha256=endpoint_sha256,
+        trajectory_config_bytes=trajectory_config,
+        trajectory_config_sha256=trajectory_config_sha256,
+        warning_bytes=warning,
+        warning_sha256=warning_sha256,
         endpoints=endpoints,
     )
 
@@ -427,6 +444,8 @@ def execute_prepared_run(
 
     message_path = prepared.directory / "MESSAGE"
     endpoint_path = prepared.directory / "tdump"
+    trajectory_config_path = prepared.directory / "TRAJ.CFG"
+    warning_path = prepared.directory / "WARNING"
     if not message_path.is_file() or _is_link_like(message_path):
         return _execution_result(
             prepared,
@@ -445,10 +464,30 @@ def execute_prepared_run(
             stdout=stdout,
             stderr=stderr,
         )
+    if not trajectory_config_path.is_file() or _is_link_like(trajectory_config_path):
+        return _execution_result(
+            prepared,
+            success=False,
+            problem="HYSPLIT TRAJ.CFG output is missing",
+            returncode=completed.returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    if not warning_path.is_file() or _is_link_like(warning_path):
+        return _execution_result(
+            prepared,
+            success=False,
+            problem="HYSPLIT WARNING output is missing",
+            returncode=completed.returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
     expected_after = {
         "ASCDATA.CFG",
         "CONTROL",
         "MESSAGE",
+        "TRAJ.CFG",
+        "WARNING",
         "tdump",
         *(member.filename for member in prepared.meteorology),
     }
