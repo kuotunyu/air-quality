@@ -121,7 +121,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
       `<noscript>` rule above takes it away with the menu — a filter that cannot
       filter is the same nuisance the menu would be.
     */}
-    <label class="control-field">
+    <label class="control-field station-search-field">
       <span class="control-label">搜尋</span>
       <input
         id="station-filter"
@@ -135,7 +135,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
       搜尋只會縮小下方測站選單；請再從選單選擇一站。
     </p>
     <p id="station-filter-count" class="control-note" role="status" aria-live="polite"></p>
-    <label class="control-field">
+    <label class="control-field station-select-field">
       <span class="control-label">測站</span>
       <select id="station-select">
         {
@@ -366,10 +366,34 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 <style>
   .picker {
     margin-top: var(--space-4);
+    container-type: inline-size;
   }
 
   .station-controls {
-    max-width: min(100%, 24rem);
+    width: 100%;
+    max-width: none;
+    align-items: start;
+    grid-template-areas:
+      "search"
+      "help"
+      "count"
+      "select";
+  }
+
+  .station-search-field {
+    grid-area: search;
+  }
+
+  .station-select-field {
+    grid-area: select;
+  }
+
+  #station-filter-help {
+    grid-area: help;
+  }
+
+  #station-filter-count {
+    grid-area: count;
   }
 
   .station-controls input[type="search"] {
@@ -504,6 +528,21 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     background: transparent;
     border-inline: 0;
     border-radius: 0;
+  }
+
+  @container (min-width: 30rem) {
+    .station-controls {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        "search select"
+        "help count";
+      column-gap: var(--space-3);
+      row-gap: var(--space-1);
+    }
+
+    #station-filter-count {
+      text-align: end;
+    }
   }
 
   @container (min-width: 30rem) {

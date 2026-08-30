@@ -919,12 +919,26 @@ function stationRegisterProblems(state, mode) {
 function stationDossierProblems(state) {
   const problems = [];
   const expectedColumns = new Map([[375, 1], [768, 2], [1024, 4], [1440, 4]]);
+  const expectedControlColumns = new Map([[375, 1], [768, 2], [1024, 2], [1440, 2]]);
   if (!expectedColumns.has(state?.viewportWidth)) {
     return ["station dossier viewport is not one of the reviewed widths"];
   }
   const visibleBox = (part) =>
     Boolean(part?.visible && part.width > 0 && part.height > 0);
   if (!visibleBox(state?.picker)) problems.push("station dossier is not visibly rendered");
+  if (!visibleBox(state?.controls)) problems.push("station locator is not visibly rendered");
+  else if (Math.abs(state.controls.width - state.picker.width) > 1) {
+    problems.push("station locator does not span the picker");
+  }
+  if (state?.controlColumns !== expectedControlColumns.get(state.viewportWidth)) {
+    problems.push(`station locator uses the wrong ${state.viewportWidth}px column count`);
+  }
+  if (!state?.supportingRowsFollowFields) {
+    problems.push("station locator support rows are detached from their fields");
+  }
+  if (!state?.controlsFollowDomOrder) {
+    problems.push("station locator keyboard order changed");
+  }
   if (!visibleBox(state?.select)) problems.push("station selector is not visibly rendered");
   else if (state.select.height < 44) problems.push("station selector target is shorter than 44px");
   // The search box, when the page carries one. Checked for the same touch
@@ -6890,6 +6904,18 @@ async function lifecycleSelfTest() {
   const completeStationDossierFor = (viewportWidth) => ({
     viewportWidth,
     picker: { visible: true, width: viewportWidth - 32, height: 520 },
+    controls: {
+      visible: true,
+      width: viewportWidth - 32,
+      height: viewportWidth === 375 ? 280 : 132,
+    },
+    searchField: { visible: true, width: 300, height: 76 },
+    selectField: { visible: true, width: 300, height: 76 },
+    help: { visible: true, width: 300, height: 34 },
+    count: { visible: true, width: 300, height: 34 },
+    controlColumns: viewportWidth === 375 ? 1 : 2,
+    supportingRowsFollowFields: true,
+    controlsFollowDomOrder: true,
     select: { visible: true, width: 320, height: 44 },
     optionCount: 79,
     reportCount: 79,
@@ -6968,6 +6994,18 @@ async function lifecycleSelfTest() {
   expectStationDossierProblem("43px selector", 375, (state) => {
     state.select.height = 43;
   }, "shorter than 44px");
+  expectStationDossierProblem("half-width locator", 1440, (state) => {
+    state.controls.width /= 2;
+  }, "does not span the picker");
+  expectStationDossierProblem("one-column desktop locator", 1440, (state) => {
+    state.controlColumns = 1;
+  }, "wrong 1440px column count");
+  expectStationDossierProblem("detached locator support", 1440, (state) => {
+    state.supportingRowsFollowFields = false;
+  }, "support rows are detached");
+  expectStationDossierProblem("reversed locator DOM order", 375, (state) => {
+    state.controlsFollowDomOrder = false;
+  }, "keyboard order changed");
   expectStationDossierProblem("option mismatch", 375, (state) => {
     state.optionCount = 78;
   }, "inventories differ");
@@ -12158,10 +12196,22 @@ async function main() {
       const rect = element.getBoundingClientRect();
       return {
         visible: rendered(element), width: rect.width, height: rect.height,
-        top: rect.top, left: rect.left,
+        top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
       };
     };
     const select = document.querySelector("#station-select");
+    const filterBox = document.querySelector("#station-filter");
+    const controls = document.querySelector("[data-station-controls]");
+    const searchField = document.querySelector(".station-search-field");
+    const selectField = document.querySelector(".station-select-field");
+    const help = document.querySelector("#station-filter-help");
+    const count = document.querySelector("#station-filter-count");
+    const searchRect = searchField?.getBoundingClientRect() ?? null;
+    const selectRect = selectField?.getBoundingClientRect() ?? null;
+    const helpRect = help?.getBoundingClientRect() ?? null;
+    const countRect = count?.getBoundingClientRect() ?? null;
+    const controlColumns = searchRect && selectRect &&
+      Math.abs(searchRect.top - selectRect.top) <= 1 ? 2 : 1;
     const reports = [...document.querySelectorAll("[data-station-report]")];
     const text = (element) => element?.textContent?.trim() ?? "";
     const visibleReports = () => reports.filter(rendered);
@@ -12174,6 +12224,22 @@ async function main() {
     const result = {
       viewportWidth: innerWidth,
       picker: inspect(document.querySelector("[data-station-picker]")),
+      controls: inspect(controls),
+      searchField: inspect(searchField),
+      selectField: inspect(selectField),
+      help: inspect(help),
+      count: inspect(count),
+      controlColumns,
+      supportingRowsFollowFields: Boolean(
+        searchRect && selectRect && helpRect && countRect &&
+        (controlColumns === 1
+          ? helpRect.top >= searchRect.bottom && selectRect.top >= countRect.bottom
+          : helpRect.top >= searchRect.bottom && countRect.top >= selectRect.bottom)
+      ),
+      controlsFollowDomOrder: Boolean(
+        filterBox && select &&
+        (filterBox.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING)
+      ),
       select: inspect(select),
       optionCount: select?.options.length ?? 0,
       reportCount: reports.length,
@@ -12234,7 +12300,6 @@ async function main() {
      * that matters, because matching only the option text answered
      * 「沒有測站符合」 to the most obvious thing a reader would type.
      */
-    const filterBox = document.querySelector("#station-filter");
     if (filterBox && select) {
       const heldValue = select.value;
       const heldReport = visibleReports()[0]?.getAttribute("data-station") ?? null;
