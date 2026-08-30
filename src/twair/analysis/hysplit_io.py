@@ -191,7 +191,7 @@ def _finite_coordinates(latitude: float, longitude: float, height: float, *, lab
 
 
 def parse_trajectory_endpoints(text: str) -> pl.DataFrame:
-    """Parse and structurally validate the latest NOAA S263 endpoint format."""
+    """Parse and structurally validate supported NOAA S263 endpoint formats."""
     lines = text.strip().splitlines()
     if not lines or any(not line.strip() for line in lines):
         raise RuntimeError("HYSPLIT endpoint file is empty or contains blank records")
@@ -203,8 +203,8 @@ def parse_trajectory_endpoints(text: str) -> pl.DataFrame:
         raise RuntimeError("HYSPLIT endpoint record 1 must use format version 2")
     grid_count = _parse_int(record_one[0], label="meteorology grid count")
     format_version = _parse_int(record_one[1], label="endpoint format version")
-    if grid_count < 1 or format_version != 2:
-        raise RuntimeError("HYSPLIT endpoint requires meteorology and format version 2")
+    if grid_count < 1 or format_version not in {1, 2}:
+        raise RuntimeError("HYSPLIT endpoint requires meteorology and format version 1 or 2")
 
     for _ in range(grid_count):
         if cursor >= len(lines):

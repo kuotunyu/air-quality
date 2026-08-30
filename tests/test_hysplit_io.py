@@ -150,8 +150,13 @@ GDAS 25 03 01 00 00
 """
 
 
-def test_endpoint_parser_follows_s263_and_preserves_diagnostics() -> None:
-    frame = parse_trajectory_endpoints(_ENDPOINT)
+@pytest.mark.parametrize("format_version", [1, 2])
+def test_endpoint_parser_follows_supported_s263_versions_and_preserves_diagnostics(
+    format_version: int,
+) -> None:
+    frame = parse_trajectory_endpoints(
+        _ENDPOINT.replace("1 2\n", f"1 {format_version}\n", 1)
+    )
 
     assert frame["trajectory_id"].unique().sort().to_list() == [1, 2, 3]
     assert frame["meteorology_grid_id"].unique().to_list() == [1]
@@ -164,6 +169,11 @@ def test_endpoint_parser_follows_s263_and_preserves_diagnostics() -> None:
     assert frame["pressure"][0] == 1000.0
     assert frame["theta"][0] == 300.0
     validate_complete_trajectory(frame, duration_hours=-2)
+
+
+def test_endpoint_parser_rejects_unsupported_format_version() -> None:
+    with pytest.raises(RuntimeError, match="version 1 or 2"):
+        parse_trajectory_endpoints(_ENDPOINT.replace("1 2\n", "1 3\n", 1))
 
 
 def test_endpoint_parser_rejects_missing_pressure_diagnostic() -> None:
