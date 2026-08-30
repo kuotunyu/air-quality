@@ -259,6 +259,7 @@ const taiwanAnnualGuide = (
 
   <EvidenceFigure number="1.1" title="固定測站後，全台 PM2.5 的下降仍然成立嗎？" primary>
     <TrendChart
+      showLatestReadout
       years={trend.years}
       series={[
         {
@@ -355,6 +356,7 @@ const taiwanAnnualGuide = (
   */}
   <EvidenceFigure number="1.2" title="在相同天氣條件下，PM2.5 還下降多少？">
     <TrendChart
+      showLatestReadout
       years={dwYears}
       series={[
         {
@@ -452,6 +454,7 @@ const taiwanAnnualGuide = (
 
   <EvidenceFigure number="1.3" title="各空品區的長期趨勢是否一致？">
     <TrendChart
+      showLatestReadout
       years={trend.years}
       series={airzoneSeries}
       guides={[{ values: taiwanAnnualFor(trend.years), label: "台灣年均標準 15 → 12", colour: "var(--taiwan)" }]}

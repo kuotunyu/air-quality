@@ -50,6 +50,9 @@ interface Props {
   years: number[];
   series: Series[];
   primaryPlot?: boolean;
+  /* Chapter 1 keeps the precomputed latest-value panel visible at rest. Other
+   * chapters retain the existing disclose-on-focus behaviour. */
+  showLatestReadout?: boolean;
   /*
    * A reference line. `value` draws it flat; `values` draws it per year, for a
    * limit that has a history — see the Taiwan PM2.5 standard in chapter 1,
@@ -122,6 +125,7 @@ const {
   legend = true,
   notesAt = "right",
   primaryPlot = false,
+  showLatestReadout = false,
   pick,
 } = Astro.props;
 
@@ -604,6 +608,7 @@ const pickCss = pick
   <div
     class="plot"
     data-readout
+    data-idle-readout={showLatestReadout || undefined}
     style={`--plot-ar:${ar};--plot-min:${minH}px;--plot-max:${maxH}px;--y-w:${yGutter(yTicks.map((t) => n(t, 0)))}px;--y-lo:${lo};--y-hi:${hi}`}
   >
     {/* The domain and the values, for the readout. Written from the same `lo`,

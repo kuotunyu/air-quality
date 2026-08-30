@@ -262,6 +262,7 @@ const CHART_TEXT_CONTRACTS = [
 ];
 const CHART_STROKE_EPSILON = 0.01;
 const TREND_MUTED_SERIES_ALPHA = 0.28;
+const IDLE_READOUT_BLANK_LIMIT_PX = 96;
 
 function trendPickerInteractionProblems(state) {
   if (!state) return ["air-zone picker state is missing"];
@@ -1018,6 +1019,46 @@ function homepageMobileTypeProblems({
   for (const [role, value] of Object.entries({ finding, routeLabel, routeIntro, routeClaim })) {
     if (!close(ratio(value), expected[role])) {
       problems.push(`homepage ${role} type ratio changed`);
+    }
+  }
+  return problems;
+}
+
+function trendIdleReadoutBlankProblems(state) {
+  if (!state) return ["610px trend idle-readout state is missing"];
+  const problems = [];
+  if (state.viewport?.width !== 610 || state.viewport?.height !== 900) {
+    problems.push("trend readout-reservation probe viewport changed");
+  }
+  if (!Array.isArray(state.figures) || state.figures.length !== 3) {
+    problems.push("trend readout-reservation figure inventory changed");
+    return problems;
+  }
+  for (const figure of state.figures) {
+    const scope = `Figure 1.${Number(figure.index) + 1}`;
+    if (!figure.hasDock) {
+      problems.push(`${scope} readout dock is missing`);
+      continue;
+    }
+    if (figure.readingBefore !== "false") {
+      problems.push(`${scope} idle readout state changed`);
+    }
+    if (!figure.idleOptIn) {
+      problems.push(`${scope} latest-value panel is not opted in`);
+    }
+    if (!String(figure.idleWhen ?? "").startsWith("2025")) {
+      problems.push(`${scope} idle readout does not identify the latest year`);
+    }
+    if (!Number.isFinite(figure.idleUnoccupiedReserve) ||
+        figure.idleUnoccupiedReserve >= IDLE_READOUT_BLANK_LIMIT_PX) {
+      problems.push(
+        `${scope} idle .readout-dock leaves ` +
+          `${Number(figure.idleUnoccupiedReserve).toFixed(1)}px unused`,
+      );
+    }
+    if (!Number.isFinite(figure.idlePanelHeight) || figure.idlePanelHeight < 44 ||
+        !Number.isFinite(figure.idlePanelOpacity) || figure.idlePanelOpacity < 0.99) {
+      problems.push(`${scope} idle latest-value panel is not visible at full size`);
     }
   }
   return problems;
@@ -6310,6 +6351,31 @@ async function lifecycleSelfTest() {
     hintText: "勾選想比較的空品區。",
   }).some((problem) => problem.includes("instruction changed"))) {
     throw new Error("the trend control-clarification predicate accepts ambiguous instructions");
+  }
+
+  const completeTrendIdleReadout = {
+    viewport: { width: 610, height: 900 },
+    figures: Array.from({ length: 3 }, (_, index) => ({
+      index,
+      hasDock: true,
+      readingBefore: "false",
+      idleOptIn: true,
+      idleWhen: "2025・μg/m³",
+      idleReserve: 160,
+      idlePanelHeight: 148,
+      idlePanelOpacity: 1,
+      idleUnoccupiedReserve: 12,
+    })),
+  };
+  if (trendIdleReadoutBlankProblems(completeTrendIdleReadout).length) {
+    throw new Error("the trend idle-readout predicate rejects its control");
+  }
+  const blankTrendReadout = structuredClone(completeTrendIdleReadout);
+  blankTrendReadout.figures[2].idlePanelOpacity = 0;
+  blankTrendReadout.figures[2].idleUnoccupiedReserve = IDLE_READOUT_BLANK_LIMIT_PX;
+  if (!trendIdleReadoutBlankProblems(blankTrendReadout)
+    .some((problem) => problem.includes("unused"))) {
+    throw new Error("the trend idle-readout predicate accepts a 96px blank interval");
   }
 
   const completeStationFilterHelper = {
@@ -14707,6 +14773,83 @@ async function main() {
       { width: 1440, height: 900 },
     )) {
       failures.push(`/explore/ print: ${problem}`);
+    }
+  }
+
+  console.log("site-quality stage: 610px trend idle-readout use");
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 610,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  await send("Page.navigate", { url: `${origin}/trend/` });
+  const trendIdleStyled = await settled(evaluate, 8000, "/trend/ 610px idle readout use");
+  let trendIdleReady = false;
+  if (trendIdleStyled) {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      trendIdleReady = Boolean(await evaluate(`(() => {
+        const figures = [...document.querySelectorAll("main .evidence-figure")];
+        return location.pathname.endsWith("/trend/") && figures.length === 3 &&
+          figures.every((figure) => {
+            const plot = figure.querySelector(".plot[data-readout]");
+            return plot?.dataset.reading === "false" &&
+              plot.nextElementSibling?.matches(".readout-dock") &&
+              Boolean(plot.nextElementSibling.querySelector(".readout-panel"));
+          });
+      })()`));
+      if (trendIdleReady) break;
+      await sleep(50);
+    }
+  }
+  if (!trendIdleStyled || !trendIdleReady) {
+    failures.push("/trend/ @610 light: page never finished styling for idle readout use");
+  } else {
+    const state = await evaluate(`(() => {
+      const reserve = (dock) => {
+        if (!dock) return NaN;
+        const style = getComputedStyle(dock);
+        return dock.getBoundingClientRect().height +
+          (Number.parseFloat(style.marginBlockStart) || 0);
+      };
+      const figures = [...document.querySelectorAll("main .evidence-figure")];
+      const rows = [];
+      for (const [index, figure] of figures.entries()) {
+        const plot = figure.querySelector(".plot[data-readout]");
+        const dock = plot?.nextElementSibling?.matches(".readout-dock")
+          ? plot.nextElementSibling : null;
+        const panel = dock?.querySelector(".readout-panel") ?? null;
+        if (!plot || !dock || !panel) {
+          rows.push({ index, hasDock: false });
+          continue;
+        }
+        const readingBefore = plot.dataset.reading ?? null;
+        const idleOptIn = plot.hasAttribute("data-idle-readout");
+        const idleReserve = reserve(dock);
+        const idlePanel = panel.getBoundingClientRect();
+        const idlePanelOpacity = Number(getComputedStyle(panel).opacity);
+        rows.push({
+          index,
+          hasDock: true,
+          readingBefore,
+          idleOptIn,
+          idleWhen: panel.querySelector(".readout-when")?.textContent?.trim() ?? null,
+          idleReserve,
+          idlePanelHeight: idlePanel.height,
+          idlePanelOpacity,
+          idleUnoccupiedReserve: idlePanelOpacity < 0.99
+            ? idleReserve
+            : Math.max(0, idleReserve - idlePanel.height),
+        });
+      }
+      return { viewport: { width: innerWidth, height: innerHeight }, figures: rows };
+    })()`);
+    for (const problem of trendIdleReadoutBlankProblems(state)) {
+      failures.push(`/trend/ @610 light: ${problem}`);
     }
   }
 

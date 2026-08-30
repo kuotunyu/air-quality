@@ -23,13 +23,15 @@
  * says.
  *
  * It also does not animate anything but opacity, and it never moves the page:
- * the crosshair and the panel are both absolutely positioned inside the plot
- * area, so nothing below a figure shifts when a pointer enters one.
+ * the crosshair is positioned inside the plot area and the value panel keeps a
+ * stable dock below it, so nothing below a figure shifts when a pointer enters
+ * one.
  */
 /**
- * 2026-08-03 — supersedes the final paragraph above. The rule and dots remain
- * overlays, but the panel now occupies a reserved dock after the plot so an
- * exact value never covers the evidence it describes.
+ * 2026-08-30 — chapter 1 keeps the dock's precomputed latest value visible at
+ * rest. Hiding the populated panel left 110–180px of unexplained blank space
+ * at a 610px viewport; collapsing it instead made the page jump on first
+ * focus. Other chapters retain disclose-on-focus through an opt-in attribute.
  */
 ---
 
@@ -316,8 +318,9 @@
       return Math.round(Math.max(0, Math.min(1, frac)) * last);
     }
 
-    /* The hidden panel still takes its final space, so first focus changes
-       opacity and content without moving the chart or the material below it. */
+    /* The panel is populated with the latest value before first focus. A chart
+       may opt to keep that value visible at rest; either way pointer and
+       keyboard interaction update the stable dock without moving the page. */
     panel.replaceChildren(head(data.x[last]), ...rows(last));
     plot.dataset.reading = "false";
 
@@ -419,6 +422,7 @@
 
   .plot[data-reading="true"] .readout-rule,
   .plot[data-reading="true"] .readout-dot:not([hidden]),
+  .plot[data-idle-readout] + .readout-dock .readout-panel,
   .plot[data-reading="true"] + .readout-dock .readout-panel {
     opacity: 1;
   }
