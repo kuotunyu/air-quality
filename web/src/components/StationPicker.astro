@@ -14,11 +14,10 @@ import { TW_PM25_ADDED, TW_PM25_DAILY_BEFORE, TW_PM25_TIGHTENED } from "../lib/s
 
 interface Props {
   cards: StationCard[];
-  caveat: string;
   guidelines: Guidelines;
 }
 
-const { cards, caveat, guidelines } = Astro.props;
+const { cards, guidelines } = Astro.props;
 
 // Grouped by county already, but the counties came out in stroke order, which
 // is no more findable than the station names were. Same helper as chapter 3's
@@ -220,10 +219,6 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
         </div>
 
         <div class="row" data-station-comparisons>
-          <p class="line" data-station-comparison="conversion">
-            <span class="num big">{card.cigarettes_per_day}</span> 支菸／天
-            <span class="dim">——粗略等效換算</span>
-          </p>
           {
             card.rank != null && card.stations_ranked != null && (
               <p class="line" data-station-comparison="rank">
@@ -263,8 +258,6 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     第一章的年均標準則是逐年畫的：
     那裡的橫軸就是時間，法規改了本來就該看得見，{TW_PM25_ADDED} 年以前也就沒有線。
   </p>
-
-  <p class="note caveat" data-station-conversion-note>{caveat}</p>
 </div>
 
 <script>

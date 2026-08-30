@@ -230,13 +230,12 @@ class TestStationCards:
         assert len(cards) == 1
         assert cards[0]["year"] == 2003, "2004 had 50 days and is not comparable"
 
-    def test_the_cigarette_figure_ships_with_its_caveat(
+    def test_station_cards_and_payload_do_not_publish_a_cigarette_analogy(
         self,
         daily: Callable[[pl.DataFrame], None],
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The analogy is a popularisation and must never travel bare."""
         daily(_daily_frame(_year_of_days("三重", 2020, 22.0, days=366)))
         monkeypatch.setattr(story, "_stations", lambda: pl.DataFrame({"station_name": ["三重"]}))
         monkeypatch.setattr(story, "_export_pitfalls", lambda root: [])
@@ -248,8 +247,13 @@ class TestStationCards:
             (tmp_path / "story" / "station-cards.json").read_text(encoding="utf-8")
         )
 
-        assert payload["cards"][0]["cigarettes_per_day"] == pytest.approx(1.0)
-        assert "劑量反應模型" in payload["cigarette_caveat"]
+        forbidden = {
+            "cigarettes" + "_per_day",
+            "cigarette" + "_equivalent_ugm3",
+            "cigarette" + "_caveat",
+        }
+        assert forbidden.isdisjoint(payload)
+        assert forbidden.isdisjoint(payload["cards"][0])
 
     def test_a_station_with_no_comparable_year_yields_no_card(
         self, daily: Callable[[pl.DataFrame], None]

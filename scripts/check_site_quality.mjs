@@ -56,6 +56,7 @@ const ROUTES = [
   "/explore/",
   "/data/",
 ];
+const FORBIDDEN_CIGARETTE_ANALOGY = /\u652f\u83f8|\u9999\u83f8|cigarette/iu;
 const COMPACT_IDENTITY_ACCESSIBLE_NAMES = new Map([
   ["/", "台灣空氣品質再分析"],
   ["/trend/", "第一章　長期趨勢與氣象校正"],
@@ -797,7 +798,7 @@ function stationRegisterProblems(state, mode) {
     problems.push(`station ${mode} displayed station identities disagree`);
   }
   if (!state?.ordered) problems.push(`station ${mode} report order changed`);
-  if (state?.standardNotes !== 1 || state?.conversionNotes !== 1) {
+  if (state?.standardNotes !== 1 || state?.conversionNotes !== 0) {
     problems.push(`station ${mode} interpretation notes changed`);
   }
   return problems;
@@ -855,7 +856,7 @@ function stationDossierProblems(state) {
   for (const [index, stat] of (state?.stats ?? []).entries()) {
     if (!visibleBox(stat)) problems.push(`station statistic ${index + 1} is not visible`);
   }
-  if (state?.comparisons?.length !== 3) problems.push("station comparison inventory changed");
+  if (state?.comparisons?.length !== 2) problems.push("station comparison inventory changed");
   for (const [index, comparison] of (state?.comparisons ?? []).entries()) {
     if (!visibleBox(comparison)) {
       problems.push(`station comparison ${index + 1} is not visible`);
@@ -865,7 +866,6 @@ function stationDossierProblems(state) {
     problems.push(`station statistics use the wrong ${state.viewportWidth}px column count`);
   }
   if (!visibleBox(state?.standardNote)) problems.push("station standard note is not visible");
-  if (!visibleBox(state?.conversionNote)) problems.push("station conversion caveat is not visible");
   if (state?.horizontalOverflow > 1) problems.push("station dossier causes horizontal overflow");
   const changed = state?.afterChange;
   if (!changed?.performed) problems.push("station selection change was not exercised");
@@ -896,7 +896,7 @@ function stationDossierProblems(state) {
       problems.push(`changed station statistic ${index + 1} is not visible`);
     }
   }
-  if (changed?.comparisons?.length !== 3) {
+  if (changed?.comparisons?.length !== 2) {
     problems.push("changed station comparison inventory changed");
   }
   for (const [index, comparison] of (changed?.comparisons ?? []).entries()) {
@@ -6459,12 +6459,11 @@ async function lifecycleSelfTest() {
     yearVisible: true,
     stats: Array.from({ length: 4 }, () => ({ visible: true, width: 120, height: 96 })),
     comparisons: Array.from(
-      { length: 3 },
+      { length: 2 },
       () => ({ visible: true, width: 180, height: 52 }),
     ),
     columns: viewportWidth === 375 ? 1 : viewportWidth === 768 ? 2 : 4,
     standardNote: { visible: true, width: 320, height: 120 },
-    conversionNote: { visible: true, width: 320, height: 80 },
     horizontalOverflow: 0,
     afterChange: {
       performed: true,
@@ -6478,7 +6477,7 @@ async function lifecycleSelfTest() {
       year: { visible: true, width: 80, height: 24 },
       stats: Array.from({ length: 4 }, () => ({ visible: true, width: 120, height: 96 })),
       comparisons: Array.from(
-        { length: 3 },
+        { length: 2 },
         () => ({ visible: true, width: 180, height: 52 }),
       ),
       liveIncludesStation: true,
@@ -6570,9 +6569,6 @@ async function lifecycleSelfTest() {
   expectStationDossierProblem("hidden standard note", 375, (state) => {
     state.standardNote.visible = false;
   }, "standard note is not visible");
-  expectStationDossierProblem("hidden conversion caveat", 375, (state) => {
-    state.conversionNote.visible = false;
-  }, "conversion caveat is not visible");
   expectStationDossierProblem("horizontal overflow", 375, (state) => {
     state.horizontalOverflow = 2;
   }, "causes horizontal overflow");
@@ -6656,7 +6652,7 @@ async function lifecycleSelfTest() {
     matchingStationNameCount: 79,
     ordered: true,
     standardNotes: 1,
-    conversionNotes: 1,
+    conversionNotes: 0,
   };
   const missedStationRegisterProblems = [];
   const expectStationRegisterProblem = (name, mode, mutate, expected) => {
@@ -6699,6 +6695,9 @@ async function lifecycleSelfTest() {
   expectStationRegisterProblem("missing no-JavaScript note", "no-JavaScript", (state) => {
     state.standardNotes = 0;
   }, "interpretation notes changed");
+  expectStationRegisterProblem("unexpected no-JavaScript conversion note", "no-JavaScript", (state) => {
+    state.conversionNotes = 1;
+  }, "interpretation notes changed");
   expectStationRegisterProblem("visible print selector", "print", (state) => {
     state.selectorVisible = true;
   }, "controls remain visible");
@@ -6725,7 +6724,10 @@ async function lifecycleSelfTest() {
     state.ordered = false;
   }, "report order changed");
   expectStationRegisterProblem("missing print note", "print", (state) => {
-    state.conversionNotes = 0;
+    state.standardNotes = 0;
+  }, "interpretation notes changed");
+  expectStationRegisterProblem("unexpected print conversion note", "print", (state) => {
+    state.conversionNotes = 1;
   }, "interpretation notes changed");
   if (missedStationRegisterProblems.length) {
     throw new Error(
@@ -11673,7 +11675,6 @@ async function main() {
       comparisons: comparisons.map(inspect),
       columns: statLefts.length,
       standardNote: inspect(document.querySelector("[data-station-standard-note]")),
-      conversionNote: inspect(document.querySelector("[data-station-conversion-note]")),
       horizontalOverflow: document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
       reportStyle: shown ? {
@@ -14410,6 +14411,10 @@ async function main() {
           continue;
         }
         console.log(`site-quality route styled: ${route} @${width}px ${theme}`);
+        const bodyText = await evaluate("document.body.innerText");
+        if (FORBIDDEN_CIGARETTE_ANALOGY.test(bodyText ?? "")) {
+          failures.push(`${route} @${width} ${theme}: cigarette analogy remains`);
+        }
         if (route === "/sources/") {
           const mainText = await evaluate(
             'document.querySelector("main")?.innerText.replace(/\\s+/g, " ").trim() ?? ""',

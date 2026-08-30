@@ -155,7 +155,6 @@ export interface StationCard {
   rank: number | null;
   stations_ranked: number | null;
   times_who_annual: number;
-  cigarettes_per_day: number;
 }
 
 /**
@@ -303,7 +302,6 @@ export interface Guidelines {
 }
 
 export const guidelines = stationCards.guidelines as unknown as Guidelines;
-export const cigaretteCaveat = stationCards.cigarette_caveat as string;
 export const pitfallTables = pitfalls.tables as Record<string, Record<string, unknown>[]>;
 /** Chapter 1's second correction: how much of the fall was the weather.
  *

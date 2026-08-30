@@ -110,16 +110,6 @@ GUIDELINES: dict[str, dict[str, Any]] = {
     },
 }
 
-# Berkeley Earth's rule of thumb, kept because it is the single most effective
-# way to make a microgram figure mean something, and labelled because it is a
-# popularisation rather than a dose-response model.
-CIGARETTE_EQUIVALENT_UGM3 = 22.0
-CIGARETTE_CAVEAT = (
-    "Berkeley Earth 的粗略換算：24 小時暴露於 22 μg/m³ PM2.5 約等於抽 1 支菸。"
-    "這是為了讓濃度有感的類比，不是劑量反應模型——菸含有 PM2.5 以外的致癌物，"
-    "而空污的成分隨來源而異。用來理解數量級，不要用來估計個人風險。"
-)
-
 # A year needs this share of days with a usable daily mean before its annual
 # statistics are reported. Below it the number exists but is not comparable,
 # and it is marked rather than dropped.
@@ -352,7 +342,6 @@ def station_cards(pollutant: str = "PM2.5", root: Path | None = None) -> list[di
                 "rank": row.get("rank"),
                 "stations_ranked": row.get("stations_ranked"),
                 "times_who_annual": round(mean / GUIDELINES[pollutant]["who_2021_annual"], 2),
-                "cigarettes_per_day": round(mean / CIGARETTE_EQUIVALENT_UGM3, 2),
             }
         )
     return cards
@@ -424,8 +413,6 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
             {
                 "pollutant": pollutant,
                 "guidelines": GUIDELINES.get(pollutant),
-                "cigarette_equivalent_ugm3": CIGARETTE_EQUIVALENT_UGM3,
-                "cigarette_caveat": CIGARETTE_CAVEAT,
                 "cards": station_cards(pollutant),
             },
         )
