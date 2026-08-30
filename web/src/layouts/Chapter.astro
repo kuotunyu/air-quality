@@ -26,6 +26,7 @@ interface Props {
 const { slug, description } = Astro.props;
 const chapter = chapterBySlug(slug);
 const { prev, next } = neighbours(slug);
+const position = !prev ? "first" : !next ? "last" : "middle";
 ---
 
 <Base
@@ -34,74 +35,177 @@ const { prev, next } = neighbours(slug);
 >
   <slot />
 
-  <nav class="chapter-nav page" aria-label="章節導覽">
-    <a class="step" href={href()} data-dir="up">
-      <span class="step-role">目錄</span>
-      <span class="step-title">全部 {CHAPTERS.length} 章</span>
-    </a>
-
-    {
-      prev ? (
-        <a class="step" href={href(prev.slug)} data-dir="prev">
-          <span class="step-role">← {chapterLabel(prev.n)}</span>
-          <span class="step-title">{prev.title}</span>
-        </a>
-      ) : (
-        <span class="step is-end">
-          <span class="step-role">序</span>
-          <span class="step-title">這是第一章</span>
+  <nav
+    class="chapter-nav page"
+    aria-label="章節導覽"
+    data-chapter-position={position}
+  >
+    <div class="chapter-nav-panel">
+      <div class="chapter-nav-head">
+        <span
+          class="chapter-progress"
+          data-chapter-progress
+          aria-label={`目前是第 ${chapter.n} 章，共 ${CHAPTERS.length} 章`}
+        >
+          {chapter.n} / {CHAPTERS.length}
         </span>
-      )
-    }
+        <a class="chapter-index-link" href={href()} data-dir="up">全部章節</a>
+      </div>
 
-    {
-      next ? (
-        <a class="step" href={href(next.slug)} data-dir="next">
-          <span class="step-role">{chapterLabel(next.n)} →</span>
-          <span class="step-title">{next.title}</span>
-        </a>
-      ) : (
-        <span class="step is-end">
-          <span class="step-role">跋</span>
-          <span class="step-title">這是最後一章</span>
-        </span>
-      )
-    }
+      <div class="chapter-nav-actions">
+        {
+          prev && (
+            <a class="step" href={href(prev.slug)} data-dir="prev">
+              <span class="step-arrow" aria-hidden="true">←</span>
+              <span class="step-copy">
+                <span class="step-role">上一章 · {chapterLabel(prev.n)}</span>
+                <span class="step-title">{prev.title}</span>
+              </span>
+            </a>
+          )
+        }
+
+        {
+          next && (
+            <a class="step" href={href(next.slug)} data-dir="next">
+              <span class="step-copy">
+                <span class="step-role">下一章 · {chapterLabel(next.n)}</span>
+                <span class="step-title">{next.title}</span>
+              </span>
+              <span class="step-arrow" aria-hidden="true">→</span>
+            </a>
+          )
+        }
+      </div>
+    </div>
   </nav>
 </Base>
 
 <style>
   .chapter-nav {
-    display: grid;
-    gap: var(--space-3);
-    padding-block: clamp(2rem, 4vw, 3rem);
-    border-top: 1px solid var(--line-soft);
+    padding-block: var(--space-3);
   }
 
-  /* Three across once there is room, and in reading order: index, back, on.
-     Below that they stack, because a 「方法選擇的量化代價」 does not fit a third
-     of 375px and truncating a chapter title to make a grid work is the wrong
-     trade. */
+  .chapter-nav-panel {
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
+
+  .chapter-nav-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 44px;
+    padding-inline: var(--space-3) var(--space-2);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .chapter-progress {
+    color: var(--text-faint);
+    font-family: var(--font-numeric);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .chapter-index-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-weight: 650;
+    text-decoration: none;
+    transition:
+      background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .chapter-index-link:hover,
+  .chapter-index-link:focus-visible {
+    color: var(--accent);
+    background: var(--tint-neutral);
+  }
+
+  .chapter-nav-actions {
+    display: grid;
+  }
+
+  /* Two neighbours share the row only when a chapter has both of them. At the
+     two endpoints the one real action owns the row instead of leaving a blank
+     column where a fake 「序／跋」 item used to sit. */
   @media (min-width: 46rem) {
-    .chapter-nav {
-      grid-template-columns: auto 1fr 1fr;
-      gap: var(--space-4);
+    .chapter-nav[data-chapter-position="middle"] .chapter-nav-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    /* Next sits hard right so the forward direction is where the eye expects it. */
-    .step[data-dir="next"],
-    .step.is-end:last-child {
-      text-align: right;
+
+    .chapter-nav[data-chapter-position="middle"] .step + .step {
+      border-top: 0;
+      border-left: 1px solid var(--line-soft);
+    }
+
+    .chapter-nav[data-chapter-position="middle"] .step:first-child {
+      border-end-start-radius: calc(var(--radius) - 1px);
+    }
+
+    .chapter-nav[data-chapter-position="middle"] .step:last-child {
+      border-end-start-radius: 0;
+      border-end-end-radius: calc(var(--radius) - 1px);
     }
   }
 
   .step {
     display: grid;
-    gap: 0.15rem;
-    padding: var(--space-3) 0;
-    text-decoration: none;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    min-height: 76px;
+    padding: var(--space-2) var(--space-3);
     color: var(--text);
-    border-top: 1px solid transparent;
-    transition: border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    text-decoration: none;
+    transition:
+      background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .step[data-dir="prev"] {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .step[data-dir="next"] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .step + .step {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .step:only-child,
+  .step:last-child {
+    border-end-start-radius: calc(var(--radius) - 1px);
+    border-end-end-radius: calc(var(--radius) - 1px);
+  }
+
+  .step-copy {
+    display: grid;
+    min-width: 0;
+    gap: 0.15rem;
+  }
+
+  .step[data-dir="next"] .step-copy {
+    justify-items: end;
+    text-align: right;
+  }
+
+  .step-arrow {
+    color: var(--text-faint);
+    font-family: var(--font-numeric);
+    font-size: var(--text-lg);
+    line-height: 1;
+    transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .step-role {
@@ -115,24 +219,23 @@ const { prev, next } = neighbours(slug);
     font-weight: 650;
     letter-spacing: -0.01em;
     text-wrap: balance;
+    overflow-wrap: anywhere;
   }
 
-  a.step:hover .step-title,
-  a.step:focus-visible .step-title {
+  .step:hover,
+  .step:focus-visible {
+    background: var(--tint-neutral);
+  }
+
+  .step:hover :is(.step-title, .step-arrow),
+  .step:focus-visible :is(.step-title, .step-arrow) {
     color: var(--accent);
   }
 
-  a.step:hover {
-    border-top-color: var(--rule);
-  }
-
-  .step.is-end .step-title {
-    color: var(--text-faint);
-    font-weight: 400;
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .step {
+    .chapter-index-link,
+    .step,
+    .step-arrow {
       transition: none;
     }
   }

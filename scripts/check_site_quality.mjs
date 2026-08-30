@@ -672,6 +672,78 @@ function chapterOpeningProblems(state) {
   return problems;
 }
 
+function chapterEndingProblems(state, viewport) {
+  const problems = [];
+  const compactHeightCeiling = viewport?.width < 768 ? 320 : 220;
+  const requiredLinks = state?.expectedPreviousLinks + state?.expectedNextLinks;
+
+  if (state?.navCount !== 1) {
+    problems.push(`chapter ending exposes ${state?.navCount ?? "unknown"} navigators`);
+  }
+  if (state?.panelCount !== 1) {
+    problems.push(`chapter ending exposes ${state?.panelCount ?? "unknown"} grouped panels`);
+  }
+  if (state?.progressCount !== 1 || state?.progressText !== state?.expectedProgressText) {
+    problems.push("chapter ending progress marker is missing or incorrect");
+  }
+  if (state?.position !== state?.expectedPosition) {
+    problems.push(
+      `chapter ending position is ${JSON.stringify(state?.position)}, ` +
+        `expected ${JSON.stringify(state?.expectedPosition)}`,
+    );
+  }
+  if (state?.indexLinks !== 1 || state?.indexLabel !== "全部章節") {
+    problems.push("chapter ending does not expose one clearly labelled chapter-index link");
+  }
+  if (state?.inertEndpoints !== 0) {
+    problems.push(`chapter ending still renders ${state?.inertEndpoints ?? "unknown"} inert endpoints`);
+  }
+  if (state?.linkCount !== state?.expectedLinkCount) {
+    problems.push(
+      `chapter ending exposes ${state?.linkCount ?? "unknown"} links, ` +
+        `expected ${state?.expectedLinkCount ?? "unknown"}`,
+    );
+  }
+  if (state?.previousLinks !== state?.expectedPreviousLinks) {
+    problems.push("chapter ending previous-link inventory does not match its chapter position");
+  }
+  if (state?.nextLinks !== state?.expectedNextLinks) {
+    problems.push("chapter ending next-link inventory does not match its chapter position");
+  }
+  if (state?.directionLabels !== requiredLinks) {
+    problems.push("chapter ending neighbour links do not state their reading direction");
+  }
+  if (state?.hiddenArrows !== requiredLinks) {
+    problems.push("chapter ending arrows are missing or exposed to assistive technology");
+  }
+  if (state?.outwardArrows !== requiredLinks) {
+    problems.push("chapter ending arrows do not sit on their outward navigation edges");
+  }
+  if ((state?.linkHeights ?? []).some((height) => !Number.isFinite(height) || height < 44)) {
+    problems.push("chapter ending has a link shorter than the 44px target floor");
+  }
+  if (state?.containedLinks !== state?.linkCount) {
+    problems.push("chapter ending has a link outside its grouped panel");
+  }
+  if (state?.clippedTitles !== 0) {
+    problems.push(`chapter ending clips ${state?.clippedTitles ?? "unknown"} chapter titles`);
+  }
+  if (state?.horizontalOverflow !== 0) {
+    problems.push(`chapter ending adds ${state?.horizontalOverflow ?? "unknown"}px horizontal overflow`);
+  }
+  if (
+    !Number.isFinite(state?.navHeight) ||
+    !Number.isFinite(compactHeightCeiling) ||
+    state.navHeight > compactHeightCeiling
+  ) {
+    problems.push(
+      `chapter ending is ${state?.navHeight ?? "unknown"}px tall ` +
+        `(ceiling ${compactHeightCeiling}px)`,
+    );
+  }
+  return problems;
+}
+
 const TREND_READING_MAP_CONTRACT = Object.freeze({
   label: "trend",
   targetIds: Object.freeze(["evidence-1-1-title", "trend-weather-adjustment", "trend-airzones"]),
@@ -6523,6 +6595,55 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality chapter opening self-test passed");
 
+  const completeChapterEnding = {
+    navCount: 1,
+    panelCount: 1,
+    progressCount: 1,
+    progressText: "5 / 10",
+    expectedProgressText: "5 / 10",
+    position: "middle",
+    expectedPosition: "middle",
+    indexLinks: 1,
+    indexLabel: "全部章節",
+    inertEndpoints: 0,
+    linkCount: 3,
+    expectedLinkCount: 3,
+    previousLinks: 1,
+    expectedPreviousLinks: 1,
+    nextLinks: 1,
+    expectedNextLinks: 1,
+    directionLabels: 2,
+    hiddenArrows: 2,
+    outwardArrows: 2,
+    linkHeights: [44, 72, 72],
+    containedLinks: 3,
+    clippedTitles: 0,
+    horizontalOverflow: 0,
+    navHeight: 180,
+  };
+  if (chapterEndingProblems(completeChapterEnding, { width: 1440, height: 900 }).length) {
+    throw new Error("the chapter-ending predicate rejects a complete reading handoff");
+  }
+  if (!chapterEndingProblems({
+    ...completeChapterEnding,
+    inertEndpoints: 1,
+  }, { width: 1440, height: 900 }).some((problem) => problem.includes("inert endpoints"))) {
+    throw new Error("the chapter-ending predicate accepts an inert endpoint placeholder");
+  }
+  if (!chapterEndingProblems({
+    ...completeChapterEnding,
+    navHeight: 476,
+  }, { width: 390, height: 844 }).some((problem) => problem.includes("476px tall"))) {
+    throw new Error("the chapter-ending predicate accepts the old phone-height band");
+  }
+  if (!chapterEndingProblems({
+    ...completeChapterEnding,
+    outwardArrows: 1,
+  }, { width: 1440, height: 900 }).some((problem) => problem.includes("outward navigation edges"))) {
+    throw new Error("the chapter-ending predicate accepts an inward next arrow");
+  }
+  console.log("site quality chapter ending self-test passed");
+
   const completeTrendReadingMapFor = (viewportWidth) => {
     const wide = viewportWidth >= 1024;
     const thesis = wide
@@ -11797,6 +11918,67 @@ async function main() {
     };
   })()`);
 
+  const chapterEndingSnapshot = async (expected) => evaluate(`(() => {
+    const navs = [...document.querySelectorAll("main .chapter-nav")];
+    const nav = navs[0] ?? null;
+    const panel = nav?.querySelector(".chapter-nav-panel") ?? null;
+    const links = [...(nav?.querySelectorAll("a") ?? [])];
+    const neighbourLinks = links.filter((link) =>
+      link.matches('[data-dir="prev"], [data-dir="next"]')
+    );
+    const panelBox = panel?.getBoundingClientRect() ?? null;
+    const navBox = nav?.getBoundingClientRect() ?? null;
+    const insidePanel = (link) => {
+      if (!panelBox) return false;
+      const box = link.getBoundingClientRect();
+      return box.left >= panelBox.left - 1 && box.right <= panelBox.right + 1 &&
+        box.top >= panelBox.top - 1 && box.bottom <= panelBox.bottom + 1;
+    };
+    const arrowAtOutwardEdge = (link) => {
+      const linkBox = link.getBoundingClientRect();
+      const arrow = link.querySelector(".step-arrow");
+      const arrowRange = arrow ? document.createRange() : null;
+      if (arrowRange && arrow) arrowRange.selectNodeContents(arrow);
+      const arrowBox = arrowRange?.getBoundingClientRect() ?? null;
+      const copyBox = link.querySelector(".step-copy")?.getBoundingClientRect() ?? null;
+      if (!arrowBox || !copyBox) return false;
+      if (link.dataset.dir === "prev") {
+        return arrowBox.right <= copyBox.left + 1 && arrowBox.left - linkBox.left <= 44;
+      }
+      return copyBox.right <= arrowBox.left + 1 && linkBox.right - arrowBox.right <= 44;
+    };
+    const normalText = (element) => element?.textContent?.replace(/\\s+/g, " ").trim() ?? "";
+    return {
+      ...${JSON.stringify(expected)},
+      navCount: navs.length,
+      panelCount: nav?.querySelectorAll(".chapter-nav-panel").length ?? 0,
+      progressCount: nav?.querySelectorAll("[data-chapter-progress]").length ?? 0,
+      progressText: normalText(nav?.querySelector("[data-chapter-progress]")),
+      position: nav?.getAttribute("data-chapter-position") ?? null,
+      indexLinks: nav?.querySelectorAll('a[data-dir="up"]').length ?? 0,
+      indexLabel: normalText(nav?.querySelector('a[data-dir="up"]')),
+      inertEndpoints: nav?.querySelectorAll(".is-end").length ?? 0,
+      linkCount: links.length,
+      previousLinks: nav?.querySelectorAll('a[data-dir="prev"]').length ?? 0,
+      nextLinks: nav?.querySelectorAll('a[data-dir="next"]').length ?? 0,
+      directionLabels: neighbourLinks.filter((link) =>
+        normalText(link).includes(link.dataset.dir === "prev" ? "上一章" : "下一章")
+      ).length,
+      hiddenArrows: neighbourLinks.filter((link) =>
+        link.querySelector('.step-arrow[aria-hidden="true"]')
+      ).length,
+      outwardArrows: neighbourLinks.filter(arrowAtOutwardEdge).length,
+      linkHeights: links.map((link) => link.getBoundingClientRect().height),
+      containedLinks: links.filter(insidePanel).length,
+      clippedTitles: [...(nav?.querySelectorAll(".step-title") ?? [])].filter((title) =>
+        title.scrollWidth - title.clientWidth > 1 || title.scrollHeight - title.clientHeight > 1
+      ).length,
+      horizontalOverflow: document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      navHeight: navBox?.height ?? null,
+    };
+  })()`);
+
   const readingMapSnapshot = async ({ targetIds, measureAnchors }) => {
     const state = await evaluate(`(() => {
       const rendered = (element) => {
@@ -13496,6 +13678,7 @@ async function main() {
     noScriptSecondaryDisclosures: 0,
     noScriptSqlDisclosures: 0,
     chapterOpeningChecks: 0,
+    chapterEndingChecks: 0,
     zoomRoutes: 0,
   };
 
@@ -14319,6 +14502,22 @@ async function main() {
       }
       for (const problem of chapterOpeningProblems(snapshot.state)) {
         failures.push(`${route} @${width}x${height} light: ${problem}`);
+      }
+      const chapterIndex = CHAPTER_ROUTES.indexOf(route);
+      const expectedPreviousLinks = chapterIndex === 0 ? 0 : 1;
+      const expectedNextLinks = chapterIndex === CHAPTER_ROUTES.length - 1 ? 0 : 1;
+      const ending = await chapterEndingSnapshot({
+        expectedProgressText: `${chapterIndex + 1} / ${CHAPTER_ROUTES.length}`,
+        expectedPosition: chapterIndex === 0
+          ? "first"
+          : chapterIndex === CHAPTER_ROUTES.length - 1 ? "last" : "middle",
+        expectedLinkCount: 1 + expectedPreviousLinks + expectedNextLinks,
+        expectedPreviousLinks,
+        expectedNextLinks,
+      });
+      totals.chapterEndingChecks += 1;
+      for (const problem of chapterEndingProblems(ending, { width, height })) {
+        failures.push(`${route} @${width}x${height} light ending: ${problem}`);
       }
       if (route === "/detection/") {
         const detectionState = await detectionLimitationBriefSnapshot("normal");
@@ -16770,6 +16969,11 @@ async function main() {
       `chapter opening matrix exercised ${totals.chapterOpeningChecks} route-viewports, expected 60`,
     );
   }
+  if (totals.chapterEndingChecks !== 60) {
+    failures.push(
+      `chapter ending matrix exercised ${totals.chapterEndingChecks} route-viewports, expected 60`,
+    );
+  }
   if (totals.smallestAt375 < MIN_FONT_PX) {
     failures.push(`smallest type at 375px is ${totals.smallestAt375}px (floor ${MIN_FONT_PX})`);
   }
@@ -16804,6 +17008,7 @@ async function main() {
   console.log(`focus checks      : ${totals.focusChecks}`);
   console.log(`no-JavaScript     : ${totals.noScriptRoutes} routes`);
   console.log(`chapter openings : ${totals.chapterOpeningChecks} route-viewports`);
+  console.log(`chapter endings  : ${totals.chapterEndingChecks} route-viewports`);
   console.log(`200% text zoom    : ${totals.zoomRoutes} routes`);
   console.log(`APCA floor       : Lc ${MIN_LC}`);
   console.log(`problems         : ${failures.length}`);
