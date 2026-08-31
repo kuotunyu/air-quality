@@ -11,6 +11,7 @@ import { stationType } from "../lib/labels";
 import { groupByCountyNorthToSouth } from "../lib/data";
 import type { Guidelines, StationCard } from "../lib/data";
 import { TW_PM25_ADDED, TW_PM25_DAILY_BEFORE, TW_PM25_TIGHTENED } from "../lib/standards";
+import StationLocator from "./StationLocator.astro";
 
 interface Props {
   cards: StationCard[];
@@ -92,6 +93,12 @@ const rankPosition = (rank: number, total: number) =>
     }
     #stations .picker .nojs {
       display: block;
+    }
+    /* One locator cannot mark 79 stations, and a mark on the wrong one is
+       worse than no mark at all — the same reasoning that takes the control
+       away above. */
+    #stations .picker .station-locator {
+      display: none;
     }
   </style>
 </noscript>
@@ -183,6 +190,8 @@ const rankPosition = (rank: number, total: number) =>
         class="report"
         data-station={card.station_name}
         data-station-report
+        data-lon={card.lon}
+        data-lat={card.lat}
         hidden={card.station_name !== initial.station_name}
       >
         <header data-station-identity>
@@ -280,6 +289,27 @@ const rankPosition = (rank: number, total: number) =>
   }
 
   {/*
+    One locator for 79 cards, not one per card.
+
+    The chapter ships every card in the HTML — that is what makes it work
+    without a script — and 79 island outlines would be a different order of
+    page weight for a figure only one of which is ever visible. So the mark is
+    a thing the change handler has to move, and therefore a thing the gate has
+    to watch: `check_site_quality.mjs` fails if the mark's station and the
+    visible report disagree, before and after a change.
+
+    Placed AFTER the reports rather than above them. `.picker` is this
+    chapter's `data-primary-evidence`, and content added above the card eats
+    the 55vh clearance the chapter-opening rule measures — which has broken
+    three chapters once already.
+  */}
+  <StationLocator
+    stationName={initial.station_name}
+    lon={initial.lon}
+    lat={initial.lat}
+  />
+
+  {/*
     Which limit, and the fact that it moved.
     
     Every card counts against the CURRENT standard, including the cards whose
@@ -302,10 +332,65 @@ const rankPosition = (rank: number, total: number) =>
 </div>
 
 <script>
+  import { mapFrame } from "../lib/taiwan";
+
   const select = document.getElementById("station-select") as HTMLSelectElement | null;
   const reports = Array.from(document.querySelectorAll<HTMLElement>(".report[data-station]"));
 
   const say = document.getElementById("station-say");
+
+  /*
+   * The locator is one figure serving 79 cards, so it has to be told.
+   *
+   * The same projection the figure was drawn with, imported rather than
+   * re-derived: a second copy of the arithmetic would agree until the frame
+   * moved, and then the mark would land somewhere the outline says is the sea.
+   *
+   * A mark left on the previous station is this chapter's own documented
+   * defect in map form — a control that confirms a choice and then shows
+   * another station's numbers.
+   */
+  const locatorMark = document.querySelector<SVGCircleElement>(
+    "[data-station-locator-mark]",
+  );
+  const locatorCaption = document.querySelector<HTMLElement>("[data-locator-caption]");
+  const locatorOffshore = document.querySelector<HTMLElement>(
+    "[data-locator-offshore-note]",
+  );
+  const locatorUnplaced = document.querySelector<HTMLElement>(
+    "[data-locator-unplaced-note]",
+  );
+  const moveLocator = (shown: HTMLElement | undefined) => {
+    if (!locatorMark || !shown) return;
+    const lon = Number(shown.dataset.lon);
+    const lat = Number(shown.dataset.lat);
+    const { bounds, project } = mapFrame();
+    const hasCoordinate = Number.isFinite(lon) && Number.isFinite(lat);
+    const inFrame =
+      hasCoordinate &&
+      lon >= bounds.lonMin && lon <= bounds.lonMax &&
+      lat >= bounds.latMin && lat <= bounds.latMax;
+    /*
+     * Three states, and neither of the two that cannot draw a mark may return
+     * early without clearing it first.
+     *
+     * A card with no coordinate at all, and a card on an offshore island that
+     * projects outside the main-island frame, both leave the PREVIOUS station's
+     * mark on the map if this function simply returns. Measured at this size:
+     * the offshore stations land at cx -432, -103 and -1 against a 0-550
+     * viewBox, so SVG clips them and the mark does not disappear, it stays
+     * where it was. Emptying `data-station` hides the mark, via the component's
+     * own CSS, and tells the gate which of the three cases this is.
+     */
+    locatorMark.setAttribute("data-station", inFrame ? shown.dataset.station ?? "" : "");
+    if (locatorCaption) locatorCaption.hidden = !inFrame;
+    if (locatorOffshore) locatorOffshore.hidden = !hasCoordinate || inFrame;
+    if (locatorUnplaced) locatorUnplaced.hidden = hasCoordinate;
+    if (!inFrame) return;
+    const at = project(lon, lat);
+    locatorMark.setAttribute("cx", String(at.x));
+    locatorMark.setAttribute("cy", String(at.y));
+  };
 
   /*
    * The filter narrows the menu and never moves the card.
@@ -383,6 +468,9 @@ const rankPosition = (rank: number, total: number) =>
      * figures a reader would ask for first.
      */
     const shown = reports.find((r) => !r.hidden);
+    // Before the early return below: the map must follow the card even on a
+    // page where the live region is missing.
+    moveLocator(shown);
     if (!say || !shown) return;
     const text = (sel: string) => shown.querySelector(sel)?.textContent?.trim() ?? "";
     const stats = Array.from(shown.querySelectorAll<HTMLElement>(".stat"));

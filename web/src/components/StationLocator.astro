@@ -1,0 +1,200 @@
+---
+/**
+ * Where one station is, and nothing else.
+ *
+ * Chapter 2 answers everything about a station except the first question a
+ * reader who does not already know Taiwanese place names asks of a name:
+ * where. 「臺中市西屯區」 is an answer only to someone who can place 西屯區.
+ *
+ * This is not the homepage's map. That one carries all 79 stations coloured by
+ * concentration and is a figure about the network; this one carries a single
+ * mark and reports no measurement at all, so it stays outside the
+ * concentration palette entirely — hue on this site means concentration, and
+ * this says position.
+ *
+ * It shares `mapFrame()` with that map rather than re-deriving the projection.
+ * Two copies would agree until the day one of `TAIWAN_BOUNDS` or the margin
+ * moved, and then the two maps would disagree about where a station is with
+ * nothing in either diff mentioning coordinates.
+ */
+import { COUNTIES, mapFrame } from "../lib/taiwan";
+
+interface Props {
+  stationName: string;
+  lon: number | null | undefined;
+  lat: number | null | undefined;
+}
+
+const { stationName, lon, lat } = Astro.props;
+const { bounds, width, height, project } = mapFrame();
+
+/*
+ * Some cards carry no coordinate, and that is a finding rather than a gap.
+ *
+ * Measured against the current `station-cards.json`: 2 of 79. They have the
+ * same decades of measurements as the rest; what is missing is a position the
+ * project is willing to assert, which is why the overview map lists its own
+ * unplaced stations beneath itself rather than dropping them. The names are
+ * deliberately not written here — the overview derives its equivalent list from
+ * the data for the same reason, because a name typed into a comment is correct
+ * until the register changes and silently wrong afterwards.
+ *
+ * A locator has a worse option available than saying nothing, and it is the one
+ * an early `return` takes: leave the previous station's mark on screen. This
+ * chapter already carries a comment about that failure in another control — a
+ * control that agrees with you and then shows another station's numbers is a
+ * lie — and a map is no different. So the mark exists exactly when it can name
+ * a station, and the caption says which of the two cases the reader is in.
+ */
+const hasCoordinate = typeof lon === "number" && typeof lat === "number";
+
+/*
+ * Being on the island is a third case, not a detail of the second.
+ *
+ * The frame is the main island's bounding box, so 金門, 馬祖 and 澎湖 project
+ * outside it — measured at this size: cx −432, −1 and −103 against a viewBox of
+ * 0–550. SVG clips them, so the mark simply vanishes and the reader is left
+ * with an outline, no mark, and a caption saying 「this station's position」.
+ * A silent wrong answer is the one outcome this project treats as worse than
+ * no answer.
+ *
+ * Clamping the point into the frame would be worse still: it would draw the
+ * station somewhere it is not. So the frame test is the overview map's own
+ * `isMain`, and falling outside it is something the figure says out loud —
+ * which is exactly how the overview handles the same three counties.
+ */
+const inFrame =
+  hasCoordinate &&
+  (lon as number) >= bounds.lonMin &&
+  (lon as number) <= bounds.lonMax &&
+  (lat as number) >= bounds.latMin &&
+  (lat as number) <= bounds.latMax;
+
+const placed = inFrame;
+const mark = placed ? project(lon as number, lat as number) : { x: 0, y: 0 };
+
+/*
+ * The same presentation-only simplification the overview makes, for the same
+ * measured reason: the official Yunlin geometry carries four detached rings for
+ * 外傘頂洲 and its neighbouring sandbars, and at the width this is drawn they
+ * read as a broken chunk beside Chiayi rather than as context.
+ *
+ * `build_taiwan_geo.py` orders exterior rings largest first, so ring 0 is the
+ * mainland. The generated source stays complete.
+ */
+const ringLimits = new Map([["雲林縣", 1]]);
+
+const counties = COUNTIES.map((county) => {
+  const limit = ringLimits.get(county.name);
+  const rings = limit == null ? county.rings : county.rings.slice(0, limit);
+  return {
+    name: county.name,
+    d: rings
+      .map(
+        (ring) =>
+          ring
+            .map(([ringLon, ringLat], i) => {
+              const { x, y } = project(ringLon, ringLat);
+              return `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+            })
+            .join(" ") + " Z",
+      )
+      .join(" "),
+  };
+});
+
+---
+
+{/*
+  A div, not a figure, and that is a contract rather than a preference.
+
+  `check_site_quality.mjs` holds `STATIC_NATIVE_FIGURES` per route and requires
+  that without JavaScript every <figure> on the page is visible, with a visible
+  body and a readable caption — /stations/ expects zero. On this site a <figure>
+  is something that works without a script, and this cannot be: it is one
+  locator serving 79 cards, so with no script to move the mark it is hidden.
+  Marking it up as a figure and then hiding it would be claiming membership of a
+  class it does not belong to, and the gate said so — 21 native figures became
+  22, one of them invisible.
+
+  Nothing is lost. The SVG carries role="img" and its own accessible name, and
+  the note below it is adjacent prose.
+*/}
+<div class="station-locator" data-station-locator>
+  <svg
+    viewBox={`0 0 ${width} ${height}`}
+    role="img"
+    aria-label={`${stationName}測站在台灣本島的位置`}
+    focusable="false"
+  >
+    {counties.map((county) => <path class="locator-county" data-locator-county d={county.d} />)}
+    <circle
+      class="locator-mark"
+      data-station-locator-mark
+      data-station={placed ? stationName : ""}
+      cx={mark.x}
+      cy={mark.y}
+      r="18"
+    />
+  </svg>
+  <p class="locator-note">
+    <span data-locator-caption hidden={!placed}>
+      此站的位置。底圖僅供定位，非量測依據。
+    </span>
+    <span data-locator-offshore-note hidden={!hasCoordinate || inFrame}>
+      這一站在離島，不在本島圖框內，因此不標在圖上。
+    </span>
+    <span data-locator-unplaced-note hidden={hasCoordinate}>
+      這一站在目前的清冊裡沒有座標，因此不標在圖上。這不表示它沒有觀測資料。
+    </span>
+  </p>
+</div>
+
+<style>
+  .station-locator {
+    margin: var(--space-4) 0 0;
+  }
+
+  .station-locator svg {
+    display: block;
+    width: min(100%, 13rem);
+    height: auto;
+  }
+
+  /*
+   * Context, not measurement: one fill, hairline borders, no hue.
+   *
+   * `fill-rule: evenodd` is load-bearing rather than tidy, exactly as on the
+   * overview. 臺北市 is a landlocked enclave of 新北市 and 嘉義市 of 嘉義縣, so
+   * the surrounding county's ring list carries a hole; filled `nonzero` the
+   * hole depends on winding and the enclave gets painted over.
+   */
+  .locator-county {
+    fill: var(--bg-sunken);
+    fill-rule: evenodd;
+    stroke: var(--line);
+    stroke-width: 2;
+  }
+
+  /* Ringed in the page background so the mark stays findable wherever it lands,
+     including on a county border. */
+  .locator-mark {
+    fill: var(--text);
+    stroke: var(--bg);
+    stroke-width: 6;
+  }
+
+  /* Visible exactly when it can name a station. An empty name is how the
+     script says 「this one has no coordinate」, and a mark drawn anyway would be
+     pointing at 0,0 — the top-left corner of the frame, which is the sea. */
+  .locator-mark[data-station=""] {
+    display: none;
+  }
+
+  .station-locator .locator-note {
+    max-width: 22rem;
+    margin-block-start: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+</style>

@@ -224,3 +224,40 @@ export const COUNTIES: County[] = [
 export const TAIWAN_BOUNDS = [
   119.9970, 122.0075, 21.8956, 25.3000,
 ] as const;
+
+/**
+ * The drawing frame every map of the island shares.
+ *
+ * Equirectangular with a cos(latitude) correction, which over three degrees of
+ * latitude is visually indistinguishable from a proper projection and needs no
+ * library. The source is EPSG:3824, whose coordinates are TWD97 lon/lat.
+ *
+ * Lifted out of `StationMap.astro` when a second map needed it. Two copies of
+ * this arithmetic would agree until the day one of `TAIWAN_BOUNDS` or the
+ * margin moved, and then the locator and the overview would disagree about
+ * where a station is, with nothing in either diff mentioning coordinates.
+ */
+export function mapFrame(margin = 0.04) {
+  const [lonMin, lonMax, latMin, latMax] = TAIWAN_BOUNDS;
+  const bounds = {
+    lonMin: lonMin - margin,
+    lonMax: lonMax + margin,
+    latMin: latMin - margin,
+    latMax: latMax + margin,
+  };
+  const midLat = ((bounds.latMin + bounds.latMax) / 2) * (Math.PI / 180);
+  const lonSpan = (bounds.lonMax - bounds.lonMin) * Math.cos(midLat);
+  const latSpan = bounds.latMax - bounds.latMin;
+  const height = 1000;
+  const width = Math.round((height * lonSpan) / latSpan);
+  const scale = height / latSpan;
+  return {
+    bounds,
+    width,
+    height,
+    project: (lon: number, lat: number) => ({
+      x: width / 2 + (lon - (bounds.lonMin + bounds.lonMax) / 2) * Math.cos(midLat) * scale,
+      y: height / 2 - (lat - (bounds.latMin + bounds.latMax) / 2) * scale,
+    }),
+  };
+}

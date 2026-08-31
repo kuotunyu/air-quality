@@ -1408,6 +1408,65 @@ function stationDossierProblems(state) {
       problems.push("station rank strip mark is drawn outside its track");
     }
   }
+  const locator = state?.locator;
+  if (!visibleBox(locator)) {
+    problems.push("station locator map is not visible");
+  } else {
+    if (locator.countyCount !== 19) {
+      problems.push(
+        `station locator draws ${locator.countyCount} counties instead of 19`,
+      );
+    }
+    if (locator.markStation === "") {
+      /*
+       * Two reasons a mark cannot be drawn: the card carries no coordinate (2
+       * of 79), or the station is offshore and projects outside the main-island
+       * frame (measured cx -432, -103 and -1 against a 0-550 viewBox). Either
+       * is a fine answer. Showing nothing and saying nothing is not, and
+       * leaving the previous station's mark up is the failure this exists to
+       * prevent — so an empty mark name must come with no mark and with exactly
+       * one of the two reasons on screen.
+       */
+      if (locator.markVisible) {
+        problems.push("station locator shows a mark for a station it cannot place");
+      }
+      if (!locator.unplacedNoteVisible && !locator.offshoreNoteVisible) {
+        problems.push("station locator does not say why the station is unplaced");
+      }
+      if (locator.unplacedNoteVisible && locator.offshoreNoteVisible) {
+        problems.push("station locator gives two reasons for one unplaced station");
+      }
+    } else {
+      if (!locator.markVisible) problems.push("station locator map has no visible mark");
+      // The mark must name the station the card shows. A locator still pointing
+      // at the station before last is the defect this chapter's select already
+      // has a comment about: a control that confirms a choice and then shows
+      // another station's numbers is a lie, and a map is no different.
+      if (locator.markStation !== state.visibleStation) {
+        problems.push("station locator mark and visible report disagree");
+      }
+      if (locator.unplacedNoteVisible || locator.offshoreNoteVisible) {
+        problems.push("station locator claims a placed station is unplaced");
+      }
+    }
+  }
+  if (state?.afterChange?.performed) {
+    /*
+     * The changed station may be one the project cannot place, and here that is
+     * not hypothetical: this harness picks the last option that is not the
+     * current one, which is one of the two cards carrying no coordinate. So the
+     * mark following the change means one of two things — it names the new
+     * station, or it names nothing and the figure says why.
+     */
+    const after = state.afterChange;
+    if (after.locatorMarkStation === "") {
+      if (!after.locatorUnplacedVisible) {
+        problems.push("station locator went silent on a station it cannot place");
+      }
+    } else if (after.locatorMarkStation !== after.visibleStation) {
+      problems.push("station locator mark did not follow the station change");
+    }
+  }
   if (state?.columns !== expectedColumns.get(state.viewportWidth)) {
     problems.push(`station statistics use the wrong ${state.viewportWidth}px column count`);
   }
@@ -7420,6 +7479,11 @@ async function lifecycleSelfTest() {
       visible: true, width: 240, height: 8, position: 55.26, rank: 43, total: 77,
       markLeft: 129.9, markRight: 134.4, trackWidth: 240,
     },
+    locator: {
+      visible: true, width: 260, height: 380, markVisible: true,
+      markStation: "西屯", countyCount: 19,
+      unplacedNoteVisible: false, offshoreNoteVisible: false,
+    },
     columns: viewportWidth === 375 ? 1 : viewportWidth === 768 ? 2 : 4,
     separators: {
       reportTop: 0,
@@ -7452,6 +7516,8 @@ async function lifecycleSelfTest() {
       liveIncludesYear: true,
       liveIncludesFirstStat: true,
       liveIncludesThirdStat: true,
+      locatorMarkStation: "基隆",
+      locatorUnplacedVisible: false,
     },
     restored: {
       performed: true,
@@ -7520,6 +7586,54 @@ async function lifecycleSelfTest() {
     state.rankStrip.markLeft = state.rankStrip.trackWidth - 2.8;
     state.rankStrip.markRight = state.rankStrip.trackWidth + 2.8;
   }, "drawn outside its track");
+  expectStationDossierProblem("hidden locator map", 375, (state) => {
+    state.locator.visible = false;
+  }, "locator map is not visible");
+  expectStationDossierProblem("markless locator map", 375, (state) => {
+    state.locator.markVisible = false;
+  }, "has no visible mark");
+  expectStationDossierProblem("stale locator mark", 1440, (state) => {
+    state.locator.markStation = "基隆";
+  }, "mark and visible report disagree");
+  expectStationDossierProblem("marked but unplaceable station", 1440, (state) => {
+    state.locator.markStation = "";
+    state.locator.unplacedNoteVisible = true;
+  }, "shows a mark for a station it cannot place");
+  expectStationDossierProblem("silent unplaceable station", 1440, (state) => {
+    state.locator.markStation = "";
+    state.locator.markVisible = false;
+  }, "does not say why the station is unplaced");
+  // The offshore reason is a complete answer on its own, so this state must
+  // produce NO problems. Asserted as a positive, because the failure-case
+  // helper can only prove that something is rejected.
+  {
+    const offshore = completeStationDossierFor(1440);
+    offshore.locator.markStation = "";
+    offshore.locator.markVisible = false;
+    offshore.locator.offshoreNoteVisible = true;
+    if (stationDossierProblems(offshore).length) {
+      throw new Error("station dossier predicate rejected a stated offshore station");
+    }
+  }
+  expectStationDossierProblem("two reasons at once", 1440, (state) => {
+    state.locator.markStation = "";
+    state.locator.markVisible = false;
+    state.locator.unplacedNoteVisible = true;
+    state.locator.offshoreNoteVisible = true;
+  }, "two reasons for one unplaced station");
+  expectStationDossierProblem("unplaced note on a placed station", 375, (state) => {
+    state.locator.unplacedNoteVisible = true;
+  }, "claims a placed station is unplaced");
+  expectStationDossierProblem("partial locator basemap", 1440, (state) => {
+    state.locator.countyCount = 18;
+  }, "counties instead of 19");
+  expectStationDossierProblem("locator mark left behind", 1440, (state) => {
+    state.afterChange.locatorMarkStation = "西屯";
+  }, "did not follow the station change");
+  expectStationDossierProblem("locator silent after change", 1440, (state) => {
+    state.afterChange.locatorMarkStation = "";
+    state.afterChange.locatorUnplacedVisible = false;
+  }, "went silent on a station it cannot place");
   expectStationDossierProblem("option mismatch", 375, (state) => {
     state.optionCount = 78;
   }, "inventories differ");
@@ -7748,6 +7862,7 @@ async function lifecycleSelfTest() {
     );
   }
   console.log("site quality station dossier self-test passed");
+  console.log("site quality station locator self-test passed");
   const detectionPart = (top, bottom, sourceIndex, extra = {}) => ({
     display: "block",
     visibility: "visible",
@@ -13002,6 +13117,10 @@ async function main() {
     // counts data-station-comparison and the predicate expects exactly two.
     // (No backticks in here — this whole block is a template literal.)
     const rankStrip = shown?.querySelector("[data-station-rank-strip]") ?? null;
+    // One locator for 79 cards, so it is queried from the document rather than
+    // from the shown report, and its mark has to be told which station it is on.
+    const locator = document.querySelector("[data-station-locator]");
+    const locatorMark = locator?.querySelector("[data-station-locator-mark]") ?? null;
     const standardNote = document.querySelector("[data-station-standard-note]");
     const statLefts = [...new Set(stats.map((item) =>
       Math.round(item.getBoundingClientRect().left * 10) / 10))];
@@ -13055,6 +13174,18 @@ async function main() {
           trackWidth,
         };
       })() : null,
+      locator: locator ? {
+        ...inspect(locator),
+        markVisible: rendered(locatorMark),
+        markStation: locatorMark?.getAttribute("data-station") ?? "",
+        countyCount: locator.querySelectorAll("[data-locator-county]").length,
+        unplacedNoteVisible: rendered(
+          locator.querySelector("[data-locator-unplaced-note]"),
+        ),
+        offshoreNoteVisible: rendered(
+          locator.querySelector("[data-locator-offshore-note]"),
+        ),
+      } : null,
       columns: statLefts.length,
       separators: {
         reportTop: borderWidth(shown, "Top"),
@@ -13089,6 +13220,8 @@ async function main() {
         liveIncludesYear: false,
         liveIncludesFirstStat: false,
         liveIncludesThirdStat: false,
+        locatorMarkStation: null,
+        locatorUnplacedVisible: false,
       },
       restored: {
         performed: false,
@@ -13174,6 +13307,14 @@ async function main() {
           liveIncludesYear: Boolean(year && live.includes(year)),
           liveIncludesFirstStat: Boolean(firstStat && live.includes(firstStat)),
           liveIncludesThirdStat: Boolean(thirdStat && live.includes(thirdStat)),
+          locatorMarkStation:
+            document.querySelector("[data-station-locator-mark]")
+              ?.getAttribute("data-station") ?? null,
+          locatorUnplacedVisible: rendered(
+            document.querySelector("[data-locator-unplaced-note]"),
+          ) || rendered(
+            document.querySelector("[data-locator-offshore-note]"),
+          ),
         };
         select.value = original;
         select.dispatchEvent(new Event("change", { bubbles: true }));

@@ -29,7 +29,7 @@
  * coordinate, and hiding them would misrepresent the record.
  */
 import { concentrationColour, concentrationLegend, PM25_LEGEND_BREAKS } from "../lib/chart";
-import { COUNTIES, TAIWAN_BOUNDS } from "../lib/taiwan";
+import { COUNTIES, mapFrame } from "../lib/taiwan";
 import { href } from "../lib/chapters";
 import type { Station, StationCard } from "../lib/data";
 
@@ -56,14 +56,10 @@ const wanliHistorical = stations.find(
 
 // The frame is the boundary data's own bounding box plus a hairline of margin,
 // so no part of the figure is empty by construction.
-const [lonMin, lonMax, latMin, latMax] = TAIWAN_BOUNDS;
-const MARGIN = 0.04;
-const MAIN = {
-  lonMin: lonMin - MARGIN,
-  lonMax: lonMax + MARGIN,
-  latMin: latMin - MARGIN,
-  latMax: latMax + MARGIN,
-};
+//
+// The frame and its projection moved to `lib/taiwan.ts` when chapter 2's
+// locator needed the same ones; `mapFrame()` is that code unchanged.
+const { bounds: MAIN, width, height, project } = mapFrame();
 const isMain = (s: Station) =>
   (s.lon as number) >= MAIN.lonMin &&
   (s.lon as number) <= MAIN.lonMax &&
@@ -81,22 +77,6 @@ const offshore = placed.filter((s) => !isMain(s));
 const offshoreCounties = [
   ...new Set(offshore.map((s) => s.county).filter((c): c is string => Boolean(c))),
 ];
-
-// Equirectangular with a cos(latitude) correction, which over three degrees of
-// latitude is visually indistinguishable from a proper projection and needs no
-// library. The source is EPSG:3824, whose coordinates are TWD97 lon/lat.
-const midLat = ((MAIN.latMin + MAIN.latMax) / 2) * (Math.PI / 180);
-const lonSpan = (MAIN.lonMax - MAIN.lonMin) * Math.cos(midLat);
-const latSpan = MAIN.latMax - MAIN.latMin;
-
-const height = 1000;
-const width = Math.round((height * lonSpan) / latSpan);
-const scale = height / latSpan;
-
-const project = (lon: number, lat: number) => ({
-  x: width / 2 + (lon - (MAIN.lonMin + MAIN.lonMax) / 2) * Math.cos(midLat) * scale,
-  y: height / 2 - (lat - (MAIN.latMin + MAIN.latMax) / 2) * scale,
-});
 
 /*
  * This is a station overview, not a cadastral map. The official Yunlin county
