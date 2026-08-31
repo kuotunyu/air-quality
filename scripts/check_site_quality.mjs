@@ -853,6 +853,15 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
     if (diagram?.hiddenConnectors !== 0) {
       problems.push(`${name} has ${diagram?.hiddenConnectors ?? "unknown"} invisible connectors`);
     }
+    if (diagram?.boxedConnectors !== 0) {
+      problems.push(`${name} has ${diagram?.boxedConnectors ?? "unknown"} boxed connectors`);
+    }
+    if (
+      !Number.isFinite(diagram?.minimumTitleWidthRatio) ||
+      diagram.minimumTitleWidthRatio < 0.9
+    ) {
+      problems.push(`${name} step titles do not use the available card width`);
+    }
     if (diagram?.outOfOrderSteps !== 0) {
       problems.push(`${name} has ${diagram?.outOfOrderSteps ?? "unknown"} visually reordered steps`);
     }
@@ -879,10 +888,22 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
       ) {
         problems.push(`${name} toolbar labels changed`);
       }
-      if (!diagram?.toolsBeforeCaption) {
-        problems.push(`${name} toolbar is not above its caption`);
+      if (
+        viewport?.width > 768 &&
+        !diagram?.toolsShareCaptionRow
+      ) {
+        problems.push(`${name} wide toolbar does not share the caption row`);
       }
-      if (!Number.isFinite(diagram?.toolLeftOffset) || diagram.toolLeftOffset > 1) {
+      if (
+        viewport?.width > 768 &&
+        (!Number.isFinite(diagram?.captionRightReserve) || diagram.captionRightReserve > 1)
+      ) {
+        problems.push(`${name} wide caption leaves unused header space`);
+      }
+      if (viewport?.width <= 768 && !diagram?.toolsBeforeCaption) {
+        problems.push(`${name} narrow toolbar is not above its caption`);
+      }
+      if (!Number.isFinite(diagram?.toolLeftInset) || diagram.toolLeftInset > 1) {
         problems.push(`${name} toolbar is not aligned to the top-left reading edge`);
       }
       if (diagram?.toolsOverlapCaption) {
@@ -974,6 +995,8 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
     const stepRects = steps.map((step) => step.getBoundingClientRect());
     const optionItems = [...diagram.querySelectorAll(":scope > ol > li > ul > li")];
     const diagramStyle = getComputedStyle(diagram);
+    const diagramPaddingInlineEnd = Number.parseFloat(diagramStyle.paddingInlineEnd) || 0;
+    const diagramPaddingInlineStart = Number.parseFloat(diagramStyle.paddingInlineStart) || 0;
     const stepStyles = steps.map((step) => getComputedStyle(step));
     const indexStyles = steps.map((step) =>
       getComputedStyle(step.querySelector(".concept-index"))
@@ -1028,6 +1051,19 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       style.display === "none" || style.visibility === "hidden" ||
       Number(style.opacity) <= 0 || style.color === "rgba(0, 0, 0, 0)"
     ).length;
+    const boxedConnectors = connectorStyles.filter((style) =>
+      Number.parseFloat(style.borderTopWidth) > 0 ||
+      !["0px", "0%"].includes(style.borderRadius)
+    ).length;
+    const titleWidthRatios = steps.map((step) => {
+      const titleRect = step.querySelector("[data-concept-step-title]")?.getBoundingClientRect();
+      const stepRect = step.getBoundingClientRect();
+      const style = getComputedStyle(step);
+      const innerWidth = stepRect.width -
+        (Number.parseFloat(style.paddingInlineStart) || 0) -
+        (Number.parseFloat(style.paddingInlineEnd) || 0);
+      return titleRect && innerWidth > 0 ? titleRect.width / innerWidth : 0;
+    });
     return {
       tagName: diagram.tagName,
       visible: visible(diagram),
@@ -1056,6 +1092,8 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       clippedOptions,
       connectorCount: connectorStyles.length,
       hiddenConnectors,
+      boxedConnectors,
+      minimumTitleWidthRatio: titleWidthRatios.length ? Math.min(...titleWidthRatios) : 0,
       outOfOrderSteps,
       nonVerticalTransitions,
       toolCount: tools.length,
@@ -1064,7 +1102,16 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       toolsBeforeCaption: Boolean(
         toolRect && captionRect && toolRect.bottom <= captionRect.top + 1
       ),
-      toolLeftOffset: toolRect && captionRect ? Math.abs(toolRect.left - captionRect.left) : null,
+      toolsShareCaptionRow: Boolean(
+        toolRect && captionRect &&
+        toolRect.top < captionRect.bottom && toolRect.bottom > captionRect.top
+      ),
+      toolLeftInset: toolRect
+        ? Math.abs(toolRect.left - (rect.left + diagramPaddingInlineStart))
+        : null,
+      captionRightReserve: captionRect
+        ? Math.abs((rect.right - diagramPaddingInlineEnd) - captionRect.right)
+        : null,
       toolsOverlapCaption: Boolean(
         toolRect && captionRect &&
         toolRect.left < captionRect.right && toolRect.right > captionRect.left &&
@@ -9231,13 +9278,17 @@ async function lifecycleSelfTest() {
       clippedOptions: 0,
       connectorCount: 3,
       hiddenConnectors: 0,
+      boxedConnectors: 0,
+      minimumTitleWidthRatio: 1,
       outOfOrderSteps: 0,
       nonVerticalTransitions: 0,
       toolCount: 1,
       toolLabels: ["放大", "下載"],
       toolButtonHeights: [45, 45],
       toolsBeforeCaption: true,
-      toolLeftOffset: 0,
+      toolsShareCaptionRow: true,
+      toolLeftInset: 0,
+      captionRightReserve: 0,
       toolsOverlapCaption: false,
       media: {},
     }],
@@ -9271,14 +9322,18 @@ async function lifecycleSelfTest() {
     ["clipped option", "clipped branch options", (state) => { state.diagrams[0].clippedOptions = 1; }],
     ["missing connector", "connector inventory", (state) => { state.diagrams[0].connectorCount = 2; }],
     ["hidden connector", "invisible connectors", (state) => { state.diagrams[0].hiddenConnectors = 1; }],
+    ["boxed connector", "boxed connectors", (state) => { state.diagrams[0].boxedConnectors = 1; }],
+    ["narrow title", "available card width", (state) => { state.diagrams[0].minimumTitleWidthRatio = 0.7; }],
     ["reordered step", "visually reordered", (state) => { state.diagrams[0].outOfOrderSteps = 1; }],
     ["phone row", "vertical sequence", (state) => { state.diagrams[0].nonVerticalTransitions = 1; }],
     ["phone columns", "narrow-layout boundary", (state) => { state.diagrams[0].gridColumnCount = 4; }],
     ["tablet columns", "desktop/tablet column count", (state) => { state.diagrams[0].gridColumnCount = 1; }],
     ["duplicate toolbar", "toolbars; expected one", (state) => { state.diagrams[0].toolCount = 2; }],
     ["verbose download label", "toolbar labels changed", (state) => { state.diagrams[0].toolLabels[1] = "下載 PNG"; }],
-    ["toolbar after caption", "not above its caption", (state) => { state.diagrams[0].toolsBeforeCaption = false; }],
-    ["toolbar right drift", "not aligned to the top-left", (state) => { state.diagrams[0].toolLeftOffset = 18; }],
+    ["narrow toolbar after caption", "narrow toolbar is not above", (state) => { state.diagrams[0].toolsBeforeCaption = false; }],
+    ["wide toolbar own row", "does not share the caption row", (state) => { state.diagrams[0].toolsShareCaptionRow = false; }],
+    ["wide caption unused space", "leaves unused header space", (state) => { state.diagrams[0].captionRightReserve = 180; }],
+    ["toolbar right drift", "not aligned to the top-left", (state) => { state.diagrams[0].toolLeftInset = 18; }],
     ["toolbar overlap", "overlaps its caption", (state) => { state.diagrams[0].toolsOverlapCaption = true; }],
     ["short toolbar target", "44px interaction floor", (state) => { state.diagrams[0].toolButtonHeights[0] = 43; }],
     ["document overflow", "scrolls sideways", (state) => { state.documentOverflow = 1; }],
@@ -9287,7 +9342,11 @@ async function lifecycleSelfTest() {
   for (const [name, expectedProblem, mutate] of conceptDiagramMutations) {
     const state = structuredClone(completeConceptDiagram);
     mutate(state);
-    const viewport = name === "tablet columns" ? { width: 769 } : { width: 375 };
+    const viewport = name === "tablet columns"
+      ? { width: 769 }
+      : name.startsWith("wide ")
+        ? { width: 1440 }
+        : { width: 375 };
     if (viewport.width <= 768 && name !== "phone columns" && state.diagrams[0]) {
       state.diagrams[0].gridColumnCount = 1;
     }
