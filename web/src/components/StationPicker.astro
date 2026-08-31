@@ -34,6 +34,14 @@ const counties = groupByCountyNorthToSouth(cards, (card) => card.station_name);
  */
 const OPENS_ON = "西屯";
 const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
+
+// Rank 1 is the lowest annual mean, so it belongs at 0% and the last rank at
+// 100%. One function rather than the expression written twice, because the
+// gate solves the same arithmetic from `data-rank` and `data-rank-total` and
+// compares: two copies that drifted would fail rather than mislead, but they
+// would still fail.
+const rankPosition = (rank: number, total: number) =>
+  total > 1 ? ((rank - 1) / (total - 1)) * 100 : 0;
 ---
 
 {/*
@@ -233,6 +241,32 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
               <p class="line" data-station-comparison="rank">
                 全台排名 <span class="num big">{card.rank}</span>
                 <span class="dim">／{card.stations_ranked} 站（1 = 年均最低）</span>
+                {/*
+                  The same fact as a position. Two integers say where the
+                  station ranks; they do not say whether that is near the clean
+                  end or the dirty one without the reader doing the division.
+
+                  A span, and inside this paragraph rather than beside it, for
+                  two separate reasons: a <p> may only contain phrasing content,
+                  and `check_site_quality.mjs` counts [data-station-comparison]
+                  and expects exactly two, so a sibling carrying that attribute
+                  would make it three.
+
+                  aria-hidden, because it restates the two numbers read out
+                  immediately before it. A screen reader gains nothing and
+                  spends time.
+                */}
+                <span
+                  class="rank-strip"
+                  data-station-rank-strip
+                  data-rank={card.rank}
+                  data-rank-total={card.stations_ranked}
+                  data-rank-position={rankPosition(card.rank, card.stations_ranked)}
+                  style={`--rank-fraction: ${
+                    rankPosition(card.rank, card.stations_ranked) / 100
+                  }`}
+                  aria-hidden="true"
+                />
               </p>
             )
           }
@@ -500,6 +534,51 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     font-size: var(--text-base);
     color: var(--text-muted);
     max-width: none;
+  }
+
+  /*
+   * The track is interface, so it stays inside the page's muted band. The mark
+   * is the one thing that has to be found, so it takes the ink a value takes.
+   * Neither uses the concentration ramp: this says where a station sits in an
+   * ordering, not what it measured, and hue on this site means concentration.
+   */
+  .rank-strip {
+    --mark-width: 0.28rem;
+    position: relative;
+    display: block;
+    width: min(100%, 22rem);
+    height: 0.5rem;
+    margin-block-start: 0.55rem;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--bg-sunken),
+      color-mix(in oklab, var(--rule) 45%, var(--bg-sunken))
+    );
+  }
+
+  .rank-strip::after {
+    position: absolute;
+    /*
+     * The mark travels between the track's ends, not across them.
+     *
+     * The first attempt was `left: <percent>` with `translateX(-50%)`, on the
+     * reasoning that a mark should be centred on its value. Measured at 375px:
+     * rank 1 of 77 put the mark's left edge at −2.8px, half of its 5.6px width
+     * hanging off the start of the track — and the last rank does the same at
+     * the other end. Those are the two values a reader goes looking for first.
+     *
+     * So the left edge spans 0 to (track − mark) instead, which is how a slider
+     * thumb is inset. `--rank-fraction` is unitless 0–1 rather than the 0–100
+     * that `data-rank-position` carries for the gate, because a length can be
+     * multiplied by a number and not by a percentage.
+     */
+    left: calc((100% - var(--mark-width)) * var(--rank-fraction));
+    inset-block: -0.18rem;
+    width: var(--mark-width);
+    border-radius: 999px;
+    background: var(--text);
+    content: "";
   }
   .num {
     font-family: var(--font-numeric);

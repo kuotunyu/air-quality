@@ -1383,6 +1383,31 @@ function stationDossierProblems(state) {
       problems.push(`station comparison ${index + 1} is not visible`);
     }
   }
+  const strip = state?.rankStrip;
+  if (!visibleBox(strip)) {
+    problems.push("station rank strip is not visible");
+  } else {
+    // Rank 1 is the lowest annual mean, so it sits at 0% and the last rank at
+    // 100%. Solved against the two integers the same line prints, because a
+    // picture that disagrees with its own caption is worse than no picture.
+    const expected = strip.total > 1
+      ? ((strip.rank - 1) / (strip.total - 1)) * 100 : 0;
+    if (!Number.isFinite(strip.position) || Math.abs(strip.position - expected) > 0.5) {
+      problems.push("station rank strip position disagrees with the stated rank");
+    }
+    // Where the mark actually lands, not where the attribute says it should.
+    // The first version of this strip agreed with its own caption and still put
+    // 2.8px of a 5.6px mark outside the track at rank 1 of 77, because it was
+    // centred on the value rather than inset by its own width. The station a
+    // reader looks up first is the cleanest or the dirtiest one, so both ends
+    // are exactly where it mattered.
+    if (
+      !Number.isFinite(strip.markLeft) || !Number.isFinite(strip.markRight) ||
+      strip.markLeft < -0.01 || strip.markRight > strip.trackWidth + 0.01
+    ) {
+      problems.push("station rank strip mark is drawn outside its track");
+    }
+  }
   if (state?.columns !== expectedColumns.get(state.viewportWidth)) {
     problems.push(`station statistics use the wrong ${state.viewportWidth}px column count`);
   }
@@ -7390,6 +7415,11 @@ async function lifecycleSelfTest() {
       { length: 2 },
       () => ({ visible: true, width: 180, height: 52 }),
     ),
+    // 西屯 is rank 43 of 77, and (43 - 1) / (77 - 1) * 100 = 55.263…
+    rankStrip: {
+      visible: true, width: 240, height: 8, position: 55.26, rank: 43, total: 77,
+      markLeft: 129.9, markRight: 134.4, trackWidth: 240,
+    },
     columns: viewportWidth === 375 ? 1 : viewportWidth === 768 ? 2 : 4,
     separators: {
       reportTop: 0,
@@ -7475,6 +7505,21 @@ async function lifecycleSelfTest() {
   expectStationDossierProblem("reversed locator DOM order", 375, (state) => {
     state.controlsFollowDomOrder = false;
   }, "keyboard order changed");
+  expectStationDossierProblem("hidden rank strip", 375, (state) => {
+    state.rankStrip.visible = false;
+  }, "rank strip is not visible");
+  expectStationDossierProblem("misplaced rank strip", 1440, (state) => {
+    state.rankStrip.position = 12;
+  }, "disagrees with the stated rank");
+  // The measured original defect: rank 1 of 77 with the mark centred on 0%.
+  expectStationDossierProblem("rank mark off the track start", 375, (state) => {
+    state.rankStrip.markLeft = -2.8;
+    state.rankStrip.markRight = 2.8;
+  }, "drawn outside its track");
+  expectStationDossierProblem("rank mark off the track end", 1440, (state) => {
+    state.rankStrip.markLeft = state.rankStrip.trackWidth - 2.8;
+    state.rankStrip.markRight = state.rankStrip.trackWidth + 2.8;
+  }, "drawn outside its track");
   expectStationDossierProblem("option mismatch", 375, (state) => {
     state.optionCount = 78;
   }, "inventories differ");
@@ -12953,6 +12998,10 @@ async function main() {
     const identity = shown?.querySelector("[data-station-identity]") ?? null;
     const statistics = shown?.querySelector("[data-station-stats]") ?? null;
     const comparisonGroup = shown?.querySelector("[data-station-comparisons]") ?? null;
+    // Inside the rank comparison, not beside it: the comparisons list above
+    // counts data-station-comparison and the predicate expects exactly two.
+    // (No backticks in here — this whole block is a template literal.)
+    const rankStrip = shown?.querySelector("[data-station-rank-strip]") ?? null;
     const standardNote = document.querySelector("[data-station-standard-note]");
     const statLefts = [...new Set(stats.map((item) =>
       Math.round(item.getBoundingClientRect().left * 10) / 10))];
@@ -12987,6 +13036,25 @@ async function main() {
       yearVisible: rendered(shown?.querySelector("[data-station-year]")),
       stats: stats.map(inspect),
       comparisons: comparisons.map(inspect),
+      rankStrip: rankStrip ? (() => {
+        // The mark is a pseudo-element, so its box comes from the computed
+        // style rather than from a node. Solved in pixels because the defect
+        // this catches was a pixel one: a mark centred on its value hangs half
+        // its width off the track at the first and last rank.
+        const markStyle = getComputedStyle(rankStrip, "::after");
+        const markLeft = Number.parseFloat(markStyle.left);
+        const markWidth = Number.parseFloat(markStyle.width);
+        const trackWidth = rankStrip.getBoundingClientRect().width;
+        return {
+          ...inspect(rankStrip),
+          position: Number(rankStrip.getAttribute("data-rank-position")),
+          rank: Number(rankStrip.getAttribute("data-rank")),
+          total: Number(rankStrip.getAttribute("data-rank-total")),
+          markLeft,
+          markRight: markLeft + markWidth,
+          trackWidth,
+        };
+      })() : null,
       columns: statLefts.length,
       separators: {
         reportTop: borderWidth(shown, "Top"),
