@@ -1662,7 +1662,12 @@ section > :last-child > :last-child:last-child {
   max-width: none;
   align-items: center;
   gap: var(--space-3);
-  font-size: var(--text-base);
+  /* A label above a title, not a line of prose. At `--text-base` it set at the
+     body's exact size and leaned on weight alone to say it was different, which
+     put a fourth thing at 1.0x on a page that already had three. One step down
+     is the whole distinction, and it moves away from the 18px floor rather than
+     toward it: `--text-sm` measures 19.13px at 375. */
+  font-size: var(--text-sm);
   font-weight: 650;
   letter-spacing: 0.01em;
   color: var(--text-muted);
@@ -1710,9 +1715,27 @@ section > :last-child > :last-child:last-child {
   margin: var(--space-5) 0;
 }
 
+/*
+ * A block heading, sized above the body it introduces.
+ *
+ * It was `--text-base`, which is the body's own size, so this <h2> and the
+ * paragraph under it set identically and only the weight told them apart. The
+ * homepage carried two <h2> elements at 1.5x and 1.0x of body while every
+ * chapter page ran a clean 2.0 / 1.5 / 1.0 — measured across /trend, /health
+ * and /data — so the inversion was the homepage's alone.
+ *
+ * `--text-lg` rather than the global `h2`'s `--text-xl`: 1.5x is the chapter
+ * section heading, and this opens a block inside one. 1.2x puts it above the
+ * body without claiming to be a section.
+ *
+ * The direction is forced. `check_site_quality.mjs` floors the smallest type at
+ * 18px and `--text-xs` measures 18.33px at 375 — 0.33px of headroom — so
+ * hierarchy here can only be bought by raising headings, never by shrinking
+ * body text.
+ */
 .start-here-heading {
   margin: 0 0 var(--space-2);
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   color: var(--text-muted);
 }
 

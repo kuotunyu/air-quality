@@ -50,13 +50,39 @@ import { CHAPTER_GROUPS, chapterLabel, href } from "../lib/chapters";
     margin: var(--space-5) 0 var(--space-4);
   }
 
+  /*
+   * These are subdivisions of one index, not sibling chapters.
+   *
+   * They are `<section>` elements, so they inherited the global rule whose job
+   * is to hold CHAPTERS apart — measured at 1440: 46.08px above and 31.68px
+   * below each group, which with the 48.4px margin put 126.16px between one
+   * group and the next. That was the three largest empty runs on the homepage
+   * (149, 149 and 143px) and the reason it carried 18.7% empty space against
+   * 12.7-14.4% on the chapter pages.
+   *
+   * The margin below already separates them. The padding was spacing a
+   * grouping as though it were a document.
+   */
+  .toc-group {
+    padding-block: 0;
+  }
+
   .toc-group + .toc-group {
     margin-top: var(--space-5);
   }
 
+  /*
+   * Above the body it labels, not below it.
+   *
+   * It was `--text-sm` — 0.95x the body text, the smallest heading on the page
+   * and the only one that set smaller than the prose it introduced. The layout
+   * had been compensating with the 126px above it: space saying "major
+   * division" over type saying "less important than a paragraph". Raising the
+   * type is what let the space come back down.
+   */
   .toc-group-label {
     margin: 0 0 var(--space-2);
-    font-size: var(--text-sm);
+    font-size: var(--text-lg);
     color: var(--text-faint);
   }
 
