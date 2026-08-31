@@ -1222,6 +1222,7 @@ function stationDossierProblems(state) {
   const problems = [];
   const expectedColumns = new Map([[375, 1], [768, 2], [1024, 4], [1440, 4]]);
   const expectedControlColumns = new Map([[375, 1], [768, 2], [1024, 2], [1440, 2]]);
+  const expectedStatisticTops = [0, 0, 0, 0];
   if (!expectedColumns.has(state?.viewportWidth)) {
     return ["station dossier viewport is not one of the reviewed widths"];
   }
@@ -1292,6 +1293,35 @@ function stationDossierProblems(state) {
   }
   if (state?.columns !== expectedColumns.get(state.viewportWidth)) {
     problems.push(`station statistics use the wrong ${state.viewportWidth}px column count`);
+  }
+  const ruleIs = (actual, expected) =>
+    Number.isFinite(actual) && Math.abs(actual - expected) <= 0.01;
+  const separators = state?.separators;
+  if (!ruleIs(separators?.reportTop, 0) || !ruleIs(separators?.reportBottom, 0)) {
+    problems.push("station dossier retains a decorative outer frame");
+  }
+  if (!ruleIs(separators?.identityBottom, 0)) {
+    problems.push("station identity retains a redundant underline");
+  }
+  if (!ruleIs(separators?.statisticsTop, 1)) {
+    problems.push("station statistics entry separator changed");
+  }
+  const expectedTops = expectedStatisticTops;
+  if (
+    separators?.statisticTops?.length !== expectedTops.length ||
+    expectedTops.some((expected, index) =>
+      !ruleIs(separators?.statisticTops?.[index], expected))
+  ) {
+    problems.push(
+      `station responsive statistic-row separators changed: expected ${JSON.stringify(expectedTops)}, ` +
+      `got ${JSON.stringify(separators?.statisticTops ?? null)}`,
+    );
+  }
+  if (!ruleIs(separators?.comparisonsTop, 1)) {
+    problems.push("station comparison entry separator changed");
+  }
+  if (!ruleIs(separators?.noteTop, 0) || !ruleIs(separators?.noteBottom, 0)) {
+    problems.push("station explanatory note retains decorative framing");
   }
   if (!visibleBox(state?.standardNote)) problems.push("station standard note is not visible");
   if (state?.horizontalOverflow > 1) problems.push("station dossier causes horizontal overflow");
@@ -7234,6 +7264,16 @@ async function lifecycleSelfTest() {
       () => ({ visible: true, width: 180, height: 52 }),
     ),
     columns: viewportWidth === 375 ? 1 : viewportWidth === 768 ? 2 : 4,
+    separators: {
+      reportTop: 0,
+      reportBottom: 0,
+      identityBottom: 0,
+      statisticsTop: 1,
+      statisticTops: [0, 0, 0, 0],
+      comparisonsTop: 1,
+      noteTop: 0,
+      noteBottom: 0,
+    },
     standardNote: { visible: true, width: 320, height: 120 },
     horizontalOverflow: 0,
     afterChange: {
@@ -7349,6 +7389,24 @@ async function lifecycleSelfTest() {
       state.columns = wrongColumns;
     }, `${viewportWidth}px column count`);
   }
+  expectStationDossierProblem("outer bottom frame", 1440, (state) => {
+    state.separators.reportBottom = 1;
+  }, "decorative outer frame");
+  expectStationDossierProblem("identity underline", 1440, (state) => {
+    state.separators.identityBottom = 1;
+  }, "redundant underline");
+  expectStationDossierProblem("missing statistics entry rule", 1440, (state) => {
+    state.separators.statisticsTop = 0;
+  }, "statistics entry separator changed");
+  expectStationDossierProblem("extra desktop statistic rule", 1440, (state) => {
+    state.separators.statisticTops[0] = 1;
+  }, "statistic-row separators changed");
+  expectStationDossierProblem("missing comparison entry rule", 1440, (state) => {
+    state.separators.comparisonsTop = 0;
+  }, "comparison entry separator changed");
+  expectStationDossierProblem("framed explanatory note", 1440, (state) => {
+    state.separators.noteTop = 1;
+  }, "explanatory note retains decorative framing");
   expectStationDossierProblem("hidden standard note", 375, (state) => {
     state.standardNote.visible = false;
   }, "standard note is not visible");
@@ -12717,6 +12775,10 @@ async function main() {
         top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left,
       };
     };
+    const borderWidth = (element, side) => {
+      if (!element) return null;
+      return Number.parseFloat(getComputedStyle(element)["border" + side + "Width"]);
+    };
     const select = document.querySelector("#station-select");
     const filterBox = document.querySelector("#station-filter");
     const controls = document.querySelector("[data-station-controls]");
@@ -12737,6 +12799,10 @@ async function main() {
     const stats = shown ? [...shown.querySelectorAll("[data-station-stat]")] : [];
     const comparisons = shown
       ? [...shown.querySelectorAll("[data-station-comparison]")] : [];
+    const identity = shown?.querySelector("[data-station-identity]") ?? null;
+    const statistics = shown?.querySelector("[data-station-stats]") ?? null;
+    const comparisonGroup = shown?.querySelector("[data-station-comparisons]") ?? null;
+    const standardNote = document.querySelector("[data-station-standard-note]");
     const statLefts = [...new Set(stats.map((item) =>
       Math.round(item.getBoundingClientRect().left * 10) / 10))];
     const result = {
@@ -12771,7 +12837,17 @@ async function main() {
       stats: stats.map(inspect),
       comparisons: comparisons.map(inspect),
       columns: statLefts.length,
-      standardNote: inspect(document.querySelector("[data-station-standard-note]")),
+      separators: {
+        reportTop: borderWidth(shown, "Top"),
+        reportBottom: borderWidth(shown, "Bottom"),
+        identityBottom: borderWidth(identity, "Bottom"),
+        statisticsTop: borderWidth(statistics, "Top"),
+        statisticTops: stats.map((stat) => borderWidth(stat, "Top")),
+        comparisonsTop: borderWidth(comparisonGroup, "Top"),
+        noteTop: borderWidth(standardNote, "Top"),
+        noteBottom: borderWidth(standardNote, "Bottom"),
+      },
+      standardNote: inspect(standardNote),
       horizontalOverflow: document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
       reportStyle: shown ? {
@@ -15425,7 +15501,13 @@ async function main() {
         continue;
       }
       const state = await stationDossierSnapshot({ changeStation: true });
-      for (const problem of stationDossierProblems(state)) {
+      const stationProblems = stationDossierProblems(state);
+      if (stationProblems.length) {
+        console.log("site-quality station dossier failure", JSON.stringify({
+          width, theme, separators: state?.separators, stationProblems,
+        }));
+      }
+      for (const problem of stationProblems) {
         failures.push(`/stations/ @${width}x${height} ${theme}: ${problem}`);
       }
       if (

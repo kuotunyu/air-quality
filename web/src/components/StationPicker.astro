@@ -76,6 +76,12 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     #stations .picker .report[hidden] {
       display: block;
     }
+    /* The no-script register exposes every report. Separate stations once,
+       between reports, instead of restoring an outer frame around each one. */
+    #stations .picker .report + .report {
+      margin-block-start: var(--space-4);
+      border-block-start: 1px solid var(--line);
+    }
     #stations .picker .nojs {
       display: block;
     }
@@ -452,7 +458,6 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     container-type: inline-size;
     background: transparent;
     border: 0;
-    border-block: 1px solid var(--line);
     border-radius: 0;
     padding: var(--space-4) 0;
   }
@@ -462,9 +467,9 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
-    margin-bottom: 1.4rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--line-soft);
+    margin-bottom: var(--space-2);
+    padding-bottom: 0;
+    border-bottom: 0;
   }
   .report h2 {
     margin: 0;
@@ -486,7 +491,7 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
     gap: var(--space-3);
-    margin-top: 1.5rem;
+    margin-top: 0;
     padding-top: 1.2rem;
     border-top: 1px solid var(--line-soft);
   }
@@ -513,21 +518,23 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   .station-stats {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 0;
+    gap: 0 var(--space-3);
+    border-block-start: 1px solid var(--line-soft);
   }
 
   .station-stats > .stat {
     min-width: 0;
     padding-block: var(--space-3);
-    border-block-start: 1px solid var(--line-soft);
+    border-block-start: 0;
   }
 
   .picker > .note[data-station-standard-note],
   .picker > .note[data-station-conversion-note] {
     max-width: var(--measure);
     background: transparent;
-    border-inline: 0;
+    border: 0;
     border-radius: 0;
+    padding: 0;
   }
 
   @container (min-width: 30rem) {
@@ -548,10 +555,6 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
   @container (min-width: 30rem) {
     .station-stats {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .station-stats > .stat {
-      padding-inline-end: var(--space-3);
     }
   }
 
@@ -574,6 +577,11 @@ const initial = cards.find((c) => c.station_name === OPENS_ON) ?? cards[0];
 
     .report {
       break-inside: avoid;
+    }
+
+    .report + .report {
+      margin-block-start: var(--space-4);
+      border-block-start: 1px solid var(--line);
     }
   }
 </style>
