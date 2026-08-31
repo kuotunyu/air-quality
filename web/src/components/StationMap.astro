@@ -428,6 +428,19 @@ const dots = main.map((s) => {
   The parent places this at the page measure; see `.hero-grid` in index.astro.
 */}
 <div class="map-notes">
+  {/*
+    What these notes, and the two buttons below them, act on.
+
+    Measured at 1280: the map is 330px wide in the top-right corner, and this
+    block sits 908px below it at full page width, with the toolbar 1,276px
+    below. The distance is not the defect — the comment above records why the
+    notes are here rather than under the map, and why they run two columns —
+    but nothing in the block said which figure it belonged to, so a reader who
+    reaches it two screens later has no way to connect it to anything.
+  */}
+  <p class="apparatus-label" data-map-apparatus-label>
+    以上地圖：全台測站概覽 · 資料來源與下載
+  </p>
   <p class="aside">
     縣市界為內政部國土測繪中心「直轄市、縣市界線（TWD97 經緯度）」1140318 版，
     原始比例尺 1:5000，依政府資料開放授權條款第 1 版使用。
@@ -545,6 +558,18 @@ const dots = main.map((s) => {
     grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
     gap: var(--space-3) var(--space-5);
     align-items: start;
+  }
+
+  /* Spans the notes grid. A track of its own would seat the label beside the
+     note it introduces rather than above it, and at 375px — where `auto-fit`
+     has already collapsed to one column — it would look correct while being
+     wrong at every other width. */
+  .map-notes .apparatus-label {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-weight: 700;
   }
 
   /* The grid gap does the spacing; the paragraph margin would double it. */

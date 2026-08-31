@@ -13323,6 +13323,9 @@ async function main() {
             levelSummary.getBoundingClientRect().top + 1
         ),
         notesText: notes?.textContent.replace(/\s+/g, " ").trim() ?? "",
+        apparatusLabelText: (
+          notes?.querySelector("[data-map-apparatus-label]")?.textContent ?? ""
+        ).replace(/\s+/g, " ").trim(),
       };
     })()`);
     const problems = [];
@@ -13347,6 +13350,14 @@ async function main() {
     }
     if (!structure?.notesText?.includes("省略無測站的雲林離岸沙洲")) {
       problems.push("homepage map notes do not disclose the omitted Yunlin offshore sandbars");
+    }
+    // The notes and the two buttons below them act on a 330px figure that, at
+    // 1280, ends 908px and 1,276px above them at full page width. That distance
+    // is not the defect — the block sits there to close a 510x620px hole beside
+    // the statistics, and runs two columns to close a 326px one — but nothing
+    // in it said which figure it belonged to.
+    if (!structure?.apparatusLabelText) {
+      problems.push("homepage map notes do not name the figure they belong to");
     }
     if (
       enhanced &&
