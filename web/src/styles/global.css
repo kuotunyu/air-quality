@@ -3456,6 +3456,7 @@ button:hover {
   justify-content: center;
   padding-block: 0;
   padding-inline: 0.9rem;
+  white-space: nowrap;
 }
 
 /* The base button moves its border on hover, which is enough for a control in a

@@ -69,11 +69,23 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 <style>
   .concept-flow {
     --concept-mark: var(--diagram-neutral);
+    display: grid;
     max-width: none;
     margin: var(--space-4) 0 var(--space-5);
     padding: var(--space-3);
-    border: 1px solid var(--line);
-    background: var(--bg-sunken);
+    border: 1px solid color-mix(in oklab, var(--concept-mark) 34%, var(--line));
+    border-radius: var(--radius);
+    background: color-mix(in oklab, var(--concept-mark) 4%, var(--bg-sunken));
+  }
+
+  /* FigureTools is injected after hydration and therefore has no Astro scope
+     attribute. Keep it in normal flow so zoom/export height accounting remains
+     exact, but visually order it first on the diagram's left reading edge. */
+  .concept-flow > :global(.fig-tools) {
+    order: -1;
+    justify-self: start;
+    justify-content: flex-start;
+    margin: 0 0 var(--space-2);
   }
 
   .concept-flow > figcaption {
@@ -91,6 +103,11 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     font-size: var(--text-lg);
     font-weight: 700;
     line-height: 1.25;
+    text-wrap: balance;
+  }
+
+  .concept-flow > figcaption span {
+    text-wrap: pretty;
   }
 
   .concept-flow > ol {
@@ -108,7 +125,7 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 
   [data-concept-step] {
     --step-mark: var(--diagram-neutral);
-    --step-surface: color-mix(in oklab, var(--step-mark) 7%, var(--bg-raised));
+    --step-surface: color-mix(in oklab, var(--step-mark) 8%, var(--bg-raised));
     position: relative;
     display: grid;
     grid-template-columns: 2.25rem minmax(0, 1fr);
@@ -116,8 +133,9 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     gap: 0.22rem var(--space-2);
     min-width: 0;
     padding: var(--space-3);
-    border: 1px solid color-mix(in oklab, var(--step-mark) 52%, var(--line));
+    border: 1px solid color-mix(in oklab, var(--step-mark) 46%, var(--line));
     border-block-start-width: 3px;
+    border-radius: var(--radius);
     background: var(--step-surface);
   }
 
@@ -137,10 +155,17 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     content: "→";
     position: absolute;
     z-index: 1;
-    inset-inline-end: calc(var(--space-3) * -0.78);
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    inset-inline-end: calc(var(--space-3) * -0.5);
     inset-block-start: 50%;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--bg-raised);
     color: var(--rule);
-    font-size: var(--text-lg);
+    font-size: var(--text-sm);
     font-weight: 700;
     line-height: 1;
     transform: translate(50%, -50%);
@@ -151,7 +176,7 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     inset-inline-end: auto;
     inset-block-start: auto;
     inset-inline-start: 1.45rem;
-    inset-block-end: calc(var(--space-3) * -0.78);
+    inset-block-end: calc(var(--space-3) * -0.5);
     transform: translate(-50%, 50%);
   }
 
@@ -240,7 +265,7 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
       inset-inline-end: auto;
       inset-block-start: auto;
       inset-inline-start: 1.45rem;
-      inset-block-end: calc(var(--space-3) * -0.78);
+      inset-block-end: calc(var(--space-3) * -0.5);
       transform: translate(-50%, 50%);
     }
   }

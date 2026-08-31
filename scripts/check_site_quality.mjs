@@ -868,6 +868,34 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
     ) {
       problems.push(`${name} has the wrong desktop/tablet column count`);
     }
+    if (diagram?.toolCount > 0) {
+      if (diagram.toolCount !== 1) {
+        problems.push(`${name} has ${diagram.toolCount} toolbars; expected one`);
+      }
+      if (
+        !Array.isArray(diagram?.toolLabels) ||
+        diagram.toolLabels.length !== 2 ||
+        diagram.toolLabels[0] !== "放大" || diagram.toolLabels[1] !== "下載"
+      ) {
+        problems.push(`${name} toolbar labels changed`);
+      }
+      if (!diagram?.toolsBeforeCaption) {
+        problems.push(`${name} toolbar is not above its caption`);
+      }
+      if (!Number.isFinite(diagram?.toolLeftOffset) || diagram.toolLeftOffset > 1) {
+        problems.push(`${name} toolbar is not aligned to the top-left reading edge`);
+      }
+      if (diagram?.toolsOverlapCaption) {
+        problems.push(`${name} toolbar overlaps its caption`);
+      }
+      if (
+        !Array.isArray(diagram?.toolButtonHeights) ||
+        diagram.toolButtonHeights.length !== 2 ||
+        diagram.toolButtonHeights.some((height) => !Number.isFinite(height) || height < 44)
+      ) {
+        problems.push(`${name} toolbar controls fall below the 44px interaction floor`);
+      }
+    }
   }
   return problems;
 }
@@ -951,6 +979,11 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       getComputedStyle(step.querySelector(".concept-index"))
     );
     const connectorStyles = steps.slice(0, -1).map((step) => getComputedStyle(step, "::after"));
+    const tools = [...diagram.querySelectorAll(":scope > .fig-tools")].filter(visible);
+    const tool = tools[0] ?? null;
+    const toolRect = tool?.getBoundingClientRect() ?? null;
+    const captionRect = captions[0]?.getBoundingClientRect() ?? null;
+    const toolButtons = [...(tool?.querySelectorAll(":scope > .fig-tool") ?? [])];
     const incompleteSteps = steps.filter((step) =>
       !step.querySelector("[data-concept-label]")?.textContent.trim() ||
       !step.querySelector("[data-concept-step-title]")?.textContent.trim() ||
@@ -1025,6 +1058,18 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       hiddenConnectors,
       outOfOrderSteps,
       nonVerticalTransitions,
+      toolCount: tools.length,
+      toolLabels: toolButtons.map((button) => button.textContent.trim()),
+      toolButtonHeights: toolButtons.map((button) => button.getBoundingClientRect().height),
+      toolsBeforeCaption: Boolean(
+        toolRect && captionRect && toolRect.bottom <= captionRect.top + 1
+      ),
+      toolLeftOffset: toolRect && captionRect ? Math.abs(toolRect.left - captionRect.left) : null,
+      toolsOverlapCaption: Boolean(
+        toolRect && captionRect &&
+        toolRect.left < captionRect.right && toolRect.right > captionRect.left &&
+        toolRect.top < captionRect.bottom && toolRect.bottom > captionRect.top
+      ),
       media: {
         printMarker: diagramStyle.getPropertyValue("--concept-print").trim(),
         forcedMarker: diagramStyle.getPropertyValue("--concept-forced-colors").trim(),
@@ -1521,14 +1566,30 @@ function homepageStationTypeBoundaryProblems(state) {
 
 function figureDownloadLabelProblems(state) {
   const problems = [];
-  if (!Number.isInteger(state?.toolbarCount) || !Array.isArray(state?.downloadLabels)) {
+  if (
+    !Number.isInteger(state?.toolbarCount) ||
+    !Array.isArray(state?.downloadLabels) ||
+    !Array.isArray(state?.downloadAriaLabels) ||
+    !Array.isArray(state?.downloadWhiteSpaces)
+  ) {
     return ["figure download-label state is invalid"];
   }
-  if (state.toolbarCount && state.downloadLabels.length !== state.toolbarCount) {
+  if (
+    state.toolbarCount &&
+    (state.downloadLabels.length !== state.toolbarCount ||
+      state.downloadAriaLabels.length !== state.toolbarCount ||
+      state.downloadWhiteSpaces.length !== state.toolbarCount)
+  ) {
     problems.push("figure download control inventory changed");
   }
-  if (state.downloadLabels.some((label) => label !== "下載 PNG")) {
-    problems.push("figure download format is not visible");
+  if (state.downloadLabels.some((label) => label !== "下載")) {
+    problems.push("figure download control does not use the concise visible label");
+  }
+  if (state.downloadAriaLabels.some((label) => !/^下載 PNG：\S/u.test(label))) {
+    problems.push("figure download accessible name omits its PNG format or figure identity");
+  }
+  if (state.downloadWhiteSpaces.some((value) => value !== "nowrap")) {
+    problems.push("figure download label can wrap inside a constrained toolbar");
   }
   return problems;
 }
@@ -6737,13 +6798,32 @@ async function lifecycleSelfTest() {
     throw new Error("the homepage station-type predicate accepts a deleted boundary");
   }
 
-  const completeFigureDownloadLabels = { toolbarCount: 2, downloadLabels: ["下載 PNG", "下載 PNG"] };
+  const completeFigureDownloadLabels = {
+    toolbarCount: 2,
+    downloadLabels: ["下載", "下載"],
+    downloadAriaLabels: ["下載 PNG：圖 1.1", "下載 PNG：圖 1.2"],
+    downloadWhiteSpaces: ["nowrap", "nowrap"],
+  };
   if (figureDownloadLabelProblems(completeFigureDownloadLabels).length) {
     throw new Error("the figure download-label predicate rejects its control");
   }
-  if (!figureDownloadLabelProblems({ toolbarCount: 2, downloadLabels: ["下載", "下載 PNG"] })
-    .some((problem) => problem.includes("format is not visible"))) {
-    throw new Error("the figure download-label predicate accepts an unlabelled format");
+  if (!figureDownloadLabelProblems({
+    ...completeFigureDownloadLabels,
+    downloadLabels: ["下載", "下載 PNG"],
+  }).some((problem) => problem.includes("concise visible label"))) {
+    throw new Error("the figure download-label predicate accepts the verbose visible label");
+  }
+  if (!figureDownloadLabelProblems({
+    ...completeFigureDownloadLabels,
+    downloadAriaLabels: ["下載：圖 1.1", "下載 PNG：圖 1.2"],
+  }).some((problem) => problem.includes("accessible name omits"))) {
+    throw new Error("the figure download-label predicate accepts an accessible name without format");
+  }
+  if (!figureDownloadLabelProblems({
+    ...completeFigureDownloadLabels,
+    downloadWhiteSpaces: ["normal", "nowrap"],
+  }).some((problem) => problem.includes("can wrap"))) {
+    throw new Error("the figure download-label predicate accepts a wrappable control label");
   }
 
   const completeTrendControlClarification = {
@@ -9153,6 +9233,12 @@ async function lifecycleSelfTest() {
       hiddenConnectors: 0,
       outOfOrderSteps: 0,
       nonVerticalTransitions: 0,
+      toolCount: 1,
+      toolLabels: ["放大", "下載"],
+      toolButtonHeights: [45, 45],
+      toolsBeforeCaption: true,
+      toolLeftOffset: 0,
+      toolsOverlapCaption: false,
       media: {},
     }],
   };
@@ -9189,6 +9275,12 @@ async function lifecycleSelfTest() {
     ["phone row", "vertical sequence", (state) => { state.diagrams[0].nonVerticalTransitions = 1; }],
     ["phone columns", "narrow-layout boundary", (state) => { state.diagrams[0].gridColumnCount = 4; }],
     ["tablet columns", "desktop/tablet column count", (state) => { state.diagrams[0].gridColumnCount = 1; }],
+    ["duplicate toolbar", "toolbars; expected one", (state) => { state.diagrams[0].toolCount = 2; }],
+    ["verbose download label", "toolbar labels changed", (state) => { state.diagrams[0].toolLabels[1] = "下載 PNG"; }],
+    ["toolbar after caption", "not above its caption", (state) => { state.diagrams[0].toolsBeforeCaption = false; }],
+    ["toolbar right drift", "not aligned to the top-left", (state) => { state.diagrams[0].toolLeftOffset = 18; }],
+    ["toolbar overlap", "overlaps its caption", (state) => { state.diagrams[0].toolsOverlapCaption = true; }],
+    ["short toolbar target", "44px interaction floor", (state) => { state.diagrams[0].toolButtonHeights[0] = 43; }],
     ["document overflow", "scrolls sideways", (state) => { state.documentOverflow = 1; }],
   ];
   const conceptDiagramPreflightMisses = [];
@@ -13049,6 +13141,8 @@ async function main() {
       figure: {
         toolbarCount: toolbars.length,
         downloadLabels: downloadButtons.map((button) => button.textContent.trim()),
+        downloadAriaLabels: downloadButtons.map((button) => button.getAttribute("aria-label") ?? ""),
+        downloadWhiteSpaces: downloadButtons.map((button) => getComputedStyle(button).whiteSpace),
       },
       trend: {
         hintCount: document.querySelectorAll(".key-hint").length,
@@ -17053,7 +17147,7 @@ async function main() {
             const dialog = document.querySelector(".fig-zoom");
             const toolbar = dialog?.querySelector(".fig-tools") ?? null;
             const download = [...(toolbar?.querySelectorAll(".fig-tool") ?? [])]
-              .find((item) => item.textContent?.trim() === "下載 PNG");
+              .find((item) => item.getAttribute("aria-label")?.startsWith("下載 PNG："));
             const plotArea = dialog?.querySelector(".plot-area") ?? null;
             const openState = {
               open: Boolean(dialog?.open),
@@ -17086,7 +17180,7 @@ async function main() {
             const shell = [...document.querySelectorAll("main .evidence-figure")][2];
             const root = shell?.matches("figure") ? shell : shell?.querySelector("figure");
             const button = [...(root?.querySelectorAll(".fig-tool") ?? [])]
-              .find((item) => item.textContent?.trim() === "下載 PNG");
+              .find((item) => item.getAttribute("aria-label")?.startsWith("下載 PNG："));
             const pills = [...(root?.querySelectorAll(".key-pill") ?? [])];
             if (!root || !button || pills.length !== 8) return null;
             pills[0].click();
