@@ -2145,9 +2145,30 @@ main {
  * chapter 5 did it: the strip ran to 1985px against a 1905px viewport, and
  * /detection was the one page on the site that scrolled sideways.
  */
-/* ConceptFlow is prose-sized explanatory structure, not a data graphic. Keep
- * those figures on the reading spine while allowing charts to use the bleed. */
-.page > figure:not([data-concept-diagram]) {
+/*
+ * 2026-09-01 — supersedes "ConceptFlow is prose-sized explanatory structure,
+ * not a data graphic. Keep those figures on the reading spine while allowing
+ * charts to use the bleed."
+ *
+ * That reasoning cannot hold together with the contract in
+ * `check_site_quality.mjs`, which requires a concept diagram above 768px to
+ * render one column per step. Prose width and four columns are not compatible,
+ * and the diagrams were paying the difference in line length: measured at 1440
+ * across all seven, the six horizontal ones rendered 225px cards carrying
+ * **six to eight Chinese characters per line**. The only readable one was
+ * /data's `layers` variant, which stacks to a single 966px column and reads
+ * 23-45.
+ *
+ * A ribbon of six characters is not a reading spine, so the diagrams take the
+ * same bleed their sibling charts do — on /trend the charts already measured
+ * 1244px against the diagram's 1012px, which made it the one figure on the
+ * page indented away from the others.
+ */
+/* On /explore the diagram sits inside the tool wrapper rather than directly on
+   the page, so the child selector cannot reach it — measured 1012px there
+   while its six siblings had already moved to 1244. */
+.page > figure,
+.page > .primary-tool > figure[data-concept-diagram] {
   --room: calc((100cqw - var(--measure) - 2 * var(--page-pad)) / 2);
   /* Less 1.5rem so the figure never runs to the column's own edge, and capped
      at 8rem so a 4K display gets a wide chart rather than a stretched one. */
