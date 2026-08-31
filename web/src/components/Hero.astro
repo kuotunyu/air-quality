@@ -442,7 +442,7 @@ const opening = [
 
 .hero-after {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .hero-level-summary {
@@ -491,7 +491,25 @@ const opening = [
 .hero-stats {
   display: grid;
   align-content: start;
-  gap: var(--space-4);
+  gap: var(--space-3);
+}
+
+/*
+ * The gap does the separating; the children's own margins were doing it again.
+ *
+ * Margins do not collapse inside a grid — they add to the row gap — and the
+ * note and the aside were both written when this column was ordinary flow. So
+ * every seam here was paid for twice: measured at 1800, 35.2px of gap plus
+ * 22px from `.aside` and 44px from `.note` between three blocks, and 35.2px
+ * again from `.lede` in `.hero-after`. 101px across the two stacks, none of it
+ * doing anything the gap was not already doing.
+ *
+ * A whole-page sweep found exactly these two containers and no others, so this
+ * is the defect and not a house style.
+ */
+.hero-stats > *,
+.hero-after > * {
+  margin-block: 0;
 }
 
 /*
