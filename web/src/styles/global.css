@@ -3791,3 +3791,80 @@ button:hover {
     block-size: auto;
   }
 }
+
+/*
+ * The handle names the chapter only once the chapter has stopped naming itself.
+ *
+ * Measured across all ten chapter routes at 1440: the sticky handle and the
+ * page's own opening carried the SAME two strings — 「第二章」 and
+ * 「測站個別統計」 — about 150px apart. Ten pages, both strings, every time. The
+ * homepage is the one route where the two differ, so it is the one route this
+ * leaves alone.
+ *
+ * The handle is wayfinding. It earns its place when the title has scrolled
+ * away; until then it repeats what is already on screen. So the chapter
+ * identity is driven by the `<h1>`'s own view timeline and fades in over the
+ * range where that heading leaves the top of the viewport.
+ *
+ * Here rather than in `Base.astro`, and that is not a filing preference. Astro
+ * scopes a component's styles by appending its own `data-astro-cid-…` to the
+ * selectors, and `.chapter-intro` belongs to another component — written there,
+ * `view-timeline-name` computed to `none` and the animation never attached,
+ * while the `.shell` half applied because `.shell` is Base's own. A rule that
+ * spans two components has to live where neither owns it.
+ *
+ * Opacity rather than `display` or `visibility`, deliberately. The accessible
+ * name is on the link and never moves; `check_site_quality.mjs` reads the
+ * compact identity's geometry and visible text, neither of which opacity
+ * touches; and its contrast and smallest-type sweeps both skip `opacity: 0`
+ * outright, so a faded label cannot be mistaken for unreadable ink.
+ *
+ * Behind `@supports`, so a browser without scroll-driven animations keeps
+ * today's always-visible handle rather than an identity that never arrives.
+ */
+@supports (animation-timeline: view()) and (timeline-scope: --x) {
+  .shell:has(.chapter-intro > h1) {
+    timeline-scope: --chapter-title;
+  }
+
+  .chapter-intro > h1 {
+    view-timeline-name: --chapter-title;
+    view-timeline-axis: block;
+  }
+
+  .shell:has(.chapter-intro > h1) .handle-n,
+  .shell:has(.chapter-intro > h1) .handle-t {
+    /*
+     * Longhands only, and that is load-bearing rather than verbose.
+     *
+     * Written as `animation: … linear both` plus an `animation-timeline`
+     * longhand, the minifier folds the two into
+     * `animation: linear both handle-identity-arrives --chapter-title` — legal
+     * in the current spec and rejected outright by Chrome, which drops the
+     * whole declaration and computes `animation-name: none`. Verified in the
+     * browser: the shorthand carrying a NAMED timeline yields `none`, the same
+     * shorthand plus the longhand yields the animation. `progress` above gets
+     * away with the shorthand because `scroll(root)` is an anonymous timeline
+     * function, which Chrome does accept there.
+     *
+     * No `animation-duration`: a scroll-driven animation takes its progress
+     * from the timeline, and leaving one longhand out also denies the minifier
+     * the complete set it would need to rebuild the shorthand.
+     */
+    animation-name: handle-identity-arrives;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline: --chapter-title;
+    animation-range: exit 0% exit 100%;
+  }
+
+  @keyframes handle-identity-arrives {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+}

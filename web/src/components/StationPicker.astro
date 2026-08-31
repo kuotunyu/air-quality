@@ -414,20 +414,35 @@ const rankPosition = (rank: number, total: number) =>
   const count = document.getElementById("station-filter-count");
   const groups = Array.from(select?.querySelectorAll("optgroup") ?? []);
 
+  /*
+   * 臺 and 台 are the same word and only one of them is in the data.
+   *
+   * The register writes the official form — 臺北市, 臺中市, 臺南市, 臺東縣 —
+   * and readers type the everyday one. Measured against the 22 county groups:
+   * 「臺中」 matched, 「台中」 matched nothing, and the same held for 台北, 台南
+   * and 台東. The search worked for eighteen counties and failed silently on
+   * the four that most people would try first, answering 「沒有測站符合」 to a
+   * county it holds seven stations in.
+   *
+   * Folded on both sides so it does not matter which form is typed or which
+   * form the next register update ships.
+   */
+  const fold = (value: string) => value.toLowerCase().replace(/臺/g, "台");
+
   filter?.addEventListener("input", () => {
-    const needle = filter.value.trim().toLowerCase();
+    const needle = fold(filter.value.trim());
     let matched = 0;
     for (const group of groups) {
       // The county matches too. A reader who knows 高雄 but not 前金 is exactly
       // the one a search box is for, and the county names are already here as
       // the group labels — matching only the option text answered 「沒有測站符合」
       // to the most obvious thing anyone would type.
-      const county = (group.label ?? "").toLowerCase();
+      const county = fold(group.label ?? "");
       const countyHit = Boolean(needle) && county.includes(needle);
       let groupMatched = 0;
       for (const option of Array.from(group.querySelectorAll("option"))) {
         const hit =
-          !needle || countyHit || (option.textContent ?? "").toLowerCase().includes(needle);
+          !needle || countyHit || fold(option.textContent ?? "").includes(needle);
         option.hidden = !hit;
         if (hit) groupMatched += 1;
       }
