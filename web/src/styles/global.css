@@ -3867,4 +3867,82 @@ button:hover {
       opacity: 1;
     }
   }
+
+  /*
+   * What fills the handle while the chapter identity is still holding back.
+   *
+   * The fade-in above solved the duplication and created a vacancy: at the top
+   * of a chapter page the bar held only the menu and theme buttons, and the
+   * owner circled the empty middle and asked for it to earn its keep. It can —
+   * below 1600px the persistent rail is hidden, so on a chapter page the SITE
+   * name appeared nowhere at all. So the handle opens by saying which
+   * publication this is, and hands over to which chapter it is on the same
+   * timeline the chapter identity arrives on.
+   *
+   * Absolutely positioned over the chapter spans rather than beside them:
+   * opacity does not release layout, so a sibling would sit indented to the
+   * right of invisible text. The two never show together — one fades out over
+   * the exact range the other fades in.
+   *
+   * Desktop only (48rem and up). At 375 the 375-wide compact-identity gate
+   * counts scrollable overflow, and an absolutely positioned child inside the
+   * handle's overflow:hidden box contributes to scrollWidth — nine characters
+   * of site name over a four-character chapter shorthand would read as
+   * clipped. Mobile keeps the plain fade-in.
+   */
+  .shell:has(.chapter-intro > h1) .handle-at {
+    position: relative;
+  }
+
+  @media (min-width: 48rem) {
+    .shell:has(.chapter-intro > h1) .handle-site {
+      display: inline;
+      position: absolute;
+      inset-inline-start: 0;
+      inset-block-start: 50%;
+      transform: translateY(-50%);
+      font-weight: 650;
+      color: var(--text);
+      white-space: nowrap;
+      animation-name: handle-identity-leaves;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-timeline: --chapter-title;
+      animation-range: exit 0% exit 100%;
+    }
+  }
+
+  @keyframes handle-identity-leaves {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  /*
+   * Print renders at scroll position zero, where the crossfade holds the
+   * chapter identity at opacity 0 — a printed page would name the site and
+   * not the chapter. On paper there is no scroll for the handle to serve, so
+   * both animations come off and the static markup prints as authored.
+   */
+  @media print {
+    .shell:has(.chapter-intro > h1) .handle-n,
+    .shell:has(.chapter-intro > h1) .handle-t {
+      animation-name: none;
+    }
+
+    .shell:has(.chapter-intro > h1) .handle-site {
+      display: none;
+    }
+  }
+}
+
+/* Outside the @supports block: a browser without scroll-driven animations
+   keeps the always-visible chapter identity, and must never add a second
+   identity beside it. */
+.handle-site {
+  display: none;
 }

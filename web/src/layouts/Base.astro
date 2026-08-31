@@ -289,6 +289,15 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
                   <span class="handle-t handle-t-short" data-site-identity-short aria-hidden="true">
                     {here.nav}
                   </span>
+                  {/*
+                    What the handle says while the chapter is still saying its
+                    own name. Styled and revealed from `global.css`, beside the
+                    view-timeline crossfade it belongs to; hidden by default so
+                    a browser without scroll-driven animations never shows two
+                    identities at once. aria-hidden like its siblings — the
+                    accessible name is the visually-hidden span above.
+                  */}
+                  <span class="handle-site" aria-hidden="true">台灣空氣品質再分析</span>
                 </>
               ) : (
                 <>
