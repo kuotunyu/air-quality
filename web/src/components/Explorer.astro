@@ -117,7 +117,7 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
       <li data-explorer-step="choose">
         <span class="explorer-step-number">01</span>
         <strong>選一個問題</strong>
-        <span>從六個現有範例開始；需要時再展開 SQL。</span>
+        <span>六個問題，每一個都問得出一張可以下載的表。</span>
       </li>
       <li data-explorer-step="execute">
         <span class="explorer-step-number">02</span>
@@ -139,9 +139,9 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
     */}
     <ConceptFlow
       title="查詢在你的瀏覽器裡如何完成"
-      summary="網站只提供公開檔案與查詢程式；SQL、暫存結果與匯出動作都留在目前這個瀏覽器分頁。"
+      summary="網站只提供公開檔案與查詢程式；查詢、暫存結果與匯出動作都留在目前這個瀏覽器分頁。"
       variant="boundary"
-      boundaryLabel="虛線內是你的瀏覽器分頁—SQL、結果與匯出都不會離開這裡"
+      boundaryLabel="虛線內是你的瀏覽器分頁—查詢、結果與匯出都不會離開這裡"
       steps={[
         {
           label: "公開資料",
@@ -156,7 +156,7 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
         },
         {
           label: "執行位置",
-          title: "SQL 與資料都不離開瀏覽器",
+          title: "查詢與資料都不離開瀏覽器",
           detail: "這裡沒有上傳步驟，也不把查詢內容送到另一台伺服器。",
           tone: "boundary",
         },
@@ -185,7 +185,7 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
     </noscript>
 
     <p class="note explorer-nojs" data-explorer-nojs>
-      瀏覽器內查詢需要 JavaScript。SQL 範例仍可閱讀，但本頁不會下載查詢引擎或執行查詢；
+      瀏覽器內查詢需要 JavaScript。六個問題仍可閱讀，但本頁不會下載查詢引擎或執行查詢；
       公開資料與重建方式見第十章。
     </p>
 
@@ -210,23 +210,16 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   </p>
 
   {/*
-    The query itself is behind a disclosure, closed by default.
+    The query is not shown at all, and that is the chapter's shape now.
 
-    It used to be an open ten-row textarea sitting between the controls and the
-    results — 340px of monospace in the middle of a reading page, shown before
-    the reader had asked for anything. For most readers that is not the content;
-    the question in the menu is the content, and the table is the answer. The
-    editable query is what makes this chapter a database rather than six fixed
-    charts, so it is kept in full and one click away rather than removed.
-
-    `<details>` and not a JavaScript toggle: this page's premise is that it does
-    nothing until the button is pressed, and a disclosure that needs script to
-    open would break that for a reader who never presses it.
+    It was a `<details>` a click away, kept on the argument that an editable
+    query is what makes this chapter a database rather than six fixed charts.
+    The owner's call is that a reader has no need to meet SQL, so the box goes —
+    and with it the share-a-query link and the `#sql=` hash that reopened one,
+    because a link carrying a query nobody can read or edit is a link to
+    nothing. What is left is the six questions, the answer and the CSV, which is
+    what a reader came here for.
   */}
-  <details class="sql-panel" data-explorer-sql>
-    <summary>檢視或修改查詢語句</summary>
-    <textarea id="sql" spellcheck="false" aria-label="SQL 查詢" rows="10">{EXAMPLES[0].sql}</textarea>
-  </details>
 
   {/*
     The schema, above the answer and above the query box.
@@ -249,8 +242,8 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   <div class="note caveat" data-explorer-caveat>
     <strong>Pages 目前公開 {publishedL1Codes.join("、")} 兩張 L1 表。</strong>
     執行查詢時仍會逐檔確認主機回應；本機匯出可產生完整 21 個 L1 測項，共 54.6 MB，
-    但那不是目前 GitHub Pages 的發布承諾。這個容量只計 L1，不含 L0。要在本機產生全部資料：
-    <code>uv run twair export web</code>。
+    但那不是目前 GitHub Pages 的發布承諾。這個容量只計 L1，不含 L0。
+    要在本機產生全部資料，執行專案的匯出管線即可。
     {/* Chapter 10 links this same document rather than printing its path;
         one of the two had to change and the link is the useful half. */}
     逐時原始資料另有授權問題待確認，見
@@ -275,14 +268,12 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   import type { Candidate, ColumnKind } from "../lib/duck";
 
   const runButton = document.getElementById("run") as HTMLButtonElement;
-  const sqlBox = document.getElementById("sql") as HTMLTextAreaElement;
   const statusEl = document.getElementById("status") as HTMLElement;
   const resultEl = document.getElementById("result") as HTMLElement;
   const tablesEl = document.getElementById("tables") as HTMLElement;
   const exampleSelect = document.getElementById("example-select") as HTMLSelectElement;
   const workspaceEl = document.querySelector("[data-explorer-workspace]") as HTMLElement;
   const controlsEl = document.querySelector("[data-explorer-controls]") as HTMLElement;
-  const sqlPanel = document.querySelector("[data-explorer-sql]") as HTMLDetailsElement;
 
   type ExplorerState = "initial" | "loading" | "success" | "empty" | "failure";
 
@@ -319,10 +310,31 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   const root = import.meta.env.BASE_URL.replace(/\/*$/, "/");
   const base = new URL(`${root}data/`, location.origin).href;
 
+  /* The chosen example IS the query, now that no box holds one. */
+  let query = examples[0] ?? "";
+
   exampleSelect.addEventListener("change", () => {
-    const sql = examples[Number(exampleSelect.value)];
-    if (sql) sqlBox.value = sql;
+    const chosen = examples[Number(exampleSelect.value)];
+    if (chosen) query = chosen;
   });
+
+  /*
+   * A test seam, and named as one.
+   *
+   * `check_site_quality.mjs` drives this page through loading, empty, failure
+   * and retry, and it reached those states by typing into the query box. With
+   * the box gone there is no other way in: all six examples succeed and return
+   * rows, so nothing a reader can click produces an error to render. The
+   * alternative was to stop checking the states the code still has, which is
+   * worse than one labelled hook.
+   *
+   * It puts no SQL in the document and adds no control — a console can already
+   * call DuckDB directly, so this grants nothing that was not already there.
+   */
+  (window as unknown as { __twairSetQuery?: (value: string) => void })
+    .__twairSetQuery = (value: string) => {
+      query = value;
+    };
 
   function setStatus(text: string, busy = false) {
     statusEl.textContent = text;
@@ -374,7 +386,7 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
       if (available.length === 0) {
         throw new Error(
           `這個站台沒有提供任何 L1 資料檔（找過 ${base}l1/）。\n` +
-            "在本機執行 uv run twair export web 可以產生它們。",
+            "在本機執行專案的匯出管線可以產生它們。",
         );
       }
       return { db };
@@ -424,7 +436,7 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
       const duckModule = await duck();
       const { runQuery } = duckModule;
       setStatus("查詢中", true);
-      const { columns, kinds, rows, total, truncated, ms } = await runQuery(db, sqlBox.value);
+      const { columns, kinds, rows, total, truncated, ms } = await runQuery(db, query);
       // Say the real count. A cap that reports the capped number as if it were
       // the answer is the one kind of wrong this page cannot afford.
       setStatus(
@@ -485,11 +497,7 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   const csvButton = document.createElement("button");
   csvButton.type = "button";
   csvButton.className = "explorer-action";
-  const linkButton = document.createElement("button");
-  linkButton.type = "button";
-  linkButton.className = "explorer-action";
-  linkButton.textContent = "複製此查詢的連結";
-  actionsEl.append(csvButton, linkButton);
+  actionsEl.append(csvButton);
 
   /*
    * One field, escaped for CSV.
@@ -551,41 +559,15 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   });
 
   /*
-   * The query in the address bar, and never run on arrival.
+   * A `#sql=` link used to arrive here, land in the box and wait to be run.
    *
-   * A link that ran its own SQL the moment it opened would be a stranger's code
-   * executing because someone clicked a URL. It is only DuckDB-WASM over public
-   * Parquet in the reader's own browser, so the worst case is a slow query — but
-   * "it can only waste your battery" is not a reason to take the decision away.
-   * The query arrives in the box, the box opens so it is visible before it runs,
-   * and the reader presses the same button they would have pressed anyway.
+   * The care in it was about consent — a stranger's query would not execute
+   * because someone clicked a URL; it appeared, visibly, and the reader pressed
+   * the button. None of that is reachable now: with no box the query could not
+   * be read before running, and a query that cannot be read must not be offered
+   * at all. So the link, the hash and the button that made one are gone rather
+   * than adapted, and a stale `#sql=` URL simply opens the page.
    */
-  const SQL_HASH = "#sql=";
-
-  linkButton.addEventListener("click", async () => {
-    const url = `${location.origin}${location.pathname}${SQL_HASH}${encodeURIComponent(sqlBox.value)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      linkButton.textContent = "已複製連結";
-    } catch {
-      // A clipboard the browser refuses is not a failure worth a dialogue: put
-      // the URL in the address bar so it can be copied the ordinary way.
-      location.hash = `${SQL_HASH.slice(1)}${encodeURIComponent(sqlBox.value)}`;
-      linkButton.textContent = "連結已放入網址列";
-    }
-    window.setTimeout(() => {
-      linkButton.textContent = "複製此查詢的連結";
-    }, 2400);
-  });
-
-  if (location.hash.startsWith(SQL_HASH)) {
-    const shared = decodeURIComponent(location.hash.slice(SQL_HASH.length));
-    if (shared.trim()) {
-      sqlBox.value = shared;
-      sqlPanel.open = true;
-      setStatus("已載入分享的查詢，按「執行查詢」開始");
-    }
-  }
 
   /*
    * The last result, kept so its LAYOUT can be recomputed without re-querying.
@@ -1037,9 +1019,6 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
       display: none;
     }
 
-    .sql-panel > textarea {
-      display: block !important;
-    }
   }
 
   /*
@@ -1058,32 +1037,11 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
    * points — the first version of this block redefined `::before` and ended up
    * pointing right-then-down in chapter 8 and down-then-up here.
    */
-  .sql-panel {
-    margin: 1rem 0 0;
-    border: 0;
-    border-radius: 0;
-    background: none;
-  }
 
-  .sql-panel > summary {
-    /* The global rule pads this to a 59px row, which is a panel header; a
-       footnote wants its own line and no more. The padding goes, and what sets
-       the height instead is the global `min-height: 44px` — a thumb's target,
-       which this still has to be. Measured: 45px tall and 206px wide. */
-    padding: 0.15rem 0;
-    width: fit-content;
-    font-weight: 500;
-  }
 
   /* Also from the global rule: it draws a rule under an open summary to separate
      it from the table beneath. There is no frame here for that rule to close. */
-  .sql-panel[open] > summary {
-    border-bottom: 0;
-  }
 
-  .sql-panel > textarea {
-    margin-top: 0.7rem;
-  }
 
   textarea {
     width: 100%;

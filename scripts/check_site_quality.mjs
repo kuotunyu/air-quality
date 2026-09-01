@@ -180,7 +180,9 @@ const STATIC_SECONDARY_DISCLOSURES = new Map([
   ["/explore/", 0],
   ["/data/", 1],
 ]);
-const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, route === "/explore/" ? 1 : 0]));
+// Zero everywhere: chapter 9 no longer shows its query. A disclosure that
+// reappeared would fail this inventory, which is what now holds the decision.
+const STATIC_SQL_DISCLOSURES = new Map(ROUTES.map((route) => [route, 0]));
 const STATIC_CONCEPT_DIAGRAMS = new Map([
   ["/", 0],
   ["/trend/", 1],
@@ -198,7 +200,7 @@ const EXPECTED_NATIVE_FIGURES = 21;
 // 2026-08-17: 9 -> 7. /methods/ lost two <details> — the transcribed K-S table
 // and the published-vs-reproduced comparison table.
 const EXPECTED_SECONDARY_DISCLOSURES = 7;
-const EXPECTED_SQL_DISCLOSURES = 1;
+const EXPECTED_SQL_DISCLOSURES = 0;
 const STATIC_TABLE_WRAPS = new Map([
   ["/", 0],
   ["/trend/", 0],
@@ -2970,7 +2972,7 @@ function loadDataProvenanceContract() {
   const layers = [
     ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。"],
     ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", `Pages 目前發布 ${publishedL1Codes.join("、")} 的 Parquet，共 ${dataMegabytes(l1Total)}；其餘測項可由本機管線產生。`],
-    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。`],
+    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。`],
   ].map((row) => Object.freeze(row));
   return Object.freeze({ layers: Object.freeze(layers), downloads: Object.freeze(downloads) });
 }
@@ -3877,7 +3879,7 @@ const EXPLORER_GUIDED_STEPS = Object.freeze([
     key: "choose",
     number: "01",
     title: "選一個問題",
-    text: "從六個現有範例開始；需要時再展開 SQL。",
+    text: "六個問題，每一個都問得出一張可以下載的表。",
   }),
   Object.freeze({
     key: "execute",
@@ -3893,11 +3895,11 @@ const EXPLORER_GUIDED_STEPS = Object.freeze([
   }),
 ]);
 const EXPLORER_STATE_KEYS = Object.freeze([
-  "caveat", "counts", "document", "mode", "noJs", "result", "run", "sql", "state",
+  "caveat", "counts", "document", "mode", "noJs", "result", "run", "state",
   "status", "steps", "tables",
 ]);
 const EXPLORER_COUNT_KEYS = Object.freeze([
-  "caveats", "controls", "paths", "results", "sql", "steps", "tables", "workspace",
+  "caveats", "controls", "paths", "results", "steps", "tables", "workspace",
 ]);
 const EXPLORER_INSPECTION_KEYS = Object.freeze([
   "accessible", "ancestorClipped", "ariaHidden", "bottom", "cssClip", "cssClipPath",
@@ -3981,7 +3983,6 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
       controls: 1,
       paths: 1,
       results: 1,
-      sql: 1,
       steps: EXPLORER_GUIDED_STEPS.length,
       tables: 1,
       workspace: 1,
@@ -4033,7 +4034,6 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
     ["tables", state.tables, ["inspection", "text"]],
     ["result", state.result, ["emptyMessage", "errorDetail", "focused", "hasRows", "inspection", "text"]],
     ["caveat", state.caveat, ["inspection", "text"]],
-    ["sql", state.sql, ["inspection", "open", "text"]],
     ["no-JavaScript notice", state.noJs, ["inspection", "text"]],
     ["document", state.document, ["clientWidth", "scrollWidth"]],
   ];
@@ -4049,7 +4049,6 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
     ["result hasRows", state.result.hasRows],
     ["result emptyMessage", state.result.emptyMessage],
     ["result focused", state.result.focused],
-    ["SQL open", state.sql.open],
   ]) {
     if (typeof value !== "boolean") problems.push(`${scope}explore ${label} is not boolean`);
   }
@@ -4058,7 +4057,6 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
     ["tables text", state.tables.text],
     ["result text", state.result.text],
     ["caveat text", state.caveat.text],
-    ["SQL text", state.sql.text],
     ["no-JavaScript text", state.noJs.text],
   ]) {
     if (typeof value !== "string") problems.push(`${scope}explore ${label} is not a string`);
@@ -4078,13 +4076,18 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
     problems.push(`${scope}explore document scrolls sideways`);
   }
 
+  /*
+   * There is no SQL disclosure to check any more.
+   *
+   * The query box, its summary and the share-a-query link were removed on the
+   * owner's call that a reader has no need to meet SQL. What used to be checked
+   * here — that the disclosure was present, visible and still said 「檢視或修改
+   * 查詢語句」 — is now checked by its absence: `STATIC_SQL_DISCLOSURES` is zero
+   * on every route, so a box that came back would fail the inventory.
+   */
   problems.push(
-    ...explorerVisibleInspectionProblems(state.sql.inspection, "SQL disclosure", scope, viewport, true),
     ...explorerVisibleInspectionProblems(state.caveat.inspection, "caveat", scope, viewport),
   );
-  if (!healthTextIdentity(state.sql.text).includes("檢視或修改查詢語句")) {
-    problems.push(`${scope}explore SQL disclosure text changed`);
-  }
   if (
     !healthTextIdentity(state.caveat.text).includes("Pages目前公開PM10、PM2.5兩張L1表") ||
     !healthTextIdentity(state.caveat.text).includes("不是目前GitHubPages的發布承諾") ||
@@ -4131,16 +4134,15 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
       problems.push(
         ...explorerHiddenInspectionProblems(state.noJs.inspection, "no-JavaScript notice", scope),
       );
-      if (!healthTextIdentity(state.sql.text).includes("SELECT")) {
-        problems.push(`${scope}explore print SQL content is missing`);
-      }
+      /* Print used to require the query to be spelled out on paper, on the
+         argument that a printed page cannot expand a disclosure. There is no
+         query on the page now, in any medium. */
     }
   }
 
   const inspections = [
     ...(state.steps ?? []).map((step) => step.inspection),
     state.run.inspection,
-    state.sql.inspection,
     state.tables.inspection,
     state.result.inspection,
     state.caveat.inspection,
@@ -5423,7 +5425,6 @@ const explorerGuidedWorkspaceSnapshotExpression = (mode) => `(() => {
   const paths = [...document.querySelectorAll("[data-explorer-path]")];
   const steps = [...document.querySelectorAll("[data-explorer-step]")];
   const controls = [...document.querySelectorAll("[data-explorer-controls]")];
-  const sqlPanels = [...document.querySelectorAll("[data-explorer-sql]")];
   const tables = [...document.querySelectorAll("[data-explorer-tables]")];
   const results = [...document.querySelectorAll("[data-explorer-result]")];
   const caveats = [...document.querySelectorAll("[data-explorer-caveat]")];
@@ -5431,7 +5432,6 @@ const explorerGuidedWorkspaceSnapshotExpression = (mode) => `(() => {
   const workspace = workspaces[0] ?? null;
   const run = document.querySelector("#run");
   const status = document.querySelector("#status");
-  const sql = sqlPanels[0] ?? null;
   const tableInventory = tables[0] ?? null;
   const result = results[0] ?? null;
   const caveat = caveats[0] ?? null;
@@ -5444,7 +5444,6 @@ const explorerGuidedWorkspaceSnapshotExpression = (mode) => `(() => {
       paths: paths.length,
       steps: steps.length,
       controls: controls.length,
-      sql: sqlPanels.length,
       tables: tables.length,
       results: results.length,
       caveats: caveats.length,
@@ -5466,13 +5465,6 @@ const explorerGuidedWorkspaceSnapshotExpression = (mode) => `(() => {
       busy: status?.getAttribute("data-busy") === "true",
       failed: status?.getAttribute("data-failed") === "true",
       inspection: inspect(status),
-    },
-    sql: {
-      text: compact(
-        [sql?.innerText, sql?.querySelector("textarea")?.value].filter(Boolean).join(" "),
-      ),
-      open: sql instanceof HTMLDetailsElement ? sql.open : null,
-      inspection: inspect(sql),
     },
     tables: {
       text: compact(tableInventory?.innerText),
@@ -9492,7 +9484,6 @@ async function lifecycleSelfTest() {
         paths: 1,
         steps: 3,
         controls: 1,
-        sql: 1,
         tables: 1,
         results: 1,
         caveats: 1,
@@ -9526,11 +9517,6 @@ async function lifecycleSelfTest() {
         busy: state === "loading",
         failed: state === "failure",
         inspection: hiddenForMode ? explorerHiddenPart(360, 31) : explorerPart(360, 31),
-      },
-      sql: {
-        text: mode === "print" ? "檢視或修改查詢語句 SELECT 1;" : "檢視或修改查詢語句",
-        open: false,
-        inspection: explorerPart(420, 40, { detailsAncestor: true }),
       },
       tables: {
         text: "按下執行之後，這裡會列出實際可以查的表。",
@@ -9623,7 +9609,6 @@ async function lifecycleSelfTest() {
     ["lost result focus", "success semantics changed", (state) => { Object.assign(state, explorerFixture("success")); state.result.focused = false; }],
     ["no-JavaScript active run", "no-JavaScript run control is visibly rendered", (state) => { Object.assign(state, explorerFixture("no-js", "no-js")); state.run.inspection = explorerPart(320, 30); }],
     ["no-JavaScript hidden notice", "no-JavaScript no-JavaScript notice is hidden", (state) => { Object.assign(state, explorerFixture("no-js", "no-js")); state.noJs.inspection.hidden = true; }],
-    ["print missing SQL", "print SQL content is missing", (state) => { Object.assign(state, explorerFixture("initial", "print")); state.sql.text = "檢視或修改查詢語句"; }],
     ["document overflow", "document scrolls sideways", (state) => { state.document.scrollWidth = 1281; }],
     ["zoom contradictory result", "zoom explore initial result is not empty", (state) => { Object.assign(state, explorerFixture("initial", "zoom")); state.result.text = "舊答案"; state.result.hasRows = true; state.result.inspection = explorerPart(560, 60); }],
   ];
@@ -12752,9 +12737,10 @@ async function main() {
       failures.push(`${label} did not reach ${expected}; last state ${JSON.stringify(last)}`);
       return explorerGuidedWorkspaceSnapshot("normal");
     };
+    /* The page no longer carries a query box; `__twairSetQuery` is the seam
+       chapter 9 exposes so these states stay reachable. See the note beside it. */
     const clickWithSql = (sql) => evaluate(`(() => {
-      const sql = document.querySelector("#sql");
-      if (${JSON.stringify(sql)} !== null) sql.value = ${JSON.stringify(sql)};
+      if (${JSON.stringify(sql)} !== null) window.__twairSetQuery(${JSON.stringify(sql)});
       const run = document.querySelector("#run");
       run.focus();
       run.click();
@@ -12850,14 +12836,14 @@ async function main() {
       } else if (exportControls.hidden) {
         failures.push("explore export controls stayed hidden after a successful query");
       } else {
-        if (exportControls.labels.length !== 2) {
-          failures.push(`explore export controls show ${exportControls.labels.length} buttons, expected 2`);
+        /* One control, not two. The share-a-query link went with the query
+           box: a link carrying SQL nobody can read or edit is a link to
+           nothing. The CSV button is the whole export surface now. */
+        if (exportControls.labels.length !== 1) {
+          failures.push(`explore export controls show ${exportControls.labels.length} buttons, expected 1`);
         }
         if (!exportControls.labels.some((label) => /CSV/u.test(label) && /\d/u.test(label))) {
           failures.push(`explore CSV button names no row count: ${JSON.stringify(exportControls.labels)}`);
-        }
-        if (!exportControls.labels.some((label) => /連結/u.test(label))) {
-          failures.push(`explore has no share-link button: ${JSON.stringify(exportControls.labels)}`);
         }
       }
       const deferredAfterClick = requests.slice(actionRequestIndex).filter(deferredRequest);
@@ -13030,7 +13016,6 @@ async function main() {
         { name: "reordered steps", expected: "step 1 key changed", script: `(() => { const p=document.querySelector("[data-explorer-path]"); p.prepend(p.lastElementChild); })()` },
         { name: "hidden run", expected: "run control is hidden", script: `document.querySelector("#run").hidden=true` },
         { name: "wrong run AX", expected: "run accessible text changed", script: `document.querySelector("#run").setAttribute("aria-label", "開始")` },
-        { name: "controls after SQL", expected: "source order changed", script: `document.querySelector("[data-explorer-sql]").after(document.querySelector("[data-explorer-controls]"))` },
         { name: "result before tables", expected: "source order changed", script: `document.querySelector("[data-explorer-tables]").before(document.querySelector("[data-explorer-result]"))` },
         { name: "caveat before result", expected: "source order changed", script: `document.querySelector("[data-explorer-result]").before(document.querySelector("[data-explorer-caveat]"))` },
         { name: "duplicate result", expected: "results count is 2", script: `document.querySelector("[data-explorer-result]").after(document.querySelector("[data-explorer-result]").cloneNode(true))` },
@@ -15774,10 +15759,15 @@ async function main() {
         `${totals.noScriptSecondaryDisclosures}, expected ${EXPECTED_SECONDARY_DISCLOSURES}`,
     );
   }
-  if (
-    totals.noScriptSqlDisclosures === 0 ||
-    totals.noScriptSqlDisclosures !== EXPECTED_SQL_DISCLOSURES
-  ) {
+  /*
+   * Zero is now the correct total, so the `=== 0` guard has to go with it.
+   *
+   * It was there to catch a selector that had stopped matching — a count of
+   * zero used to mean the check had lost its subject rather than passed. There
+   * is no subject any more: chapter 9 shows no query, and what this inventory
+   * holds is that none comes back.
+   */
+  if (totals.noScriptSqlDisclosures !== EXPECTED_SQL_DISCLOSURES) {
     failures.push(
       `no-JavaScript SQL disclosure inventory totals ${totals.noScriptSqlDisclosures}, ` +
         `expected ${EXPECTED_SQL_DISCLOSURES}`,

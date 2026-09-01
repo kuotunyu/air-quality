@@ -129,7 +129,7 @@ export const CHAPTERS: readonly Chapter[] = [
     nav: "資料查詢",
     title: "資料查詢",
     question: "如何直接查詢公開 Parquet，而不經過伺服器？",
-    claim: "以 SQL 直接查詢 Parquet 檔，不經過任何伺服器。",
+    claim: "六個問題，在你自己的瀏覽器裡查完，不經過任何伺服器。",
   },
   {
     n: 10,

@@ -1008,7 +1008,7 @@ def methods_case_index_failures_for_text(html: str) -> list[str]:
 
 
 EXPLORER_STEPS = (
-    ("choose", "選一個問題", "從六個現有範例開始；需要時再展開 SQL。"),
+    ("choose", "選一個問題", "六個問題，每一個都問得出一張可以下載的表。"),
     ("execute", "在瀏覽器內執行", "按下按鈕後才載入查詢引擎與可用資料。"),
     ("read", "讀結果與限制", "把表格、空結果或錯誤，和下方限制一起讀。"),
 )
@@ -1121,7 +1121,6 @@ def explorer_guided_workspace_failures_for_text(
 
     hook_contract = (
         ("controls", "data-explorer-controls"),
-        ("sql", "data-explorer-sql"),
         ("tables", "data-explorer-tables"),
         ("result", "data-explorer-result"),
         ("caveat", "data-explorer-caveat"),
@@ -1139,7 +1138,7 @@ def explorer_guided_workspace_failures_for_text(
             if workspace is None or not matches[0].is_inside(workspace):
                 failures.append(f"explore {label} moved outside the workspace")
 
-    order_labels = ("controls", "sql", "tables", "result", "caveat")
+    order_labels = ("controls", "tables", "result", "caveat")
     ordered = [hooks[label] for label in order_labels]
     if path is not None and all(element is not None for element in ordered):
         observed_order = [
@@ -1155,13 +1154,12 @@ def explorer_guided_workspace_failures_for_text(
             "example-select",
             "run",
             "status",
-            "sql",
             "tables",
             "result",
             "explorer-examples",
         )
     }
-    for identifier in ("example-select", "run", "status", "sql", "tables", "result"):
+    for identifier in ("example-select", "run", "status", "tables", "result"):
         visible = [element for element in ids[identifier] if element.visible]
         if len(visible) != 1 or visible != ids[identifier]:
             failures.append(f"explore #{identifier} inventory changed: {len(visible)}")
@@ -1372,7 +1370,7 @@ def load_data_provenance_contract() -> DataProvenanceContract:
         ),
         "L2": (
             f"{hourly_observations / 1e8:.2f} 億筆完整逐時觀測，含每一筆的品管旗標。"
-            "不發布— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
+            "不發布— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
         ),
     }
     return DataProvenanceContract(descriptions=descriptions, downloads=tuple(downloads))
@@ -3306,9 +3304,6 @@ def _run_explorer_preflight() -> None:
         + '</select><button id="run" type="button">執行查詢</button>'
         '<span id="status" role="status" aria-live="polite"></span></div>'
     )
-    sql_panel = (
-        '<details data-explorer-sql><summary>SQL</summary><textarea id="sql"></textarea></details>'
-    )
     tables = '<div id="tables" data-explorer-tables>tables</div>'
     result = '<div id="result" data-explorer-result tabindex="-1"></div>'
     caveat = "<div data-explorer-caveat>caveat</div>"
@@ -3321,7 +3316,7 @@ def _run_explorer_preflight() -> None:
     )
     valid = (
         '<section data-explorer-workspace data-explorer-state="initial">'
-        f"{primary}{sql_panel}{tables}{result}{caveat}</section>{script}"
+        f"{primary}{tables}{result}{caveat}</section>{script}"
     )
     valid_failures = explorer_guided_workspace_failures_for_text(valid, expected_examples)
     if valid_failures:
@@ -3408,18 +3403,14 @@ def _run_explorer_preflight() -> None:
                 "guide after controls", valid, guide + nojs + controls, nojs + controls + guide
             ),
         ),
-        "SQL before controls": (
+        "tables before controls": (
             "explore guide-to-result source order changed",
             changed(
-                "SQL before controls",
+                "tables before controls",
                 valid,
-                controls + "</div>" + sql_panel,
-                sql_panel + controls + "</div>",
+                controls + "</div>" + tables,
+                tables + controls + "</div>",
             ),
-        ),
-        "tables before SQL": (
-            "explore guide-to-result source order changed",
-            changed("tables before SQL", valid, sql_panel + tables, tables + sql_panel),
         ),
         "result before tables": (
             "explore guide-to-result source order changed",
@@ -5029,7 +5020,7 @@ def _run_preflight() -> None:
         "L1": "Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。",
         "L2": (
             "3.40 億筆完整逐時觀測，含每一筆的品管旗標。"
-            "不發布— 只發衍生產物與完整管線，執行一次 twair ingest 加 twair build 即可獨立重建。"
+            "不發布— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
         ),
     }
     data_expected_downloads = tuple(
@@ -5052,7 +5043,7 @@ def _run_preflight() -> None:
 <dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span><span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>
 <dd data-data-layer-description="L1">Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。</dd>
 <dt data-data-layer="L2"><span data-data-layer-term>L2 站-時</span><span data-data-layer-use>重現者 · 逐時稽核與管線重建</span></dt>
-<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>— 只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加 <code>twair build</code> 即可獨立重建。</dd>
+<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。</dd>
 </dl>
 <h2>下載</h2>
 <a href="/data/meta.json" download>資料與產製資訊</a>

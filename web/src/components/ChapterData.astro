@@ -95,7 +95,7 @@ const zhDate = (value: string) => {
       <li><a href="#downloads"><strong>快速查看月資料</strong></a><span>下載 L0 JSON；網站圖表使用同一層。</span></li>
       <li><a href="#downloads"><strong>分析 PM10／PM2.5 日資料</strong></a><span>下載 Pages 已發布的 L1 Parquet。</span></li>
       <li><a href={href("explore")}><strong>依測站或日期查詢，再匯出 CSV</strong></a><span>前往第九章，從六個範例開始。</span></li>
-      <li><a href="#rebuild"><strong>重建完整逐時資料</strong></a><span>執行 twair ingest 與 twair build；L2 不轉散布。</span></li>
+      <li><a href="#rebuild"><strong>重建完整逐時資料</strong></a><span>以公開原始檔與專案管線在本機重建；L2 不轉散布。</span></li>
     </ol>
   </div>
 
@@ -107,7 +107,7 @@ const zhDate = (value: string) => {
       {
         label: "L2 · 站－時",
         title: "完整逐時觀測與品管旗標",
-        detail: "不轉散布；以公開原始檔與 twair ingest、twair build 管線獨立重建。",
+        detail: "不轉散布；以公開原始檔與專案的匯入、建置管線獨立重建。",
         tone: "boundary",
       },
       {
@@ -155,8 +155,7 @@ const zhDate = (value: string) => {
       </dt>
       <dd id="rebuild" data-data-layer-description="L2">
         {hourlyObservationsShort}筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>—
-        只發衍生產物與完整管線，執行一次 <code>twair ingest</code> 加{" "}
-        <code>twair build</code> 即可獨立重建。
+        只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。
       </dd>
     </dl>
   </div>
