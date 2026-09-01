@@ -86,10 +86,14 @@ const position = !prev ? "first" : !next ? "last" : "middle";
     padding-block: var(--space-3);
   }
 
+  /* 2026-09-02 — a panel: a surface without a line around it, the rule the
+     concept diagrams settled on. A raised card with a border is what a figure
+     or a disclosure gets; the chapter's navigation is furniture, and it sits in
+     the page's recess. */
   .chapter-nav-panel {
-    border: 1px solid var(--line-soft);
+    border: 0;
     border-radius: var(--radius);
-    background: var(--bg-raised);
+    background: var(--bg-sunken);
   }
 
   .chapter-nav-head {

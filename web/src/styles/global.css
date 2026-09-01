@@ -140,8 +140,14 @@
    * surfaces. Browser measurements selected fog-white and restrained green-grey
    * surfaces that keep hue subordinate to the unchanged data palette.
    */
-  --bg: oklch(0.971 0.003 145.5); /* #f4f6f4 */
-  --bg-raised: oklch(0.990 0.003 128.5); /* #fbfcfa */
+  /* 2026-09-02 — the ladder widens at both ends of the page surface.
+     Measured on the rendered pages, a raised card sat 0.019 of lightness
+     above the page and a sunken panel 0.032 below it, and the page read
+     flat. The page moves up to 0.975 and the raised surface to 0.997, so
+     the two steps are 0.022 and 0.036; `--bg-sunken` stays, because c0
+     measures 3.10:1 against it and the mark floor is 3.0. */
+  --bg: oklch(0.975 0.003 145.5); /* #f5f7f5 */
+  --bg-raised: oklch(0.997 0.003 128.5); /* #fdfefc */
   --bg-sunken: oklch(0.939 0.005 165); /* #e8ecea */
   /*
    * 2026-09-01 — the visible neutrals share the ink's temperature.
@@ -164,8 +170,13 @@
    * The dark theme is untouched: it is already one family, all 250. A cool
    * night page was coherent before this and stays coherent.
    */
-  --line: oklch(0.858 0.009 210);
-  --line-soft: oklch(0.918 0.009 210);
+  /* 2026-09-02 — one step darker, both of them. At 0.858 a table rule
+     measured 1.63:1 against the page and the card borders were the part
+     of the page readers could not find. 0.830 and 0.890 measure 1.57:1
+     and 1.29:1 against the new page surface; still structure rather than
+     ink, and now visibly there. */
+  --line: oklch(0.830 0.009 210);
+  --line-soft: oklch(0.890 0.009 210);
   /* The chapter divider, and the only line on the page that carries meaning
      rather than just separating two boxes. `--line` measures 1.63:1 against the
      body — fine for a table rule you are already looking at, not fine for the
@@ -764,11 +775,20 @@
 :root[data-theme="dark"] {
     color-scheme: dark;
 
+    /* 2026-09-02 — the lines move one step lighter, as in the light ladder;
+       the surfaces do not. Lifting the raised surface was tried and measured
+       twice against it: the three inks, solved to Lc 92 / 80 / 70 on the
+       worst surface, allow at most 0.272 before --text-muted drops to 79.5,
+       and at 0.272 the site gate measured a categorical mark on the forecast
+       chapter's chart at 2.83:1 against a chart surface, under the 3:1 those
+       marks were solved for. This theme's surfaces were already 0.057 apart,
+       three times the light theme's step, so the lines are the part that was
+       flat. */
     --bg: oklch(0.205 0.009 250);
     --bg-raised: oklch(0.262 0.009 250);
     --bg-sunken: oklch(0.168 0.012 250);
-    --line: oklch(0.362 0.010 250);
-    --line-soft: oklch(0.286 0.009 250);
+    --line: oklch(0.400 0.010 250);
+    --line-soft: oklch(0.320 0.009 250);
     /* Same solve against the dark body — and same correction: 0.530 measured
        2.92 against `--bg-sunken`, not the 3:1 it was supposed to be. */
     --rule: oklch(0.536 0.012 250);

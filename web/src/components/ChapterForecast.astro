@@ -287,6 +287,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
       <div
         class="plot"
         data-readout
+        data-idle-readout
         style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(rmseTicks.map((t) => n(t, 0)))}px;--y-lo:${yRmse.domain[0]};--y-hi:${yRmse.domain[1]}`}
       >
     <script
@@ -451,6 +452,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
       <div
         class="plot"
         data-readout
+        data-idle-readout
         style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(metricTicks.map((t) => n(t, 1)))}px;--y-lo:${yMetric.domain[0]};--y-hi:${yMetric.domain[1]}`}
       >
     <script
@@ -782,6 +784,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
       <div
         class="plot"
         data-readout
+        data-idle-readout
         style={`--plot-ar:42;--plot-min:250px;--plot-max:400px;--y-w:${yGutter(sarTicks.map((t) => n(t, 0)))}px;--y-lo:${ySar.domain[0]};--y-hi:${ySar.domain[1]}`}
       >
     <script

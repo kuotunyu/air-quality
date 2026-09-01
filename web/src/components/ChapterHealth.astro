@@ -270,6 +270,7 @@ const langOf = (s: string | null | undefined) =>
       <div
         class="plot"
         data-readout
+        data-idle-readout
         style={`--plot-ar:44;--plot-min:250px;--plot-max:420px;--y-w:${yGutter(pafTicks.map((t) => `${n(t * 100, 0)}%`))}px;--y-lo:${yPaf.domain[0]};--y-hi:${yPaf.domain[1]}`}
       >
     <script
@@ -434,6 +435,7 @@ const langOf = (s: string | null | undefined) =>
       <div
         class="plot"
         data-readout
+        data-idle-readout
         style={`--plot-ar:38;--plot-min:230px;--plot-max:360px;--y-w:${yGutter(shareTicks.map((t) => `${n(t * 100, 0)}%`))}px;--y-lo:${yShare.domain[0]};--y-hi:${yShare.domain[1]}`}
       >
     <script

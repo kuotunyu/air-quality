@@ -178,6 +178,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
           <div
             class="plot"
             data-readout
+            data-idle-readout
             style={`--plot-ar:36;--plot-min:220px;--plot-max:320px;--y-w:${yGutter(dTicks.map((t) => n(t, 0)))}px;--y-lo:${dDomain[0]};--y-hi:${dDomain[1]}`}
           >
             <script
@@ -674,6 +675,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
         <div
           class="plot"
           data-readout
+          data-idle-readout
           style={`--plot-ar:40;--plot-min:240px;--plot-max:380px;--y-w:${yGutter(gTicks.map((t) => n(t, 0)))}px;--y-lo:${gDomain[0]};--y-hi:${gDomain[1]}`}
         >
             <script
@@ -1208,9 +1210,11 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
    * border there is no box to be unequal, so `align-items: start` can let each
    * side end where its text does.
    */
+  /* 2026-09-02 — the closing aside is a panel, not a card: the recess
+     surface, no frame, and only the leading rule it already had. */
   .epilogue {
-    background: var(--bg-raised);
-    border: 1px solid var(--line);
+    background: var(--bg-sunken);
+    border: 0;
     border-radius: var(--radius);
     padding: var(--space-4);
     border-top: 1px solid var(--line);

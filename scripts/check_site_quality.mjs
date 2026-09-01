@@ -15168,7 +15168,7 @@ async function main() {
         (button) => button.getAttribute("aria-label") === "深色模式（深色／淺色）",
       ),
       chromeSynchronized:
-        document.querySelector("[data-theme-color]")?.getAttribute("content") === "#f4f6f4" &&
+        document.querySelector("[data-theme-color]")?.getAttribute("content") === "#f5f7f5" &&
         document.querySelector("[data-theme-icon]")?.getAttribute("href") ===
           document.querySelector("[data-theme-icon]")?.getAttribute("data-light"),
     }))()`);

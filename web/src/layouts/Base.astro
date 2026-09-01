@@ -117,11 +117,13 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
     {/* 2026-08-02 — supersedes the media-query mechanism above: the reading
         theme is now an explicit stored choice, and the light chrome uses the
         measured fog-white page surface. */}
+    {/* 2026-09-02 — the light page moved to oklch(0.975 0.003 145.5); read back
+        through a 1×1 canvas as #f5f7f5. Dark is unchanged at #14181b. */}
     <meta
       name="theme-color"
-      content="#f4f6f4"
+      content="#f5f7f5"
       data-theme-color
-      data-light="#f4f6f4"
+      data-light="#f5f7f5"
       data-dark="#14181b"
     />
 
