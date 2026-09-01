@@ -213,7 +213,7 @@ def national_trend(
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
     """Annual national mean, computed two ways because they disagree.
 
-    Taiwan's monitoring network grew from one station in 1982 to 84 by 1999,
+    Taiwan's monitoring network grew from one station in 1982,
     and its PM2.5 network from 5 stations to 77. A mean over "all stations
     reporting that year" therefore compares different places in different
     years, and part of any trend it shows is the network changing shape rather
@@ -368,9 +368,10 @@ def export_story(destination: Path | None = None, *, pollutant: str = "PM2.5") -
                     ),
                     "min_annual_coverage": MIN_ANNUAL_COVERAGE,
                     "why": (
-                        "The network grew from 1 station (1982) to 84 (1999), and the "
-                        "PM2.5 network from 5 to 77. An all-stations mean partly "
-                        "measures that growth rather than the air."
+                        "The network grew from 1 station (1982), and the PM2.5 "
+                        "network from 5 comparable stations (1998) to 77 (2025). "
+                        "An all-stations mean partly measures that growth rather "
+                        "than the air."
                     ),
                 },
                 "panel": panel,
@@ -646,10 +647,10 @@ def _export_spatial(root: Path) -> list[Path]:
                     "而面板是完整案例，網路本身就被資料完整度篩選過。",
                 ],
                 "refusals": [
-                    "不做人口加權暴露：repo 內沒有任何人口網格，"
-                    "拿測站平均乘上任何現有欄位都不是暴露量。",
+                    "不做人口加權暴露：本專案沒有任何人口網格，"
+                    "拿測站平均乘上任何現有欄位都不是暴露量",
                     "不出 1 公里濃度場：測站最近鄰距離從 0.6 到 67 公里，"
-                    "1 公里的格子宣稱了網路給不起的解析度。",
+                    "1 公里的格子宣稱了網路給不起的解析度",
                 ],
             },
         )
@@ -759,7 +760,7 @@ def _export_sarima(root: Path) -> list[Path]:
                     "把兩者畫在同一張圖上，正是本章在記錄的那種錯誤。"
                 ),
                 "no_lightgbm": (
-                    "而 D10 要問的問題不需要它：一個連「一小時前的值」都打不贏的方法，"
+                    "而這一節要問的問題不需要它：一個連「一小時前的值」都打不贏的方法，"
                     "被放棄就是對的，不管梯度提升樹做得如何。"
                 ),
             },
@@ -922,10 +923,16 @@ def _export_health(root: Path) -> list[Path]:
                         "rr_per_10": f.rr_per_10,
                         "rr_per_10_low": f.rr_per_10_low,
                         "rr_per_10_high": f.rr_per_10_high,
-                        "outcome": f.outcome,
+                        # The registry speaks the literature's language; the
+                        # page speaks the reader's. Outcome and caveat are
+                        # translated at this boundary — the citation itself
+                        # stays in the language it was published in — and an
+                        # untranslated function falls through in English rather
+                        # than blocking the export.
+                        "outcome": _ERF_OUTCOME_ZH.get(f.name, f.outcome),
                         "source": f.source,
                         "source_url": f.source_url,
-                        "caveat": f.caveat,
+                        "caveat": _ERF_CAVEAT_ZH.get(f.name, f.caveat),
                     }
                     for f in functions.values()
                 ],
@@ -1547,7 +1554,7 @@ def _persistence_baseline_why() -> str:
         )
 
     return (
-        f"Phase 2 量到它的 R² 是 {baseline:.3f}，勝過所有解釋性模型的 {explanatory:.3f}，"
+        f"本專案稍早量到它的 R² 是 {baseline:.3f}，勝過所有解釋性模型的 {explanatory:.3f}，"
         "因為它用了 PM2.5 自己的前一個值。它是要超越的門檻，不是比較對象。"
     )
 
@@ -1564,11 +1571,42 @@ def _signed(value: float, places: int = 3) -> str:
 _CHINESE_NUMERALS = ("零", "一", "兩", "三", "四", "五", "六", "七", "八", "九", "十")
 
 
+# Reader-language renderings of conf/health.yaml's response functions, keyed
+# by function name so a renamed or added function cannot silently wear the
+# wrong translation. The English originals stay in the conf as the analysis
+# record; these exist because chapter 7's audience reads Chinese and the
+# caveat is load-bearing there, not decoration.
+_ERF_OUTCOME_ZH = {
+    "who_2021_allcause": "成人全因死亡（all-cause mortality）",
+}
+
+_ERF_CAVEAT_ZH = {
+    "who_2021_allcause": (
+        "以對數線性外推。這條係數背後的世代研究多在北美與歐洲、"
+        "濃度約 30 μg/m³ 以下的環境完成；把它套用到台灣 1990 年代的水準，"
+        "是外推到觀測範圍之外。每一項結果都同時標出落在範圍外的測站-年比例。"
+    ),
+}
+
+
+def _fraction_of(value: int) -> str:
+    """The fraction register for a measured multiple: 「一半」, 「三分之一」.
+
+    Fractions count with 二 rather than the counting 兩 (二分之一, never
+    兩分之一), and a halving is simply 一半. Past ten this falls back to
+    digits, for the same reason `_counted` does.
+    """
+    if value == 2:
+        return "一半"
+    numerals = ("零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十")
+    return f"{numerals[value]}分之一" if 0 <= value <= 10 else f"{value} 分之一"
+
+
 def _counted(value: int) -> str:
     """A small count in the voice the chapters use for counts.
 
     Measurements are Arabic here — 0.859, 24 小時 — and characterisations are
-    not: 「三步決定」, 「兩條基準線」, 「掉三倍」. Deriving the multiple from the data
+    not: 「三步決定」, 「兩條基準線」, 「掉到三分之一」. Deriving the multiple from the data
     and then printing it as `3` would have been correct and would have changed
     the register of the sentence, so the mapping keeps the register while the
     value stays measured. Anything past ten falls back to digits rather than
@@ -1645,7 +1683,7 @@ def _forecast_reading(horizons: list[dict[str, Any]]) -> list[dict[str, str]]:
 
     return [
         {
-            "claim": f"R² 掉{_counted(round(fall))}倍的同時，skill 沒有跟著掉",
+            "claim": f"R² 掉到{_fraction_of(round(fall))}的同時，skill 沒有跟著掉",
             "detail": (
                 f"R² 從 {first_r2:.3f} 掉到 {last_r2:.3f}，而 skill 收在比起點更高的地方。"
                 "R² 衡量的是「這個目標本來多好預測」，而 PM2.5 一小時後"

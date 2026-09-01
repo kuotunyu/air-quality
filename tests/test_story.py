@@ -621,13 +621,18 @@ class TestChapterSixReadsItsOwnTable:
         rows = self.horizons()
         rows[0]["model_r2"], rows[-1]["model_r2"] = 0.8, 0.4
 
-        assert "R² 掉兩倍的同時" in story._forecast_reading(rows)[0]["claim"]
+        assert "R² 掉到一半的同時" in story._forecast_reading(rows)[0]["claim"]
 
     def test_the_multiple_keeps_the_register_of_a_characterisation(self) -> None:
         """Measurements are Arabic here and characterisations are not. Deriving
         the value and printing it as `3` would be correct and would change the
-        voice of the sentence."""
-        assert "R² 掉三倍" in story._forecast_reading(self.horizons())[0]["claim"]
+        voice of the sentence.
+
+        The phrasing moved once, deliberately: 「掉 N 倍」 says a quantity fell
+        by more than all of itself, which a ratio cannot do. 「掉到 N 分之一」
+        keeps the characterisation register while being arithmetic a reader
+        can check against the two R² values beside it."""
+        assert "R² 掉到三分之一" in story._forecast_reading(self.horizons())[0]["claim"]
 
     def test_a_negative_split_is_not_described_as_absent(self) -> None:
         """「現在這張表沒有負的格子」 is a claim about the current table."""

@@ -339,8 +339,15 @@ const taiwanAnnualGuide = (
   </p>
 
   <p>
-    1982 年全台只有 1 個監測站，1999 年才達到 84 站的高峰；PM2.5 更晚，
-    1998 年只有 5 個實驗性測點，2005 年才成為全國網路。
+    {/*
+      This used to say the network 「1999 年才達到 84 站的高峰」. The archive
+      supports no reading of that: 1999 has 74 stations reporting (75 ever seen
+      by then), and the single-year peak is 78, in 2005 and 2011. The sentence
+      now states only counts the payload can verify — 1 station in 1982, and
+      the PM2.5 network's 5 (1998) → 75 (2006) → 77 (2025).
+    */}
+    1982 年全台只有 1 個監測站；PM2.5 更晚，1998 年只有 5 個實驗性測點，
+    2006 年才有 75 站的全國樣本（2025 年為 77 站）。
     拿「當年有回報的所有測站」平均，比較的是不同年份的不同地方，
     趨勢裡有一部分來自測站網的組成改變，而非濃度改變。
   </p>
@@ -423,7 +430,8 @@ const taiwanAnnualGuide = (
       同一批測站只從 {n(dwNormalised[0], 1)} 降到 {n(dwNormalised[dwNormalised.length - 1], 1)}，
       降了 {n(dw.panel.normalised_fall, 1)}。
       兩條序列的下降幅度相差 <strong>{n(dw.panel.observed_fall - dw.panel.normalised_fall, 1)} μg/m³，
-      相當於觀測下降幅度的 {n(dwShare, 0)}%</strong>。這是觀測序列與模型標準化序列的
+      相當於觀測下降幅度的 {n(dwShare, 1)}%</strong>（差值以未捨入的原值相減，
+      與上列兩個已捨入的數字相減略有出入）。這是觀測序列與模型標準化序列的
       下降幅度差，不是「天氣造成 {n(dwShare, 0)}%」的因果證明；剩餘比例也不是排放或
       政策貢獻估計。長程傳輸、未量測氣象、模型誤差與其他同期變化仍留在比較裡。
     </p>
