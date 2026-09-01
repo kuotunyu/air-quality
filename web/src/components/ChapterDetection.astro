@@ -735,17 +735,74 @@ const estimandLabel = (kind: string) => {
     display: block;
   }
 
+  /*
+   * The reading key is also the figure's legend, and it now reads as one.
+   *
+   * As a bare ordered list in a three-column grid it collided with itself:
+   * `gap` was `--space-2` — 13px, under one CJK character of the text it
+   * separated — and the browser's default `outside` markers hang beyond the
+   * list item's box, which inside a grid cell means INSIDE the previous
+   * column: 「…同一程序仍」 ran straight into 「2.」. The owner circled it.
+   *
+   * The markers move inside with a hanging indent so a wrapped second line
+   * aligns under the text rather than under the numeral, styled to the site's
+   * apparatus numerals (the 01/02/03 of the reading map). The styling stays on
+   * `::marker` rather than moving to a `::before`, because a marker is a
+   * ListMarker node in the accessibility tree and stays out of the step's
+   * accessible text, which `check_site_quality.mjs` pins verbatim — today's
+   * default numerals pass that gate by exactly this route.
+   *
+   * Step one names the grey rug and step two the orange dots, so their
+   * lead-ins are set in the ink of the mark they name — `--text-faint` IS the
+   * rug's stroke, `--k1-ink` the reading weight of the dots' `--k1`. The key
+   * doubles as the legend without a swatch row.
+   */
+  .detection-reading-key {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0 0 var(--space-3);
+    padding: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+  }
+
+  .detection-reading-key > li {
+    list-style-position: inside;
+    padding-inline-start: 1.7rem;
+    text-indent: -1.7rem;
+  }
+
+  .detection-reading-key > li::marker {
+    /* Two plain spaces, not a CSS escape: generated-content strings keep
+       their whitespace literally, so this needs no non-breaking trick. */
+    content: "0" counter(list-item) "  ";
+    color: var(--text-faint);
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+
+  [data-detection-reading-step="placebo"] > strong {
+    color: var(--text-faint);
+  }
+
+  [data-detection-reading-step="event"] > strong {
+    color: var(--k1-ink);
+  }
+
   /* At the measured 1280×720 opening, the vertical key ran from 295.765625px
      to 407.9375px and pushed the first plot to 452.9375px, past the existing
-     396px opening boundary. The three reading steps share one baseline once
-     the site's established 64rem wide-layout boundary supplies three columns;
+     396px opening boundary. The three reading steps share one row once the
+     site's established 64rem wide-layout boundary supplies three columns;
      below it, including 375px, the ordered list stays one vertical sequence. */
   @media (min-width: 64rem) {
     .detection-reading-key {
-      display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      align-items: baseline;
-      gap: var(--space-2);
+      align-items: start;
+      /* Column gap at `--space-4`: the previous `--space-2` was 13px, less
+         than one character of the text it separated. Row gap stays tight —
+         it only matters while a step wraps. */
+      gap: var(--space-1) var(--space-4);
       /* The first grid measurement still left exactly 45px from the key's
          370.546875px bottom to the plot's 415.546875px top. Removing only the
          list's default end margin returns that duplicated gap to the plot. */
