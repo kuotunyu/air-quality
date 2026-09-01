@@ -242,6 +242,19 @@ jobs:
       - name: Every Pages download is registered and built
         run: node scripts/check_pages_publication.mjs
 
+      # The three served faces are subsets of the characters the built pages
+      # used on the day `scripts/site_fonts.py build` ran. A copy change that
+      # introduces a character the subset lacks breaks nothing a test can see:
+      # the browser draws it from the system stack, in a different face,
+      # silently. This walks the built pages with the generator's own parser,
+      # reads the served cmaps, and names the characters. No project install,
+      # same as the term gate; fontTools reads the woff2 files and brotli
+      # decompresses them. On its first run against the real site it found the
+      # rail's close glyph in none of the three sources and the subscript of
+      # NO₂ in only one of them.
+      - name: Every character on the built pages is in the face that draws it
+        run: uv run --no-project --python 3.12 --with fonttools --with brotli python scripts/site_fonts.py check
+
       # A source newline is whitespace in HTML, and Chinese has no inter-word
       # spaces, so a wrapped source line becomes a visible gap mid-sentence.
       # Checked on the built output because the middleware that closes them only

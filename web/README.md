@@ -91,6 +91,27 @@ paint on later pages. `data-theme`, `color-scheme`, browser chrome, and the
 button icon stay in sync. Without JavaScript the site remains a complete static
 light document and the inactive theme control is absent.
 
+## Fonts
+
+Three self-hosted faces under `src/fonts/`: Noto Sans TC (reading and
+interface), Noto Serif TC (the headings and the homepage's one display
+sentence), IBM Plex Sans (digits and Latin, first in both sans stacks). They
+are subsets: `scripts/site_fonts.py build` reads the built pages and keeps the
+characters they use plus a base set, so a copy change that introduces a new
+character outside that base needs
+
+```bash
+npm run build && uv run python scripts/site_fonts.py build
+```
+
+and a commit of `src/fonts/`. CI runs `site_fonts.py check`, which names any
+character on the pages that the served faces lack. `src/fonts/fonts.json`
+records each source font's sha256, the axes kept and the byte sizes. All three
+are OFL; the licence texts sit beside the files. The files live under `src/`
+rather than `public/` because a root-relative `url()` in a stylesheet is not
+rewritten for the GitHub Pages base path; the bundler emits hashed,
+base-prefixed paths for assets it resolves itself.
+
 ## Charts
 
 There is no charting library. Charts are SVG built in Astro frontmatter, so
