@@ -20,6 +20,7 @@
 import health from "../../public/data/story/health.json";
 import { axisNumber, linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
+import { href } from "../lib/chapters";
 import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
@@ -333,7 +334,8 @@ const langOf = (s: string | null | undefined) =>
       可歸因比例，{panel.stations} 個固定測站、{panel.start_year}–{
         years[years.length - 1]
       } 年。四條線是<strong>同一批濃度資料</strong>，只差在以哪個濃度作為比較基準。
-      標籤上的數字就是那個基準。
+      標籤上的數字就是那個基準。年均值由小時值聚合而來，逐時 PM2.5 另有
+      <a href={`${href("data")}#hourly-pm25`}>環境部的但書</a>。
     </Fragment>
   </EvidenceFigure>
 

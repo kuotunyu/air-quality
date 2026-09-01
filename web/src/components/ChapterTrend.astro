@@ -9,6 +9,7 @@
 import TrendChart from "./TrendChart.astro";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
+import { href } from "../lib/chapters";
 import ConceptFlow from "./ConceptFlow.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
@@ -300,6 +301,7 @@ const taiwanAnnualGuide = (
     <Fragment slot="caption">
       全台 PM2.5 年均值。線在中斷處是真的斷開—那一年沒有足以計算的資料，
       而不是數值為零。年覆蓋率低於 75% 的測站年不列入計算。
+      這是全站一致的<a href={`${href("data")}#gaps`}>缺值處理方式</a>。
     </Fragment>
   </EvidenceFigure>
 

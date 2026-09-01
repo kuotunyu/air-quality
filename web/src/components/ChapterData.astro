@@ -12,6 +12,21 @@
  * repository. Two headings now, because a chapter that answers three questions
  * should show three answers, and the licence is one of them.
  *
+ * The chapter then spent a while looking purposeless, and the reason turned
+ * out to be measurable. Three of its passages appear on exactly one of the
+ * eleven built pages — 「這個專案不補值」, the 萬里 publication conflict, and
+ * 環境部's own caveat that beta-ray hourly PM2.5 is for warning reference only
+ * — and every one of them qualifies numbers the reader met chapters earlier.
+ * Nothing linked here. Not one chapter. So the limits that govern the whole
+ * site sat at the bottom of a page with no inbound path, under an opening list
+ * that spent two of its four entries sending the reader somewhere else.
+ *
+ * The opening register now states those three limits instead of routing, they
+ * are placed above the download table rather than below the licence, and
+ * chapters 1 and 7 link at the two that bear on what they show. Reading order
+ * within them is by scope: every line on the site, then every PM2.5 aggregate,
+ * then one station.
+ *
  * The rights below are transcribed from LICENSE, LICENSE-DATA and
  * docs/legal.md, not restated from memory. One thing is deliberately NOT copied
  * from README.md: it credits 「環境部與交通部中央氣象署」, but README.md's own
@@ -90,12 +105,11 @@ const zhDate = (value: string) => {
   </ChapterIntro>
 
   <div class="primary-register task-register" data-primary-evidence data-data-task-register>
-    <h2>先按用途選資料</h2>
+    <h2>引用這裡的數字之前</h2>
     <ol>
-      <li><a href="#downloads"><strong>快速查看月資料</strong></a><span>下載 L0 JSON；網站圖表使用同一層。</span></li>
-      <li><a href="#downloads"><strong>分析 PM10／PM2.5 日資料</strong></a><span>下載 Pages 已發布的 L1 Parquet。</span></li>
-      <li><a href={href("explore")}><strong>依測站或日期查詢，再匯出 CSV</strong></a><span>前往第九章，從六個範例開始。</span></li>
-      <li><a href="#rebuild"><strong>重建完整逐時資料</strong></a><span>以公開原始檔與專案管線在本機重建；L2 不轉散布。</span></li>
+      <li><a href="#gaps"><strong>缺的值就讓它缺</strong></a><span>檔案裡的 null 不是零，聚合之前要先把它排除。</span></li>
+      <li><a href="#hourly-pm25"><strong>逐時 PM2.5 帶著官方但書</strong></a><span>引用日均或年均時，一併帶上環境部對這個量測方法的保留。</span></li>
+      <li><a href="#wanli"><strong>萬里測站有一項未解的來源歧異</strong></a><span>用到 2025 年的萬里資料時，要知道那些值是在什麼情況下留下來的。</span></li>
     </ol>
   </div>
 
@@ -125,7 +139,7 @@ const zhDate = (value: string) => {
       {
         label: "讀者使用",
         title: "網站圖表、直接下載或瀏覽器查詢",
-        detail: "先按用途選時間尺度，再依檔案格式或第九章查詢工具取得資料。",
+        detail: "依需要的時間尺度選一層，再依檔案格式或第九章的查詢工具取得資料。",
       },
     ]}
   />
@@ -160,12 +174,56 @@ const zhDate = (value: string) => {
     </dl>
   </div>
 
+  <h2>使用限制</h2>
+
+  <div class="note caveat" id="gaps">
+    <strong>關於缺值。</strong>
+    這個專案不補值。無效值標記但不刪除、超出物理範圍的值保留原數字以供檢視、
+    覆蓋率不足的聚合直接<strong>不給平均值</strong>—寧可留一個洞，
+    也不給一個有偏誤的數字。網站上每條線的中斷都是真的中斷。
+  </div>
+
+  <div class="note caveat" id="hourly-pm25">
+    <strong>逐時 PM2.5 的官方但書。</strong>
+    環境部 ReadMe 載明：PM2.5 自動監測（貝他射線衰減法）的小時值僅供預警參考，
+    不宜直接與 24 小時空氣品質標準比較。本站的日均、年均由小時值聚合而來，
+    引用時請一併理解這個限制。
+  </div>
+
+  <details class="publication-disagreement" id="wanli" data-publication-disagreement>
+    <summary>萬里測站：官方停測公告與年度封存值不一致</summary>
+    <div class="publication-disagreement-body" data-publication-disagreement-body>
+      {wanliPm25Conflict ? (
+        <>
+          <p>
+            <a href={wanliPm25Conflict.source_url}>環境部公告</a>記載萬里測站自
+            <time datetime={wanliPm25Conflict.effective_from}>{zhDate(wanliPm25Conflict.effective_from)}</time>
+            起停止更新；但同一機關發布的 2025 年度封存檔，在該時間點之後仍有
+            {" "}{integer.format(wanliPm25Conflict.rows_at_or_after_event)} 筆 PM2.5 列，
+            其中 {integer.format(wanliPm25Conflict.numeric_rows_at_or_after_event)} 筆有數值、
+            {integer.format(wanliPm25Conflict.null_rows_at_or_after_event)} 筆保留為 null，
+            最晚到 {wanliPm25Conflict.last_post_event_ts?.replace("T", " ")}。
+          </p>
+          <p>
+            <strong>這是未解的來源歧異。</strong>
+            本專案按來源原樣保留並報告，沒有判定這些值有效或無效，也沒有因此改寫、刪除或補值。
+          </p>
+        </>
+      ) : (
+        <p>
+          本次靜態匯出沒有可用的萬里測站公告後比對結果；這代表證據未提供，不能顯示零筆或替來源下判斷。
+        </p>
+      )}
+    </div>
+  </details>
+
   <h2 id="downloads">下載</h2>
 
   <p>
     Pages 目前發布 PM10、PM2.5 的 L1；其餘測項可由本機管線產生。
     下列已發布檔案可直接取得，
     不需要註冊也不經過任何伺服器端處理。
+    要先依測站或日期挑出其中一段再匯出 CSV，用<a href={href("explore")}>第九章</a>的瀏覽器內查詢。
   </p>
 
   <ul class="supporting-downloads">
@@ -274,46 +332,6 @@ const zhDate = (value: string) => {
     查證過程與兩份敘述的原文留在<a href={repoFile("docs/legal.md")}>授權說明</a>裡。
   </div>
 
-  <div class="note caveat">
-    <strong>關於缺值。</strong>
-    這個專案不補值。無效值標記但不刪除、超出物理範圍的值保留原數字以供檢視、
-    覆蓋率不足的聚合直接<strong>不給平均值</strong>—寧可留一個洞，
-    也不給一個有偏誤的數字。網站上每條線的中斷都是真的中斷。
-  </div>
-
-  <details class="publication-disagreement" data-publication-disagreement>
-    <summary>萬里測站：官方停測公告與年度封存值不一致</summary>
-    <div class="publication-disagreement-body" data-publication-disagreement-body>
-      {wanliPm25Conflict ? (
-        <>
-          <p>
-            <a href={wanliPm25Conflict.source_url}>環境部公告</a>記載萬里測站自
-            <time datetime={wanliPm25Conflict.effective_from}>{zhDate(wanliPm25Conflict.effective_from)}</time>
-            起停止更新；但同一機關發布的 2025 年度封存檔，在該時間點之後仍有
-            {" "}{integer.format(wanliPm25Conflict.rows_at_or_after_event)} 筆 PM2.5 列，
-            其中 {integer.format(wanliPm25Conflict.numeric_rows_at_or_after_event)} 筆有數值、
-            {integer.format(wanliPm25Conflict.null_rows_at_or_after_event)} 筆保留為 null，
-            最晚到 {wanliPm25Conflict.last_post_event_ts?.replace("T", " ")}。
-          </p>
-          <p>
-            <strong>這是未解的來源歧異。</strong>
-            本專案按來源原樣保留並報告，沒有判定這些值有效或無效，也沒有因此改寫、刪除或補值。
-          </p>
-        </>
-      ) : (
-        <p>
-          本次靜態匯出沒有可用的萬里測站公告後比對結果；這代表證據未提供，不能顯示零筆或替來源下判斷。
-        </p>
-      )}
-    </div>
-  </details>
-
-  <div class="note">
-    <strong>逐時 PM2.5 的官方但書。</strong>
-    環境部 ReadMe 載明：PM2.5 自動監測（貝他射線衰減法）的小時值僅供預警參考，
-    不宜直接與 24 小時空氣品質標準比較。本站的日均、年均由小時值聚合而來，
-    引用時請一併理解這個限制。
-  </div>
 </section>
 
 <style>
@@ -473,6 +491,14 @@ const zhDate = (value: string) => {
    rest of the cells give up. */
 .table-wrap a[download] {
   font-weight: 650;
+}
+
+/* Chapter 1 and chapter 7 link straight at these three, and the site header
+   would otherwise cover whichever one the reader arrived for. */
+#gaps,
+#hourly-pm25,
+#wanli {
+  scroll-margin-top: 5rem;
 }
 
 .publication-disagreement-body {
