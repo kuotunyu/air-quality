@@ -297,7 +297,24 @@ const readingMap = [
       <>
         其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊—
         該站已停用而從清冊消失，位置改依審閱過的環境部歷史測站紀錄補上，
-        來源與查證日期記在 <code>conf/station_geo_historical.yaml</code>。
+        {/*
+          Framed and linked, with the path kept.
+
+          It was a bare filename mid-sentence — the one repository path on the
+          site still written that way — and a reader met it with nothing saying
+          it was a file, where it lived, or that they could open it. The first
+          repair replaced the path with a plain-language name and dropped it,
+          which `check_site_quality.mjs` rejected, correctly: the path is pinned
+          there as the NAMED AUTHORITY that makes 萬里's substituted coordinate
+          auditable, so removing it removes the thing the sentence is for.
+
+          So the frame is what was missing, not the path. The reader now gets
+          what it is, where it lives, and exactly which file — and can open it.
+          Line 421 of this component already links a path this way.
+        */}
+        來源與查證日期記在開放原始碼庫的測站歷史座標設定檔{" "}
+        <a href={repoFile("conf/station_geo_historical.yaml")}>
+          conf/station_geo_historical.yaml</a>。
         本章結果是在納入之後重算的；
       </>
     )}
