@@ -646,6 +646,7 @@ const rankPosition = (rank: number, total: number) =>
     container-type: inline-size;
   }
 
+
   /*
    * One column, because there is one control.
    *
@@ -659,10 +660,37 @@ const rankPosition = (rank: number, total: number) =>
     max-width: min(100%, 30rem);
     align-items: start;
     grid-template-columns: minmax(0, 1fr);
+    /*
+     * The two support rows sit under the field, not spaced apart from it.
+     *
+     * `.controls` gaps by `--space-2` for a row of separate fields; here the
+     * three areas are one field and the two lines that describe it, so the
+     * inherited gap was pushing 73px between the label and the help line and
+     * another 102px before the card. `--space-1` between the rows keeps them
+     * reading as one block; the field keeps the fuller gap above the help line.
+     */
+    gap: var(--space-1);
     grid-template-areas:
       "search"
       "help"
       "count";
+  }
+
+  .station-search-field {
+    margin-block-end: var(--space-1);
+  }
+
+  /*
+   * The control block's own trailing margin, not the row gap on top of it.
+   *
+   * `.controls` in global.css carries `margin-bottom: var(--space-3)` for a row
+   * of fields standing apart from what follows. Inside `.picker`, which is a
+   * grid with its own row gap once the two-up layout applies, that margin was
+   * being paid twice — measured 102px between the help line and the card the
+   * chapter exists to show.
+   */
+  .picker > .station-controls {
+    margin-bottom: var(--space-2);
   }
 
   .station-search-field {
@@ -774,9 +802,13 @@ const rankPosition = (rank: number, total: number) =>
    * again when the box is cleared.
    */
   .control-note {
-    min-height: 1.5em;
+    /* 1.5em was a full line of leading for a row that is empty most of the
+       time; the count only ever runs to one line, so the reserved box is that
+       line's own height and nothing more. */
+    min-height: 1.2em;
     margin: 0;
     font-size: var(--text-sm);
+    line-height: 1.2;
     color: var(--text-muted);
   }
 
