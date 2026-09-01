@@ -1193,12 +1193,40 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
   summary:hover {
     color: var(--text);
   }
+  /*
+   * One frame, and the two refutations sit inside it as text.
+   *
+   * This was a bordered panel holding two bordered cards: 39.6px of panel
+   * padding plus 35.2px of card padding put 75px between the edge and the
+   * first character on each side, and the shorter of the two cards carried
+   * **81px of blank space below its last line** because equal-height stretch
+   * gave it a bottom it had no text for. Measured 1012x644 at 33% ink.
+   *
+   * The panel keeps its frame — it is the chapter's closing aside and needs to
+   * read as one — and the cards give up theirs, taking a leading rule instead,
+   * the same treatment the comparison blocks above now use. With no card
+   * border there is no box to be unequal, so `align-items: start` can let each
+   * side end where its text does.
+   */
   .epilogue {
     background: var(--bg-raised);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 1.8rem;
+    padding: var(--space-4);
     border-top: 1px solid var(--line);
+  }
+
+  .epilogue .grid {
+    align-items: start;
+  }
+
+  .epilogue .card {
+    container-type: normal;
+    border: 0;
+    border-inline-start: 3px solid var(--line);
+    border-radius: 0;
+    background: none;
+    padding: 0.1rem 0 0.1rem var(--space-3);
   }
   .epilogue h4 {
     margin: 0 0 0.4rem;

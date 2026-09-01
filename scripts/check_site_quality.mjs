@@ -850,11 +850,12 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
     if (diagram?.captionCount !== 1) problems.push(`${name} lacks exactly one direct figcaption`);
     if (!diagram?.title) problems.push(`${name} has no visible title`);
     if (!diagram?.summary) problems.push(`${name} has no visible reading summary`);
-    // `fork` (one input fanned through assumptions) and `boundary` (a drawn
-    // trust edge) keep the same DOM contract as the sequence variants — the
-    // reading order stays an ordered list — and differ only in geometry, so
-    // every check below applies to them unchanged.
-    if (!['process', 'timeline', 'layers', 'fork', 'boundary'].includes(diagram?.variant)) {
+    // `boundary` (a drawn trust edge) keeps the same DOM contract as the
+    // sequence variants — the reading order stays an ordered list — and differs
+    // only in geometry, so every check below applies to it unchanged. `fork`
+    // was here too and is gone: its only caller repeated a figure's legend, and
+    // an unrendered variant is CSS no page exercises.
+    if (!['process', 'timeline', 'layers', 'boundary'].includes(diagram?.variant)) {
       problems.push(`${name} has an invalid layout variant`);
     }
     if (!Number.isFinite(diagram?.stepCount) || diagram.stepCount < 3 || diagram.stepCount > 5) {

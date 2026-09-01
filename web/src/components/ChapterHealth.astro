@@ -338,14 +338,17 @@ const langOf = (s: string | null | undefined) =>
   </EvidenceFigure>
 
   {/*
-    A fork, not a pipeline: one observed series runs through four assumptions
-    and the fan is what figure 7.1 then plots. The branches off step 2's spine
-    are those four lines.
+    The four baselines are not listed here, because figure 7.1 is directly
+    above and lists them as its own legend — with each one's curve attached,
+    which is strictly more than four chips can say. They were repeated here to
+    give a `fork` variant something to fan out, which is the wrong order to
+    reach a design in: the diagram was dramatising a duplication. Removing the
+    duplication took 243px off the figure, most of it blank — the branch column
+    set a shared subgrid row that the three branchless steps also had to span.
   */}
   <ConceptFlow
     title="同一批濃度如何變成一段可歸因比例"
     summary="資料沒有改變；改變的是比較基準。網站因此報告一段範圍，而不是把其中一個假設包裝成唯一答案。"
-    variant="fork"
     steps={[
       {
         label: "觀測",
@@ -357,14 +360,6 @@ const langOf = (s: string | null | undefined) =>
         title: "指定拿哪個濃度作為比較基準",
         detail: "基準是估計之前必須公開的假設，資料本身決定不了它。",
         tone: "cool",
-        /*
-        * One line per branch. The label already carries the value and its
-        * annotation (「5 μg/m³（WHO 2021）」), so a separate value title printed
-        * the number twice — and four two-line chips made this card 300px
-        * taller than its neighbours in a row the fork variant draws as
-        * branches.
-        */
-        options: series.map((item) => ({ title: item.label })),
       },
       {
         label: "估計",

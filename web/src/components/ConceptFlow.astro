@@ -7,19 +7,21 @@
  * five of the seven ARE sequences, and a flowchart is the right form for a
  * sequence — uniformity there is coherence. But two were never sequences:
  *
- * - `fork`: chapter 7 runs ONE series through FOUR assumptions and reports the
- *   fan as a range. Its options are branches, so they are drawn as branches
- *   off a spine, not a pack of chips.
  * - `boundary`: chapter 9's subject is a trust edge — two downloads cross into
  *   the reader's browser and nothing crosses out. A context diagram draws the
  *   edge; the steps inside it sit inside a drawn zone, and the connector into
  *   step 2 is the crossing.
  *
- * Both keep this component's DOM contract — an ordered list a screen reader
+ * A `fork` variant lived here too, drawing a step's options as branches off a
+ * spine. Chapter 7 was its only caller and its branches repeated figure 7.1's
+ * own legend, so the content went and the variant went with it — a form with
+ * nothing to hold is CSS nobody renders and therefore nobody checks.
+ *
+ * The remaining one keeps this component's DOM contract — an ordered list a screen reader
  * hears as a sequence — because the reading ORDER is still sequential even
  * where the geometry is not.
  */
-export type ConceptVariant = "process" | "timeline" | "layers" | "fork" | "boundary";
+export type ConceptVariant = "process" | "timeline" | "layers" | "boundary";
 export type ConceptTone = "neutral" | "cool" | "warm" | "boundary";
 
 export interface ConceptOption {
@@ -513,40 +515,6 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     text-wrap: balance;
   }
 
-  /*
-   * Fork: one input, several assumptions. The options were a pack of chips in
-   * an auto-fit grid, which reads as a list of attributes; drawn as branches
-   * off a spine (├─) the card reads as the fan it is — the same four lines the
-   * figure below then plots.
-   */
-  .concept-flow[data-variant="fork"] [data-concept-step] > ul {
-    position: relative;
-    grid-template-columns: minmax(0, 1fr);
-    margin-inline-start: var(--space-2);
-  }
-
-  .concept-flow[data-variant="fork"] [data-concept-step] > ul::before {
-    content: "";
-    position: absolute;
-    inset-block: 0.75rem calc(100% / var(--concept-fork-count, 4) / 2);
-    inset-inline-start: calc(var(--space-2) * -1);
-    border-inline-start: 2px solid var(--step-mark);
-  }
-
-  .concept-flow[data-variant="fork"] [data-concept-step] > ul > li {
-    position: relative;
-    border-inline-start-width: 0;
-    border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
-  }
-
-  .concept-flow[data-variant="fork"] [data-concept-step] > ul > li::before {
-    content: "";
-    position: absolute;
-    inset-inline-start: calc(var(--space-2) * -1);
-    inset-block-start: 50%;
-    width: var(--space-2);
-    border-block-start: 2px solid var(--step-mark);
-  }
 
   @media (max-width: 48rem) {
     .concept-flow {
