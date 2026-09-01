@@ -1199,6 +1199,32 @@ h2 {
      not to the paragraph it follows. */
   margin-top: var(--space-4);
 }
+
+/*
+ * A container's padding is already the space above its first child.
+ *
+ * The rule above gives every heading `--space-4` on top so it reads as opening
+ * what follows rather than closing what precedes — and when the heading opens a
+ * BOX there is nothing preceding it, so the margin lands on top of the box's own
+ * padding and the two are paid twice. Measured on chapter 8's epilogue: 35.2px
+ * of panel padding plus 35.2px of heading margin put **71px** between the border
+ * and the first word, which is the blank block the owner asked about, and 37px
+ * inside each of its cards.
+ *
+ * Swept every route for a box whose first element child carries a top margin.
+ * The whole list is `.card > h3`, `.card > ul` and `.mistake > h2`, on /methods/
+ * and /sources/; the other nine routes were already clean, because their boxes
+ * either open with text or set this themselves. `.mistake` is a divider rather
+ * than a panel, so it keeps its `padding-top` as the gap after the rule — what
+ * it loses is the second helping.
+ *
+ * `:where()` keeps the parent side at zero specificity, so the pair scores
+ * 0,1,0: it outranks the element selectors that set the margins and yields to
+ * any component that wants to state its own.
+ */
+:where(.card, .note, .epilogue, .mistake, .panel, .verdict) > :first-child {
+  margin-block-start: 0;
+}
 /*
  * `--text-lg`, not `--text-base`.
  *
