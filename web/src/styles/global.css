@@ -737,6 +737,22 @@
        not mechanical lifts of the light marks, so their perceived weight and
        colour-vision distances survive the charcoal ground. The measured dark
        minima are 0.143/0.146/0.134 for four and 0.091/0.084/0.080 for eight. */
+    /*
+     * The boundary mark needs its own dark value; it never had one.
+     *
+     * `--diagram-boundary` aliases `--editorial-accent`, which is declared once
+     * in the light theme and was inherited unchanged here — measured at
+     * **2.88:1 against `--bg-sunken` and 2.32:1 against `--bg-raised`**, both
+     * under the 3:1 this file solves every other non-text mark against. It went
+     * unnoticed while the mark was a 1px card border; it surfaced the moment
+     * the concept diagrams made it the ring that carries the step's role.
+     *
+     * Solved at the same hue and chroma, at the lightness that puts it in the
+     * same visual band as the marks it sits beside — `--rule` reads 3.73:1 on
+     * this panel and `--k1` 6.96:1, and this reads 5.84:1 / 4.70:1. Light stays
+     * as it was: it already measured 5.58:1 / 6.48:1.
+     */
+    --diagram-boundary: oklch(0.660 0.130 34);
     --k0: oklch(0.744 0.132 246);
     --k1: oklch(0.701 0.124 56);
     --k2: oklch(0.653 0.107 346);

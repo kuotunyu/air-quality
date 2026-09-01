@@ -118,10 +118,34 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
      * above; this is the second component to walk into it.
      */
     margin-block: var(--space-4) var(--space-5);
-    padding: var(--space-3);
-    border: 1px solid color-mix(in oklab, var(--concept-mark) 34%, var(--line));
-    border-radius: var(--radius);
-    background: color-mix(in oklab, var(--concept-mark) 4%, var(--bg-sunken));
+    /*
+     * One frame, not two.
+     *
+     * The panel and every card inside it each carried a border, a tint and a
+     * radius, so a four-step diagram drew five boxes and the reader's eye had
+     * to discard four of them to find the content. The panel keeps the frame
+     * because it bleeds wider than the prose and needs an edge; the cards give
+     * theirs up and separate by surface instead — `--bg-raised` on
+     * `--bg-sunken` is a measured step of 0.05 in lightness, which is a
+     * boundary without a line.
+     */
+    padding: var(--space-4) var(--space-3) var(--space-3);
+    /*
+     * A surface, without a line around it as well.
+     *
+     * A background and a border both say 「this is one region」, and saying it
+     * twice is the same double-marking the cards were just relieved of.
+     * `--bg-sunken` against the page's `--bg` is a step of 0.032 in lightness
+     * — enough to read as a panel, which is all the border was doing.
+     *
+     * The radius is larger than the cards', not equal to it. Concentric
+     * corners at the same radius read as a mistake because the outer curve has
+     * to travel further to turn the same corner; +4px is the padding-matched
+     * value that makes the two look like one nested pair.
+     */
+    border: 0;
+    border-radius: calc(var(--radius) + 4px);
+    background: var(--bg-sunken);
   }
 
   /* FigureTools is injected after hydration and therefore has no Astro scope
@@ -231,24 +255,54 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
        row that subgrid would otherwise charge to all four cards. */
     grid-template-columns: 2rem minmax(0, 1fr);
     align-content: start;
-    gap: 0.22rem var(--space-2);
+    gap: 0.3rem var(--space-2);
     min-width: 0;
-    /* `--space-2` rather than `--space-3`: at four columns the padding is paid
-       eight times across the row, and every pixel of it comes out of a line
-       that was already down to six characters. */
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid color-mix(in oklab, var(--step-mark) 46%, var(--line));
-    border-block-start-width: 3px;
+    /*
+     * Symmetric, and `--space-2` on the inline axis.
+     *
+     * Horizontal padding is paid eight times across a four-column row and
+     * every pixel of it comes out of a line that holds about eleven Chinese
+     * characters at 1440 and eight at 1280 — the measurement an earlier round
+     * raised from eight by giving these figures the page bleed. The vertical
+     * axis can afford `--space-3` now that the card has no border crowding its
+     * content.
+     */
+    padding: var(--space-3) var(--space-2);
+    /*
+     * Transparent, not absent: `box-sizing` is border-box, so a bordered card
+     * among borderless ones would be 2px narrower in its content box and one
+     * of four columns would set its text on a different measure. The boundary
+     * card below only changes this border's colour and style.
+     */
+    border: 1px solid transparent;
     border-radius: var(--radius);
     background: var(--step-surface);
   }
 
+  /*
+   * The role lives in the marker, not in the surface.
+   *
+   * Every card used to be washed with its own tone at 8%. Two of the four
+   * roles are greys — neutral is `--rule`, and 8% of a grey on an off-white is
+   * nothing — so a scheme with four levels rendered as two coloured cards and
+   * two blank ones, which reads as decoration that ran out rather than as a
+   * scale. The tone now carries at full strength in two small places, the
+   * disc's ring and the label, and every card takes the same surface. Four
+   * roles, four visible markers.
+   */
+  [data-concept-step] {
+    --step-surface: var(--bg-raised);
+    --step-ink: var(--text-faint);
+  }
+
   [data-tone="cool"] {
     --step-mark: var(--diagram-cool);
+    --step-ink: var(--k0-ink);
   }
 
   [data-tone="warm"] {
     --step-mark: var(--diagram-warm);
+    --step-ink: var(--k1-ink);
   }
 
   /*
@@ -268,19 +322,51 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
    */
   [data-tone="boundary"] {
     --step-mark: var(--diagram-boundary);
-    --step-surface: var(--bg-raised);
-    border-block-start-style: dashed;
+    /*
+     * Grey, and that is the same decision one level further on.
+     *
+     * An earlier round took the boundary card off its own hue because
+     * `--diagram-warm` and `--diagram-boundary` sit 16 degrees apart and read
+     * as one colour; it is marked by KIND instead — a dashed outline and the
+     * 「界線 · 」 prefix. Colouring its label would walk that back, and the
+     * measurement says so too: `--editorial-accent` has no dark-theme value,
+     * so as reading ink it lands at Lc 19.4 against a floor of 60. The card
+     * that carries the most marks needs no more.
+     */
+    --step-ink: var(--text-faint);
+    /* The only card that keeps an outline, now that the others have given
+       theirs up — and it is dashed and unfilled, so the difference reads as
+       「this one is not part of the solid sequence」 rather than as one more
+       hue. */
+    --step-surface: transparent;
+    border-color: color-mix(in oklab, var(--diagram-boundary) 45%, var(--line));
+    border-style: dashed;
   }
 
+  /*
+   * The connector belongs at the markers' height.
+   *
+   * It sat at 50% of the card, which on a 290px card put a process arrow in
+   * the middle of a paragraph — it read as punctuation between two blocks of
+   * text rather than as a link between two steps. Anchored to the disc's
+   * centre instead (`--space-3` of padding plus half of the 2rem disc), the
+   * four discs and the three arrows now form one horizontal line, which is
+   * the line a reader follows.
+   *
+   * Still a glyph, deliberately. Forced-colors mode forces `background-color`,
+   * so an arrow drawn as a shape would vanish for exactly the readers who need
+   * it most; a glyph is painted with `color`, which forced-colors maps to
+   * CanvasText — and the gate checks that mapping.
+   */
   .concept-flow > ol > [data-concept-step]:not(:last-child)::after {
     content: "→";
     position: absolute;
     z-index: 1;
     inset-inline-end: calc(var(--space-3) * -0.5);
-    inset-block-start: 50%;
+    inset-block-start: calc(var(--space-3) + 1rem);
     color: var(--rule);
     font-size: var(--text-lg);
-    font-weight: 700;
+    font-weight: 400;
     line-height: 1;
     transform: translate(50%, -50%);
   }
@@ -300,7 +386,11 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     place-items: center;
     width: 2rem;
     height: 2rem;
-    border: 1px solid var(--step-mark);
+    /* 2px, not 1: with the card's own border gone this ring is the diagram's
+       structural mark, and a hairline reads as a hint rather than a station on
+       a line. The number stays `--text` on `--bg-raised` — a filled disc would
+       need white on `--k0`, which measures Lc 35 in the dark theme. */
+    border: 2px solid var(--step-mark);
     border-radius: 50%;
     color: var(--text);
     background: var(--bg-raised);
@@ -312,7 +402,10 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 
   .concept-label {
     align-self: center;
-    color: var(--text-faint);
+    /* The role's own ink. `--k0-ink`/`--k1-ink` are the measured reading
+       weights of the same two marks, so the label names the role in the colour
+       the disc draws it in without inventing a hue or a contrast. */
+    color: var(--step-ink);
     font-size: var(--text-xs);
     font-weight: 700;
     /* Tracking was 0.05em, which on a nine-character CJK label costs 11px —
