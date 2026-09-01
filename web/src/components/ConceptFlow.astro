@@ -1,5 +1,25 @@
 ---
-export type ConceptVariant = "process" | "timeline" | "layers";
+/*
+ * Five variants, because the chapters hold five logical shapes.
+ *
+ * One component rendered every diagram as the same four cards and an arrow,
+ * and the owner noticed: 「怎麼圖解都長差不多?」. The honest answer is that
+ * five of the seven ARE sequences, and a flowchart is the right form for a
+ * sequence — uniformity there is coherence. But two were never sequences:
+ *
+ * - `fork`: chapter 7 runs ONE series through FOUR assumptions and reports the
+ *   fan as a range. Its options are branches, so they are drawn as branches
+ *   off a spine, not a pack of chips.
+ * - `boundary`: chapter 9's subject is a trust edge — two downloads cross into
+ *   the reader's browser and nothing crosses out. A context diagram draws the
+ *   edge; the steps inside it sit inside a drawn zone, and the connector into
+ *   step 2 is the crossing.
+ *
+ * Both keep this component's DOM contract — an ordered list a screen reader
+ * hears as a sequence — because the reading ORDER is still sequential even
+ * where the geometry is not.
+ */
+export type ConceptVariant = "process" | "timeline" | "layers" | "fork" | "boundary";
 export type ConceptTone = "neutral" | "cool" | "warm" | "boundary";
 
 export interface ConceptOption {
@@ -20,9 +40,15 @@ interface Props {
   summary: string;
   steps: readonly ConceptStep[];
   variant?: ConceptVariant;
+  /** boundary only: the zone label. Steps 2..N are drawn inside the zone. */
+  boundaryLabel?: string;
 }
 
-const { title, summary, steps, variant = "process" } = Astro.props;
+const { title, summary, steps, variant = "process", boundaryLabel } = Astro.props;
+
+if (variant === "boundary" && !boundaryLabel) {
+  throw new Error("ConceptFlow boundary variant requires a boundaryLabel");
+}
 
 if (steps.length < 3 || steps.length > 5) {
   throw new Error(`ConceptFlow requires 3–5 steps; received ${steps.length}`);
@@ -42,7 +68,11 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     <span data-concept-summary>{summary}</span>
   </figcaption>
 
-  <ol role="list">
+  <ol
+    role="list"
+    data-boundary-label={variant === "boundary" ? boundaryLabel : undefined}
+    style={variant === "boundary" ? `--concept-zone-end:${steps.length + 1}` : undefined}
+  >
     {
       steps.map((step, index) => (
         <li data-concept-step data-tone={step.tone ?? "neutral"}>
@@ -338,6 +368,93 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     color: var(--text-muted);
   }
 
+  /*
+   * Boundary: the subject is a trust edge, so the edge is drawn.
+   *
+   * A dashed zone encloses steps 2..N — the work that stays inside the
+   * reader's browser — and step 1 sits outside it, so the 1→2 connector is the
+   * one crossing: the download. The zone is the ol's own ::before placed into
+   * the same grid tracks as the cards (pseudo-elements of a grid container are
+   * grid items), inflated by a negative margin so the cards keep their size.
+   * The label takes an implicit row of its own below the zone rather than
+   * absolute positioning, so it can never overlap a card at any width.
+   */
+  .concept-flow[data-variant="boundary"] > ol {
+    position: relative;
+  }
+
+  /*
+   * Absolutely positioned, and that is load-bearing. A grid pseudo-element
+   * placed with grid-column/row OCCUPIES those cells for auto-placement, so a
+   * zone drawn as a normal grid item shoved cards 2–4 into implicit rows below
+   * itself — an 803px diagram with an empty box where the cards belonged, and
+   * the gate could not see it because the displaced cards were still visible,
+   * ordered and unclipped. An absolutely positioned grid child still takes its
+   * grid area as containing block but occupies nothing, which is exactly a
+   * drawn overlay's contract. The negative inset is the inflation the margin
+   * used to provide.
+   */
+  .concept-flow[data-variant="boundary"] > ol::before {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    grid-column: 2 / -1;
+    grid-row: 1 / -1;
+    inset: calc(var(--space-2) * -1);
+    border: 2px dashed color-mix(in oklab, var(--diagram-boundary) 60%, var(--line));
+    border-radius: calc(var(--radius) + 4px);
+    pointer-events: none;
+  }
+
+  .concept-flow[data-variant="boundary"] > ol::after {
+    content: attr(data-boundary-label);
+    grid-column: 2 / -1;
+    grid-row: 5;
+    justify-self: center;
+    margin-block-start: calc(var(--space-2) * -0.5);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  /*
+   * Fork: one input, several assumptions. The options were a pack of chips in
+   * an auto-fit grid, which reads as a list of attributes; drawn as branches
+   * off a spine (├─) the card reads as the fan it is — the same four lines the
+   * figure below then plots.
+   */
+  .concept-flow[data-variant="fork"] [data-concept-step] > ul {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline-start: var(--space-2);
+  }
+
+  .concept-flow[data-variant="fork"] [data-concept-step] > ul::before {
+    content: "";
+    position: absolute;
+    inset-block: 0.75rem calc(100% / var(--concept-fork-count, 4) / 2);
+    inset-inline-start: calc(var(--space-2) * -1);
+    border-inline-start: 2px solid var(--step-mark);
+  }
+
+  .concept-flow[data-variant="fork"] [data-concept-step] > ul > li {
+    position: relative;
+    border-inline-start-width: 0;
+    border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  }
+
+  .concept-flow[data-variant="fork"] [data-concept-step] > ul > li::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: calc(var(--space-2) * -1);
+    inset-block-start: 50%;
+    width: var(--space-2);
+    border-block-start: 2px solid var(--step-mark);
+  }
+
   @media (max-width: 48rem) {
     .concept-flow {
       grid-template-columns: minmax(0, 1fr);
@@ -378,11 +495,32 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
       inset-block-end: calc(var(--space-3) * -0.5);
       transform: translate(-50%, 50%);
     }
+
+    /* One column: the zone wraps the rows of steps 2..N instead of columns.
+       `--concept-zone-end` is the step count + 1, set inline, because a grid
+       line cannot be computed in CSS. */
+    .concept-flow[data-variant="boundary"] > ol::before {
+      grid-column: 1;
+      grid-row: 2 / var(--concept-zone-end, 5);
+    }
+
+    .concept-flow[data-variant="boundary"] > ol::after {
+      grid-column: 1;
+      grid-row: var(--concept-zone-end, 5);
+    }
   }
 
   @media (forced-colors: active) {
     .concept-flow {
       --concept-forced-colors: active;
+    }
+
+    .concept-flow[data-variant="boundary"] > ol::before {
+      border-color: CanvasText;
+    }
+
+    .concept-flow[data-variant="boundary"] > ol::after {
+      color: CanvasText;
     }
 
     .concept-flow,

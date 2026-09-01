@@ -131,9 +131,17 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
       </li>
     </ol>
 
+    {/*
+      A context diagram, not a flowchart: this figure's subject is the trust
+      edge. The zone drawn around steps 2–4 is the reader's tab; the only
+      arrow that crosses it is the download into step 2, and the label states
+      the outbound half — nothing crosses back.
+    */}
     <ConceptFlow
       title="查詢在你的瀏覽器裡如何完成"
       summary="網站只提供公開檔案與查詢程式；SQL、暫存結果與匯出動作都留在目前這個瀏覽器分頁。"
+      variant="boundary"
+      boundaryLabel="虛線內是你的瀏覽器分頁—SQL、結果與匯出都不會離開這裡"
       steps={[
         {
           label: "公開資料",

@@ -805,7 +805,11 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
     if (diagram?.captionCount !== 1) problems.push(`${name} lacks exactly one direct figcaption`);
     if (!diagram?.title) problems.push(`${name} has no visible title`);
     if (!diagram?.summary) problems.push(`${name} has no visible reading summary`);
-    if (!['process', 'timeline', 'layers'].includes(diagram?.variant)) {
+    // `fork` (one input fanned through assumptions) and `boundary` (a drawn
+    // trust edge) keep the same DOM contract as the sequence variants — the
+    // reading order stays an ordered list — and differ only in geometry, so
+    // every check below applies to them unchanged.
+    if (!['process', 'timeline', 'layers', 'fork', 'boundary'].includes(diagram?.variant)) {
       problems.push(`${name} has an invalid layout variant`);
     }
     if (!Number.isFinite(diagram?.stepCount) || diagram.stepCount < 3 || diagram.stepCount > 5) {
@@ -881,6 +885,14 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
       diagram?.gridColumnCount !== (diagram?.variant === "layers" ? 1 : diagram?.stepCount)
     ) {
       problems.push(`${name} has the wrong desktop/tablet column count`);
+    }
+    if (viewport?.width > 768 && diagram?.variant !== "layers") {
+      const tops = Array.isArray(diagram?.stepTops) ? diagram.stepTops : [];
+      if (tops.length !== diagram?.stepCount) {
+        problems.push(`${name} step top-edge inventory is incomplete`);
+      } else if (Math.max(...tops) - Math.min(...tops) > 1) {
+        problems.push(`${name} steps do not share one row band`);
+      }
     }
     if (diagram?.toolCount > 0) {
       if (diagram.toolCount !== 1) {
@@ -1083,6 +1095,12 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       stepCount: steps.length,
       directItemCount: directItems.length,
       nonListSteps: steps.filter((step) => step.tagName !== "LI").length,
+      // Rounded top edges, one per step. A grid pseudo-element placed into the
+      // card columns OCCUPIES them for auto-placement, and the boundary
+      // variant's first draft learned it: cards 2-4 were displaced into rows
+      // below the zone — visible, ordered, unclipped, and wrong — and nothing
+      // here failed. Row-band membership is the property that catches it.
+      stepTops: steps.map((step) => Math.round(step.getBoundingClientRect().top)),
       gridColumnCount: orderedLists[0]
         ? getComputedStyle(orderedLists[0]).gridTemplateColumns.trim().split(/\\s+/u).length
         : 0,
@@ -9598,6 +9616,7 @@ async function lifecycleSelfTest() {
       stepCount: 4,
       directItemCount: 4,
       nonListSteps: 0,
+      stepTops: [120, 120, 120, 120],
       stepAxRoles: ["listitem", "listitem", "listitem", "listitem"],
       gridColumnCount: 4,
       incompleteSteps: 0,
@@ -9658,6 +9677,11 @@ async function lifecycleSelfTest() {
     ["boxed connector", "boxed connectors", (state) => { state.diagrams[0].boxedConnectors = 1; }],
     ["narrow title", "available card width", (state) => { state.diagrams[0].minimumTitleWidthRatio = 0.7; }],
     ["reordered step", "visually reordered", (state) => { state.diagrams[0].outOfOrderSteps = 1; }],
+    // The boundary variant's first draft shipped exactly this shape: a zone
+    // pseudo-element occupied the card columns and auto-placement pushed cards
+    // 2-4 into rows below it — visible, ordered, unclipped, and wrong.
+    ["wide displaced step", "share one row band", (state) => { state.diagrams[0].stepTops = [120, 120, 120, 386]; }],
+    ["wide missing top inventory", "top-edge inventory", (state) => { state.diagrams[0].stepTops = [120, 120]; }],
     ["phone row", "vertical sequence", (state) => { state.diagrams[0].nonVerticalTransitions = 1; }],
     ["phone columns", "narrow-layout boundary", (state) => { state.diagrams[0].gridColumnCount = 4; }],
     ["tablet columns", "desktop/tablet column count", (state) => { state.diagrams[0].gridColumnCount = 1; }],
