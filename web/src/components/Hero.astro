@@ -208,20 +208,25 @@ const opening = [
         composition now puts StartHere after the complete map, following the
         derived figures and longer interpretation.
       */}
-      <p class="note">
+      {/* 2026-09-02 — a paragraph, not a box: the third frame under the map
+          was saying 「this is one region」 to one sentence. Seating the three
+          figures beside the map was built and measured the same day and
+          undone: at 1440×900 the map is 683px tall and the opening column
+          651px, so a 548px figures block under the routes ran 551px below the
+          map and left that much empty beside itself. */}
+      <p class="aside">
         品管規則與資料管線全部開源，本頁每個數字都可獨立重算—
         包含上面那三個，它們是從同一份資料算出來的，不是寫進版面的。
       </p>
     </div>
 
-        <p class="lede hero-context" data-homepage-atlas-right>
-          長期趨勢已改善，但這不等於空氣品質已達健康指引。
-        </p>
-
+        {/* 2026-09-02 — the sentence that stood here as a lede of its own opens
+            the level summary's paragraph instead: it is that paragraph's
+            thesis, and it was saying so twice, one block apart. */}
         <section class="hero-level-summary" data-homepage-level-summary aria-labelledby="level-summary-heading">
           <p class="eyebrow" id="level-summary-heading">2025 年的水準</p>
           <p class="lede">
-            有可比較資料的 {latest.length} 個測站中，<strong>{overWho} 個超過
+            長期趨勢已改善，但這不等於空氣品質已達健康指引。有可比較資料的 {latest.length} 個測站中，<strong>{overWho} 個超過
             世界衛生組織的年均指引值</strong>（5 μg/m³），{overTaiwan} 個超過台灣自身的
             標準（{TAIWAN_PM25_ANNUAL} μg/m³）。趨勢與水準是兩個不同的量，這兩項結果
             並不衝突。
