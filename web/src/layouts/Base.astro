@@ -430,8 +430,27 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
            *
            * 13.9rem is the width the widest label needs plus the numeral column,
            * the gap and both paddings — solved, not rounded up by eye.
+           *
+           * 2026-09-02 — supersedes the 12rem floor, and records why the 100rem
+           * boundary stays. The rail prints the short `nav` labels now, not the
+           * nine-character titles that measurement was taken on: at 1440 with
+           * the served faces the widest label, 方法學對照, inks 104.5px, its ink
+           * ends 181.1px from the rail's left edge, and 13.2px of link padding
+           * plus 22px of rail padding make 216px. 10rem is 220px at the 22px
+           * root the rail exists at.
+           *
+           * Making the rail persistent from 80rem was built and measured on the
+           * same day, and undone. Even at 220px it leaves the column 1045px at
+           * 1280, where the trend chart's card is 873.8px — under the 888px at
+           * which its standard note leaves the plot corner for the key row —
+           * so chapter 1's plot opened at 493px against the 396px the 55vh
+           * contract allows at 1280×720; at 1440 the readout row wrapped to two
+           * rows; at 200% text /methods/ scrolled sideways by 138px; and print
+           * emulation clipped every concept diagram. Five measured contracts
+           * assume a full-width column below 1600px, and a rail there is a
+           * redesign of them, not a breakpoint.
            */
-          grid-template-columns: clamp(12rem, 14vw, 13.5rem) minmax(0, 1fr);
+          grid-template-columns: clamp(10rem, 14vw, 13.5rem) minmax(0, 1fr);
         }
       }
 
