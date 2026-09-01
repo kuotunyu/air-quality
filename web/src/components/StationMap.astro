@@ -439,10 +439,18 @@ const apparatusFinding = [
     but nothing in the block said which figure it belonged to, so a reader who
     reaches it two screens later has no way to connect it to anything.
   */}
+  {/*
+    One inline box for the whole line. The site's `summary` is a flex row
+    (marker, then content), so a bare text node beside the finding span made
+    two flex items that wrapped as two side-by-side columns at 375px —
+    「全台測站概 ・5 個測站未繪」 on one line and the rest of each under it.
+  */}
   <summary data-map-apparatus-label>
-    全台測站概覽地圖：來源與界線{apparatusFinding && (
-      <span class="apparatus-finding">・{apparatusFinding}</span>
-    )}
+    <span class="apparatus-summary">
+      全台測站概覽地圖：來源與界線{apparatusFinding && (
+        <span class="apparatus-finding">・{apparatusFinding}</span>
+      )}
+    </span>
   </summary>
   <div class="map-notes-body">
   <p class="aside">
@@ -558,6 +566,10 @@ const apparatusFinding = [
     flex: 1 1 24rem;
     min-width: 0;
     margin: 0;
+  }
+
+  .apparatus-summary {
+    min-width: 0;
   }
 
   .apparatus-finding {
