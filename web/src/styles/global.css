@@ -101,8 +101,29 @@
   --bg: oklch(0.971 0.003 145.5); /* #f4f6f4 */
   --bg-raised: oklch(0.990 0.003 128.5); /* #fbfcfa */
   --bg-sunken: oklch(0.939 0.005 165); /* #e8ecea */
-  --line: oklch(0.858 0.009 250);
-  --line-soft: oklch(0.918 0.009 250);
+  /*
+   * 2026-09-01 — the visible neutrals share the ink's temperature.
+   *
+   * The 2026-08-02 re-solve moved the reading SURFACES to fog-white and
+   * green-grey and left every line, rule, grid and stripe at the older cool
+   * anchor, hue 250 — so the paper was warm-green while everything drawn on it
+   * was cool-blue, and the ink between them sat at 210. Three grey
+   * temperatures on one page is the discord a low-chroma palette exists to
+   * prevent.
+   *
+   * Everything drawn or written now shares hue 210 — one ink for lines and
+   * text, the print metaphor — with the surfaces' faint green adjacent to it.
+   * Hue-only where the token is decorative; `--rule` is re-solved because
+   * measurement put it at 2.95:1 against `--bg-sunken`, under the 3:1 its own
+   * comment claims, before AND after the hue move. L 0.628 → 0.622 is the
+   * highest lightness clearing 3.0:1 on the worst surface — the original
+   * intent, the lightest mark that still reads as structure, kept honest.
+   *
+   * The dark theme is untouched: it is already one family, all 250. A cool
+   * night page was coherent before this and stays coherent.
+   */
+  --line: oklch(0.858 0.009 210);
+  --line-soft: oklch(0.918 0.009 210);
   /* The chapter divider, and the only line on the page that carries meaning
      rather than just separating two boxes. `--line` measures 1.63:1 against the
      body — fine for a table rule you are already looking at, not fine for the
@@ -111,7 +132,7 @@
      measured 2.92 against `--bg`, because the earlier solve checked it against
      the page and this mark also sits on `--bg-sunken`. Re-solved against the
      worst of the three surfaces. */
-  --rule: oklch(0.628 0.012 250);
+  --rule: oklch(0.622 0.012 210);
 
   /*
    * The three inks, solved against APCA rather than against a WCAG ratio.
@@ -240,8 +261,8 @@
    * nothing else, and both lines already carry their own text label. Two
    * lightnesses so the pair is still a pair, each clearing 3:1.
    */
-  --who: oklch(0.628 0.012 250);
-  --taiwan: oklch(0.430 0.012 250);
+  --who: oklch(0.622 0.012 210);
+  --taiwan: oklch(0.430 0.012 210);
 
   /*
    * The categorical set — for series that are KINDS, not amounts.
@@ -381,7 +402,7 @@
   /* Which extreme a data colour is darkened (or lightened) toward to become
      legible as text. It is the opposite end from this theme's paper, which is
      why it is a token rather than a literal in the mix. */
-  --ink-mix: oklch(0.16 0.01 250);
+  --ink-mix: oklch(0.16 0.01 210);
 
   /*
    * The ramp again, for when a data colour has to be TYPE rather than a mark.
@@ -451,8 +472,8 @@
    * 1.26:1 against the resting fill in light and 1.41 in dark — small numbers,
    * but this is a county-sized area and the alternative measured 1.01.
    */
-  --map-line: oklch(0.571 0.012 250);
-  --map-hover: oklch(0.868 0.016 250);
+  --map-line: oklch(0.571 0.012 210);
+  --map-hover: oklch(0.868 0.016 210);
 
   /*
    * A gridline, and it is its own token because `--line` cannot serve both
@@ -470,12 +491,12 @@
    * 7.66. On the page, where chapter 3 draws with no card behind it: 1.90 and
    * 1.66, against a rule at 3.25 and 3.46.
    */
-  --plot-grid: oklch(0.770 0.010 250);
+  --plot-grid: oklch(0.770 0.010 210);
 
   /* The zebra stripe. A recess on light paper; see the rule that uses it. */
-  --table-stripe: oklch(0.945 0.009 250);
+  --table-stripe: oklch(0.945 0.009 210);
 
-  --tint-neutral: oklch(0.948 0.005 250);
+  --tint-neutral: oklch(0.948 0.005 210);
   --tint-caution: oklch(0.958 0.022 85);
   --tint-caution-edge: oklch(0.860 0.048 85);
 
