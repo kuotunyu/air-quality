@@ -3524,7 +3524,25 @@ button:hover {
  * and a hover that darkens the edge — the same treatment as 關閉 inside the
  * dialog 放大 opens, which is the button a reader meets immediately after.
  */
-.fig-tool {
+/*
+ * 關閉 is one of these too.
+ *
+ * `.fig-shut` had no rule of its own and fell through to the base `button`,
+ * which sizes by padding rather than to the interaction floor — so the dialog's
+ * header put a 79 x 59.53px control next to an 83.41 x 45px one and the pair
+ * read as two different kinds of thing. They are not: while the dialog is open
+ * the figure's own toolbar is moved into that header (see `open()` in
+ * `FigureTools.astro`), so 下載 and 關閉 sit in one row and have to be one
+ * control.
+ *
+ * Swept the rest of the site before generalising: `.primary-action` and
+ * `.explorer-action` also carry no rule of their own, but every control beside
+ * them is likewise a base button, so those rows are already even. A runtime
+ * pass over all eleven routes — every parent holding two or more controls,
+ * flagging any whose heights differ by more than 1px — found nothing else.
+ */
+.fig-tool,
+.fig-shut {
   /* 2026-08-03 — an exact 44px minimum quantised one 1/64px layout unit
      below the interaction floor in Linux Chrome while remaining 44px on
      Windows Chrome. One CSS pixel of reserve keeps both renderers above it. */
@@ -3543,7 +3561,9 @@ button:hover {
 /* The base button moves its border on hover, which is enough for a control in a
    form and not enough for two sitting over a chart. The face changes too. */
 .fig-tool:hover,
-.fig-tool:focus-visible {
+.fig-tool:focus-visible,
+.fig-shut:hover,
+.fig-shut:focus-visible {
   background: var(--bg-sunken);
 }
 

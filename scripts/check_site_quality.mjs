@@ -784,6 +784,51 @@ function chapterEndingProblems(state, viewport) {
   return problems;
 }
 
+/*
+ * The enlarged view's header holds two controls, and they must be one control.
+ *
+ * 下載 moves into that header while the dialog is open, so it and 關閉 sit on a
+ * single line. They were sized by different rules — `.fig-tool` to the 45px
+ * interaction floor with no block padding, `.fig-shut` by the base button's
+ * `0.5rem 0.8rem` — and shipped as 83.41 x 45 beside 79 x 59.53. Nothing here
+ * looked, because every check the toolbar had was about ITS OWN buttons.
+ *
+ * The predicate is about agreement rather than about either measurement: the
+ * floor is already checked elsewhere, and a pair that both drifted to 60px
+ * would still be wrong in the way the owner noticed. One CSS pixel of slack,
+ * for the same sub-pixel serialisation the toolbar's own 45px reserve exists
+ * for.
+ */
+function zoomHeadControlProblems(controls) {
+  const problems = [];
+  const { download, shut } = controls ?? {};
+  if (!download || !shut) {
+    return ["enlarged view header controls are missing"];
+  }
+  for (const [name, box] of [["download", download], ["close", shut]]) {
+    if (!["width", "height", "top"].every((edge) => Number.isFinite(box[edge]))) {
+      problems.push(`enlarged view ${name} control geometry is invalid`);
+    }
+  }
+  if (problems.length) return problems;
+  if (Math.abs(download.height - shut.height) > 1) {
+    problems.push(
+      `enlarged view header controls differ in height: ` +
+        `${download.height.toFixed(2)} against ${shut.height.toFixed(2)}`,
+    );
+  }
+  if (Math.abs(download.width - shut.width) > 1) {
+    problems.push(
+      `enlarged view header controls differ in width: ` +
+        `${download.width.toFixed(2)} against ${shut.width.toFixed(2)}`,
+    );
+  }
+  if (Math.abs(download.top - shut.top) > 1) {
+    problems.push("enlarged view header controls do not share one baseline");
+  }
+  return problems;
+}
+
 function conceptDiagramProblems(state, expectedCount, viewport) {
   const problems = [];
   const diagrams = state?.diagrams;
@@ -9780,6 +9825,35 @@ async function lifecycleSelfTest() {
       `the concept-diagram media predicates accept ${conceptDiagramPreflightMisses.join(", ")}`,
     );
   }
+  {
+    const even = { width: 83.41, height: 45, top: 50.2 };
+    if (zoomHeadControlProblems({ download: { ...even }, shut: { ...even } }).length) {
+      throw new Error("the enlarged-view header predicate rejects an even pair");
+    }
+    const cases = [
+      ["missing control", "controls are missing", { download: { ...even }, shut: null }],
+      // The pair that shipped, to the measurement.
+      ["shipped mismatch", "differ in height", {
+        download: { ...even }, shut: { width: 79, height: 59.53, top: 50.2 },
+      }],
+      ["width drift", "differ in width", {
+        download: { ...even }, shut: { ...even, width: 120 },
+      }],
+      ["off baseline", "one baseline", {
+        download: { ...even }, shut: { ...even, top: 70 },
+      }],
+      ["invalid geometry", "geometry is invalid", {
+        download: { ...even }, shut: { width: Number.NaN, height: 45, top: 50.2 },
+      }],
+    ];
+    for (const [name, expected, controls] of cases) {
+      if (!zoomHeadControlProblems(controls).some((problem) => problem.includes(expected))) {
+        throw new Error(`the enlarged-view header predicate accepts ${name}`);
+      }
+    }
+    console.log("site quality enlarged-view header self-test passed");
+  }
+
   console.log("site quality concept diagrams self-test passed");
 
   const completeCompactIdentity = {
@@ -17704,12 +17778,34 @@ async function main() {
             const download = [...(toolbar?.querySelectorAll(".fig-tool") ?? [])]
               .find((item) => item.getAttribute("aria-label")?.startsWith("下載 PNG："));
             const plotArea = dialog?.querySelector(".plot-area") ?? null;
+            /*
+              The header's controls are one row, so they are one control.
+              (No backticks: this whole block is a template literal.)
+
+              下載 is moved into this header while the dialog is open and sits
+              beside 關閉, and the two were sized by different rules: fig-tool to
+              the interaction floor, fig-shut by the base button's padding.
+              Measured 83.41 x 45 against 79 x 59.53 — a 14.5px difference in
+              height between two buttons on one line, which the owner saw before
+              anything here did. Both boxes are collected so the check is about
+              the pair agreeing, not about either number.
+            */
+            const shutButton = dialog?.querySelector(".fig-shut") ?? null;
+            const box = (element) => {
+              if (!element) return null;
+              const rect = element.getBoundingClientRect();
+              return { width: rect.width, height: rect.height, top: rect.top };
+            };
             const openState = {
               open: Boolean(dialog?.open),
               toolbarParent: toolbar?.parentElement?.className ?? "",
               enlargeVisible: visible(enlarge),
               downloadVisible: visible(download),
               plotHeight: plotArea?.getBoundingClientRect().height ?? 0,
+              headControls: {
+                download: box(download),
+                shut: box(shutButton),
+              },
             };
             dialog?.querySelector(".fig-shut")?.click();
             return {
@@ -17730,6 +17826,9 @@ async function main() {
             failures.push(
               `/trend/ @375 light: enlarged figure tools changed ${JSON.stringify(zoomTools)}`,
             );
+          }
+          for (const problem of zoomHeadControlProblems(zoomTools?.headControls)) {
+            failures.push(`/trend/ @375 light: ${problem}`);
           }
           const exported = await evaluate(`(async () => {
             const shell = [...document.querySelectorAll("main .evidence-figure")][2];
