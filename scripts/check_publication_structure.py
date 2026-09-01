@@ -548,20 +548,25 @@ def station_dossier_failures_for_text(html: str) -> list[str]:
     ]
     if len(controls) != 1:
         failures.append(f"station controls inventory changed: {len(controls)}")
-    selects = [
+    # Chapter 2's control is a combobox: one text input driving a listbox of
+    # options, rather than a native select. The properties below are unchanged
+    # — one control, uniquely named options, the option order matching the card
+    # order, exactly one selected and exactly one card visible — only the
+    # elements carrying them moved.
+    listboxes = [
         element
         for element in elements
-        if element.tag == "select"
-        and element.attributes.get("id") == "station-select"
-        and element.is_inside(picker)
+        if element.attributes.get("id") == "station-listbox" and element.is_inside(picker)
     ]
-    if len(selects) != 1:
-        return [*failures, f"station select inventory changed: {len(selects)}"]
-    select = selects[0]
+    if len(listboxes) != 1:
+        return [*failures, f"station listbox inventory changed: {len(listboxes)}"]
+    listbox = listboxes[0]
     options = [
-        element for element in elements if element.tag == "option" and element.is_inside(select)
+        element
+        for element in elements
+        if "data-station-option" in element.attributes and element.is_inside(listbox)
     ]
-    option_values = [element.attributes.get("value") or "" for element in options]
+    option_values = [element.attributes.get("data-station-option") or "" for element in options]
     if not option_values or any(not value for value in option_values):
         failures.append("station option values are empty")
     if len(set(option_values)) != len(option_values):
@@ -580,14 +585,16 @@ def station_dossier_failures_for_text(html: str) -> list[str]:
     if option_values != report_values:
         failures.append("station selector and report order changed")
 
-    selected_options = [element for element in options if "selected" in element.attributes]
+    selected_options = [
+        element for element in options if element.attributes.get("aria-selected") == "true"
+    ]
     visible_reports = [element for element in reports if element.visible]
     if len(selected_options) != 1:
         failures.append(f"station selected-option inventory changed: {len(selected_options)}")
     if len(visible_reports) != 1:
         failures.append(f"station visible report inventory changed: {len(visible_reports)}")
     if len(selected_options) == 1 and len(visible_reports) == 1:
-        selected_value = selected_options[0].attributes.get("value") or ""
+        selected_value = selected_options[0].attributes.get("data-station-option") or ""
         visible_value = visible_reports[0].attributes.get("data-station") or ""
         if selected_value != visible_value:
             failures.append("station selector and visible identity disagree")
@@ -3750,9 +3757,9 @@ def _run_preflight() -> None:
     valid_station_dossier = """
 <div data-station-picker>
 <p id="station-say" role="status" aria-live="polite"></p>
-<div data-station-controls><label><span>測站</span><select id="station-select">
-<option value="甲站" selected>甲站</option><option value="乙站">乙站</option>
-</select></label></div>
+<div data-station-controls><label for="station-filter"><span>測站</span></label><input id="station-filter" role="combobox"><ul id="station-listbox" role="listbox" hidden>
+<li data-station-option="甲站" aria-selected="true">甲站</li><li data-station-option="乙站" aria-selected="false">乙站</li>
+</ul></div>
 <article data-station-report data-station="甲站">
 <header data-station-identity><h2><span data-station-name>甲站</span></h2><span data-station-year>2025 年</span></header>
 <div data-station-stats>
@@ -3788,9 +3795,12 @@ def _run_preflight() -> None:
             f"station dossier preflight rejected the valid control: {valid_station_failures}"
         )
 
-    first_option = '<option value="甲站" selected>甲站</option>'
-    second_option = '<option value="乙站">乙站</option>'
-    select_block = f'<select id="station-select">\n{first_option}{second_option}\n</select>'
+    first_option = '<li data-station-option="甲站" aria-selected="true">甲站</li>'
+    second_option = '<li data-station-option="乙站" aria-selected="false">乙站</li>'
+    select_block = (
+        f'<ul id="station-listbox" role="listbox" hidden>'
+        f'\n{first_option}{second_option}\n</ul>'
+    )
     first_report = '<article data-station-report data-station="甲站">'
     second_report = '<article data-station-report data-station="乙站" hidden>'
     first_identity = (
@@ -3836,17 +3846,21 @@ def _run_preflight() -> None:
             "station picker inventory changed",
             valid_station_dossier.replace(" data-station-picker", "", 1),
         ),
-        "missing select": (
-            "station select inventory changed",
-            valid_station_dossier.replace(' id="station-select"', "", 1),
+        "missing listbox": (
+            "station listbox inventory changed",
+            valid_station_dossier.replace(' id="station-listbox"', "", 1),
         ),
-        "duplicate select": (
-            "station select inventory changed",
+        "duplicate listbox": (
+            "station listbox inventory changed",
             valid_station_dossier.replace(select_block, select_block + select_block, 1),
         ),
         "duplicate option": (
             "station option values are not unique",
-            valid_station_dossier.replace(second_option, first_option.replace(" selected", ""), 1),
+            valid_station_dossier.replace(
+                second_option,
+                first_option.replace('aria-selected="true"', 'aria-selected="false"'),
+                1,
+            ),
         ),
         "missing report": (
             "station selector and report order changed",
@@ -3884,9 +3898,14 @@ def _run_preflight() -> None:
         ),
         "selected report mismatch": (
             "station selector and visible identity disagree",
-            valid_station_dossier.replace(" selected", "", 1).replace(
-                second_option, '<option value="乙站" selected>乙站</option>', 1
-            ),
+            # Move the selected flag to the option whose card is hidden: one
+            # option still claims selection, one card is still visible, and
+            # they name different stations.
+            valid_station_dossier.replace(first_option, first_option.replace(
+                'aria-selected="true"', 'aria-selected="false"'
+            ), 1).replace(second_option, second_option.replace(
+                'aria-selected="false"', 'aria-selected="true"'
+            ), 1),
         ),
         "missing identity": (
             "station identity inventory changed",

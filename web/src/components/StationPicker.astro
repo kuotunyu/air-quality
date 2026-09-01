@@ -105,7 +105,7 @@ const rankPosition = (rank: number, total: number) =>
 
 <div class="picker" data-primary-evidence data-station-picker>
   <p class="note nojs">
-    這一章的測站選單需要 JavaScript。下面直接列出全部 {cards.length} 個測站，
+    這一章的測站搜尋需要 JavaScript。下面直接列出全部 {cards.length} 個測站，
     依縣市由北到南排序。
   </p>
 
@@ -127,51 +127,76 @@ const rankPosition = (rank: number, total: number) =>
   */}
   <p id="station-say" class="visually-hidden" role="status" aria-live="polite"></p>
 
+  {/*
+    One control, because two of them were one too many.
+
+    It was a search box beside a menu: typing narrowed the menu and nothing
+    else, so the reader typed 「新竹」, read 「3 個測站符合」 off to the right, and
+    still had a closed menu in front of them. A control that answers a question
+    nobody can see the result of reads as broken, and the owner reported it as
+    exactly that.
+
+    What the search was solving is still real and still measured — a native
+    `<select>` types-to-jump on the first character, which for 中文 needs an IME
+    to have committed before the keystroke arrives, so 「西屯」 never found 西屯
+    and 79 stations in 23 county groups had to be scrolled. So the box stays and
+    the menu becomes its own results: typing filters the list in place, and the
+    list is what chooses.
+
+    Closed until it is asked for, and grouped by county when it opens, because
+    the groups are how someone finds a station they cannot name — the reason the
+    menu existed at all.
+  */}
   <div class="controls station-controls" data-station-controls>
-    {/*
-      Typing narrows the menu; the menu is still what chooses.
-
-      79 stations in 20 county groups is a long way to scroll for someone who
-      knows the name they want, and a native `<select>` types-to-jump by the
-      first character, which for 中文 depends on an IME committing before the
-      keystroke reaches it — 「西屯」 does not find 西屯.
-
-      This filters rather than replacing: the reader who does not know the name
-      still gets the county groups they were relying on, and the one who does
-      gets there in four keystrokes. It sits inside `.controls`, so the
-      `<noscript>` rule above takes it away with the menu — a filter that cannot
-      filter is the same nuisance the menu would be.
-    */}
-    <label class="control-field station-search-field">
-      <span class="control-label">搜尋</span>
-      <input
-        id="station-filter"
-        type="search"
-        autocomplete="off"
-        placeholder="輸入測站名稱"
-        aria-describedby="station-filter-help station-filter-count"
-      />
-    </label>
+    <div class="control-field station-search-field">
+      <label class="control-label" for="station-filter">測站</label>
+      <div class="combo-shell">
+        <input
+          id="station-filter"
+          type="text"
+          role="combobox"
+          autocomplete="off"
+          placeholder="輸入測站或縣市名稱"
+          aria-expanded="false"
+          aria-controls="station-listbox"
+          aria-autocomplete="list"
+          aria-describedby="station-filter-help station-filter-count"
+        />
+        {/*
+          `role="listbox"` on a <ul> and `role="option"` on its items, so the
+          county headings can stay as `role="group"` labels rather than being
+          flattened into the option list. Hidden rather than absent when closed:
+          `aria-activedescendant` needs its target in the document, and a list
+          rebuilt on every keystroke would lose the element the input is
+          pointing at mid-announcement.
+        */}
+        <ul id="station-listbox" role="listbox" aria-label="測站" hidden>
+          {
+            counties.map((group) => (
+              <li role="group" aria-label={group.label} data-county-group>
+                <span class="combo-county" aria-hidden="true">{group.label}</span>
+                <ul role="none">
+                  {group.items.map((card) => (
+                    <li
+                      role="option"
+                      id={`station-option-${card.station_name}`}
+                      data-station-option={card.station_name}
+                      aria-selected={card.station_name === initial.station_name ? "true" : "false"}
+                    >
+                      {card.station_name}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </div>
     <p id="station-filter-help" class="control-note">
-      搜尋只會縮小下方測站選單；請再從選單選擇一站。
+      輸入以縮小清單，或直接從清單選一站。
     </p>
     <p id="station-filter-count" class="control-note" role="status" aria-live="polite"></p>
-    <label class="control-field station-select-field">
-      <span class="control-label">測站</span>
-      <select id="station-select">
-        {
-          counties.map((group) => (
-            <optgroup label={group.label}>
-              {group.items.map((card) => (
-                <option value={card.station_name} selected={card.station_name === initial.station_name}>
-                  {card.station_name}
-                </option>
-              ))}
-            </optgroup>
-          ))
-        }
-      </select>
-    </label>
   </div>
 
   {/*
@@ -334,7 +359,11 @@ const rankPosition = (rank: number, total: number) =>
 <script>
   import { mapFrame } from "../lib/taiwan";
 
-  const select = document.getElementById("station-select") as HTMLSelectElement | null;
+  const input = document.getElementById("station-filter") as HTMLInputElement | null;
+  const listbox = document.getElementById("station-listbox");
+  const options = Array.from(document.querySelectorAll<HTMLElement>("[data-station-option]"));
+  const countyGroups = Array.from(document.querySelectorAll<HTMLElement>("[data-county-group]"));
+  const count = document.getElementById("station-filter-count");
   const reports = Array.from(document.querySelectorAll<HTMLElement>(".report[data-station]"));
 
   const say = document.getElementById("station-say");
@@ -410,78 +439,25 @@ const rankPosition = (rank: number, total: number) =>
    * Groups are hidden when they empty out. A county heading over nothing reads
    * as a station that vanished rather than as one that did not match.
    */
-  const filter = document.getElementById("station-filter") as HTMLInputElement | null;
-  const count = document.getElementById("station-filter-count");
-  const groups = Array.from(select?.querySelectorAll("optgroup") ?? []);
-
   /*
-   * 臺 and 台 are the same word and only one of them is in the data.
+   * Selecting a station: the card, the announcement and the map move together.
    *
-   * The register writes the official form — 臺北市, 臺中市, 臺南市, 臺東縣 —
-   * and readers type the everyday one. Measured against the 22 county groups:
-   * 「臺中」 matched, 「台中」 matched nothing, and the same held for 台北, 台南
-   * and 台東. The search worked for eighteen counties and failed silently on
-   * the four that most people would try first, answering 「沒有測站符合」 to a
-   * county it holds seven stations in.
+   * Read off the card that is now on screen rather than from a second copy of
+   * the data, so the announcement cannot drift from what is displayed and stays
+   * correct if the card's contents ever change.
    *
-   * Folded on both sides so it does not matter which form is typed or which
-   * form the next register update ships.
+   * It deliberately does NOT repeat the h2. A reader who hears 「基隆」 and then
+   * arrows down into the card would otherwise be told the station's name twice
+   * in a row; what they need is the headline the card leads with, which the h2
+   * does not carry. So: the name once, then the year and the two figures a
+   * reader would ask for first.
    */
-  const fold = (value: string) => value.toLowerCase().replace(/臺/g, "台");
-
-  filter?.addEventListener("input", () => {
-    const needle = fold(filter.value.trim());
-    let matched = 0;
-    for (const group of groups) {
-      // The county matches too. A reader who knows 高雄 but not 前金 is exactly
-      // the one a search box is for, and the county names are already here as
-      // the group labels — matching only the option text answered 「沒有測站符合」
-      // to the most obvious thing anyone would type.
-      const county = fold(group.label ?? "");
-      const countyHit = Boolean(needle) && county.includes(needle);
-      let groupMatched = 0;
-      for (const option of Array.from(group.querySelectorAll("option"))) {
-        const hit =
-          !needle || countyHit || fold(option.textContent ?? "").includes(needle);
-        option.hidden = !hit;
-        if (hit) groupMatched += 1;
-      }
-      group.hidden = groupMatched === 0;
-      matched += groupMatched;
-    }
-    if (!count) return;
-    count.textContent = !needle
-      ? ""
-      : matched === 0
-        ? "沒有測站符合，選單維持完整"
-        : `${matched} 個測站符合`;
-    // Nothing matched, so nothing was narrowed: leave the reader the whole
-    // register rather than a menu that looks broken.
-    if (matched === 0) {
-      for (const group of groups) {
-        group.hidden = false;
-        for (const option of Array.from(group.querySelectorAll("option"))) option.hidden = false;
-      }
-    }
-  });
-
-  select?.addEventListener("change", () => {
-    for (const report of reports) {
-      report.hidden = report.dataset.station !== select.value;
+  const showStation = (name: string) => {
+    for (const report of reports) report.hidden = report.dataset.station !== name;
+    for (const option of options) {
+      option.setAttribute("aria-selected", option.dataset.stationOption === name ? "true" : "false");
     }
 
-    /*
-     * Read off the card that is now on screen, rather than from a second copy
-     * of the data. Two things follow from that: the announcement cannot drift
-     * from what is displayed, and it stays correct if the card's contents ever
-     * change.
-     *
-     * It deliberately does NOT repeat the h2. A reader who hears 「基隆」 and
-     * then arrows down into the card would otherwise be told the station's name
-     * twice in a row; what they need is the headline the card leads with, which
-     * the h2 does not carry. So: the name once, then the year and the two
-     * figures a reader would ask for first.
-     */
     const shown = reports.find((r) => !r.hidden);
     // Before the early return below: the map must follow the card even on a
     // page where the live region is missing.
@@ -490,10 +466,10 @@ const rankPosition = (rank: number, total: number) =>
     const text = (sel: string) => shown.querySelector(sel)?.textContent?.trim() ?? "";
     const stats = Array.from(shown.querySelectorAll<HTMLElement>(".stat"));
     const figure = (i: number) => {
-      const s = stats[i];
-      if (!s) return "";
-      const value = s.querySelector(".stat-value")?.textContent?.trim() ?? "";
-      const label = s.querySelector(".stat-label")?.textContent?.trim() ?? "";
+      const st = stats[i];
+      if (!st) return "";
+      const value = st.querySelector(".stat-value")?.textContent?.trim() ?? "";
+      const label = st.querySelector(".stat-label")?.textContent?.trim() ?? "";
       return value && label ? `${label} ${value}` : "";
     };
     say.textContent = [
@@ -503,7 +479,165 @@ const rankPosition = (rank: number, total: number) =>
     ]
       .filter(Boolean)
       .join("；");
+  };
+
+  /*
+   * 臺 and 台 are the same word and only one of them is in the data.
+   *
+   * The register writes the official form — 臺北市, 臺中市, 臺南市, 臺東縣 —
+   * and readers type the everyday one. Measured against the 22 county groups:
+   * 「臺中」 matched, 「台中」 matched nothing, and the same held for 台北, 台南
+   * and 台東. The search worked for eighteen counties and failed silently on
+   * the four that most people would try first, answering 「沒有測站符合」 to a
+   * county it holds five stations in.
+   *
+   * Folded on both sides so it does not matter which form is typed or which
+   * form the next register update ships.
+   */
+  const fold = (value: string) => value.toLowerCase().replace(/臺/g, "台");
+
+  const visibleOptions = () =>
+    options.filter((o) => !o.hidden && !o.closest<HTMLElement>("[data-county-group]")?.hidden);
+
+  let active: HTMLElement | null = null;
+
+  const setActive = (option: HTMLElement | null) => {
+    if (active) active.classList.remove("is-active");
+    active = option;
+    if (!input) return;
+    if (!option) {
+      input.removeAttribute("aria-activedescendant");
+      return;
+    }
+    option.classList.add("is-active");
+    input.setAttribute("aria-activedescendant", option.id);
+    option.scrollIntoView({ block: "nearest" });
+  };
+
+  const openList = () => {
+    if (!listbox || !input) return;
+    listbox.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  };
+
+  const closeList = () => {
+    if (!listbox || !input) return;
+    listbox.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    setActive(null);
+  };
+
+  /*
+   * Filtering narrows the list the reader is looking at, so the answer is on
+   * screen rather than in a number beside a closed menu. The county match is
+   * kept: a reader who knows 高雄 but not 前金 is exactly the one this is for,
+   * and the county names are already here as the group labels.
+   */
+  const applyFilter = () => {
+    if (!input) return;
+    const needle = fold(input.value.trim());
+    let matched = 0;
+    for (const group of countyGroups) {
+      const county = fold(group.getAttribute("aria-label") ?? "");
+      const countyHit = Boolean(needle) && county.includes(needle);
+      let groupMatched = 0;
+      for (const option of Array.from(group.querySelectorAll<HTMLElement>("[data-station-option]"))) {
+        const hit = !needle || countyHit || fold(option.textContent ?? "").includes(needle);
+        option.hidden = !hit;
+        if (hit) groupMatched += 1;
+      }
+      group.hidden = groupMatched === 0;
+      matched += groupMatched;
+    }
+
+    // Nothing matched, so nothing was narrowed: leave the reader the whole
+    // register rather than a list that looks broken.
+    if (matched === 0) {
+      for (const group of countyGroups) {
+        group.hidden = false;
+        for (const option of Array.from(group.querySelectorAll<HTMLElement>("[data-station-option]"))) {
+          option.hidden = false;
+        }
+      }
+    }
+
+    if (count) {
+      count.textContent = !needle
+        ? ""
+        : matched === 0
+          ? "沒有測站符合，清單維持完整"
+          : `${matched} 個測站符合`;
+    }
+
+    if (active?.hidden) setActive(null);
+  };
+
+  input?.addEventListener("input", () => {
+    openList();
+    applyFilter();
   });
+
+  input?.addEventListener("focus", () => {
+    openList();
+  });
+
+  input?.addEventListener("keydown", (event) => {
+    const list = visibleOptions();
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      openList();
+      if (!list.length) return;
+      const at = active ? list.indexOf(active) : -1;
+      const next = event.key === "ArrowDown"
+        ? list[Math.min(at + 1, list.length - 1)] ?? list[0]
+        : list[Math.max(at - 1, 0)] ?? list[list.length - 1];
+      setActive(next);
+      return;
+    }
+    if (event.key === "Enter" && active) {
+      event.preventDefault();
+      commit(active);
+      return;
+    }
+    if (event.key === "Escape") {
+      closeList();
+    }
+  });
+
+  /*
+   * Committing empties the box rather than filling it with the chosen name.
+   *
+   * The card underneath already says which station this is, in type several
+   * times the size; leaving the query in the field would say it again and leave
+   * the reader to clear it before the next search. An empty field with a
+   * placeholder reads as ready.
+   */
+  const commit = (option: HTMLElement) => {
+    const name = option.dataset.stationOption;
+    if (!name || !input) return;
+    showStation(name);
+    input.value = "";
+    applyFilter();
+    closeList();
+    input.focus();
+  };
+
+  listbox?.addEventListener("mousedown", (event) => {
+    const option = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-station-option]");
+    if (!option) return;
+    // `mousedown` rather than `click`: the input's blur would close the list
+    // before a click could land on it.
+    event.preventDefault();
+    commit(option);
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target as Node | null;
+    if (!target || !input || !listbox) return;
+    if (input.contains(target) || listbox.contains(target)) return;
+    closeList();
+  });
+
 </script>
 
 <style>
@@ -512,23 +646,27 @@ const rankPosition = (rank: number, total: number) =>
     container-type: inline-size;
   }
 
+  /*
+   * One column, because there is one control.
+   *
+   * The two-field grid — search beside menu, each with its own support row —
+   * went with the menu. What is left is a field and the two lines that describe
+   * it, so the areas are a stack and the whole thing is bounded to a width a
+   * station name actually needs rather than spanning the page.
+   */
   .station-controls {
     width: 100%;
-    max-width: none;
+    max-width: min(100%, 30rem);
     align-items: start;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "search"
       "help"
-      "count"
-      "select";
+      "count";
   }
 
   .station-search-field {
     grid-area: search;
-  }
-
-  .station-select-field {
-    grid-area: select;
   }
 
   #station-filter-help {
@@ -539,7 +677,77 @@ const rankPosition = (rank: number, total: number) =>
     grid-area: count;
   }
 
-  .station-controls input[type="search"] {
+  /* The input and its list share one positioning context, so the list hangs
+     off the field rather than off the page. */
+  .combo-shell {
+    position: relative;
+  }
+
+  #station-listbox {
+    position: absolute;
+    z-index: 3;
+    inset-inline: 0;
+    inset-block-start: calc(100% + 0.3rem);
+    max-height: 19rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: var(--space-1) 0;
+    list-style: none;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--bg-raised);
+    box-shadow: 0 6px 18px oklch(0% 0 0 / 0.09);
+  }
+
+  #station-listbox[hidden] {
+    display: none;
+  }
+
+  #station-listbox ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The county heading is a label for the group, not an option — it is not in
+     the option list the arrow keys walk. */
+  .combo-county {
+    display: block;
+    padding: var(--space-1) 0.8rem 0.15rem;
+    color: var(--text-faint);
+    font-size: var(--text-xs);
+    font-weight: 700;
+  }
+
+  [data-station-option] {
+    padding: 0.4rem 0.8rem;
+    color: var(--text);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  [data-station-option][hidden],
+  [data-county-group][hidden] {
+    display: none;
+  }
+
+  /* One highlight for both routes in: `is-active` is where the arrow keys are,
+     and hover is where the pointer is. */
+  [data-station-option].is-active,
+  [data-station-option]:hover {
+    background: var(--bg-sunken);
+  }
+
+  [data-station-option][aria-selected="true"] {
+    font-weight: 700;
+  }
+
+  [data-station-option][aria-selected="true"]::after {
+    content: " ·";
+    color: var(--text-faint);
+  }
+
+  .station-controls input[type="text"] {
     /* Same treatment the select gets four rules up in global.css, for the same
        reason: a control sized inside a label is only bounded if it is told to
        shrink. */
@@ -554,7 +762,7 @@ const rankPosition = (rank: number, total: number) =>
     padding: 0.5rem 0.8rem;
   }
 
-  .station-controls input[type="search"]:hover {
+  .station-controls input[type="text"]:hover {
     border-color: var(--text-faint);
   }
 
@@ -717,21 +925,6 @@ const rankPosition = (rank: number, total: number) =>
     border: 0;
     border-radius: 0;
     padding: 0;
-  }
-
-  @container (min-width: 30rem) {
-    .station-controls {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-areas:
-        "search select"
-        "help count";
-      column-gap: var(--space-3);
-      row-gap: var(--space-1);
-    }
-
-    #station-filter-count {
-      text-align: end;
-    }
   }
 
   @container (min-width: 30rem) {

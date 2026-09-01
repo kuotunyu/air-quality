@@ -1313,7 +1313,6 @@ function stationRegisterProblems(state, mode) {
 function stationDossierProblems(state) {
   const problems = [];
   const expectedColumns = new Map([[375, 1], [768, 2], [1024, 4], [1440, 4]]);
-  const expectedControlColumns = new Map([[375, 1], [768, 2], [1024, 2], [1440, 2]]);
   const expectedStatisticTops = [0, 0, 0, 0];
   if (!expectedColumns.has(state?.viewportWidth)) {
     return ["station dossier viewport is not one of the reviewed widths"];
@@ -1322,11 +1321,29 @@ function stationDossierProblems(state) {
     Boolean(part?.visible && part.width > 0 && part.height > 0);
   if (!visibleBox(state?.picker)) problems.push("station dossier is not visibly rendered");
   if (!visibleBox(state?.controls)) problems.push("station locator is not visibly rendered");
-  else if (Math.abs(state.controls.width - state.picker.width) > 1) {
-    problems.push("station locator does not span the picker");
-  }
-  if (state?.controlColumns !== expectedControlColumns.get(state.viewportWidth)) {
-    problems.push(`station locator uses the wrong ${state.viewportWidth}px column count`);
+  else {
+    /*
+     * Bounded, not spanning.
+     *
+     * The old contract was that the controls matched the picker's width
+     * exactly, written when there were two fields side by side and the pair
+     * had to fill the row. One field does not: a search box stretched to
+     * 1012px is a line a station name crosses a tenth of. It takes the picker's
+     * width while the picker is narrow and stops at a readable measure once
+     * there is room — measured 329/329 at 375, and 660 of 1012 at 1440.
+     *
+     * What still has to hold is that it never exceeds the picker and never
+     * collapses below something a name can be typed into.
+     */
+    if (state.controls.width > state.picker.width + 1) {
+      problems.push("station locator is wider than the picker");
+    }
+    const floor = Math.min(320, state.picker.width);
+    if (state.controls.width < floor - 1) {
+      problems.push(
+        `station locator is ${Math.round(state.controls.width)}px against a ${Math.round(floor)}px floor`,
+      );
+    }
   }
   if (!state?.supportingRowsFollowFields) {
     problems.push("station locator support rows are detached from their fields");
@@ -1334,8 +1351,57 @@ function stationDossierProblems(state) {
   if (!state?.controlsFollowDomOrder) {
     problems.push("station locator keyboard order changed");
   }
+  // The field itself: still the one thing a finger has to land on, so it keeps
+  // the 44px target the menu was held to.
   if (!visibleBox(state?.select)) problems.push("station selector is not visibly rendered");
   else if (state.select.height < 44) problems.push("station selector target is shorter than 44px");
+  /*
+   * One control now, not two.
+   *
+   * The search box beside the menu narrowed the menu and nothing else, so a
+   * reader typed a county, read a count off to the right and still faced a
+   * closed menu — reported as a control that does nothing. The box and the menu
+   * are one combobox: typing filters the list in place and the list is what
+   * chooses. What used to be a two-column contract is a combobox contract.
+   */
+  const combo = state?.combo;
+  if (!combo) {
+    problems.push("station combobox is missing");
+  } else {
+    if (combo.role !== "combobox") problems.push("station control is not a combobox");
+    if (combo.autocomplete !== "list") {
+      problems.push("station combobox does not advertise list autocomplete");
+    }
+    if (combo.controlsListbox !== "station-listbox") {
+      problems.push("station combobox does not point at its listbox");
+    }
+    if (!combo.listboxPresent) problems.push("station combobox has no listbox");
+    if (combo.listboxRole !== "listbox") {
+      problems.push("station option list is not exposed as a listbox");
+    }
+    // Closed on arrival: 79 stations unrolled under the field would push the
+    // card the chapter exists to show below the fold.
+    if (combo.listboxHiddenAtRest !== true) {
+      problems.push("station combobox opens before it is asked to");
+    }
+    if (combo.expanded !== "false") {
+      problems.push("station combobox reports itself expanded while closed");
+    }
+    if (combo.optionCountInList !== state.optionCount) {
+      problems.push("station combobox option inventory differs from the register");
+    }
+    // The groups are how a reader finds a station they cannot name; losing them
+    // is what the menu was kept for in the first place.
+    if (!Number.isInteger(combo.groupCountInList) || combo.groupCountInList < 2) {
+      problems.push("station combobox lost its county grouping");
+    }
+    if (
+      !Array.isArray(combo.selectedOptions) || combo.selectedOptions.length !== 1 ||
+      combo.selectedOptions[0] !== state.visibleStation
+    ) {
+      problems.push("station combobox selection and visible report disagree");
+    }
+  }
   // The search box, when the page carries one. Checked for the same touch
   // target the menu gets, and for the property that matters more: filtering
   // must narrow the menu without moving the selection or the card.
@@ -1749,9 +1815,17 @@ function stationFilterHelperProblems(state) {
   if (state?.count !== 1 || !state?.visible) {
     problems.push("station filter helper is not visible");
   }
+  /*
+   * The promise the copy has to keep changed with the control.
+   *
+   * It used to say the search narrowed a menu the reader then had to open —
+   * true of the two-field version, and the reason it read as doing nothing.
+   * One combobox does both, so the line has to say that typing narrows the list
+   * and that the list is what chooses.
+   */
   if (
-    !String(state?.text ?? "").includes("搜尋只會縮小") ||
-    !String(state?.text ?? "").includes("再從選單選擇")
+    !String(state?.text ?? "").includes("縮小清單") ||
+    !String(state?.text ?? "").includes("從清單選")
   ) {
     problems.push("station filter helper text changed");
   }
@@ -7014,7 +7088,7 @@ async function lifecycleSelfTest() {
   const completeStationFilterHelper = {
     count: 1,
     visible: true,
-    text: "搜尋只會縮小下方測站選單；請再從選單選擇一站。",
+    text: "輸入以縮小清單，或直接從清單選一站。",
     describedBy: "station-filter-help station-filter-count",
   };
   if (stationFilterHelperProblems(completeStationFilterHelper).length) {
@@ -7453,10 +7527,14 @@ async function lifecycleSelfTest() {
       height: viewportWidth === 375 ? 280 : 132,
     },
     searchField: { visible: true, width: 300, height: 76 },
-    selectField: { visible: true, width: 300, height: 76 },
     help: { visible: true, width: 300, height: 34 },
     count: { visible: true, width: 300, height: 34 },
-    controlColumns: viewportWidth === 375 ? 1 : 2,
+    combo: {
+      role: "combobox", expanded: "false", controlsListbox: "station-listbox",
+      autocomplete: "list", listboxPresent: true, listboxRole: "listbox",
+      listboxHiddenAtRest: true, optionCountInList: 79, groupCountInList: 23,
+      selectedOptions: ["西屯"],
+    },
     supportingRowsFollowFields: true,
     controlsFollowDomOrder: true,
     select: { visible: true, width: 320, height: 44 },
@@ -7550,21 +7628,47 @@ async function lifecycleSelfTest() {
   expectStationDossierProblem("hidden picker", 375, (state) => {
     state.picker.visible = false;
   }, "dossier is not visibly rendered");
-  expectStationDossierProblem("hidden selector", 375, (state) => {
+  expectStationDossierProblem("hidden field", 375, (state) => {
     state.select.visible = false;
   }, "selector is not visibly rendered");
-  expectStationDossierProblem("zero-area selector", 375, (state) => {
+  expectStationDossierProblem("zero-area field", 375, (state) => {
     state.select.width = 0;
   }, "selector is not visibly rendered");
-  expectStationDossierProblem("43px selector", 375, (state) => {
+  expectStationDossierProblem("43px field", 375, (state) => {
     state.select.height = 43;
   }, "shorter than 44px");
-  expectStationDossierProblem("half-width locator", 1440, (state) => {
-    state.controls.width /= 2;
-  }, "does not span the picker");
-  expectStationDossierProblem("one-column desktop locator", 1440, (state) => {
-    state.controlColumns = 1;
-  }, "wrong 1440px column count");
+  expectStationDossierProblem("locator wider than its picker", 1440, (state) => {
+    state.controls.width = state.picker.width + 40;
+  }, "wider than the picker");
+  expectStationDossierProblem("collapsed locator", 1440, (state) => {
+    state.controls.width = 120;
+  }, "against a 320px floor");
+  expectStationDossierProblem("missing combobox", 1440, (state) => {
+    state.combo = null;
+  }, "station combobox is missing");
+  expectStationDossierProblem("plain text field", 1440, (state) => {
+    state.combo.role = "textbox";
+  }, "is not a combobox");
+  expectStationDossierProblem("combobox without its listbox", 1440, (state) => {
+    state.combo.listboxPresent = false;
+  }, "has no listbox");
+  // 79 stations unrolled under the field would push the card below the fold.
+  expectStationDossierProblem("list open on arrival", 375, (state) => {
+    state.combo.listboxHiddenAtRest = false;
+  }, "opens before it is asked to");
+  expectStationDossierProblem("expanded while closed", 375, (state) => {
+    state.combo.expanded = "true";
+  }, "reports itself expanded while closed");
+  // The groups are how a reader finds a station they cannot name.
+  expectStationDossierProblem("flattened county groups", 1440, (state) => {
+    state.combo.groupCountInList = 0;
+  }, "lost its county grouping");
+  expectStationDossierProblem("partial option list", 1440, (state) => {
+    state.combo.optionCountInList = 40;
+  }, "option inventory differs from the register");
+  expectStationDossierProblem("selection disagrees with the card", 1440, (state) => {
+    state.combo.selectedOptions = ["基隆"];
+  }, "selection and visible report disagree");
   expectStationDossierProblem("detached locator support", 1440, (state) => {
     state.supportingRowsFollowFields = false;
   }, "support rows are detached");
@@ -13090,19 +13194,15 @@ async function main() {
       if (!element) return null;
       return Number.parseFloat(getComputedStyle(element)["border" + side + "Width"]);
     };
-    const select = document.querySelector("#station-select");
     const filterBox = document.querySelector("#station-filter");
     const controls = document.querySelector("[data-station-controls]");
     const searchField = document.querySelector(".station-search-field");
-    const selectField = document.querySelector(".station-select-field");
     const help = document.querySelector("#station-filter-help");
     const count = document.querySelector("#station-filter-count");
+    const listbox = document.querySelector("#station-listbox");
     const searchRect = searchField?.getBoundingClientRect() ?? null;
-    const selectRect = selectField?.getBoundingClientRect() ?? null;
     const helpRect = help?.getBoundingClientRect() ?? null;
     const countRect = count?.getBoundingClientRect() ?? null;
-    const controlColumns = searchRect && selectRect &&
-      Math.abs(searchRect.top - selectRect.top) <= 1 ? 2 : 1;
     const reports = [...document.querySelectorAll("[data-station-report]")];
     const text = (element) => element?.textContent?.trim() ?? "";
     const visibleReports = () => reports.filter(rendered);
@@ -13129,25 +13229,43 @@ async function main() {
       picker: inspect(document.querySelector("[data-station-picker]")),
       controls: inspect(controls),
       searchField: inspect(searchField),
-      selectField: inspect(selectField),
       help: inspect(help),
       count: inspect(count),
-      controlColumns,
+      combo: filterBox ? {
+        role: filterBox.getAttribute("role"),
+        expanded: filterBox.getAttribute("aria-expanded"),
+        controlsListbox: filterBox.getAttribute("aria-controls"),
+        autocomplete: filterBox.getAttribute("aria-autocomplete"),
+        // The list must exist in the document while closed: aria-activedescendant
+        // points into it, and a list rebuilt per keystroke loses its target.
+        listboxPresent: Boolean(listbox),
+        listboxRole: listbox?.getAttribute("role") ?? "",
+        listboxHiddenAtRest: listbox ? listbox.hasAttribute("hidden") : null,
+        optionCountInList: document.querySelectorAll("[data-station-option]").length,
+        groupCountInList: document.querySelectorAll("[data-county-group]").length,
+        selectedOptions: [...document.querySelectorAll("[data-station-option]")]
+          .filter((option) => option.getAttribute("aria-selected") === "true")
+          .map((option) => option.getAttribute("data-station-option")),
+      } : null,
+      // One field, two support rows, stacked under it.
       supportingRowsFollowFields: Boolean(
-        searchRect && selectRect && helpRect && countRect &&
-        (controlColumns === 1
-          ? helpRect.top >= searchRect.bottom && selectRect.top >= countRect.bottom
-          : helpRect.top >= searchRect.bottom && countRect.top >= selectRect.bottom)
+        searchRect && helpRect && countRect &&
+        helpRect.top >= searchRect.bottom - 1 && countRect.top >= helpRect.bottom - 1
       ),
+      // One field now, so the order that matters is the field before the two
+      // lines that describe it — the pair the arrow keys and a screen reader
+      // walk in turn.
       controlsFollowDomOrder: Boolean(
-        filterBox && select &&
-        (filterBox.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING)
+        filterBox && help &&
+        (filterBox.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING)
       ),
-      select: inspect(select),
-      optionCount: select?.options.length ?? 0,
+      select: inspect(filterBox),
+      optionCount: document.querySelectorAll("[data-station-option]").length,
       reportCount: reports.length,
       visibleReportCount: visibleReports().length,
-      selectedValue: select?.value ?? null,
+      selectedValue: [...document.querySelectorAll("[data-station-option]")]
+        .find((option) => option.getAttribute("aria-selected") === "true")
+        ?.getAttribute("data-station-option") ?? null,
       visibleStation: shown?.getAttribute("data-station") ?? null,
       identityText: text(shown?.querySelector("[data-station-name]")),
       identityName: inspect(shown?.querySelector("[data-station-name]")),
@@ -13246,21 +13364,26 @@ async function main() {
      * that matters, because matching only the option text answered
      * 「沒有測站符合」 to the most obvious thing a reader would type.
      */
-    if (filterBox && select) {
-      const heldValue = select.value;
+    if (filterBox && listbox) {
       const heldReport = visibleReports()[0]?.getAttribute("data-station") ?? null;
-      const total = select.options.length;
-      const county = select.querySelector("optgroup")?.label ?? "";
+      const allOptions = [...document.querySelectorAll("[data-station-option]")];
+      const total = allOptions.length;
+      const county = document.querySelector("[data-county-group]")?.getAttribute("aria-label") ?? "";
       const settle = () =>
         new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const stillShown = () =>
-        [...select.querySelectorAll("option")].filter((option) => !option.hidden).length;
+      const stillShown = () => allOptions.filter((option) =>
+        !option.hidden && !option.closest("[data-county-group]").hidden).length;
+      const selectedNow = () => allOptions
+        .filter((option) => option.getAttribute("aria-selected") === "true")
+        .map((option) => option.getAttribute("data-station-option"))
+        .join(",");
+      const heldSelection = selectedNow();
       filterBox.value = county;
       filterBox.dispatchEvent(new Event("input", { bubbles: true }));
       await settle();
       const narrowedTo = stillShown();
       const heldWhileFiltered =
-        select.value === heldValue &&
+        selectedNow() === heldSelection &&
         (visibleReports()[0]?.getAttribute("data-station") ?? null) === heldReport;
       filterBox.value = "";
       filterBox.dispatchEvent(new Event("input", { bubbles: true }));
@@ -13274,12 +13397,20 @@ async function main() {
         restored: stillShown() === total,
       };
     }
-    if (${JSON.stringify(changeStation)} && select && select.options.length > 1) {
-      const original = select.value;
-      const replacement = [...select.options].reverse().find((option) => option.value !== original);
+    const allStationOptions = [...document.querySelectorAll("[data-station-option]")];
+    const selectedOptionName = () => allStationOptions
+      .find((option) => option.getAttribute("aria-selected") === "true")
+      ?.getAttribute("data-station-option") ?? null;
+    if (${JSON.stringify(changeStation)} && filterBox && allStationOptions.length > 1) {
+      const original = visibleReports()[0]?.getAttribute("data-station") ?? null;
+      // Last option that is not the current one, the same choice the select
+      // version made — which lands on a card carrying no coordinate, so the
+      // locator's unplaced branch is exercised on every run.
+      const replacement = [...allStationOptions].reverse()
+        .find((option) => option.getAttribute("data-station-option") !== original);
       if (replacement) {
-        select.value = replacement.value;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+        const replacementName = replacement.getAttribute("data-station-option");
+        replacement.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const changedReports = visibleReports();
         const changed = changedReports[0] ?? null;
@@ -13293,17 +13424,17 @@ async function main() {
         const thirdStat = text(changedStats[2]?.querySelector(".stat-value"));
         result.afterChange = {
           performed: true,
-          selectedValue: select.value,
+          selectedValue: selectedOptionName(),
           visibleStation: changed?.getAttribute("data-station") ?? null,
           identityText: text(changed?.querySelector("[data-station-name]")),
           identityName: inspect(changed?.querySelector("[data-station-name]")),
           visibleReportCount: changedReports.length,
-          selectedMatchesVisible: select.value === changed?.getAttribute("data-station"),
+          selectedMatchesVisible: selectedOptionName() === changed?.getAttribute("data-station"),
           identity: inspect(changed?.querySelector("[data-station-identity]")),
           year: inspect(changed?.querySelector("[data-station-year]")),
           stats: changedStats.map(inspect),
           comparisons: changedComparisons.map(inspect),
-          liveIncludesStation: Boolean(replacement.value && live.includes(replacement.value)),
+          liveIncludesStation: Boolean(replacementName && live.includes(replacementName)),
           liveIncludesYear: Boolean(year && live.includes(year)),
           liveIncludesFirstStat: Boolean(firstStat && live.includes(firstStat)),
           liveIncludesThirdStat: Boolean(thirdStat && live.includes(thirdStat)),
@@ -13316,8 +13447,9 @@ async function main() {
             document.querySelector("[data-locator-offshore-note]"),
           ),
         };
-        select.value = original;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+        allStationOptions
+          .find((option) => option.getAttribute("data-station-option") === original)
+          ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const restoredReports = visibleReports();
         const restored = restoredReports[0] ?? null;
@@ -13329,12 +13461,12 @@ async function main() {
         const restoredThirdStat = text(restoredStats[2]?.querySelector(".stat-value"));
         result.restored = {
           performed: true,
-          selectedValue: select.value,
+          selectedValue: selectedOptionName(),
           visibleStation: restored?.getAttribute("data-station") ?? null,
           identityText: text(restored?.querySelector("[data-station-name]")),
           identityName: inspect(restored?.querySelector("[data-station-name]")),
           visibleReportCount: restoredReports.length,
-          selectedMatchesVisible: select.value === original &&
+          selectedMatchesVisible: selectedOptionName() === original &&
             original === restored?.getAttribute("data-station"),
           liveIncludesStation: Boolean(original && restoredLive.includes(original)),
           liveIncludesYear: Boolean(restoredYear && restoredLive.includes(restoredYear)),
@@ -13448,8 +13580,8 @@ async function main() {
       return rect.width > 0 && rect.height > 0;
     };
     const reports = [...document.querySelectorAll("[data-station-report]")];
-    const optionOrder = [...document.querySelectorAll("#station-select option")]
-      .map((option) => option.value);
+    const optionOrder = [...document.querySelectorAll("[data-station-option]")]
+      .map((option) => option.getAttribute("data-station-option"));
     const reportOrder = reports.map((report) => report.getAttribute("data-station"));
     const stationNames = reports.flatMap((report) =>
       [...report.querySelectorAll("[data-station-name]")]);
@@ -16799,11 +16931,24 @@ async function main() {
         );
         if (width === 375 && (route === "/stations/" || route === "/explore/")) {
           const controlOrder = await evaluate(`(() => {
-            const label = document.querySelector(${JSON.stringify(
-              route === "/stations/" ? "#station-select" : "#example-select",
-            )})?.closest("label");
-            const labelText = label?.querySelector(":scope > .control-label");
-            const select = label?.querySelector(":scope > select");
+            /*
+             * Chapter 2's control is a combobox now: a label carrying "for"
+             * beside an input, rather than a select wrapped in its label. The
+             * property being checked is unchanged — the label sits above the
+             * control it names — so only the way the pair is found moves.
+             * (No backticks: this whole block is a template literal.)
+             */
+            const isStations = ${route === "/stations/"};
+            const field = document.querySelector(
+              isStations ? ".station-search-field" : null,
+            );
+            const label = isStations ? field : document.querySelector("#example-select")?.closest("label");
+            const labelText = isStations
+              ? field?.querySelector(":scope > .control-label")
+              : label?.querySelector(":scope > .control-label");
+            const select = isStations
+              ? document.querySelector("#station-filter")
+              : label?.querySelector(":scope > select");
             const action = document.querySelector(${JSON.stringify(
               route === "/explore/" ? "#run" : ".selector-does-not-exist",
             )});
@@ -16833,7 +16978,9 @@ async function main() {
         }
         const requiredFocus = [
           { name: "theme toggle", selector: "[data-theme-toggle]", required: true },
-          { name: "station control", selector: "#station-select", required: route === "/stations/" },
+          // The combobox input is what takes focus now; the select it replaced
+          // is gone. Same requirement: it must show a visible focus ring.
+          { name: "station control", selector: "#station-filter", required: route === "/stations/" },
           { name: "Explorer run button", selector: "#run", required: route === "/explore/" },
           {
             name: "evidence details",
