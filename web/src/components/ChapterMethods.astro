@@ -1022,41 +1022,81 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
    * on the value pushes it, the label and the note — three single lines in both
    * cards — to a shared bottom, whatever the tag above them did.
    */
+  /*
+   * One grid for both cards, so the rows line up without being padded.
+   *
+   * The two cards differ in two places and not the same one each time: in block
+   * 02 the TAG wraps (「含 PM10（有缺陷的做法）」 against 「不含 PM10」) and in
+   * block 07 the NOTE does (「只答 61%，其餘拒答」 against 「答了 70%」). The
+   * previous answer pinned both — `min-height: 2lh` on every tag and
+   * `margin-top: auto` on every note — which aligned them by making every card
+   * as tall as its worst case. Measured at 1832, where neither tag wraps: a
+   * 495 x 244px card whose four lines of content inked **11%** of it, a blank
+   * line reserved under each tag, and the note pushed to a bottom it had no
+   * reason to be at.
+   *
+   * `subgrid` does what pinning was standing in for: the parent owns the three
+   * rows, both cards span them, and each row is as tall as the taller of the
+   * two cards' content — one line when neither wraps, two when one does. The
+   * comment this replaces recorded that subgrid 「does not take here」; it does,
+   * with `grid-row: span 3` on the card, which is what the earlier attempt was
+   * missing.
+   *
+   * The value and its unit share row two, because that is how the pair is
+   * written down anywhere else: 「2.88 μg/m³ 平均絕對誤差」, not the number and
+   * its unit on separate lines with the width beside them unused.
+   */
   .compare {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-rows: auto auto auto;
+    align-items: start;
     gap: 1rem;
     margin: 1.6rem 0;
   }
+
   .compare .card {
-    flex: 1 1 190px;
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-  /*
-   * Two rows vary independently, so both are pinned.
-   *
-   * Measured, the two cards differ in two places and not the same one each time:
-   * in block 02 the TAG wraps (「含 PM10（有缺陷的做法）」 two lines against 「不含
-   * PM10」 one), and in block 07 the NOTE does (「只答 61%，其餘拒答」 65px against
-   * 「答了 70%」 32px). Bottom-anchoring alone fixed the first and broke on the
-   * second; a fixed tag alone would do the reverse.
-   *
-   * So the tag always occupies two lines — `lh` is exactly one line box, so this
-   * needs no guess about the type size — and the note is pushed to the bottom of
-   * an equal-height card. What is left between them is the value and its label,
-   * one line each, starting at the same offset in both cards.
-   */
-  .compare .tag {
-    min-height: 2lh;
-  }
-  .compare .stat-note {
-    margin-top: auto;
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0.3rem 0.5rem;
   }
 
-  .arrow {
+  .compare .tag,
+  .compare .stat-note {
+    grid-column: 1 / -1;
+  }
+
+  .compare .stat-value {
+    grid-column: 1;
+  }
+
+  .compare .stat-label {
+    grid-column: 2;
+  }
+
+  .compare .arrow {
+    grid-row: span 3;
+    align-self: center;
+  }
+
+  /*
+   * Stacked, the arrow points at nothing.
+   *
+   * It reads as 「this became that」 across a row; down a column the same glyph
+   * is just a mark between two boxes. It was hidden at every width by accident
+   * — `ffd49d7` added this rule without the `@media` line that was meant to
+   * wrap it, plus the stray brace that went with it, so a 「→」 and a 「vs」 the
+   * markup still carries have been `display: none` since 2026-08-01.
+   */
+  @media (max-width: 48rem) {
+    .compare {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .compare .arrow {
       display: none;
     }
   }
