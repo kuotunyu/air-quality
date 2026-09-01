@@ -3496,10 +3496,26 @@ button:hover {
     margin-top: 0;
   }
 
-  .two-up .evidence-figure > figure > .fig-tools {
-    position: static;
-    margin-top: var(--space-1);
-  }
+  /*
+   * The two-up figure keeps the corner too — the exclusion had gone stale.
+   *
+   * It used to be pushed back into the flow here, below its caption, on the
+   * measurement that a two-up card leaves its header 215px against a toolbar
+   * that took 216. Both numbers have moved since: the toolbar measures 175px
+   * today, and the space that matters is not the header BOX but what is left
+   * to the right of the title's inked text.
+   *
+   * Re-measured at every width this rule can apply to. 1120–1248 the two-up is
+   * still one column, so the figure has the full reading measure: 534px spare.
+   * At 78rem it splits and the figure track settles at 719px and stays there —
+   * the container is the reading measure plus its bleed, not a share of the
+   * viewport — so the spare is 241px at 1248 and 242px at 1920. The toolbar
+   * fits with 66px to spare at the tightest point the rule can reach.
+   *
+   * So the figure that had its controls stranded under its caption at 1920px
+   * was obeying a bound that had stopped being true, and there is nothing left
+   * for the exclusion to do.
+   */
 }
 
 /*
