@@ -1261,8 +1261,6 @@ def _assert_spatial_baseline_claim_boundary(section: str) -> None:
 @pytest.mark.parametrize(
     "relative",
     (
-        "README.md",
-        "README.en.md",
         "docs/data-sources.md",
         "docs/methodology.md",
     ),
@@ -1418,8 +1416,6 @@ def _assert_spatial_covariate_readiness_boundary(section: str) -> None:
 @pytest.mark.parametrize(
     "relative",
     (
-        "README.md",
-        "README.en.md",
         "docs/data-sources.md",
         "docs/methodology.md",
     ),
@@ -1499,10 +1495,58 @@ def test_spatial_covariate_readiness_boundary_rejects_measured_evidence_drift(
         )
 
 
+# The English README carried this section until 2026-09-02, when the three
+# readiness-gate sections moved out of both READMEs into docs/methodology.md.
+# The mutation tests below exercise the predicate on English prose, and the
+# only English copy of that prose is now this one. It is a fixture for the
+# predicate, not a public claim: the public copies are the two docs/ files.
+_ENGLISH_SPATIAL_COVARIATE_READINESS_SECTION = """\
+## Spatial covariate-model readiness gate
+
+The confirmed run on 2026-08-29 used `TWAIR_DATA_DIR=D:/twair-data` and
+`uv run twair analyze spatial-covariate-readiness --confirm-production`, then
+passed the independent verifier. Its immutable generation is
+`852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38`.
+The bound spatial-baseline generation is
+`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`, and the
+station-inventory generation is
+`58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`.
+
+The frozen cohort has 59 stations and 1,416 station-month keys across 2024–2025:
+1,415 are `observed`, while Xinying in May 2025 remains explicitly `withheld`.
+Non-null coverage is 1,309 / 1,416 for MAIAC AOD, 1,416 / 1,416 for S5P NO₂,
+and 1,411 / 1,416 for S5P SO₂; 1,306 / 1,416 keys have all three. The complete
+method domain is `covariate_gbm`, `covariate_gbm_idw2`, and comparator `idw2`.
+For every method and fold family, same-year 2024 has 708 / 708 / 0 intended /
+scored / failed rows; same-year 2025 and `2024_to_2025` each have 707 / 707 / 0.
+Every cell has 59 / 59 intended / scored stations.
+
+| Cell | Station-clustered MAE: GBM / GBM+IDW² / IDW² | Paired median station MAE delta [2.5%, 97.5%]: GBM / GBM+IDW² |
+|---|---:|---:|
+| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |
+| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |
+| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |
+| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |
+| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |
+| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |
+| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |
+| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |
+| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |
+
+A negative paired delta favours the candidate, but the frozen rule requires it
+in all seven required improvement cells. Both `buffer_20km` same-year cells
+failed that condition, so qualifying methods: none; verdict: `stop`. This is
+covariate-model readiness only; no concentration surface was generated. Even a
+passing result would permit later full-domain covariate acquisition and nested
+surface design, not publication of a map. There is no prediction interval,
+support mask, population-weighted ambient concentration or personal-exposure result.
+There is also no raster, source attribution, calibration, fusion, or website
+payload; `feeds_web=false`.
+"""
+
+
 def _english_spatial_covariate_readiness_section() -> str:
-    return _spatial_covariate_readiness_section(
-        (REPO_ROOT / "README.en.md").read_text(encoding="utf-8")
-    )
+    return _spatial_covariate_readiness_section(_ENGLISH_SPATIAL_COVARIATE_READINESS_SECTION)
 
 
 @pytest.mark.parametrize(
@@ -1583,9 +1627,9 @@ def test_spatial_covariate_readiness_boundary_allows_explicit_negations(
 
 
 _VERIFIED_AUDIT_GENERATION = "bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a"
+# Until 2026-09-02 the two READMEs carried the audit paragraph as well; the
+# public copies are the two docs/ files now.
 _AUDIT_PUBLIC_DOCUMENTS = (
-    "README.md",
-    "README.en.md",
     "docs/data-sources.md",
     "docs/methodology.md",
 )
@@ -1686,7 +1730,7 @@ def audit_prose_problems(
         f"{primary[model]:.6f}"
         for model in ("raw_micro", "pooled_micro_ridge", "pooled_weather_ridge")
     )
-    for name in ("README.md", "README.en.md"):
+    for name in _AUDIT_PUBLIC_DOCUMENTS:
         text = folded.get(name, "")
         if score_line not in text:
             problems.append(f"{name}: station-day reversal is missing")
@@ -1754,7 +1798,7 @@ def test_public_docs_match_verified_micro_sensor_audit() -> None:
 def test_micro_sensor_audit_copy_rejects_unsupported_claim(unsupported: str) -> None:
     summary, controls, gate = verified_audit_prose_fixture()
     documents = load_public_audit_documents()
-    documents["README.md"] += f"\nProject D produced {unsupported}.\n"
+    documents["docs/methodology.md"] += f"\nProject D produced {unsupported}.\n"
     problems = audit_prose_problems(documents, summary, controls, gate)
     assert any(unsupported in problem for problem in problems)
 

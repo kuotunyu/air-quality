@@ -360,19 +360,9 @@ def test_public_docs_publish_the_verified_satellite_context_limit_without_callin
 
 def test_spatial_baseline_readiness_gate_keeps_the_verified_result_and_boundary_together() -> None:
     generation = "620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f"
+    # The two READMEs carried this section too until 2026-09-02; the public
+    # copies are the two docs/ files now, and the README rows point at them.
     expected = {
-        "README.md": (
-            "baseline readiness gate",
-            "59 個測站、1,416 個站月 key",
-            "each qualifying method must also have a finite, complete spatial_cluster score in both 2024 and 2025",
-            "沒有產生濃度場或人口暴露結果",
-        ),
-        "README.en.md": (
-            "baseline readiness gate",
-            "59 stations and 1,416 station-month keys",
-            "each qualifying method must also have a finite, complete spatial_cluster score in both 2024 and 2025",
-            "produced no concentration surface or population exposure result",
-        ),
         "docs/data-sources.md": (
             "baseline readiness gate",
             "59 個測站、1,416 個站月 key",
@@ -431,8 +421,6 @@ def test_spatial_covariate_readiness_gate_keeps_the_verified_stop_and_boundary_t
     )
 
     for relative in (
-        "README.md",
-        "README.en.md",
         "docs/data-sources.md",
         "docs/methodology.md",
     ):

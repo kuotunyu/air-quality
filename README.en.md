@@ -200,74 +200,6 @@ the released meteorological normalisation still uses station measurements.
 
 ---
 
-## Spatial baseline readiness gate
-
-The baseline readiness gate run on 2026-08-28 with
-`uv run twair analyze spatial-surface-baseline --confirm-production` passed its
-independent verifier. Its immutable generation is
-`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`.
-It used 59 stations and 1,416 station-month keys across 24 months in 2024–2025.
-The sole non-observed target, Xinying in May 2025, remains explicitly `withheld`;
-it was neither filled nor counted as zero.
-
-The three holdout families are 20 km buffer, 40 km buffer, and spatial cluster.
-The five methods are station mean, nearest, IDW², spherical kriging, and
-hole-effect kriging. Every method has the same denominator in every
-evaluation-year cell: 708 intended / 708 scored / 0 failed rows in 2024 and
-707 / 707 / 0 in 2025, with 59 intended / 59 scored stations in all six cells.
-
-The frozen rule requires complete predictions and a paired median station MAE
-delta, computed as candidate-minus-`station_mean`, below zero in all four required
-2024/2025 20/40 km cells; each qualifying method must also have a finite, complete
-spatial_cluster score in both 2024 and 2025.
-The measured verdict is `go`: IDW², hole-effect kriging, spherical kriging, and
-nearest all qualify.
-`go` says only that covariate-model design may begin. This generation produced
-no concentration surface or population exposure result, and it is not evidence
-for publishing a map.
-
-## Spatial covariate-model readiness gate
-
-The confirmed run on 2026-08-29 used `TWAIR_DATA_DIR=D:/twair-data` and
-`uv run twair analyze spatial-covariate-readiness --confirm-production`, then
-passed the independent verifier. Its immutable generation is
-`852db84e74980b8664fdc42da0b3fe30c73af189df4eedbe9b894d0318dbbe38`.
-The bound spatial-baseline generation is
-`620b7ba088906611c191d0f371b5405f8096059cefc488306b6849b64588ef0f`, and the
-station-inventory generation is
-`58e00bb5ab951c9afd1a95e9e98aacdab4e90762e32904ca6d79d198efe6d788`.
-
-The frozen cohort has 59 stations and 1,416 station-month keys across 2024–2025:
-1,415 are `observed`, while Xinying in May 2025 remains explicitly `withheld`.
-Non-null coverage is 1,309 / 1,416 for MAIAC AOD, 1,416 / 1,416 for S5P NO₂,
-and 1,411 / 1,416 for S5P SO₂; 1,306 / 1,416 keys have all three. The complete
-method domain is `covariate_gbm`, `covariate_gbm_idw2`, and comparator `idw2`.
-For every method and fold family, same-year 2024 has 708 / 708 / 0 intended /
-scored / failed rows; same-year 2025 and `2024_to_2025` each have 707 / 707 / 0.
-Every cell has 59 / 59 intended / scored stations.
-
-| Cell | Station-clustered MAE: GBM / GBM+IDW² / IDW² | Paired median station MAE delta [2.5%, 97.5%]: GBM / GBM+IDW² |
-|---|---:|---:|
-| `buffer_20km`, same-year 2024 | 2.176 / 2.171 / 2.169 | +0.253 [+0.058, +0.355] / +0.231 [+0.006, +0.360] |
-| `buffer_20km`, same-year 2025 | 1.837 / 1.822 / 1.796 | +0.268 [+0.078, +0.475] / +0.259 [+0.056, +0.462] |
-| `buffer_40km`, same-year 2024 | 2.311 / 2.300 / 2.572 | +0.016 [−0.471, +0.229] / −0.010 [−0.473, +0.222] |
-| `buffer_40km`, same-year 2025 | 2.129 / 2.122 / 2.381 | +0.018 [−0.159, +0.205] / +0.021 [−0.163, +0.197] |
-| `spatial_cluster`, same-year 2024 | 2.324 / 2.315 / 3.024 | −0.291 [−0.552, −0.067] / −0.308 [−0.573, −0.077] |
-| `spatial_cluster`, same-year 2025 | 2.256 / 2.244 / 2.737 | −0.109 [−0.799, +0.126] / −0.171 [−0.803, +0.124] |
-| `buffer_20km`, `2024_to_2025` | 2.347 / 2.350 / 2.630 | −0.058 [−0.243, +0.106] / −0.082 [−0.259, +0.125] |
-| `buffer_40km`, `2024_to_2025` | 2.484 / 2.491 / 2.939 | −0.235 [−0.501, +0.022] / −0.240 [−0.484, +0.026] |
-| `spatial_cluster`, `2024_to_2025` | 2.601 / 2.601 / 3.247 | −0.353 [−0.637, −0.133] / −0.389 [−0.643, −0.141] |
-
-A negative paired delta favours the candidate, but the frozen rule requires it
-in all seven required improvement cells. Both `buffer_20km` same-year cells
-failed that condition, so qualifying methods: none; verdict: `stop`. This is
-covariate-model readiness only; no concentration surface was generated. Even a
-passing result would permit later full-domain covariate acquisition and nested
-surface design, not publication of a map. There is no prediction interval,
-support mask, population-weighted ambient concentration or personal-exposure result.
-There is also no raster, source attribution, calibration, fusion, or website
-payload; `feeds_web=false`.
-
 ## Quick Start
 
 ### 1. Synchronize the Environment
@@ -300,18 +232,6 @@ workspace overrides and never rewrite the installed package.
 
 The `probe sources` utility parses the live airtw annual catalogue, resolves current Google Drive identifiers, downloads one real archive sample, and populates `conf/sources.yaml` and `docs/data-sources.md`. Credentialed value-add sources remain explicitly unprobed when no credential is configured. Since government links change periodically, the catalogue is rediscovered rather than treated as a permanent hardcoded URL list.
 
-### Micro-sensor agreement audit
-
-The independent verifier passed immutable generation
-`bd8ea9ef867c2eb8f3411bdc4bd6e0051046026f4fa260535df91e746e02187a`.
-Primary station-day RMSE (raw micro / pooled micro / pooled weather) is
-**4.189404 / 4.668848 / 4.720668 µg/m³**: both pooled candidates reverse the
-secondary device-day improvement at the primary scale. The result is
-verdict: `stop` and does not advance to calibration or fusion. The target is
-nearest reference-station daily PM2.5, not colocated truth.
-
-Claim boundary: no validated calibration; no sensor fusion product; no high-resolution PM2.5 field; no annual transfer; no seasonal transfer; no causal effect; no source attribution.
-
 ---
 
 ## Project Status
@@ -327,8 +247,8 @@ evidence and decisions live in the relevant public [technical docs](docs/).
 | **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
 | **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
 | **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
-| **Phase 5** | M6 spatial structure, M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), and the spatial baseline and covariate-model readiness gates | ✅ The baseline `go` permitted bounded covariate-model design; the measured covariate-model gate is `stop`, so this fixed model branch closes; HYSPLIT, a 1 km field, and population-weighted exposure were not delivered |
-| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered; 2025 annual micro-sensor readiness audit delivered, and the Q4-supported cross-station agreement delivered — 5 of 29 folds scorable, the remaining 18 with an empty test set and 6 with an empty training set, all reported unscored rather than as zero; held-quarter and joint station-quarter are not estimable — while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5 |
+| **Phase 5** | M6 spatial structure, M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), and the spatial baseline and covariate-model readiness gates | ✅ The baseline `go` permitted bounded covariate-model design; the measured covariate-model gate is `stop`, so this fixed model branch closes; HYSPLIT, a 1 km field, and population-weighted exposure were not delivered; the full results and claim boundaries of both readiness gates are in [docs/methodology.md](docs/methodology.md) |
+| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered; 2025 annual micro-sensor readiness audit delivered, and the Q4-supported cross-station agreement delivered — 5 of 29 folds scorable, the remaining 18 with an empty test set and 6 with an empty training set, all reported unscored rather than as zero; held-quarter and joint station-quarter are not estimable — while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5; the agreement audit's full result and claim boundary are in [docs/methodology.md](docs/methodology.md) |
 | **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
 | **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | ✅ Release closeout complete: normal engineering and the editorial UI implementation are integrated into `master` and deployed to GitHub Pages, and the L0/L1 HF Dataset is public. The external-reader trial remains deferred and non-blocking; PyPI is optional. |
 
