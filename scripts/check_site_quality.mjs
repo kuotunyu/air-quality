@@ -962,17 +962,27 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
       ) {
         problems.push(`${name} wide toolbar does not share the caption row`);
       }
+      // 2026-09-02 — the toolbar moved from the panel's top-left reading edge
+      // to its top-right corner, where every evidence figure keeps its own;
+      // the caption reserves that corner and the gap between them is the
+      // 8px title-ink clearance the evidence figures are held to.
       if (
         viewport?.width > 768 &&
-        (!Number.isFinite(diagram?.captionRightReserve) || diagram.captionRightReserve > 1)
+        (!Number.isFinite(diagram?.captionToolGap) || diagram.captionToolGap < 8)
+      ) {
+        problems.push(`${name} wide caption runs under the toolbar`);
+      }
+      if (
+        viewport?.width > 768 &&
+        Number.isFinite(diagram?.captionToolGap) && diagram.captionToolGap > 64
       ) {
         problems.push(`${name} wide caption leaves unused header space`);
       }
-      if (viewport?.width <= 768 && !diagram?.toolsBeforeCaption) {
-        problems.push(`${name} narrow toolbar is not above its caption`);
+      if (viewport?.width <= 768 && !diagram?.toolsAfterSteps) {
+        problems.push(`${name} narrow toolbar is not below its steps`);
       }
-      if (!Number.isFinite(diagram?.toolLeftInset) || diagram.toolLeftInset > 1) {
-        problems.push(`${name} toolbar is not aligned to the top-left reading edge`);
+      if (!Number.isFinite(diagram?.toolRightInset) || diagram.toolRightInset > 1) {
+        problems.push(`${name} toolbar is not aligned to the top-right corner`);
       }
       if (diagram?.toolsOverlapCaption) {
         problems.push(`${name} toolbar overlaps its caption`);
@@ -1173,19 +1183,18 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       toolCount: tools.length,
       toolLabels: toolButtons.map((button) => button.textContent.trim()),
       toolButtonHeights: toolButtons.map((button) => button.getBoundingClientRect().height),
-      toolsBeforeCaption: Boolean(
-        toolRect && captionRect && toolRect.bottom <= captionRect.top + 1
+      toolsAfterSteps: Boolean(
+        toolRect && stepRects.length &&
+        toolRect.top >= Math.max(...stepRects.map((r) => r.bottom)) - 1
       ),
       toolsShareCaptionRow: Boolean(
         toolRect && captionRect &&
         toolRect.top < captionRect.bottom && toolRect.bottom > captionRect.top
       ),
-      toolLeftInset: toolRect
-        ? Math.abs(toolRect.left - (rect.left + diagramPaddingInlineStart))
+      toolRightInset: toolRect
+        ? Math.abs((rect.right - diagramPaddingInlineEnd) - toolRect.right)
         : null,
-      captionRightReserve: captionRect
-        ? Math.abs((rect.right - diagramPaddingInlineEnd) - captionRect.right)
-        : null,
+      captionToolGap: toolRect && captionRect ? toolRect.left - captionRect.right : null,
       toolsOverlapCaption: Boolean(
         toolRect && captionRect &&
         toolRect.left < captionRect.right && toolRect.right > captionRect.left &&
@@ -9671,10 +9680,10 @@ async function lifecycleSelfTest() {
       toolCount: 1,
       toolLabels: ["放大", "下載"],
       toolButtonHeights: [45, 45],
-      toolsBeforeCaption: true,
+      toolsAfterSteps: true,
       toolsShareCaptionRow: true,
-      toolLeftInset: 0,
-      captionRightReserve: 0,
+      toolRightInset: 0,
+      captionToolGap: 34,
       toolsOverlapCaption: false,
       media: {},
     }],
@@ -9721,10 +9730,11 @@ async function lifecycleSelfTest() {
     ["tablet columns", "desktop/tablet column count", (state) => { state.diagrams[0].gridColumnCount = 1; }],
     ["duplicate toolbar", "toolbars; expected one", (state) => { state.diagrams[0].toolCount = 2; }],
     ["verbose download label", "toolbar labels changed", (state) => { state.diagrams[0].toolLabels[1] = "下載 PNG"; }],
-    ["narrow toolbar after caption", "narrow toolbar is not above", (state) => { state.diagrams[0].toolsBeforeCaption = false; }],
+    ["narrow toolbar above steps", "not below its steps", (state) => { state.diagrams[0].toolsAfterSteps = false; }],
     ["wide toolbar own row", "does not share the caption row", (state) => { state.diagrams[0].toolsShareCaptionRow = false; }],
-    ["wide caption unused space", "leaves unused header space", (state) => { state.diagrams[0].captionRightReserve = 180; }],
-    ["toolbar right drift", "not aligned to the top-left", (state) => { state.diagrams[0].toolLeftInset = 18; }],
+    ["wide caption under toolbar", "runs under the toolbar", (state) => { state.diagrams[0].captionToolGap = 2; }],
+    ["wide caption unused space", "leaves unused header space", (state) => { state.diagrams[0].captionToolGap = 180; }],
+    ["toolbar left drift", "not aligned to the top-right", (state) => { state.diagrams[0].toolRightInset = 18; }],
     ["toolbar overlap", "overlaps its caption", (state) => { state.diagrams[0].toolsOverlapCaption = true; }],
     ["short toolbar target", "44px interaction floor", (state) => { state.diagrams[0].toolButtonHeights[0] = 43; }],
     ["document overflow", "scrolls sideways", (state) => { state.documentOverflow = 1; }],

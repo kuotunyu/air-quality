@@ -101,8 +101,11 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 <style>
   .concept-flow {
     --concept-mark: var(--diagram-neutral);
+    /* 2026-09-02 — `relative` for the toolbar's corner; one column, because
+       the toolbar no longer takes the first one. */
+    position: relative;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     column-gap: var(--space-3);
     max-width: none;
     /*
@@ -153,22 +156,33 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
   /* FigureTools is injected after hydration and therefore has no Astro scope
      attribute. Keep it in normal flow so zoom/export height accounting remains
      exact, but visually order it first on the diagram's left reading edge. */
+  /* 2026-09-02 — supersedes the left-edge placement above: the toolbar sits in
+     the panel's top-right corner, where every evidence figure keeps its own,
+     out of flow so the caption row costs nothing. The zoom dialog parks the
+     toolbar in its own header while open, so this position is only ever
+     measured against the panel. */
   .concept-flow > :global(.fig-tools) {
-    grid-column: 1;
-    grid-row: 1;
-    align-self: start;
-    justify-self: start;
-    justify-content: flex-start;
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-3);
     margin: 0;
   }
 
   .concept-flow > figcaption {
     display: grid;
-    grid-column: 2;
+    grid-column: 1;
     grid-row: 1;
     gap: 0.32rem;
     max-width: none;
     margin: 0;
+    /* 9.5rem holds the 175px toolbar plus a gap at the site's 22px root. A
+       margin, not padding, and declared after the `margin: 0` above: the gate
+       measures the caption's BOX against the toolbar and requires 8–64px
+       between them, and padding sits inside the box — the first draft used
+       padding, the second put the margin before the shorthand that resets it,
+       and both times every diagram reported the toolbar overlapping a caption
+       no ink came near. */
+    margin-inline-end: 9.5rem;
     color: var(--text-muted);
     font-size: var(--text-sm);
     line-height: 1.55;
@@ -213,7 +227,7 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
   }
 
   :global(.concept-flow:not(:has(> .fig-tools))) > figcaption {
-    grid-column: 1 / -1;
+    margin-inline-end: 0;
   }
 
   .concept-flow[data-variant="layers"] > ol {
@@ -523,29 +537,26 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
       padding: var(--space-2);
     }
 
+    /* 2026-09-02 — below the tablet boundary the toolbar returns to the flow,
+       under the steps and right-aligned, as an evidence figure's does. */
     .concept-flow > :global(.fig-tools) {
+      position: static;
       grid-column: 1;
-      grid-row: 1;
-      margin-block-end: var(--space-2);
+      grid-row: 3;
+      justify-content: flex-end;
+      margin-block-start: var(--space-2);
     }
 
     .concept-flow > figcaption {
       grid-column: 1;
-      grid-row: 2;
+      grid-row: 1;
+      margin-inline-end: 0;
     }
 
     .concept-flow > ol {
       grid-column: 1;
-      grid-row: 3;
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    :global(.concept-flow:not(:has(> .fig-tools))) > figcaption {
-      grid-row: 1;
-    }
-
-    :global(.concept-flow:not(:has(> .fig-tools))) > ol {
       grid-row: 2;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .concept-flow > ol > [data-concept-step]:not(:last-child)::after {
