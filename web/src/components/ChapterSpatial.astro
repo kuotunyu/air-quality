@@ -434,7 +434,7 @@ const readingMap = [
       生料月均值在全島高度相關—那是共用的冬季高峰，不是分區的性質；用它來測，
       任何分區方式都會看起來同樣有效。減掉逐月島均之後平均相關趨近於零，剩下的才是
       「這一站如何偏離全國」，分區的資訊到這裡才量得出來。兩個值每次執行重算，
-      現值印在 <a href={repoFile("reports/03-spatial.md")}>reports/03-spatial.md</a>；
+      現值印在<a href={repoFile("reports/03-spatial.md")}>第三章的分析報告</a>裡；
       這裡不轉述，因為先前寫死在這裡的那個數字已經漂掉了。
     </p>
   </div>
@@ -557,8 +557,18 @@ const readingMap = [
   </div>
 
   <p class="small">
+    {/*
+      The missing input is the point; which file records it is not.
+
+      This named `conf/spatial.yaml` in plain prose. A reader has no use for a
+      config path — it is not something they download, run, or check — and the
+      sentence works without it: what matters is that the gap and the source
+      requirement ARE written down, and that filling it is a data-layer call.
+      The chapter's one auditable citation, the historical-coordinate file, is
+      a link; this one is not a citation at all.
+    */}
     兩件事刻意不做：{refusals.join("；")}。缺的輸入（人口網格）與其來源要求
-    記錄在 conf/spatial.yaml，補上與否是資料層的決定，不是本章能替它決定的。
+    都已記錄在管線設定裡，補上與否是資料層的決定，不是本章能替它決定的。
   </p>
 </section>
 
