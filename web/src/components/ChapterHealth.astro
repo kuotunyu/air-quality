@@ -71,6 +71,32 @@ const years = health.years as number[];
 const spreadShare = health.spread_share as number[];
 
 /*
+ * The other width — statistical, not assumed.
+ *
+ * M10 has always fitted the grid at three bounds of the pooled coefficient and
+ * only the central one reached the page, so every percentage in this chapter
+ * was a point estimate with no interval anywhere near it. Beside a figure whose
+ * whole subject is how far an assumption moves the answer, that invites the
+ * reading that the assumption is the only thing moving it.
+ *
+ * This is NOT the first of the chapter's three choices. That one is which
+ * response function to use, and this chapter uses one; the interval below is
+ * the confidence interval on that one function's pooled estimate. The prose has
+ * to keep them apart.
+ */
+const band = health.coefficient_band as {
+  counterfactual_ugm3: number;
+  rr_low: number;
+  rr_high: number;
+  first_year: number;
+  last_year: number;
+  first_width_pp: number;
+  last_width_pp: number;
+};
+const assumptionFirstWidth = (headline.first_range[1] - headline.first_range[0]) * 100;
+const assumptionLastWidth = (headline.last_range[1] - headline.last_range[0]) * 100;
+
+/*
  * Which two assumptions the headline range actually spans.
  *
  * The sentence below used to name them by hand as 「2.4 還是 5.9」 and call them
@@ -477,6 +503,33 @@ const langOf = (s: string | null | undefined) =>
     <p>
       也就是說：<strong>空氣越乾淨，健康負擔的數字就越取決於一個從未被明說的選擇。</strong>
       這跟「資料變好、估計就變準」的直覺剛好相反。
+    </p>
+  </div>
+
+  <h2>另一種寬度：係數本身的信賴區間</h2>
+
+  <p>
+    上面兩張圖的每一條線都是點估計。同一條反應函數的合併相對風險本身有信賴區間
+    （每 10 μg/m³ {n(band.rr_low, 2)}–{n(band.rr_high, 2)}），把它一起算進去，
+    在 {band.counterfactual_ugm3} μg/m³ 這個基準上，
+    {band.first_year} 年的可歸因比例寬 {n(band.first_width_pp, 1)} 個百分點，
+    {band.last_year} 年寬 {n(band.last_width_pp, 1)} 個百分點。
+  </p>
+
+  <div class="note">
+    <p>
+      <strong>兩種寬度在這二十年間換了位置。</strong>
+      {band.first_year} 年，基準選擇造成的範圍是 {n(assumptionFirstWidth, 1)} 個百分點，
+      而係數的信賴區間是 {n(band.first_width_pp, 1)} 個—統計上的不確定性比假設更寬。
+      {band.last_year} 年反過來：基準造成 {n(assumptionLastWidth, 1)} 個百分點，
+      係數只造成 {n(band.last_width_pp, 1)} 個。濃度降下來之後，
+      主導這個數字的已經從「係數量得多準」變成「基準放在哪裡」。
+    </p>
+    <p class="small">
+      這兩種寬度不是同一種東西：一個是統計不確定性，一個是假設的分歧，
+      放在一起比較是因為兩者都以可歸因比例的百分點計。
+      它們也都不是本章開頭說的第一個選擇—<strong>那個選擇是換一條反應函數</strong>，
+      本章只用一條，沒有估計換函數會把答案推到哪裡。
     </p>
   </div>
 

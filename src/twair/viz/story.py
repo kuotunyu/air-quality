@@ -881,8 +881,19 @@ def _export_health(root: Path) -> list[Path]:
     from twair.analysis.health import load_counterfactuals, load_response_functions
 
     spread = pl.read_parquet(spread_path)
-    national = pl.read_parquet(source / "national.parquet").filter(pl.col("bound") == "central")
+    # M10 has always computed the grid at three bounds of the pooled
+    # coefficient; only the central one was ever exported, so the site showed
+    # four point estimates and no interval at all. The other two are read here
+    # so the chapter can say how wide the coefficient's own interval is beside
+    # how wide the assumption is.
+    national_all = pl.read_parquet(source / "national.parquet")
+    national = national_all.filter(pl.col("bound") == "central")
     coverage = pl.read_parquet(source / "coverage.parquet").to_dicts()[0]
+
+    def _bound(cf_name: str, bound: str) -> pl.DataFrame:
+        return national_all.filter(
+            (pl.col("counterfactual") == cf_name) & (pl.col("bound") == bound)
+        ).sort("year")
 
     functions = load_response_functions()
     counterfactuals = load_counterfactuals()
@@ -896,6 +907,12 @@ def _export_health(root: Path) -> list[Path]:
             "why": cf.why,
             "years": part["year"].to_list(),
             "paf": [_round(v, 4) for v in part["paf_median"]],
+            # The pooled coefficient's own confidence interval, held at this
+            # counterfactual. Not the spread between different functions —
+            # this chapter uses one — so it must never be read as pricing the
+            # first of its three choices.
+            "paf_low": [_round(v, 4) for v in _bound(cf.name, "low")["paf_median"]],
+            "paf_high": [_round(v, 4) for v in _bound(cf.name, "high")["paf_median"]],
         }
         for cf in sorted(counterfactuals.values(), key=lambda c: c.value)
         for part in [national.filter(pl.col("counterfactual") == cf.name).sort("year")]
@@ -954,6 +971,27 @@ def _export_health(root: Path) -> list[Path]:
                         _round(last["paf_highest_assumption"], 4),
                     ],
                 },
+                # Two widths that are not the same kind of quantity, reported
+                # side by side because the chapter's argument turns on which
+                # one dominates.
+                #
+                # `headline` above is the ASSUMPTION width — how far the answer
+                # moves when the counterfactual moves. This is the STATISTICAL
+                # width — the pooled coefficient's confidence interval, held at
+                # one counterfactual. Both are in percentage points of PAF, so
+                # they can be compared; neither is the spread between different
+                # response functions, which this chapter does not estimate.
+                #
+                # Reported at the reference counterfactual rather than the
+                # widest, so the comparison is against the assumption a reader
+                # is most likely to have in mind.
+                "coefficient_band": _coefficient_band(
+                    national_all,
+                    counterfactuals=counterfactuals,
+                    function=next(iter(functions.values())),
+                    first_year=int(first["year"]),
+                    last_year=int(last["year"]),
+                ),
                 "extrapolation": {
                     "ceiling_ugm3": coverage["extrapolation_ceiling_ugm3"],
                     "share_above": _round(coverage["share_above_ceiling"], 4),
@@ -1587,6 +1625,51 @@ _ERF_CAVEAT_ZH = {
         "是外推到觀測範圍之外。每一項結果都同時標出落在範圍外的測站-年比例。"
     ),
 }
+
+
+def _coefficient_band(
+    national: pl.DataFrame,
+    *,
+    counterfactuals: dict[str, Any],
+    function: Any,
+    first_year: int,
+    last_year: int,
+) -> dict[str, Any]:
+    """How wide the pooled coefficient's own interval is, at the reference.
+
+    The reference is the WHO guideline counterfactual when one is configured —
+    the chapter treats 5 μg/m³ as the value a reader arrives with — and the
+    smallest non-zero counterfactual otherwise, so a re-configured grid still
+    reports against an assumption rather than against zero exposure.
+    """
+    reference = counterfactuals.get("who_guideline")
+    if reference is None:
+        candidates = [cf for cf in counterfactuals.values() if cf.value > 0]
+        if not candidates:
+            return {}
+        reference = min(candidates, key=lambda cf: cf.value)
+
+    def width(year: int) -> float | None:
+        rows = {
+            row["bound"]: row["paf_median"]
+            for row in national.filter(
+                (pl.col("counterfactual") == reference.name) & (pl.col("year") == year)
+            ).iter_rows(named=True)
+        }
+        if "low" not in rows or "high" not in rows:
+            return None
+        return _round((rows["high"] - rows["low"]) * 100, 2)
+
+    return {
+        "counterfactual": reference.name,
+        "counterfactual_ugm3": reference.value,
+        "rr_low": function.rr_per_10_low,
+        "rr_high": function.rr_per_10_high,
+        "first_year": first_year,
+        "last_year": last_year,
+        "first_width_pp": width(first_year),
+        "last_width_pp": width(last_year),
+    }
 
 
 def _fraction_of(value: int) -> str:

@@ -35,6 +35,17 @@ const sorted = [...latest].sort((a, b) => b.annual_mean - a.annual_mean);
 const dirtiest = sorted[0];
 const cleanest = sorted[sorted.length - 1];
 const extremaRatio = dirtiest.annual_mean / cleanest.annual_mean;
+/*
+ * Whether the two extreme stations are the same category, because the
+ * disclosure below turns on it.
+ *
+ * The paragraph used to assert 「來自不同監測類型」 unconditionally, which the
+ * data does not guarantee: these two are recomputed from the latest cards on
+ * every export, and nothing stops both ends landing in the same category. The
+ * reason the ratio cannot be read as a spatial difference is different in the
+ * two cases, so the sentence — and the gate that pins it — branches.
+ */
+const sameStationType = dirtiest.station_type === cleanest.station_type;
 
 const lastValue = trend.all_stations[trend.all_stations.length - 1] as number;
 const balancedSince = trend.panel.balanced_since as number;
@@ -138,10 +149,34 @@ const opening = [
         </div>
       </dl>
 
+      {/*
+        Why the ratio is not comparable, not only that it is not.
+
+        This listed three things the number was not — 「不是純空間、土地使用或
+        因果效果」 — and left the reader to work out why. The reason is the
+        classification itself: `conf/stations.yaml` records that this project
+        treats station type as a model variable precisely because 「交通站與背景
+        站的 PM2.5 驅動因子本來就應該不同」. Saying that is what makes the three
+        disclaimers land, and it is the project's own position rather than a
+        siting rule invented here.
+      */}
       <p class="aside" data-homepage-station-type-boundary>
-        最高與最低來自不同監測類型（{dirtiest.station_name}：{stationType(dirtiest.station_type)}；
-        {cleanest.station_name}：{stationType(cleanest.station_type)}）。{n(extremaRatio, 1)}× 是測站觀測值對比，
-        不是純空間、土地使用或因果效果。
+        {sameStationType ? (
+          <>
+            最高與最低同屬{stationType(dirtiest.station_type)}（{dirtiest.station_name}、
+            {cleanest.station_name}），差別在<strong>地點不同</strong>。
+            {n(extremaRatio, 1)}× 是測站觀測值對比，兩地的排放、地形與土地使用都混在裡面，
+            不是純空間差距，也不是任何因果效果。
+          </>
+        ) : (
+          <>
+            最高與最低不是同一類測站：{dirtiest.station_name}屬{stationType(dirtiest.station_type)}，
+            {cleanest.station_name}屬{stationType(cleanest.station_type)}—
+            <strong>不同類別的測站，PM2.5 的驅動因子本來就不同</strong>。
+            {n(extremaRatio, 1)}× 是測站觀測值對比，站型與地點的差距混在一起，
+            不是純空間差距，也不是任何因果效果。
+          </>
+        )}
       </p>
 
       {/*

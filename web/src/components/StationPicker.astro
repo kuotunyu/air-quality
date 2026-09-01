@@ -8,7 +8,7 @@
  */
 import { n } from "../lib/chart";
 import { stationType } from "../lib/labels";
-import { groupByCountyNorthToSouth } from "../lib/data";
+import { groupByCountyNorthToSouth, stations } from "../lib/data";
 import type { Guidelines, StationCard } from "../lib/data";
 import { TW_PM25_ADDED, TW_PM25_DAILY_BEFORE, TW_PM25_TIGHTENED } from "../lib/standards";
 import StationLocator from "./StationLocator.astro";
@@ -24,6 +24,21 @@ const { cards, guidelines } = Astro.props;
 // is no more findable than the station names were. Same helper as chapter 3's
 // picker, so the two lists cannot drift into different orders.
 const counties = groupByCountyNorthToSouth(cards, (card) => card.station_name);
+
+/*
+ * Three station counts appear across this site and none of them said how they
+ * relate: the entry page opens on the whole archive, this chapter lists the
+ * stations that have a card, and every card ranks against a third number.
+ * A reader who noticed had nothing to go on.
+ *
+ * All three are derived, not written down — the same rule the rest of the site
+ * follows, and the reason the entry page's 「84 站」 claim could survive as long
+ * as it did was that it was written down.
+ */
+const archivedStations = stations.length;
+const latestCardYear = Math.max(...cards.map((card) => card.year));
+const latestRanked = cards.find((card) => card.year === latestCardYear)?.stations_ranked ?? null;
+const withoutCard = archivedStations - cards.length;
 
 /*
  * The station the chapter opens on.
@@ -343,6 +358,23 @@ const rankPosition = (rank: number, total: number) =>
     chapter 1's time series gets the limit in force each year. A reader who
     knows the number changed has to be able to see which one this is.
   */}
+  {/*
+    Why this chapter lists fewer stations than the entry page counts.
+
+    PM2.5 monitoring started two decades into the archive, so a station that
+    retired before it arrived has hours in the store and no annual mean to put
+    on a card. Nothing said so, and the two numbers sat on different pages
+    where a reader could not put them side by side.
+  */}
+  <p class="note" data-station-count-note>
+    這一章有 {cards.length} 張卡片，首頁說的卻是 {archivedStations} 站：
+    差的 {withoutCard} 站在檔案庫裡有逐時資料，但沒有一年量過 PM2.5—
+    PM2.5 監測比這份檔案的起點晚了二十年，停用得早的測站因此沒有年均值可放上卡片。
+    卡片裡的排名還有第三個數字（{latestRanked} 站），
+    那是{" "}{latestCardYear} 年當年資料完整到可以互比的測站；
+    停用站則各自排在它自己那一年的名單裡，所以分母會不同。
+  </p>
+
   <p class="note" data-station-standard-note>
     這一欄用的是現行標準（{n(guidelines.taiwan_daily)} μg/m³），
     每一站、每一年都用同一把尺：{TW_PM25_TIGHTENED} 年 9 月 30 日之前，日均標準是

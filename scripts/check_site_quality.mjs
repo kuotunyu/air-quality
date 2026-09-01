@@ -99,6 +99,11 @@ const HOMEPAGE_EXTREMA = Object.freeze({
     ?? HOMEPAGE_LATEST_CARDS.at(-1).station_type,
   ratio: (HOMEPAGE_LATEST_CARDS[0].annual_mean / HOMEPAGE_LATEST_CARDS.at(-1).annual_mean)
     .toFixed(1),
+  // Whether the two ends of the range are the same category. The page says why
+  // its ratio is not a spatial difference, and the reason differs between the
+  // two cases, so the contract below has to follow the data rather than assume
+  // the categories will keep differing.
+  sameType: HOMEPAGE_LATEST_CARDS[0].station_type === HOMEPAGE_LATEST_CARDS.at(-1).station_type,
 });
 const COMPACT_IDENTITY_ACCESSIBLE_NAMES = new Map([
   ["/", "台灣空氣品質再分析"],
@@ -1758,6 +1763,19 @@ function homepageStationTypeBoundaryProblems(state) {
     HOMEPAGE_EXTREMA.cleanestType,
     `${HOMEPAGE_EXTREMA.ratio}×是測站觀測值對比`,
     "不是純空間",
+    /*
+     * The reason, not only the disclaimer.
+     *
+     * The five phrases above survived a version that listed what the ratio was
+     * not and never said why, which left a first-screen reader with three
+     * negations and no mechanism. What makes them land is the classification:
+     * different categories of station have different PM2.5 drivers, which is
+     * this project's own stated reason for treating type as a model variable.
+     * When both extrema happen to share a category that reason does not apply
+     * and the confound is location alone, so the required phrase follows the
+     * data the same way the sentence does.
+     */
+    HOMEPAGE_EXTREMA.sameType ? "地點不同" : "驅動因子本來就不同",
   ]);
 }
 
@@ -2502,6 +2520,10 @@ const HEALTH_STORY_PAYLOAD = JSON.parse(
   readFileSync(join(process.cwd(), "web", "public", "data", "story", "health.json"), "utf8"),
 );
 const HEALTH_PAYLOAD_KEYS = [
+  // The pooled coefficient's own confidence interval, at the reference
+  // counterfactual. M10 always fitted it; only the central bound used to be
+  // exported, so every percentage in the chapter was a point estimate.
+  "coefficient_band",
   "extrapolation",
   "formula",
   "functions",
@@ -2523,7 +2545,13 @@ const HEALTH_FUNCTION_KEYS = [
   "source",
   "source_url",
 ];
-const HEALTH_SERIES_KEYS = ["label", "name", "paf", "value", "why", "years"];
+const HEALTH_SERIES_KEYS = [
+  "label", "name", "paf",
+  // The pooled coefficient at its low and high bound, held at this
+  // counterfactual — beside `paf` so the three cannot be paired wrongly.
+  "paf_high", "paf_low",
+  "value", "why", "years",
+];
 const HEALTH_HEADLINE_KEYS = [
   "first_range",
   "first_share",
@@ -7018,9 +7046,14 @@ async function lifecycleSelfTest() {
   const completeHomepageStationTypeBoundary = {
     count: 1,
     visible: true,
-    text: `最高與最低來自不同監測類型（${HOMEPAGE_EXTREMA.dirtiest}：${HOMEPAGE_EXTREMA.dirtiestType}；` +
-      `${HOMEPAGE_EXTREMA.cleanest}：${HOMEPAGE_EXTREMA.cleanestType}）。` +
-      `${HOMEPAGE_EXTREMA.ratio}× 是測站觀測值對比，不是純空間、土地使用或因果效果。`,
+    text: HOMEPAGE_EXTREMA.sameType
+      ? `最高與最低同屬${HOMEPAGE_EXTREMA.dirtiestType}（${HOMEPAGE_EXTREMA.dirtiest}、` +
+        `${HOMEPAGE_EXTREMA.cleanest}），差別在地點不同。${HOMEPAGE_EXTREMA.ratio}× 是測站觀測值` +
+        `對比，兩地的排放、地形與土地使用都混在裡面，不是純空間差距，也不是任何因果效果。`
+      : `最高與最低不是同一類測站：${HOMEPAGE_EXTREMA.dirtiest}屬${HOMEPAGE_EXTREMA.dirtiestType}，` +
+        `${HOMEPAGE_EXTREMA.cleanest}屬${HOMEPAGE_EXTREMA.cleanestType}—不同類別的測站，` +
+        `PM2.5 的驅動因子本來就不同。${HOMEPAGE_EXTREMA.ratio}× 是測站觀測值對比，` +
+        `站型與地點的差距混在一起，不是純空間差距，也不是任何因果效果。`,
   };
   if (homepageStationTypeBoundaryProblems(completeHomepageStationTypeBoundary).length) {
     throw new Error("the homepage station-type predicate rejects its control");

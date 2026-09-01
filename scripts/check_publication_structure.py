@@ -1962,6 +1962,11 @@ HEALTH_PAYLOAD_KEYS = frozenset(
         "mean_median",
         "spread_share",
         "headline",
+        # The pooled coefficient's confidence interval at the reference
+        # counterfactual. M10 always fitted three bounds and only the central
+        # one reached the page, so the chapter's percentages carried no
+        # interval at all beside a figure about how far assumptions move them.
+        "coefficient_band",
         "extrapolation",
         "not_reported",
     }
@@ -1978,7 +1983,12 @@ HEALTH_FUNCTION_KEYS = frozenset(
         "caveat",
     }
 )
-HEALTH_SERIES_KEYS = frozenset({"name", "label", "value", "why", "years", "paf"})
+# `paf_low`/`paf_high` are the pooled coefficient at its two bounds, held at
+# this counterfactual — kept on the series so they cannot be paired with the
+# wrong assumption.
+HEALTH_SERIES_KEYS = frozenset(
+    {"name", "label", "value", "why", "years", "paf", "paf_low", "paf_high"}
+)
 HEALTH_HEADLINE_KEYS = frozenset(
     {"first_year", "last_year", "first_share", "last_share", "first_range", "last_range"}
 )
@@ -5687,6 +5697,17 @@ def _run_preflight() -> None:
                 # made the headline range resolve to all four series at once,
                 # which is exactly the shape the derivation has to refuse.
                 "paf": [(0.2, 0.17, 0.14, 0.12)[index], (0.1, 0.08, 0.06, 0.05)[index]],
+                # The coefficient's two bounds, bracketing `paf` at the same
+                # counterfactual. Offsets rather than a second grid: what the
+                # derivation reads off these is their presence and shape.
+                "paf_low": [
+                    (0.2, 0.17, 0.14, 0.12)[index] - 0.03,
+                    (0.1, 0.08, 0.06, 0.05)[index] - 0.01,
+                ],
+                "paf_high": [
+                    (0.2, 0.17, 0.14, 0.12)[index] + 0.02,
+                    (0.1, 0.08, 0.06, 0.05)[index] + 0.01,
+                ],
             }
             for index in range(4)
         ],
@@ -5700,6 +5721,16 @@ def _run_preflight() -> None:
             "last_share": 0.4,
             "first_range": [0.12, 0.2],
             "last_range": [0.05, 0.1],
+        },
+        "coefficient_band": {
+            "counterfactual": "who_guideline",
+            "counterfactual_ugm3": 5.0,
+            "rr_low": 1.06,
+            "rr_high": 1.09,
+            "first_year": 2024,
+            "last_year": 2025,
+            "first_width_pp": 6.2,
+            "last_width_pp": 2.1,
         },
         "extrapolation": {"ceiling_ugm3": 30.0, "share_above": 0.2, "why": "why"},
         "not_reported": {
