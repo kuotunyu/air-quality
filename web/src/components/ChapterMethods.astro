@@ -1046,11 +1046,37 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
    * written down anywhere else: 「2.88 μg/m³ 平均絕對誤差」, not the number and
    * its unit on separate lines with the width beside them unused.
    */
+  /*
+   * Sized to the content, then centred — the leftover is margin, not a hole.
+   *
+   * With `1fr` tracks the pair took the full reading measure: 462px cards whose
+   * widest content, measured across all six, inked 313px from the card's left
+   * edge and whose narrowest inked 162. So every card carried 149 to 300px of
+   * dead space ON ITS RIGHT, inside a border, which is what makes emptiness
+   * read as a fault rather than as air.
+   *
+   * Capped and centred, so the leftover is margin rather than a hole.
+   *
+   * `fit-content` on the container with equal `1fr` tracks was tried first, on
+   * the theory that equal flex factors would resolve to the wider card's
+   * max-content and size each block to its own text. They do not: the tracks
+   * fell to their `minmax` floor, the narrower box wrapped text it had been
+   * fitting, and the two cards stopped being the same height — 217px against
+   * 183 — which is the one thing a comparison cannot afford. Reverted.
+   *
+   * What works is smaller boxes rather than cleverer tracks. The horizontal
+   * padding was 35.2px a side, 70px of a 396px card, so it comes down to match
+   * the vertical; block 07's widest row then needs 322px and the cap is 15rem
+   * (330px at the 22px root). `margin-inline: auto` puts what is left outside
+   * the boxes, where the page's own margins already are, and the `0` floor lets
+   * the tracks shrink instead of overflowing above the stacking breakpoint.
+   */
   .compare {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: minmax(0, 15rem) auto minmax(0, 15rem);
     grid-template-rows: auto auto auto;
-    align-items: start;
+    justify-content: center;
+    align-items: stretch;
     gap: 1rem;
     margin: 1.6rem 0;
   }
@@ -1062,6 +1088,10 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     grid-template-columns: auto minmax(0, 1fr);
     align-items: baseline;
     gap: 0.3rem 0.5rem;
+    /* Square, and smaller than the shared card default. 35.2px a side was 70px
+       of a 396px box holding 168 to 313px of text; at 22px it is the same
+       measure as the block padding above and below. */
+    padding: var(--space-3);
   }
 
   .compare .tag,
