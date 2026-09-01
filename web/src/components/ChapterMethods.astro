@@ -1055,29 +1055,37 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
    * dead space ON ITS RIGHT, inside a border, which is what makes emptiness
    * read as a fault rather than as air.
    *
-   * Capped and centred, so the leftover is margin rather than a hole.
+   * No box, so there is no box to be empty.
    *
-   * `fit-content` on the container with equal `1fr` tracks was tried first, on
-   * the theory that equal flex factors would resolve to the wider card's
-   * max-content and size each block to its own text. They do not: the tracks
-   * fell to their `minmax` floor, the narrower box wrapped text it had been
-   * fitting, and the two cards stopped being the same height — 217px against
-   * 183 — which is the one thing a comparison cannot afford. Reverted.
+   * Two rounds of shrinking got these from 495x244 to 330x183, and the space
+   * was still wrong, for a reason no cap can fix: the three blocks hold 146,
+   * 267 and 278px of text, and one width has to be the widest of them. Block 06
+   * — 「樣本內」 over 「N = 3,657,289」 — then sat in a 330px box it needed 190
+   * for.
    *
-   * What works is smaller boxes rather than cleverer tracks. The horizontal
-   * padding was 35.2px a side, 70px of a 396px card, so it comes down to match
-   * the vertical; block 07's widest row then needs 322px and the cap is 15rem
-   * (330px at the 22px root). `margin-inline: auto` puts what is left outside
-   * the boxes, where the page's own margins already are, and the `0` floor lets
-   * the tracks shrink instead of overflowing above the stacking breakpoint.
+   * The rule this project wrote down last round is the answer to its own
+   * question: dead space INSIDE a border reads as a fault, and the same pixels
+   * outside it read as margin. So the border goes. Each side keeps a 3px rule
+   * on its leading edge in its own tone — the mark the tag is already coloured
+   * with — which says 「these three lines are one side」 without enclosing
+   * anything. The tracks can then be `max-content`: each side is exactly as
+   * wide as its longest line, the two may differ, and with no boxes to compare
+   * nothing looks uneven. Subgrid still holds the tag, value and note rows
+   * level across both sides, which is what the comparison actually needs.
+   *
+   * `container-type: inline-size` has to go with it. `.card` sets it, and an
+   * inline-size container's own width by definition does not depend on its
+   * contents — which is why the earlier `fit-content` experiment could not
+   * measure them and fell to its floor. That was the real cause, recorded here
+   * so the next attempt does not repeat it.
    */
   .compare {
     display: grid;
-    grid-template-columns: minmax(0, 15rem) auto minmax(0, 15rem);
+    grid-template-columns: max-content auto max-content;
     grid-template-rows: auto auto auto;
     justify-content: center;
     align-items: stretch;
-    gap: 1rem;
+    gap: 1rem 1.4rem;
     margin: 1.6rem 0;
   }
 
@@ -1088,10 +1096,23 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     grid-template-columns: auto minmax(0, 1fr);
     align-items: baseline;
     gap: 0.3rem 0.5rem;
-    /* Square, and smaller than the shared card default. 35.2px a side was 70px
-       of a 396px box holding 168 to 313px of text; at 22px it is the same
-       measure as the block padding above and below. */
-    padding: var(--space-3);
+    container-type: normal;
+    border: 0;
+    border-inline-start: 3px solid var(--compare-mark, var(--rule));
+    border-radius: 0;
+    background: none;
+    padding: 0.1rem 0 0.1rem var(--space-3);
+  }
+
+  /* The bar takes the tag's own colour — `--c5` and `--c1` are the measured
+     marks behind `--c5-ink` and `--c1-ink`, so the side is marked in the same
+     hue the reader is already reading its name in. */
+  .compare .card:has(.tag.bad) {
+    --compare-mark: var(--c5);
+  }
+
+  .compare .card:has(.tag.good) {
+    --compare-mark: var(--c1);
   }
 
   .compare .tag,
