@@ -4142,7 +4142,6 @@ function historicalStationCopyProblems(route, text, hrefs = null) {
         "萬里",
         "不是來自環境部現行測站清冊",
         "審閱過的環境部歷史測站紀錄",
-        "測站歷史座標設定檔",
         "本章結果是在納入之後重算的",
       ],
     ],
@@ -4160,28 +4159,37 @@ function historicalStationCopyProblems(route, text, hrefs = null) {
     .map((phrase) => `missing historical-station disclosure ${JSON.stringify(phrase)}`);
 
   /*
-   * The citation is pinned by where it points, not by what it prints.
+   * The citation is pinned by where it points, and it points at the authority.
    *
-   * This used to require the literal string `conf/station_geo_historical.yaml`
-   * in the prose, on the argument that a named authority is what makes 萬里's
-   * substituted coordinate auditable. The authority is still required — the
-   * phrase list above still holds 「審閱過的環境部歷史測站紀錄」 — but a reader
-   * met the raw path mid-sentence with nothing saying it was a file, and the
-   * owner asked for it to go. A link satisfies the same requirement without
-   * spending a reader's attention on a repository path: the file is still
-   * cited, still reachable, and still exactly one file.
+   * Three shapes so far. It required the literal string
+   * `conf/station_geo_historical.yaml` in the prose, on the argument that a
+   * named authority is what makes 萬里's substituted coordinate auditable; then
+   * a link to that same file, once the owner asked for the bare path to go.
+   * Both sent a reader into this project's repository to read raw YAML for one
+   * date, and the owner then asked for repository file links to go too.
+   *
+   * So the requirement is unchanged and the target moved: the disclosure must
+   * still cite where the coordinate came from, but that is 環境部's own station
+   * record, which is what the supplement was quoting in the first place. The
+   * host is pinned rather than the full URL — the record id belongs to the
+   * payload, not to this gate — and the review date is required as a date on
+   * the page, which the file link used to hide behind a click.
    */
   const citations = new Map([
-    ["/space/", "conf/station_geo_historical.yaml"],
+    ["/space/", "airtw.moenv.gov.tw"],
   ]);
   const citation = citations.get(route);
   if (citation && Array.isArray(hrefs)) {
-    if (!hrefs.some((href) => String(href ?? "").endsWith(citation))) {
+    if (!hrefs.some((href) => String(href ?? "").includes(citation))) {
       problems.push(
         `missing historical-station citation link to ${JSON.stringify(citation)}`,
       );
     }
+    if (!/\d{4}-\d{2}-\d{2}\s*查證/.test(text)) {
+      problems.push("missing historical-station review date");
+    }
   }
+
 
   const forbidden = [
     {
@@ -10100,8 +10108,8 @@ async function lifecycleSelfTest() {
     [
       "/space/",
       "其中萬里的座標不是來自環境部現行測站清冊—該站已停用而從清冊消失，" +
-        "位置改依審閱過的環境部歷史測站紀錄補上，來源與查證日期記在" +
-        "開放原始碼庫的測站歷史座標設定檔。本章結果是在納入之後重算的。",
+        "位置改依審閱過的環境部歷史測站紀錄補上，來源是環境部空品監測網的" +
+        "該站測站資料，2026-08-10 查證。本章結果是在納入之後重算的。",
     ],
     [
       "/data/",
@@ -10113,21 +10121,39 @@ async function lifecycleSelfTest() {
     // /space/ additionally has to cite the file by link; the others carry no
     // citation contract, and an empty list is fine for them.
     const fixtureHrefs = route === "/space/"
-      ? ["https://example.test/repo/blob/HEAD/conf/station_geo_historical.yaml"]
+      ? ["https://airtw.moenv.gov.tw/CHT/EnvMonitoring/Central/article_station.aspx?SiteID=61"]
       : [];
     const copyProblems = historicalStationCopyProblems(route, text, fixtureHrefs);
     if (copyProblems.length) {
       throw new Error(`${route} precise historical-station copy is rejected: ${copyProblems.join("; ")}`);
     }
   }
-  // The citation must fail closed when the link goes, not only when the prose
-  // does — that is the whole point of moving the pin off the visible string.
+  // Both halves must fail closed on their own: the citation when the link goes
+  // even though the prose is intact, and the review date when the date goes
+  // even though the link is intact. Moving the pin off the visible string is
+  // only safe while each is checked separately.
   {
     const spaceText = historicalCopyFixtures.get("/space/") ?? "";
+    const spaceHrefs = [
+      "https://airtw.moenv.gov.tw/CHT/EnvMonitoring/Central/article_station.aspx?SiteID=61",
+    ];
     if (!historicalStationCopyProblems("/space/", spaceText, []).some((problem) =>
       problem.includes("missing historical-station citation link")
     )) {
       throw new Error("/space/ accepts the historical-station disclosure with no citation link");
+    }
+    // A link back into this project's own tree is not the authority the
+    // sentence claims, and must not satisfy the citation.
+    if (!historicalStationCopyProblems("/space/", spaceText, [
+      "https://example.test/repo/blob/HEAD/conf/station_geo_historical.yaml",
+    ]).some((problem) => problem.includes("missing historical-station citation link"))) {
+      throw new Error("/space/ accepts a repository file in place of the 環境部 record");
+    }
+    const undated = spaceText.replace("2026-08-10 查證", "已查證");
+    if (!historicalStationCopyProblems("/space/", undated, spaceHrefs).some((problem) =>
+      problem.includes("missing historical-station review date")
+    )) {
+      throw new Error("/space/ accepts the historical-station disclosure with no review date");
     }
   }
 

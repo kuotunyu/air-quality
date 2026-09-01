@@ -32,10 +32,29 @@ def build(root: Path, tree: dict[str, str]) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A stand-in repository, with both surfaces pointed at it."""
+    """A stand-in repository, with both surfaces pointed at it.
+
+    `READER_FACING` is widened to accept anything here. The tests below are
+    about whether a link *resolves*; which files a reader may be sent to is an
+    editorial decision about the real site, and letting it leak into these
+    fixtures would make every unrelated case pick its targets to satisfy a
+    policy it is not testing. The policy has its own tests, further down, which
+    set the list explicitly.
+    """
     monkeypatch.setattr(links, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(links, "WEB_SRC", tmp_path / "web" / "src")
+    monkeypatch.setattr(links, "READER_FACING", _ACCEPTS_ANY)
     return tmp_path
+
+
+class _AcceptsAny:
+    """Stands in for `READER_FACING` when a test is not about that rule."""
+
+    def __contains__(self, _item: object) -> bool:
+        return True
+
+
+_ACCEPTS_ANY = _AcceptsAny()
 
 
 # --- the real repository -----------------------------------------------------
@@ -200,4 +219,71 @@ def test_external_urls_are_never_resolved_as_files(repo: Path) -> None:
         },
     )
 
+    assert links.main() == 0
+
+
+# --- which files a reader may be sent to -------------------------------------
+
+
+def test_a_repofile_target_outside_the_reader_facing_list_fails(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rule the owner asked for: a reader should not be sent into the source
+    tree unless that file is what they came for. A config file that exists, and
+    whose link therefore resolves, still fails."""
+    monkeypatch.setattr(links, "READER_FACING", {"docs/legal.md"})
+    build(
+        repo,
+        {
+            "README.md": "[legal](docs/legal.md)",
+            "docs/legal.md": "",
+            "conf/spatial.yaml": "",
+            "web/src/page.astro": 'repoFile("conf/spatial.yaml")',
+        },
+    )
+
+    assert links.main() == 1
+
+
+def test_a_reader_facing_target_passes(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same tree, linking the document that earns the trip."""
+    monkeypatch.setattr(links, "READER_FACING", {"docs/legal.md"})
+    build(
+        repo,
+        {
+            "README.md": "[legal](docs/legal.md)",
+            "docs/legal.md": "",
+            "conf/spatial.yaml": "",
+            "web/src/page.astro": 'repoFile("docs/legal.md")',
+        },
+    )
+
+    assert links.main() == 0
+
+
+def test_a_missing_target_is_reported_as_broken_not_as_unwarranted(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The two questions must not collapse into each other. A target that does
+    not exist is broken, whatever the policy says about it — reporting it as
+    'not reader-facing' would send the next person to edit a list when the fix
+    is to correct a path."""
+    monkeypatch.setattr(links, "READER_FACING", {"docs/legal.md"})
+    build(
+        repo,
+        {
+            "README.md": "[legal](docs/legal.md)",
+            "docs/legal.md": "",
+            "web/src/page.astro": 'repoFile("conf/gone.yaml")',
+        },
+    )
+
+    assert links.main() == 1
+    out = capsys.readouterr().out
+    assert "broken           : 1" in out
+    assert "not reader-facing: 0" in out
+
+
+def test_the_real_site_only_links_reader_facing_files() -> None:
+    """The list is not aspirational: the shipped site satisfies it today."""
     assert links.main() == 0

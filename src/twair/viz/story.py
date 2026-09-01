@@ -22,6 +22,7 @@ from typing import Any
 
 import polars as pl
 
+from twair.ingest.station_meta import load_historical_station_geo
 from twair.panels import balanced_panel_options, choose_balanced_start
 from twair.paths import outputs_dir, processed_dir
 from twair.scalars import as_int, opt_float
@@ -520,6 +521,28 @@ def _export_spatial(root: Path) -> list[Path]:
         for row in lisa_table.group_by("quadrant").len().iter_rows(named=True)
     }
 
+    # Where a substituted coordinate came from, in a form the chapter can cite.
+    #
+    # The supplement is the only place this lives: `station_coverage.parquet`
+    # records `geo_source` but not which record was read or when. The chapter
+    # used to close the gap by linking this project's own config file, which
+    # asked a reader to open raw YAML to learn a date. Carrying the government
+    # page and the review date instead lets the page state the date and cite
+    # the authority itself.
+    #
+    # Read, not recomputed — the same discipline as the parquets above.
+    historical_source: dict[str, Any] = {}
+    if historical:
+        supplement = load_historical_station_geo()
+        if supplement.height:
+            rows = {row["station_name"]: row for row in supplement.iter_rows(named=True)}
+            first = next((rows[name] for name in historical if name in rows), None)
+            if first is not None:
+                historical_source = {
+                    "verified_on": first["verified_on"],
+                    "page": first["source_page"],
+                }
+
     return [
         write_json(
             root / "spatial-structure.json",
@@ -535,6 +558,15 @@ def _export_spatial(root: Path) -> list[Path]:
                     "zone_partition": metadata["zone_partition"],
                     "null_draws": int(metadata["residual_null_draws"]),
                     "seed": int(metadata["seed"]),
+                    "historical_source": historical_source,
+                },
+                # Why the correlation is taken on anomalies, in the two numbers
+                # that say it. `reports/03-spatial.md` prints these from the
+                # same metadata; exporting them lets the chapter print the
+                # current pair rather than send a reader to that report for it.
+                "climatology": {
+                    "corr_raw": _round(float(metadata["station_correlation_raw"]), 3),
+                    "corr_anomaly": _round(float(metadata["station_correlation_anomaly"]), 3),
                 },
                 "correlogram": [
                     {

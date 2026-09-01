@@ -14,7 +14,6 @@
  */
 import spatial from "../../public/data/story/spatial-structure.json";
 import { axisNumber, n, nFixed, ticks } from "../lib/chart";
-import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
 import ConceptFlow from "./ConceptFlow.astro";
@@ -30,8 +29,16 @@ const network = spatial.network as {
   // Separate from `unplaced`: one says "we found this elsewhere", the other
   // "no official source places this at all", and the page says each.
   historical: string[];
+  // Where a substituted coordinate came from, when there is one. Empty for a
+  // network placed entirely on the current register.
+  historical_source: { verified_on?: string; page?: string };
   weights: string;
   null_draws: number;
+};
+
+const climatology = spatial.climatology as {
+  corr_raw: number;
+  corr_anomaly: number;
 };
 
 const correlogram = spatial.correlogram as {
@@ -298,22 +305,25 @@ const readingMap = [
         其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊—
         該站已停用而從清冊消失，位置改依審閱過的環境部歷史測站紀錄補上，
         {/*
-          Named in the reader's language; the path is the link, not the text.
+          The citation is the government's record, and the date is on the page.
 
-          A repository path set in the middle of a sentence told a reader
-          nothing — not that it was a file, not where it lived, not that they
-          could open it — and the owner asked for it to go.
+          This clause has been through three shapes. It printed the raw path
+          `conf/station_geo_historical.yaml`; then linked that file under a
+          readable name; now it does neither, because both asked a reader to
+          open this project's own config to learn one date.
 
-          What it was doing still has to be done. `check_site_quality.mjs` pins
-          this disclosure because it is what makes 萬里's substituted coordinate
-          auditable, and an earlier attempt that simply deleted the path was
-          rejected by that gate, correctly. So the gate now pins the citation by
-          **where the link points** rather than by the string the sentence
-          prints: the file is still cited, still exactly one file, still one
-          click away, and the prose reads as prose.
+          What the clause has to do — make 萬里's substituted coordinate
+          auditable — is done better this way. The date is stated rather than
+          stored behind a click, and the link goes to the 環境部 station record
+          the coordinate was actually read from. `check_site_quality.mjs` pins
+          the citation by where the link points, so it moved with this.
+
+          Both values come from the supplement via the payload; neither is
+          written here, because a reviewed date changes when someone reviews.
         */}
-        來源與查證日期記在開放原始碼庫的
-        <a href={repoFile("conf/station_geo_historical.yaml")}>測站歷史座標設定檔</a>。
+        來源是環境部空品監測網的
+        <a href={network.historical_source.page}>該站測站資料</a>，
+        {network.historical_source.verified_on} 查證。
         本章結果是在納入之後重算的；
       </>
     )}
@@ -433,9 +443,18 @@ const readingMap = [
       <strong>相關算在距全島均值的異常量上，這一步是檢定成立的前提。</strong>
       生料月均值在全島高度相關—那是共用的冬季高峰，不是分區的性質；用它來測，
       任何分區方式都會看起來同樣有效。減掉逐月島均之後平均相關趨近於零，剩下的才是
-      「這一站如何偏離全國」，分區的資訊到這裡才量得出來。兩個值每次執行重算，
-      現值印在<a href={repoFile("reports/03-spatial.md")}>第三章的分析報告</a>裡；
-      這裡不轉述，因為先前寫死在這裡的那個數字已經漂掉了。
+      「這一站如何偏離全國」，分區的資訊到這裡才量得出來。生料上全島測站兩兩平均相關{" "}
+      {nFixed(climatology.corr_raw, 3)}，扣掉逐月島均之後是 {nFixed(climatology.corr_anomaly, 3)}。
+      {/*
+        Printed, not linked.
+
+        These two used to be hardcoded here, drifted, and were replaced by a
+        link to `reports/03-spatial.md` — which fixed the drift by making the
+        reader leave to get the number. They come from the payload now, which
+        is how every other number on this site works, so they cannot drift and
+        the reader does not have to go anywhere.
+      */}
+      兩個值都由測站中繼資料每次執行重算。
     </p>
   </div>
 

@@ -15,6 +15,17 @@ one looks wrong in the source; the only way to find it is to click.
 a documentation tidy-up would 404 the live site with nothing to catch it, and the
 Astro build cannot help because a wrong URL is still a valid string.
 
+The website is also asked a second question: *should* it link that file at all.
+A reader following a link out of a chapter lands in a source tree, and that is
+only worth their trip when the file is the thing they came for — a licence they
+were just told applies to them, or the document a sentence says holds the full
+working. It was not worth it for `conf/station_geo_historical.yaml`, which cost
+a reader a click to learn one date, or for `reports/03-spatial.md`, which held
+two numbers the page can simply print. Both were replaced by the fact itself,
+and `READER_FACING` below is the list of what remains defensible. Adding to it
+is a decision about a reader's attention, so it is made here rather than in a
+component.
+
 External URLs are never fetched. This has to run offline in CI, and an upstream
 outage must not turn the build red.
 
@@ -50,6 +61,22 @@ EXTERNAL = ("http://", "https://", "mailto:", "#")
 WEB_SRC = REPO_ROOT / "web" / "src"
 REPO_FILE = re.compile(r"""repoFile\(\s*["']([^"']+)["']""")
 
+# Files a reader is allowed to be sent to, and why each earns the trip.
+#
+# `LICENSE` / `LICENSE-DATA`: the site states the terms 「MIT」 and 「CC BY 4.0」
+# as facts about what the reader may do. A grant with no way to read it is not
+# checkable, and LICENSE-DATA is this project's own scoping document rather
+# than the verbatim Creative Commons text, so an external deed cannot stand in.
+#
+# `docs/legal.md`: chapters 9 and 10 both say the full verification and the two
+# conflicting MOENV statements live there. That is a document a reader chooses
+# to open, not a detour to fetch one value.
+READER_FACING = {
+    "LICENSE",
+    "LICENSE-DATA",
+    "docs/legal.md",
+}
+
 
 def markdown_files() -> list[Path]:
     return [
@@ -81,6 +108,7 @@ def main() -> int:
                 broken.append(f"{relative}  ->  {target}")
 
     site_links = 0
+    unwarranted: list[str] = []
     for path in sorted(WEB_SRC.rglob("*")) if WEB_SRC.exists() else []:
         if path.suffix not in {".astro", ".ts", ".tsx", ".js"} or not path.is_file():
             continue
@@ -93,6 +121,8 @@ def main() -> int:
             site_links += 1
             if not (REPO_ROOT / target).exists():
                 broken.append(f"{relative}  ->  repoFile({target!r})")
+            elif target not in READER_FACING:
+                unwarranted.append(f"{relative}  ->  repoFile({target!r})")
 
     # Finding nothing is not the same as finding nothing wrong. If SKIP_PARTS
     # ever excluded the whole tree, or `repoFile` were renamed, this would print
@@ -111,7 +141,10 @@ def main() -> int:
     print(f"broken           : {len(broken)}")
     for entry in broken:
         print(f"  {entry}")
-    return 1 if broken else 0
+    print(f"not reader-facing: {len(unwarranted)}")
+    for entry in unwarranted:
+        print(f"  {entry}  (not in READER_FACING — state the fact, or justify the trip)")
+    return 1 if broken or unwarranted else 0
 
 
 if __name__ == "__main__":
