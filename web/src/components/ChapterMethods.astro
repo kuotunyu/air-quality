@@ -278,7 +278,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p>
       先說結論：有些選擇無關痛癢，有些讓整個模型的解釋力高估了三分之一。
-      這些不是誰特別粗心，而是整個世代的環境統計慣例—
+      這些做法是整個世代的環境統計慣例，跟誰粗心無關—
       同一批做法在那個時期的期刊論文裡到處都是。
     </p>
 
@@ -354,7 +354,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       這個基準裡最顯著的變數是 PM10。
       問題是 <strong>PM2.5 在定義上就是 PM10 的一部分</strong>—
       PM10 是直徑 10 微米以下的顆粒，PM2.5 是 2.5 微米以下的，後者被前者包含。
-      這不是預測，是把答案的一部分放進題目。
+      這等於把答案的一部分放進題目。
     </p>
 
     <p>
@@ -620,8 +620,8 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <div class="note caveat">
       落差 {n(optimism?.r2 as number, 3)} 的 R²，
-      就是樣本內評估看不到的樂觀偏誤。這不是模型失效，
-      是<strong>評估方式本身會系統性高估</strong>。
+      就是樣本內評估看不到的樂觀偏誤。<strong>評估方式本身會系統性高估</strong>，
+      模型並沒有失效。
     </div>
   </article>
 
@@ -806,7 +806,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
         第二，那條紅線相當平緩。缺口從 2–3 小時拉長到超過 48 小時（20 倍），
         鄰站法的誤差只從 {n(GAP_SERIES[2].values[1] as number, 2)} 升到
         {" "}{n(GAP_SERIES[2].values[4] as number, 2)}。
-        <strong>這並非穩健，而是相反</strong>—它代表這個方法不知道問題有多難：
+        平緩看起來像穩健，<strong>實際上量到的是這個方法的盲點</strong>—它代表這個方法不知道問題有多難：
         它會用同樣的自信填一次三週停機和一個一小時缺口，
         而輸出裡沒有任何欄位區分這兩者。<strong>內插的行為相反：誤差隨缺口成長，然後它停下來。</strong>
       </p>

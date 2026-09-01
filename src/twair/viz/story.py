@@ -745,7 +745,7 @@ def _export_sarima(root: Path) -> list[Path]:
                 "why_it_loses_at_one_hour": (
                     "(1,0,1)(1,0,1)₂₄ 沒有差分項，一步預測會往均值回歸，"
                     "而不是承諾「跟剛才一樣」。在 PM2.5 的一小時尺度上，"
-                    "承諾比回歸準—所以這不是實作問題，是這個模型的性質。"
+                    "承諾比回歸準—所以這是這個模型的性質，跟實作無關。"
                 ),
                 # No headline sentence here. The component supplies one in
                 # markup, and a payload that also states it makes the site print
