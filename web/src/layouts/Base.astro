@@ -6,6 +6,11 @@ import FigureTools from "../components/FigureTools.astro";
 import TableTools from "../components/TableTools.astro";
 import PlotReadout from "../components/PlotReadout.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
+// The two faces every page paints with, preloaded so the swap window is short.
+// `?url` hands back the bundler's emitted path — hashed and base-prefixed — so
+// the preload and the stylesheet name the same file.
+import sansFontUrl from "../fonts/noto-sans-tc.woff2?url";
+import displayFontUrl from "../fonts/noto-serif-tc.woff2?url";
 
 interface Props {
   title: string;
@@ -173,6 +178,8 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
       })();
     </script>
     <link rel="sitemap" type="application/xml" href={href("sitemap.xml")} />
+    <link rel="preload" href={sansFontUrl} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={displayFontUrl} as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <a href="#main" class="skip">跳到主要內容</a>
@@ -223,8 +230,11 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
             key listener would overturn that for a case where an exit already
             exists.
           */}
+          {/* 2026-09-02 — × (U+00D7), not ✕ (U+2715): none of the three served
+              faces carries the dingbat, and `scripts/site_fonts.py check` names
+              every character a face has to borrow from the system. */}
           <label class="rail-shut" for="rail" aria-label="收起章節" tabindex="0">
-            <span aria-hidden="true">✕</span>
+            <span aria-hidden="true">×</span>
           </label>
         </div>
 

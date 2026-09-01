@@ -15,11 +15,14 @@ is a second parser to keep in step with the first. `web/dist` is the one place
 every rendered character exists exactly once.
 
 Three roles, three faces. Text inside `h1`, `h2`, `h3` and `.hero-finding` is
-set in Noto Serif TC; everything is offered IBM Plex Sans first (Latin, digits,
-symbols) and Noto Sans TC second. So the sans role must be covered by the union
-of those two, and the display role by the serif alone. A character a role lacks
-still renders — in whatever the system stack falls back to — which is why the
-check exists: the fallback is visibly a different face, and silently so.
+set in Noto Serif TC, falling back to Plex and then the sans for a symbol the
+serif lacks (the subscript in NO₂ is in none of the Noto sources); everything
+else is offered IBM Plex Sans first (Latin, digits, symbols) and Noto Sans TC
+second. So the sans role must be covered by the union of those two, and the
+display role by the three together. A character a role lacks still renders —
+in whatever the system stack falls back to — which is why the check exists:
+the fallback is visibly a different face, and silently so. The first real run
+found the rail's close glyph, ✕, in none of the three sources; it is × now.
 """
 
 from __future__ import annotations
@@ -83,7 +86,7 @@ FACES: tuple[Face, ...] = (
 # `--font-*` stacks in web/src/styles/global.css.
 STACKS: dict[str, tuple[str, ...]] = {
     "sans": ("ibm-plex-sans", "noto-sans-tc"),
-    "display": ("noto-serif-tc",),
+    "display": ("noto-serif-tc", "ibm-plex-sans", "noto-sans-tc"),
 }
 
 DISPLAY_TAGS = frozenset({"h1", "h2", "h3"})
@@ -112,7 +115,10 @@ _ASCII = {chr(c) for c in range(0x20, 0x7F)}
 _LATIN_1 = {chr(c) for c in range(0xA0, 0x100)}
 _SYMBOLS = set("μ²³°±−×→←↑↓≤≥≈·…–—′″‰")
 _CJK_PUNCTUATION = {chr(c) for c in range(0x3000, 0x3040)}
-_FULLWIDTH = {chr(c) for c in range(0xFF00, 0xFFF0)}
+# The assigned fullwidth forms only — U+FF01–FF60 and U+FFE0–FFE6. The whole
+# block also holds halfwidth kana and Hangul fillers the site never sets, and
+# 16 unassigned code points the first coverage run reported as missing.
+_FULLWIDTH = {chr(c) for c in range(0xFF01, 0xFF61)} | {chr(c) for c in range(0xFFE0, 0xFFE7)}
 
 # Always in the sans subset, whatever the pages held on the day: printable
 # ASCII, Latin-1, the symbols the formatters emit, CJK punctuation, fullwidth
@@ -171,10 +177,26 @@ class _Roles(HTMLParser):
             self.display |= chars
 
 
-def character_sets(pages: list[Path]) -> dict[str, set[str]]:
+def character_sets(pages: list[Path], *, with_base: bool = True) -> dict[str, set[str]]:
+    """The characters each role must draw.
+
+    `with_base` is what the build asks the subsetter for — the pages plus the
+    base sets, so most copy edits need no rebuild. The check passes `False`:
+    it holds the faces to what the pages render, because a base character the
+    source font never had (the unassigned fullwidth code points, on the first
+    run) is not a defect a rebuild could fix.
+    """
     roles = _Roles()
     for page in pages:
         roles.feed(page.read_text(encoding="utf-8"))
+    if not with_base:
+        sans = set(roles.sans)
+        display = set(roles.display)
+        return {
+            "sans": sans,
+            "display": display,
+            "latin": {c for c in sans if ord(c) < LATIN_LIMIT},
+        }
     sans = set(roles.sans) | BASE_CHARACTERS
     borrowed = {c for c in roles.sans if c in _LATIN_1 or c in _FULLWIDTH}
     display = set(roles.display) | DISPLAY_BASE_CHARACTERS | borrowed
@@ -296,7 +318,7 @@ def check(dist: Path, fonts: Path) -> list[str]:
                 f"{name}: {path.name} differs from fonts.json; run `site_fonts.py build`"
             )
         cmaps[name] = _cmap(path)
-    sets = character_sets(pages)
+    sets = character_sets(pages, with_base=False)
     for role, stack in STACKS.items():
         served: set[str] = set()
         for name in stack:
@@ -352,19 +374,18 @@ def _tiny_font(chars: str) -> bytes:
 
 
 def write_fixture_site(dist: Path, fonts: Path, *, page_text: str, face_text: str) -> None:
-    """A one-page site and three served faces that all hold `face_text`.
+    """A one-page site and three served faces that hold exactly `face_text`.
 
-    Every role's set carries `BASE_CHARACTERS` whatever the page says, so the
-    fixture faces carry them too; otherwise a complete site is rejected for
-    the 500-odd base characters, which is what happened on the first run.
+    Exactly, and no base characters: the check holds the faces to what the
+    page renders, so a fixture whose faces carry only the page's characters
+    is the complete case.
     """
     fonts.mkdir(parents=True, exist_ok=True)
     (dist / "_astro").mkdir(parents=True, exist_ok=True)
     manifest: dict[str, Any] = {"pages": 1, "characters": {}, "faces": {}}
     css: list[str] = []
-    glyph_text = "".join(sorted(BASE_CHARACTERS | set(face_text)))
     for face in FACES:
-        data = _tiny_font(glyph_text)
+        data = _tiny_font(face_text)
         (fonts / f"{face.name}.woff2").write_bytes(data)
         hashed = f"{face.name}.fixture.woff2"
         (dist / "_astro" / hashed).write_bytes(data)
@@ -396,12 +417,7 @@ def self_test() -> int:
         if not any("文" in p and p.startswith("sans") for p in problems):
             raise SystemExit("self-test: a body character the sans faces lack was not named")
         write_fixture_site(dist, fonts, page_text="A", face_text="A")
-        # 中, not a Latin letter: printable ASCII is in the base set already,
-        # so a Latin addition changes nothing and the first draft of this
-        # mutation passed for that reason.
-        (fonts / "noto-sans-tc.woff2").write_bytes(
-            _tiny_font("".join(sorted(BASE_CHARACTERS | {"A", "中"})))
-        )
+        (fonts / "noto-sans-tc.woff2").write_bytes(_tiny_font("A中"))
         if not any("differs from fonts.json" in p for p in check(dist, fonts)):
             raise SystemExit("self-test: a regenerated font without its manifest was accepted")
         write_fixture_site(dist, fonts, page_text="A", face_text="A")
@@ -421,6 +437,11 @@ def self_test() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The problems name the characters themselves, and a Windows console
+    # defaults to cp950, which cannot encode most of them — the first real run
+    # found a missing character and then crashed printing it.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("verb", nargs="?", choices=("build", "check"))
     parser.add_argument("--self-test", action="store_true")

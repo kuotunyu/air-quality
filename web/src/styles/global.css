@@ -42,6 +42,48 @@
  * readers whose system asks for it.
  */
 
+/*
+ * ---------- the three faces ----------
+ *
+ * Self-hosted subsets, built by `scripts/site_fonts.py` from the characters the
+ * built pages actually use — 2026-09-02 — and checked by the same script in CI.
+ * Three faces, three jobs: Noto Sans TC for reading and interface, Noto Serif TC
+ * for the headings and the one display sentence, IBM Plex Sans for every digit
+ * and Latin run. Before this the site set in whatever the reader's system held,
+ * which on Windows is Microsoft JhengHei with digits in Segoe UI, and CI's
+ * Linux Chrome measured a different face again — so every width the gate
+ * pinned was pinned in a face no reader saw.
+ *
+ * The files live under `src/fonts/`, not `public/`, on purpose: a root-relative
+ * `url(/fonts/…)` is not rewritten for Astro's `base`, so it 404s on GitHub
+ * Pages while working locally. A relative `url()` into `src/` is emitted by the
+ * bundler with a hash and the base prefix, and the preload in Base.astro takes
+ * the same emitted URL through an `?url` import.
+ */
+@font-face {
+  font-family: "Noto Sans TC";
+  src: url("../fonts/noto-sans-tc.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Serif TC";
+  src: url("../fonts/noto-serif-tc.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/ibm-plex-sans.woff2") format("woff2");
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* 2026-08-02 — supersedes the OS-driven rationale above: native controls and
      page tokens follow the reader's explicit root theme. */
@@ -500,9 +542,16 @@
   --tint-caution: oklch(0.958 0.022 85);
   --tint-caution-edge: oklch(0.860 0.048 85);
 
+  /* 2026-09-02 — the served faces lead each stack; the system faces that used
+     to lead them stay behind as the fallback the coverage gate makes visible. */
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
-    "PingFang TC", "Microsoft JhengHei", sans-serif;
+    "IBM Plex Sans", "Noto Sans TC", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  /* Plex and the sans behind the serif for the symbols it lacks — the
+     subscript in NO₂ is in neither Noto source; only Plex carries it. */
+  --font-display:
+    "Noto Serif TC", "IBM Plex Sans", "Noto Sans TC", "Noto Serif CJK TC", "Songti TC",
+    PMingLiU, serif;
   --font-mono:
     ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
   /* Numbers are data, and data on this site is content — but they were set in
@@ -524,8 +573,8 @@
      after; digits land in Segoe UI / SF Pro, and any CJK character in the same
      run still falls through to the CJK faces. */
   --font-numeric:
-    "Segoe UI", -apple-system, ui-sans-serif, system-ui, "Noto Sans TC",
-    "PingFang TC", "Microsoft JhengHei", sans-serif;
+    "IBM Plex Sans", "Noto Sans TC", "Segoe UI", -apple-system, ui-sans-serif,
+    system-ui, "PingFang TC", "Microsoft JhengHei", sans-serif;
 
   /*
    * Modular scale, ratio ~1.26. The previous scale ran from 0.78 to 1.15 around
@@ -1148,6 +1197,7 @@ blockquote,
 h1,
 h2,
 h3 {
+  font-family: var(--font-display);
   line-height: 1.28;
   text-wrap: balance;
   margin: 0 0 var(--space-3);

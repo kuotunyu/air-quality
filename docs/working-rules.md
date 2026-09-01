@@ -1089,6 +1089,16 @@ weekly job would stay green forever while measuring nothing. Both states fail
 Same shape as the two nulls in the aggregates. When absence can happen for two
 different reasons, the two reasons have to stay distinguishable.
 
+### Astro does not rewrite a root-relative CSS `url()` for `base`
+
+A stylesheet `url(/fonts/x.woff2)` works on `localhost:4321` and 404s on GitHub
+Pages, where the site lives under `/air-quality/`. Astro rewrites the hrefs it
+renders; it does not touch a string inside a stylesheet. Assets a stylesheet
+names live under `src/` and are referenced relatively, so the bundler emits
+them hashed and base-prefixed, and a preload takes the same emitted path
+through an `?url` import. `scripts/site_fonts.py check` fails if the built
+stylesheet names a font file that is not in `dist`.
+
 ## Commands
 
 ```bash
