@@ -478,7 +478,7 @@ const opening = [
 .hero-grid > .hero-after {
   order: 3;
 }
-.hero-grid > :global(.map-notes) {
+.hero-grid > :global(.map-apparatus) {
   order: 4;
   grid-area: auto;
 }
@@ -580,8 +580,8 @@ const opening = [
   order: 3;
 }
 
-.hero-grid > :global(.map-notes),
-.hero-grid > :global(.map-tools) {
+/* 2026-09-02 — the notes and the tools are one strip now, one grid child. */
+.hero-grid > :global(.map-apparatus) {
   order: 4;
 }
 
@@ -613,8 +613,7 @@ const opening = [
   .hero-grid > .hero-after {
     grid-area: 2 / 1 / auto / -1;
   }
-  .hero-grid > :global(.map-notes),
-  .hero-grid > :global(.map-tools) {
+  .hero-grid > :global(.map-apparatus) {
     grid-column: 1 / -1;
   }
 

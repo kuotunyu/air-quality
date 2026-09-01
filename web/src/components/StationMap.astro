@@ -293,6 +293,16 @@ const dots = main.map((s) => {
     colour: concentrationColour(card?.annual_mean),
   };
 });
+// The finding the apparatus strip's summary carries while the licence text
+// stays folded: how many stations are not drawn, and that 萬里 is placed from
+// a historical record. Assembled here so an empty part leaves no stranded
+// separator.
+const apparatusFinding = [
+  unplaced.length > 0 ? `${unplaced.length} 個測站未繪出` : null,
+  wanliHistorical ? "萬里位置來自歷史紀錄" : null,
+]
+  .filter(Boolean)
+  .join("，");
 ---
 
 <slot name="before-map" />
@@ -407,7 +417,18 @@ const dots = main.map((s) => {
 
   The parent places this at the page measure; see `.hero-grid` in index.astro.
 */}
-<div class="map-notes">
+{/*
+  2026-09-02 — one strip, one line tall. The two note paragraphs ran at full
+  width under the level summary with the two buttons alone under them: licence
+  text with the visual weight of a section. The finding in them — how many
+  stations are not drawn, and that 萬里 is placed from a historical record — is
+  what a reader must not lose, so it is in the summary; the derivation and the
+  licence open on demand, and open on paper (the print sheet forces `details`
+  open). The DOM order the gate pins — map, interpretation, notes, tools — is
+  unchanged.
+*/}
+<div class="map-apparatus" data-homepage-map-apparatus>
+<details class="map-notes">
   {/*
     What these notes, and the two buttons below them, act on.
 
@@ -418,9 +439,12 @@ const dots = main.map((s) => {
     but nothing in the block said which figure it belonged to, so a reader who
     reaches it two screens later has no way to connect it to anything.
   */}
-  <p class="apparatus-label" data-map-apparatus-label>
-    以上地圖：全台測站概覽 · 資料來源與下載
-  </p>
+  <summary data-map-apparatus-label>
+    全台測站概覽地圖：來源與界線{apparatusFinding && (
+      <span class="apparatus-finding">・{apparatusFinding}</span>
+    )}
+  </summary>
+  <div class="map-notes-body">
   <p class="aside">
     縣市界為內政部國土測繪中心「直轄市、縣市界線（TWD97 經緯度）」1140318 版，
     原始比例尺 1:5000，依政府資料開放授權條款第 1 版使用。
@@ -461,9 +485,10 @@ const dots = main.map((s) => {
       </p>
     )
   }
-</div>
-
+  </div>
+</details>
 <div id="homepage-map-tools" class="map-tools"></div>
+</div>
 
 <style>
   /*
@@ -482,7 +507,7 @@ const dots = main.map((s) => {
     flex-direction: column;
     container-type: inline-size;
     container-name: map-frame;
-    width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
+    width: min(100%, clamp(26rem, 70vh, 42rem) * var(--map-wide));
     margin-inline: auto;
   }
 
@@ -517,9 +542,32 @@ const dots = main.map((s) => {
     }
   }
 
-  .map-tools {
-    order: 5;
-    grid-column: 1 / -1;
+  /* 2026-09-02 — the strip: summary on the left, the two controls on the
+     right, one row wherever the row fits and a wrapped pair where it does not.
+     `details` carries the site's disclosure frame from global.css; the flex
+     basis is what lets the tools share its row rather than take one. */
+  .map-apparatus {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .map-apparatus > .map-notes {
+    flex: 1 1 24rem;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .apparatus-finding {
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+
+  .map-tools,
+  .map-tools :global(.fig-tools) {
+    margin: 0;
   }
 
   /*
@@ -529,7 +577,9 @@ const dots = main.map((s) => {
    * `auto-fit` drops to one column as soon as two no longer fit, so this needs
    * no breakpoint; the row gap only ever applies in that collapsed state.
    */
-  .map-notes {
+  /* 2026-09-02 — the two-column grid moved from the notes element, which is
+     the disclosure now, to the body it opens. */
+  .map-notes-body {
     display: grid;
     /* `min(…, 100%)` and not a bare `19rem`: a minmax floor is a floor even when
        there is only one column, so at 375px the single track measured 351px in a
@@ -538,22 +588,11 @@ const dots = main.map((s) => {
     grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
     gap: var(--space-3) var(--space-5);
     align-items: start;
-  }
-
-  /* Spans the notes grid. A track of its own would seat the label beside the
-     note it introduces rather than above it, and at 375px — where `auto-fit`
-     has already collapsed to one column — it would look correct while being
-     wrong at every other width. */
-  .map-notes .apparatus-label {
-    grid-column: 1 / -1;
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-    font-weight: 700;
+    padding: var(--space-2) var(--space-3) var(--space-3);
   }
 
   /* The grid gap does the spacing; the paragraph margin would double it. */
-  .map-notes .aside {
+  .map-notes-body .aside {
     margin: 0;
   }
 
@@ -596,12 +635,16 @@ const dots = main.map((s) => {
    * at the existing 260px county-label collision floor so the complete legend
    * remains in view without changing the projection or any mark.
    */
+  /* 2026-09-02 — 400 rather than 330: the county labels were solved at a 330px
+     wrapper and a 260px floor, so a wider frame only adds room, and the first
+     viewport at 1440×900 is what actually bounds the drawing (see the band
+     rule below). */
   .map-wrap {
-    width: min(100%, 330px);
+    width: min(100%, 400px);
   }
 
   .map-box {
-    width: min(100%, clamp(26rem, 62vh, 36rem) * var(--map-wide));
+    width: min(100%, clamp(26rem, 70vh, 42rem) * var(--map-wide));
     margin-inline: auto;
   }
 
@@ -611,9 +654,15 @@ const dots = main.map((s) => {
     }
   }
 
+  /* 2026-09-02 — 300px, from 260: the largest width at which the site
+     gate's first-viewport contract (the map, its marks, its scale and its
+     ticks all inside 1440×900) still holds, found by stepping down from 300 in
+     10px steps. The height budget above went from 62vh to 70vh and its ceiling
+     from 36rem to 42rem at the same time, for the viewports this band does not
+     cover. */
   @media (min-width: 901px) and (max-width: 1599px) and (min-height: 800px) {
     .map-box {
-      width: min(100%, 260px);
+      width: min(100%, 300px);
     }
   }
 

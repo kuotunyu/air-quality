@@ -168,7 +168,10 @@ const CHART_ROUTES = new Set([
   "/trend/", "/space/", "/sources/", "/detection/", "/forecast/", "/health/", "/methods/",
 ]);
 const STATIC_SECONDARY_DISCLOSURES = new Map([
-  ["/", 0],
+  // 2026-09-02 — one: the map's source and boundary notes are a disclosure
+  // now, folded under a summary that keeps the finding (how many stations are
+  // not drawn, and 萬里's historical placement) visible.
+  ["/", 1],
   ["/trend/", 0],
   ["/stations/", 0],
   ["/space/", 0],
@@ -199,7 +202,7 @@ const STATIC_CONCEPT_DIAGRAMS = new Map([
 const EXPECTED_NATIVE_FIGURES = 21;
 // 2026-08-17: 9 -> 7. /methods/ lost two <details> — the transcribed K-S table
 // and the published-vs-reproduced comparison table.
-const EXPECTED_SECONDARY_DISCLOSURES = 7;
+const EXPECTED_SECONDARY_DISCLOSURES = 8;
 const EXPECTED_SQL_DISCLOSURES = 0;
 const STATIC_TABLE_WRAPS = new Map([
   ["/", 0],
@@ -13854,6 +13857,35 @@ async function main() {
         apparatusLabelText: (
           notes?.querySelector("[data-map-apparatus-label]")?.textContent ?? ""
         ).replace(/\s+/g, " ").trim(),
+        // 2026-09-02 — the notes are a disclosure and the two controls sit
+        // beside its summary in one strip; the vertical centres of the two
+        // say whether that row actually formed.
+        apparatusRowOffset: (() => {
+          const summary = notes?.querySelector("summary");
+          if (!summary || !tools) return null;
+          const s = summary.getBoundingClientRect();
+          const t = tools.getBoundingClientRect();
+          return Math.abs((s.top + s.bottom) / 2 - (t.top + t.bottom) / 2);
+        })(),
+        // Whether the strip is wide enough for the summary's ink and the two
+        // controls on one row. At 200% text it is not, and the pair wrapping
+        // there is the strip working, not failing — so the row is required
+        // only where it fits.
+        apparatusFits: (() => {
+          const summary = notes?.querySelector("summary");
+          const strip = notes?.parentElement ?? null;
+          if (!summary || !tools || !strip) return null;
+          const range = document.createRange();
+          range.selectNodeContents(summary);
+          const s = summary.getBoundingClientRect();
+          const inkRight = range.getBoundingClientRect().right;
+          const summaryStyle = getComputedStyle(summary);
+          const stripStyle = getComputedStyle(strip);
+          const needed = (inkRight - s.left) + (parseFloat(summaryStyle.paddingInlineEnd) || 0) +
+            (parseFloat(stripStyle.columnGap) || 0) + tools.getBoundingClientRect().width;
+          return needed <= strip.getBoundingClientRect().width;
+        })(),
+        viewportWidth: innerWidth,
       };
     })()`);
     const problems = [];
@@ -13886,6 +13918,12 @@ async function main() {
     // in it said which figure it belonged to.
     if (!structure?.apparatusLabelText) {
       problems.push("homepage map notes do not name the figure they belong to");
+    }
+    if (
+      structure?.viewportWidth >= 1024 && structure?.apparatusFits &&
+      (!Number.isFinite(structure?.apparatusRowOffset) || structure.apparatusRowOffset > 4)
+    ) {
+      problems.push("homepage map apparatus summary and tools do not share a row");
     }
     if (
       enhanced &&
