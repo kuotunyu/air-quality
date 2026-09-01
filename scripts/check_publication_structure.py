@@ -3798,8 +3798,7 @@ def _run_preflight() -> None:
     first_option = '<li data-station-option="甲站" aria-selected="true">甲站</li>'
     second_option = '<li data-station-option="乙站" aria-selected="false">乙站</li>'
     select_block = (
-        f'<ul id="station-listbox" role="listbox" hidden>'
-        f'\n{first_option}{second_option}\n</ul>'
+        f'<ul id="station-listbox" role="listbox" hidden>\n{first_option}{second_option}\n</ul>'
     )
     first_report = '<article data-station-report data-station="甲站">'
     second_report = '<article data-station-report data-station="乙站" hidden>'
@@ -3901,11 +3900,15 @@ def _run_preflight() -> None:
             # Move the selected flag to the option whose card is hidden: one
             # option still claims selection, one card is still visible, and
             # they name different stations.
-            valid_station_dossier.replace(first_option, first_option.replace(
-                'aria-selected="true"', 'aria-selected="false"'
-            ), 1).replace(second_option, second_option.replace(
-                'aria-selected="false"', 'aria-selected="true"'
-            ), 1),
+            valid_station_dossier.replace(
+                first_option,
+                first_option.replace('aria-selected="true"', 'aria-selected="false"'),
+                1,
+            ).replace(
+                second_option,
+                second_option.replace('aria-selected="false"', 'aria-selected="true"'),
+                1,
+            ),
         ),
         "missing identity": (
             "station identity inventory changed",
