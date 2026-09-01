@@ -40,6 +40,16 @@ _BINARY_SIGNATURES = (
     b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
     b"PAR1",
     b"\x00asm",
+    # 2026-09-02 — the served font subsets under web/src/fonts. Without this
+    # the audit read a woff2 blob as text, found no encoding for it, and could
+    # not run at all: check_like_ci reported step 2 of 29 failed with no finding.
+    b"wOF2",
+    b"wOFF",
+    # ...and the two sfnt magics, because two commits on this branch carry
+    # raw TrueType under `.woff2` names (the generator set no flavour), and
+    # the audit walks every reachable blob, not only the current tree.
+    b"\x00\x01\x00\x00",
+    b"OTTO",
 )
 
 

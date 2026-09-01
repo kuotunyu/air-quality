@@ -21,8 +21,8 @@
       "glyphs": 1445,
       "characters": 1387,
       "output": "noto-sans-tc.woff2",
-      "bytes": 612168,
-      "sha256": "00d3c44d5bcf4bc15cbaafeaa70a0db2b6ce91f1851a1b3d2f2f84bde7bfd58f"
+      "bytes": 338516,
+      "sha256": "2824c6f0284022d833e3cc594c92130cc8ff663edcddf912c9c3f7c4869362ba"
     },
     "noto-serif-tc": {
       "role": "display",
@@ -39,8 +39,8 @@
       "glyphs": 693,
       "characters": 639,
       "output": "noto-serif-tc.woff2",
-      "bytes": 369400,
-      "sha256": "efb94453adc2fccfc72e301b8e09e8e0e80f064a1f1984031d6fbe96709a29c0"
+      "bytes": 205032,
+      "sha256": "1a2f244cf5763c3fe6c9f05ff7d1d08377a96a05536621e623246c1bfdbc5366"
     },
     "ibm-plex-sans": {
       "role": "latin",
@@ -57,8 +57,8 @@
       "glyphs": 244,
       "characters": 210,
       "output": "ibm-plex-sans.woff2",
-      "bytes": 36720,
-      "sha256": "695ef72e526bea9c1347d78a02b2bb8e6cb599f61b862629ef8b7686c7f073bf"
+      "bytes": 36772,
+      "sha256": "1daecd74271a005d2371149ac4e10f59c8caa7673d4a1b4f073e3dae3f52540a"
     }
   }
 }

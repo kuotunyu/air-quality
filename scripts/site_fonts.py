@@ -255,7 +255,12 @@ def build(dist: Path, out: Path, cache: Path) -> dict[str, Any]:
         # the instancer works on what is left.
         if face.pin:
             font = instancer.instantiateVariableFont(font, face.pin)
-            font.flavor = "woff2"
+        # `options.flavor` is honoured by the subsetter's own save path, not by
+        # `TTFont.save`; without this line two of the three files were raw
+        # TrueType wearing `.woff2` names — 612,168 and 369,400 bytes — and
+        # the repository's anonymity audit, which knows woff2 by its magic and
+        # reads anything else as text, was the check that noticed.
+        font.flavor = "woff2"
         target = out / f"{face.name}.woff2"
         font.save(target)
         shutil.copyfile(licence, out / f"{face.name}-OFL.txt")
