@@ -1,13 +1,7 @@
 ---
 import "../styles/global.css";
-import {
-  hourlyObservationsFull,
-  hourlyObservationsShort,
-  recordSpan,
-  stations,
-} from "../lib/data";
+import { hourlyObservationsShort, recordSpan, stations } from "../lib/data";
 import { CHAPTERS, chapterLabel, chapterNumeral, href } from "../lib/chapters";
-import { repoUrl } from "../lib/repo";
 import FigureTools from "../components/FigureTools.astro";
 import TableTools from "../components/TableTools.astro";
 import PlotReadout from "../components/PlotReadout.astro";
@@ -321,13 +315,18 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
         <footer>
           <div class="page">
             {/*
-              The openness claim carries the link to the source. Detailed export
-              provenance remains in the downloadable data metadata, where it is
-              useful for reproduction without becoming reader-facing build status.
+              The source, and nothing else.
+
+              This line also carried the row count and an 「全部開源」 link back
+              to the repository. Both are already where a reader who wants them
+              would look — the count opens the entry page and is stated again in
+              chapter 10, and the licence block in chapter 10 is where reuse
+              terms belong — so on every one of twelve pages the footer was
+              repeating what the document says better elsewhere. Detailed export
+              provenance stays in the downloadable data's own metadata.
             */}
             <p class="mono">
-              資料：環境部空氣品質監測網 {recordSpan.first}–{recordSpan.last} 逐時觀測，{hourlyObservationsFull} 筆。
-              管線與分析<a href={repoUrl}>全部開源</a>。
+              資料：環境部空氣品質監測網 {recordSpan.first}–{recordSpan.last} 逐時觀測
             </p>
           </div>
         </footer>
