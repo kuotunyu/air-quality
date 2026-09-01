@@ -1,0 +1,64 @@
+{
+  "pages": 12,
+  "characters": {
+    "sans": 1525,
+    "display": 639,
+    "latin": 211
+  },
+  "faces": {
+    "noto-sans-tc": {
+      "role": "sans",
+      "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf",
+      "source_bytes": 11941968,
+      "source_sha256": "864727d210d54f2537bbe23b3a839436c3992af72de9322af5270897246bd44f",
+      "axes": {
+        "wght": [
+          100.0,
+          100.0,
+          900.0
+        ]
+      },
+      "glyphs": 1566,
+      "characters": 1525,
+      "output": "noto-sans-tc.woff2",
+      "bytes": 637936,
+      "sha256": "87834b29b10ef07844f75601b9364e690dad5bea28e639daa0f6c4084e349d3b"
+    },
+    "noto-serif-tc": {
+      "role": "display",
+      "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftc/NotoSerifTC%5Bwght%5D.ttf",
+      "source_bytes": 16851596,
+      "source_sha256": "0077e18f57c6908f4a000969880940bdb0dad057c0e8d98b49dc364c3d1b09c6",
+      "axes": {
+        "wght": [
+          200.0,
+          200.0,
+          900.0
+        ]
+      },
+      "glyphs": 693,
+      "characters": 639,
+      "output": "noto-serif-tc.woff2",
+      "bytes": 369400,
+      "sha256": "75cffa30bceb8b63d82c472a4afdf70422ed9643fa061ce13f6fbba84db110c4"
+    },
+    "ibm-plex-sans": {
+      "role": "latin",
+      "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsans/IBMPlexSans%5Bwdth,wght%5D.ttf",
+      "source_bytes": 537244,
+      "source_sha256": "3b031aa4216174205bd8471f88a49b91f093169e9e87bd5262242bc5967fe2e3",
+      "axes": {
+        "wght": [
+          100.0,
+          400.0,
+          700.0
+        ]
+      },
+      "glyphs": 244,
+      "characters": 211,
+      "output": "ibm-plex-sans.woff2",
+      "bytes": 36688,
+      "sha256": "6abc7c1c9ae5bbc9a1962cfd4ae2481b5d4578166fbca55b9b7abc858d55aedc"
+    }
+  }
+}

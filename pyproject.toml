@@ -169,6 +169,9 @@ module = [
     # marker. Keep that external boundary here instead of silencing the call
     # site, so our own bundle types remain checked.
     "pyarrow", "pyarrow.*",
+    # fontTools ships no py.typed marker. It arrives with matplotlib and is what
+    # scripts/site_fonts.py subsets the served faces with.
+    "fontTools", "fontTools.*",
     "shap", "shap.*", "lightgbm", "lightgbm.*", "pykrige", "pykrige.*",
     "sklearn", "sklearn.*",
     "esda", "esda.*", "libpysal", "libpysal.*", "ee", "ee.*", "scipy", "scipy.*",
