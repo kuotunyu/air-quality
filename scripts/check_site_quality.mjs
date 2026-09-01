@@ -4119,7 +4119,7 @@ function explorerGuidedWorkspaceProblems(state, viewport) {
 
 const HISTORICAL_STATION_ROUTES = new Set(["/", "/space/", "/data/"]);
 
-function historicalStationCopyProblems(route, text) {
+function historicalStationCopyProblems(route, text, hrefs = null) {
   const compact = String(text ?? "").replace(/\s+/g, "").trim();
   const required = new Map([
     [
@@ -4142,7 +4142,7 @@ function historicalStationCopyProblems(route, text) {
         "萬里",
         "不是來自環境部現行測站清冊",
         "審閱過的環境部歷史測站紀錄",
-        "conf/station_geo_historical.yaml",
+        "測站歷史座標設定檔",
         "本章結果是在納入之後重算的",
       ],
     ],
@@ -4158,6 +4158,30 @@ function historicalStationCopyProblems(route, text) {
   ]).get(route) ?? [];
   const problems = required.filter((phrase) => !compact.includes(phrase.replace(/\s+/g, "")))
     .map((phrase) => `missing historical-station disclosure ${JSON.stringify(phrase)}`);
+
+  /*
+   * The citation is pinned by where it points, not by what it prints.
+   *
+   * This used to require the literal string `conf/station_geo_historical.yaml`
+   * in the prose, on the argument that a named authority is what makes 萬里's
+   * substituted coordinate auditable. The authority is still required — the
+   * phrase list above still holds 「審閱過的環境部歷史測站紀錄」 — but a reader
+   * met the raw path mid-sentence with nothing saying it was a file, and the
+   * owner asked for it to go. A link satisfies the same requirement without
+   * spending a reader's attention on a repository path: the file is still
+   * cited, still reachable, and still exactly one file.
+   */
+  const citations = new Map([
+    ["/space/", "conf/station_geo_historical.yaml"],
+  ]);
+  const citation = citations.get(route);
+  if (citation && Array.isArray(hrefs)) {
+    if (!hrefs.some((href) => String(href ?? "").endsWith(citation))) {
+      problems.push(
+        `missing historical-station citation link to ${JSON.stringify(citation)}`,
+      );
+    }
+  }
 
   const forbidden = [
     {
@@ -4194,6 +4218,10 @@ const HISTORICAL_STATION_DISCLOSURE_PROBE = `(() => {
   if (disclosure) disclosure.open = true;
   const result = {
     text: document.querySelector("main")?.textContent?.replace(/\\s+/g, " ").trim() ?? "",
+    // Every link target in the chapter. A citation can be checkable without
+    // its path being printed at the reader, so what has to be pinned is where
+    // the link goes, not what the sentence spells out.
+    hrefs: [...document.querySelectorAll("main a[href]")].map((a) => a.getAttribute("href")),
     disclosure: disclosure ? {
       defaultCollapsed,
       summaryVisible: visible(summary),
@@ -10072,8 +10100,8 @@ async function lifecycleSelfTest() {
     [
       "/space/",
       "其中萬里的座標不是來自環境部現行測站清冊—該站已停用而從清冊消失，" +
-        "位置改依審閱過的環境部歷史測站紀錄補上，來源與查證日期記在 " +
-        "conf/station_geo_historical.yaml。本章結果是在納入之後重算的。",
+        "位置改依審閱過的環境部歷史測站紀錄補上，來源與查證日期記在" +
+        "開放原始碼庫的測站歷史座標設定檔。本章結果是在納入之後重算的。",
     ],
     [
       "/data/",
@@ -10082,11 +10110,27 @@ async function lifecycleSelfTest() {
     ],
   ]);
   for (const [route, text] of historicalCopyFixtures) {
-    const copyProblems = historicalStationCopyProblems(route, text);
+    // /space/ additionally has to cite the file by link; the others carry no
+    // citation contract, and an empty list is fine for them.
+    const fixtureHrefs = route === "/space/"
+      ? ["https://example.test/repo/blob/HEAD/conf/station_geo_historical.yaml"]
+      : [];
+    const copyProblems = historicalStationCopyProblems(route, text, fixtureHrefs);
     if (copyProblems.length) {
       throw new Error(`${route} precise historical-station copy is rejected: ${copyProblems.join("; ")}`);
     }
   }
+  // The citation must fail closed when the link goes, not only when the prose
+  // does — that is the whole point of moving the pin off the visible string.
+  {
+    const spaceText = historicalCopyFixtures.get("/space/") ?? "";
+    if (!historicalStationCopyProblems("/space/", spaceText, []).some((problem) =>
+      problem.includes("missing historical-station citation link")
+    )) {
+      throw new Error("/space/ accepts the historical-station disclosure with no citation link");
+    }
+  }
+
   const unsupportedHistoricalClaims = [
     ["/", "萬里測站就是富貴角。"],
     ["/", "五個測站未繪出，它們都已停用。"],
@@ -16510,7 +16554,9 @@ async function main() {
         }
         if (HISTORICAL_STATION_ROUTES.has(route)) {
           const historicalState = await evaluate(HISTORICAL_STATION_DISCLOSURE_PROBE);
-          for (const problem of historicalStationCopyProblems(route, historicalState?.text ?? "")) {
+          for (const problem of historicalStationCopyProblems(
+            route, historicalState?.text ?? "", historicalState?.hrefs ?? null,
+          )) {
             failures.push(`${route} @${width} ${theme}: ${problem}`);
           }
           if (route === "/data/") {
@@ -18204,7 +18250,9 @@ async function main() {
     }
     if (HISTORICAL_STATION_ROUTES.has(route)) {
       const historicalState = await evaluate(HISTORICAL_STATION_DISCLOSURE_PROBE);
-      for (const problem of historicalStationCopyProblems(route, historicalState?.text ?? "")) {
+      for (const problem of historicalStationCopyProblems(
+        route, historicalState?.text ?? "", historicalState?.hrefs ?? null,
+      )) {
         failures.push(`${state}: ${problem}`);
       }
       if (route === "/data/") {
