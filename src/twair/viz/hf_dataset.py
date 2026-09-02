@@ -161,6 +161,12 @@ daily = load_dataset("steven0226/air-quality", "daily")
 The source code is MIT licensed. Dataset reuse remains subject to the upstream
 source terms documented by the project; the data license is intentionally
 recorded as `other` rather than inheriting the code license.
+
+## Source repository
+
+程式碼、訓練與評估流程、測試與完整證據都在 GitHub：<https://github.com/kuotunyu/air-quality>。GitHub `kuotunyu` 與 Hugging Face `steven0226` 為同一人。
+
+Source code, the training/evaluation pipeline, tests and the full evidence trail live at <https://github.com/kuotunyu/air-quality>. GitHub `kuotunyu` and Hugging Face `steven0226` are the same author.
 """
 
 

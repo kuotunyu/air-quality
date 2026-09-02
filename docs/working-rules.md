@@ -427,6 +427,18 @@ api.upload_folder(
 Still needs the owner's go-ahead — this repo publishing to a repo they own is
 not standing authorisation for future pushes without asking.
 
+**Xet does not complete from this machine.** On 2026-09-03 `upload_folder`
+sat for 13 minutes with nothing committed, and the `hf` CLI retry died with
+`ConnectionError … cas-server.xethub.hf.co/v1/xorbs/…` — the Xet storage
+backend, not the Hub. With `HF_HUB_DISABLE_XET=1` (and
+`HF_HUB_ENABLE_HF_TRANSFER=0`) the same upload went over classic LFS in under
+a minute; only the objects that differed were transferred. Commits are atomic,
+so a killed upload leaves nothing partial. The Space's own host
+(`*.hf.space`) does not answer from this machine either, before or after; use
+the Hub API — `/api/spaces/<id>/runtime` and the authenticated
+`/logs/build` and `/logs/run` — to see a build finish and Gradio start, and
+let the owner open the page.
+
 Four things it does deliberately, each of which cost a debugging round:
 
 - **LightGBM's text format, never pickle**, and written with `Path.write_text`

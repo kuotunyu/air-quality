@@ -84,3 +84,9 @@ skill 問的是不同的問題：模型有沒有加到東西。
 這是模型的限制，不是選站失誤，所以寫在這裡而不是默默換掉。
 
 完整的管線、品管規則與分析程式都是開源的。
+
+## Source repository
+
+程式碼、訓練與評估流程、測試與完整證據都在 GitHub：<https://github.com/kuotunyu/air-quality>。GitHub `kuotunyu` 與 Hugging Face `steven0226` 為同一人。
+
+Source code, the training/evaluation pipeline, tests and the full evidence trail live at <https://github.com/kuotunyu/air-quality>. GitHub `kuotunyu` and Hugging Face `steven0226` are the same author.
