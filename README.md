@@ -225,41 +225,23 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 
 ---
 
-## 快速開始
+## 本地運行指南
+
+### Python 資料分析管線 (CLI)
 
 ```bash
-uv sync
+uv sync                     # 安裝 Python 依賴與環境
+cp .env.example .env        # 建立環境設定
+uv run twair doctor         # 驗證系統環境與依賴相容性
+uv run twair probe sources  # 解析年度目錄並取得即時資料樣本
 ```
 
-```bash
-cp .env.example .env
-```
+從 source checkout 執行時，repository root 即為工作目錄。若從安裝好的 wheel 執行，可在啟動前設定 `TWAIR_WORKSPACE_DIR` 環境變數。`probe sources` 指令會自動解析環境部最新開放檔案目錄結構並驗證連線，確保取得之資料與配置具備完全再現性。
+
+### 前端視覺化網站 (Web Dashboard)
 
 ```bash
-uv run twair doctor
-```
-
-```bash
-uv run twair probe sources
-```
-
-從 source checkout 執行時，repository root 就是 workspace。若從安裝好的
-wheel 執行，可在啟動前以 process environment 設定 `TWAIR_WORKSPACE_DIR`；未設定時
-使用目前工作目錄。相對的 `data/`、`.env`、`conf/`、報告與 probe 輸出都留在這個
-外部 workspace。`conf/*.yaml` 若不存在，程式會讀取 wheel 內隨版本審查過的
-read-only defaults；refresh 或 probe 只會建立 workspace override，不會改寫安裝套件。
-
-`probe sources` 會實地解析 airtw 年度目錄與當前下載連結、抓取一個真實 archive 樣本，
-並把結果寫進 `conf/sources.yaml` 與 `docs/data-sources.md`；需要憑證的加值來源若未設定，
-會明確保留為未驗證。
-政府網站的連結會變動，所以這一步每次都重新解析，不寫死任何 URL。
-
----
-
-## 執行Local 端
-
-```bash
-uv run twair export web                 # 從 Parquet 產生網站資料層
+uv run twair export web                 # 從 Parquet 匯出前端分析資料層
 cd web && npm install && npm run dev    # 本地啟動：http://localhost:4321
 ```
 

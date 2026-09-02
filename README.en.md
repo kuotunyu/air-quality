@@ -232,39 +232,21 @@ live in [docs/data-sources.md](docs/data-sources.md) and
 
 ---
 
-## Quick Start
+## Local Development Guide
+
+### Python Data Pipeline (CLI)
 
 ```bash
-uv sync
+uv sync                     # Install Python dependencies and virtual environment
+cp .env.example .env        # Create local configuration
+uv run twair doctor         # Verify system environment and dependencies
+uv run twair probe sources  # Discover remote annual archives and sample data
 ```
 
-```bash
-cp .env.example .env
-```
+When executing from source checkout, the repository root serves as the default workspace. The `probe sources` utility dynamically resolves live MoENV annual archives and verifies data schema integrity without relying on hardcoded URLs.
 
-```bash
-uv run twair doctor
-```
+### Web Dashboard (Astro)
 
-```bash
-uv run twair probe sources
-```
-
-When run from a source checkout, the repository root serves as the workspace.
-If running from an installed wheel, configure `TWAIR_WORKSPACE_DIR` in your process
-environment before launch; otherwise, the current working directory is used. The
-relative `data/`, `.env`, `conf/`, reports, and probe outputs remain within this
-external workspace. If `conf/*.yaml` files are absent, the application reads the
-read-only defaults packaged in the wheel. Refresh and probe commands create
-workspace overrides and never rewrite the installed package.
-
-The `probe sources` utility parses the live airtw annual catalogue, resolves current Google Drive identifiers, downloads one real archive sample, and populates `conf/sources.yaml` and `docs/data-sources.md`. Credentialed value-add sources remain explicitly unprobed when no credential is configured. Since government links change periodically, the catalogue is rediscovered rather than treated as a permanent hardcoded URL list.
-
----
-
-## Run Locally
-
-To run the interactive web interface locally:
 ```bash
 uv run twair export web                 # Export analytics results from Parquet into static front-end assets
 cd web && npm install && npm run dev    # Dashboard launches on http://localhost:4321
