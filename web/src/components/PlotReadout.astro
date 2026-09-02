@@ -501,6 +501,33 @@
       grid-column: auto;
       margin-bottom: 0;
     }
+
+    /*
+     * Three or more series: the label on its own line, the rows in two equal
+     * columns — the 560px form kept, not the one-line form above.
+     *
+     * The inline label sizes the first column to itself — 156px on figure 1.3
+     * at 1280, against 398px for the other two — and every third series lands
+     * in it. Measured: 離島 and 竹苗 printed their value 105px from the row's
+     * left edge while the other six printed it at 347–362px, two alignments in
+     * one panel. Two-series panels keep the one-line form; the count is read
+     * live because chapter 1's filter can take figure 1.3 from eight rows to two.
+     *
+     * Two columns and not three, because three wrapped a name. At 1440 a
+     * third of chapter 7's panel is a 371px row, and its 2006 state carries a
+     * 74px value beside a 255px name, 11px more than the row had: the name
+     * broke, the panel grew 32.7px, and the site gate failed the figure for
+     * changing its reserved height between two readout states. Two columns
+     * give every row 585px there and 504px at 1280, both more than the
+     * 505px the one-line form gave, so nothing that fitted before wraps now.
+     */
+    .readout-panel:has(> .readout-row:nth-child(4)) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .readout-panel:has(> .readout-row:nth-child(4)) .readout-when {
+      grid-column: 1 / -1;
+    }
   }
 
   .readout-when {
