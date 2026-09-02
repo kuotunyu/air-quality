@@ -916,6 +916,21 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
     if (diagram?.boxedConnectors !== 0) {
       problems.push(`${name} has ${diagram?.boxedConnectors ?? "unknown"} boxed connectors`);
     }
+    // 2026-09-02 — the drawn strips. A plate draws on every step or on none,
+    // so a row of strips with a gap in it is a step whose drawing failed to
+    // render, not a design; `timeline` is the one variant whose geometry IS
+    // the strip (two lanes), so it must draw. SVG text is forbidden outright:
+    // the glossary, CJK-spacing and no-JavaScript text gates read the page's
+    // HTML and skip <svg>, so a label inside one is a label no gate can see.
+    if (diagram?.figureTextCount !== 0) {
+      problems.push(`${name} carries SVG text inside a step`);
+    }
+    if (diagram?.figureCount > 0 && diagram.figureCount < diagram.stepCount) {
+      problems.push(`${name} drawing row is incomplete`);
+    }
+    if (diagram?.hiddenFigures !== 0) {
+      problems.push(`${name} has ${diagram?.hiddenFigures ?? "unknown"} hidden drawing strips`);
+    }
     if (
       !Number.isFinite(diagram?.minimumTitleWidthRatio) ||
       diagram.minimumTitleWidthRatio < 0.9
@@ -1020,6 +1035,9 @@ function conceptDiagramPrintProblems(state) {
     if (media?.indexBackgrounds?.some((colour) => !transparentCssColour(colour))) {
       problems.push(`${name} keeps index surfaces in print`);
     }
+    if (media?.figureBackgrounds?.some((colour) => !transparentCssColour(colour))) {
+      problems.push(`${name} keeps strip surfaces in print`);
+    }
     if (media?.stepBreakInside?.some((value) => !["avoid", "avoid-page"].includes(value))) {
       problems.push(`${name} permits a printed step to split`);
     }
@@ -1051,6 +1069,12 @@ function conceptDiagramForcedColorsProblems(state) {
     ) {
       problems.push(`${name} does not use one forced-colors Canvas surface`);
     }
+    // 2026-09-02 — every stroke in a strip is `currentColor`, so the strip's
+    // own `color` is the one value that decides whether the drawing survives
+    // forced colors.
+    if (media?.figureColors?.some((colour) => colour !== media.canvasText)) {
+      problems.push(`${name} paints strips outside CanvasText`);
+    }
   }
   return problems;
 }
@@ -1072,6 +1096,12 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
     const directItems = diagram.querySelectorAll(":scope > ol > li");
     const stepRects = steps.map((step) => step.getBoundingClientRect());
     const optionItems = [...diagram.querySelectorAll(":scope > ol > li > ul > li")];
+    // 2026-09-02 — the drawn strip: at most one per step, an inline SVG that
+    // carries the chapter's geometry. Its text lives in HTML spans beside it,
+    // never inside the SVG, because every text gate reads the page's HTML and
+    // treats <svg> as opaque.
+    const figures = steps.map((step) => step.querySelector(".concept-figure")).filter(Boolean);
+    const figureStyles = figures.map((figure) => getComputedStyle(figure));
     const diagramStyle = getComputedStyle(diagram);
     const diagramPaddingInlineEnd = Number.parseFloat(diagramStyle.paddingInlineEnd) || 0;
     const diagramPaddingInlineStart = Number.parseFloat(diagramStyle.paddingInlineStart) || 0;
@@ -1177,6 +1207,9 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
       connectorCount: connectorStyles.length,
       hiddenConnectors,
       boxedConnectors,
+      figureCount: figures.length,
+      figureTextCount: diagram.querySelectorAll(":scope > ol > li svg text").length,
+      hiddenFigures: figures.filter((figure) => !visible(figure)).length,
       minimumTitleWidthRatio: titleWidthRatios.length ? Math.min(...titleWidthRatios) : 0,
       outOfOrderSteps,
       nonVerticalTransitions,
@@ -1209,6 +1242,8 @@ const CONCEPT_DIAGRAM_PROBE = `(() => {
         stepBackgrounds: stepStyles.map((style) => style.backgroundColor),
         indexBackgrounds: indexStyles.map((style) => style.backgroundColor),
         stepBreakInside: stepStyles.map((style) => style.breakInside),
+        figureBackgrounds: figureStyles.map((style) => style.backgroundColor),
+        figureColors: figureStyles.map((style) => style.color),
         borderColors: [diagramStyle, ...stepStyles, ...indexStyles]
           .map((style) => style.borderTopColor),
         connectorColors: connectorStyles.map((style) => style.color),
@@ -9674,6 +9709,9 @@ async function lifecycleSelfTest() {
       connectorCount: 3,
       hiddenConnectors: 0,
       boxedConnectors: 0,
+      figureCount: 0,
+      figureTextCount: 0,
+      hiddenFigures: 0,
       minimumTitleWidthRatio: 1,
       outOfOrderSteps: 0,
       nonVerticalTransitions: 0,
@@ -9718,6 +9756,9 @@ async function lifecycleSelfTest() {
     ["missing connector", "connector inventory", (state) => { state.diagrams[0].connectorCount = 2; }],
     ["hidden connector", "invisible connectors", (state) => { state.diagrams[0].hiddenConnectors = 1; }],
     ["boxed connector", "boxed connectors", (state) => { state.diagrams[0].boxedConnectors = 1; }],
+    ["svg text label", "carries SVG text", (state) => { state.diagrams[0].figureTextCount = 1; }],
+    ["partial drawing row", "drawing row is incomplete", (state) => { state.diagrams[0].figureCount = 2; }],
+    ["hidden strip", "hidden drawing strips", (state) => { state.diagrams[0].hiddenFigures = 1; }],
     ["narrow title", "available card width", (state) => { state.diagrams[0].minimumTitleWidthRatio = 0.7; }],
     ["reordered step", "visually reordered", (state) => { state.diagrams[0].outOfOrderSteps = 1; }],
     // The boundary variant's first draft shipped exactly this shape: a zone
@@ -9769,6 +9810,7 @@ async function lifecycleSelfTest() {
     figureBackground: "rgba(0, 0, 0, 0)",
     stepBackgrounds: Array(4).fill("rgba(0, 0, 0, 0)"),
     indexBackgrounds: Array(4).fill("rgba(0, 0, 0, 0)"),
+    figureBackgrounds: [],
     stepBreakInside: Array(4).fill("avoid"),
   };
   if (conceptDiagramPrintProblems(completePrintConceptDiagram).length) {
@@ -9780,6 +9822,7 @@ async function lifecycleSelfTest() {
     ["screen figure fill", "screen surface in print", (media) => { media.figureBackground = "rgb(250, 250, 250)"; }],
     ["screen step fill", "step surfaces in print", (media) => { media.stepBackgrounds[0] = "rgb(250, 250, 250)"; }],
     ["screen index fill", "index surfaces in print", (media) => { media.indexBackgrounds[0] = "rgb(250, 250, 250)"; }],
+    ["screen strip fill", "strip surfaces in print", (media) => { media.figureBackgrounds = ["rgb(250, 250, 250)"]; }],
     ["splittable step", "printed step to split", (media) => { media.stepBreakInside[0] = "auto"; }],
   ];
   for (const [name, expectedProblem, mutate] of printMutations) {
@@ -9800,6 +9843,7 @@ async function lifecycleSelfTest() {
     borderColors: Array(9).fill("rgb(0, 0, 0)"),
     connectorColors: Array(3).fill("rgb(0, 0, 0)"),
     textColors: Array(8).fill("rgb(0, 0, 0)"),
+    figureColors: [],
     canvasText: "rgb(0, 0, 0)",
   };
   if (conceptDiagramForcedColorsProblems(completeForcedConceptDiagram).length) {
@@ -9811,6 +9855,7 @@ async function lifecycleSelfTest() {
     ["transparent Canvas", "no forced-colors Canvas", (media) => { media.figureBackground = "transparent"; }],
     ["wrong structure color", "CanvasText", (media) => { media.connectorColors[0] = "rgb(1, 2, 3)"; }],
     ["wrong surface color", "one forced-colors Canvas", (media) => { media.stepBackgrounds[0] = "rgb(1, 2, 3)"; }],
+    ["tinted strip", "strips outside CanvasText", (media) => { media.figureColors = ["rgb(1, 2, 3)"]; }],
   ];
   for (const [name, expectedProblem, mutate] of forcedMutations) {
     const state = structuredClone(completeForcedConceptDiagram);
