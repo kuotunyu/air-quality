@@ -170,7 +170,8 @@ const readingMap = [
 ] as const satisfies readonly { href: `#${string}`; question: string }[];
 
 /*
- * The whisker fan is the one measured proportion on any of the seven plates,
+ * The whisker fan was the first plate drawing to hold a payload's proportion
+ * (since 2026-09-03 /sources/, /detection/, /health/ and /methods/ do too),
  * so it is read by `cov_type` rather than by row order, and a payload that
  * stops carrying one of the four fails the build rather than drawing three
  * whiskers and a gap.

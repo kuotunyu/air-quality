@@ -618,6 +618,42 @@ grid/flex children is in `global.css`; keep it there.
 Verify with `document.documentElement.scrollWidth - clientWidth === 0` at
 375px, in both colour schemes.
 
+### The phone scale is the root, and the floor is 18px
+
+The operative `:root` is the second block in `global.css` (`clamp(1.25rem, …)`,
+20.2px on a phone), and every size token is rem. The phone pass sets it to
+1.125rem below 30rem, and that alone put `--text-xs` at 16.4px, under the site
+gate's `MIN_FONT_PX` of 18 — so the two small tokens rise to 1rem there, and
+any scoped `em` literal in a component (GuideAnnotation's 0.9em and 0.86em,
+ChapterHealth's `code` at 0.95em) is floored with `max(<em>, var(--text-xs))`,
+which the global `code` rule already did. A rule in the phone block loses to a
+later base rule of equal specificity (`.evidence-header` did); prefix it with
+`main`. Measured at 390×844: prose 20.2px and 17 characters a line before,
+18px and 19.9 after; smallest visible text exactly 18px on all eleven routes.
+
+### A readout that listens to `pointermove` never opens on a phone
+
+A tap produces no move; a drag is claimed by the browser for scrolling and
+arrives as `pointercancel`; and the moment a finger lifts, Chrome fires
+`pointerleave`, which closed the reading it had just opened. The plot now opens
+on `pointerdown` when `pointerType === "touch"`, ignores a touch
+`pointerleave`, and carries `touch-action: pan-y` so a sideways drag reaches
+`pointermove` while an up-down one still scrolls. Verified with synthetic touch
+events at 390 (open on down, still open after leave, closed on an outside
+down); a real device remains the check.
+
+### Adding a plate moves three gate pins, and its words need their own band
+
+`STATIC_CONCEPT_DIAGRAMS` for the route, the per-route native-figure map
+(figures plus plate: /trend/ 4, /health/ 3, /methods/ 3) and
+`EXPECTED_NATIVE_FIGURES` (22); the first web job on chapter 8's plate caught
+the per-route one. On the strip, the top twelve of its forty units are for
+words — /sources/' stop label sat on its grid's top row until the grid started
+at y=12 — and a label placed at x=42 is capped at the card's remaining width,
+which is how 「下載一次 · 8.1 MB」 came to wrap. /methods/ keeps its case index
+inside the first viewport at 375×812 and 1280×720, so its plate sits after
+the index, not before it.
+
 ### A border style on a side whose width was never set draws a 3px rule
 
 `border-block-end: 1px solid` sets one side. Adding `border-top-style: dashed`
