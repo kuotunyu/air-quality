@@ -743,6 +743,26 @@ const spaceConcept = spacePlate(
     margin-inline: auto;
   }
 
+  /*
+   * The controls figure gets a wider label column than the correlogram.
+   *
+   * 7.5em holds 「0–10 km」 with room to spare and holds none of the five
+   * control names: at 1280 the column is 165px and the names set 2 / 1 / 3 /
+   * 2 / 2 lines, breaking inside their own brackets — 「（未／分層）」,
+   * 「截／距（時代錯／置對照）」, 「「分／區各跑一次」」, 「效／果（天花板）」.
+   * `balance` above chose the best of those breaks; it could not remove them.
+   * 12em (264px) was tried first: it set 1 / 1 / 2 / 2 / 1 but still split
+   * the twelve-character 「字面上的「分區各跑一次」」 inside its quotes, because
+   * twelve characters at this size are 277px. 13em is 286px, the smallest
+   * whole em that holds it: the names set 1 / 1 / 2 / 1 / 1, the one break
+   * left is 「今日分區截距／（時代錯置對照）」 at the bracket, and the plot
+   * column pays 121px of its 682px for it. Below 560px the narrow template
+   * further down still applies to both figures.
+   */
+  .controls-fig {
+    grid-template-columns: minmax(0, 13em) minmax(84px, 1fr) minmax(0, auto);
+  }
+
   .corr-row,
   .ctrl-row {
     display: contents;
