@@ -22,6 +22,7 @@ import { axisNumber, linear, markInk, n, ticks, xLabelBucket, yearTicks, yGutter
 import ChapterIntro from "./ChapterIntro.astro";
 import { href } from "../lib/chapters";
 import ConceptFlow from "./ConceptFlow.astro";
+import { healthPlate } from "../lib/concept-vignettes";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const series = health.series as {
@@ -206,6 +207,10 @@ const fn = functions[0];
  */
 const langOf = (s: string | null | undefined) =>
   s && !/[㐀-鿿]/.test(s) ? "en" : undefined;
+
+/* One concentration axis, four times. */
+const healthConcept = healthPlate();
+
 ---
 
 <section id="health" class="page">
@@ -349,32 +354,46 @@ const langOf = (s: string | null | undefined) =>
     duplication took 243px off the figure, most of it blank — the branch column
     set a shared subgrid row that the three branchless steps also had to span.
   */}
+  {/*
+    One concentration axis, drawn at the same place on all four cards: the
+    reading, then the baseline the analyst chooses, then the length between
+    them — which is the whole of what this chapter reports — and finally that
+    length beside an edge the project does not cross. Nothing on the strip
+    carries a value; 圖 7.1 below owns the four counterfactuals and their
+    numbers, and a strip that re-listed them is why the `fork` variant was
+    deleted.
+  */}
   <ConceptFlow
     title="同一批濃度如何變成一段可歸因比例"
     summary="資料沒有改變；改變的是比較基準。網站因此報告一段範圍，而不是把其中一個假設包裝成唯一答案。"
+    figureHeight="5.2rem"
     steps={[
       {
         label: "觀測",
         title: "固定測站的年均濃度",
         detail: "同一批濃度序列是四種估計共同的起點。",
+        ...healthConcept[0],
       },
       {
         label: "反事實選擇",
         title: "指定拿哪個濃度作為比較基準",
-        detail: "基準是估計之前必須公開的假設，資料本身決定不了它。",
+        detail: "基準是估計之前公開的假設，即以什麼濃度作為比較基準；資料本身決定不了它。",
         tone: "cool",
+        ...healthConcept[1],
       },
       {
         label: "估計",
         title: "套用暴露反應函數，得到比例範圍",
         detail: "下降幅度可以跨基準比較；當前年份的絕對水準對基準較敏感。",
         tone: "warm",
+        ...healthConcept[2],
       },
       {
         label: "可報告範圍",
         title: "不延伸成死亡人數或個人暴露",
         detail: "本專案沒有人口、基礎死亡率與人口加權暴露，不能補出這兩種結論。",
         tone: "boundary",
+        ...healthConcept[3],
       },
     ]}
   />

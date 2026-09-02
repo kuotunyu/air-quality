@@ -19,6 +19,7 @@ import { n } from "../lib/chart";
 import { groupByCountyNorthToSouth } from "../lib/data";
 import ChapterIntro from "./ChapterIntro.astro";
 import ConceptFlow from "./ConceptFlow.astro";
+import { sourcesPlate } from "../lib/concept-vignettes";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const data = sourcesData as {
@@ -124,6 +125,10 @@ const legend = BREAKS.map((b, i) => ({
   colour: `var(${RAMP[i]})`,
   label: i === 0 ? `< ${b}` : `${BREAKS[i - 1]}–${b}`,
 })).concat([{ colour: `var(${RAMP[RAMP.length - 1]})`, label: `≥ ${BREAKS[BREAKS.length - 1]}` }]);
+
+/* The evidence ladder, one rung per step. */
+const sourcesConcept = sourcesPlate();
+
 ---
 
 <section id="sources" class="page">
@@ -413,42 +418,65 @@ const legend = BREAKS.map((b, i) => ({
     </span></Fragment>
   </EvidenceFigure>
 
-  <ConceptFlow
-    title="從風向條件到來源歸因，中間還缺哪些證據"
-    summary="CBPF 是形成來源假說的工具；它把值得追查的條件指出來，但不會替污染源命名。"
-    steps={[
-      {
-        label: "觀測條件",
-        title: "把風向、風速與高濃度小時配對",
-        detail: "每一格回答特定風向與風速下，PM2.5 落在高值的條件機率。",
-      },
-      {
-        label: "可支持",
-        title: "辨認高值較常出現的來風條件",
-        detail: "這是測站與氣象條件的關聯，可用來比較模式並提出問題。",
-        tone: "cool",
-      },
-      {
-        label: "待檢驗假說",
-        title: "列出可能的傳送或局地機制",
-        detail: "低風速與高風速高值都可能對應多種機制，不能只挑一個故事。",
-        tone: "warm",
-      },
-      {
-        label: "來源歸因",
-        title: "CBPF 不識別污染來源",
-        detail: "還需要軌跡或擴散模式、排放清冊、化學組成與跨站一致證據。",
-        tone: "boundary",
-      },
-    ]}
-  />
-
   <p>
     這張圖叫 CBPF（conditional bivariate probability function，
     條件雙變量機率函數）。角度是風吹來的方位，半徑是風速—
     圓心附近是微風，外圈是強風。每一格的顏色是：風從這個方位、以這個速度吹來時，
     該小時的 PM2.5 落在最高四分之一的機率。
   </p>
+
+  {/*
+    The paragraph above used to sit below this figure, so the reader met a
+    ladder climbing out of a chart nobody had explained yet.
+
+    The strip is that ladder: one rung per step, solid while this chapter's
+    evidence carries it, dashed from the riser where it stops, and open-ended
+    on the last rung. The dashed rule down the third card's leading edge says
+    where the stop is; the fourth card's options are what would be needed to
+    climb past it, which used to be a heading and a bulleted card of its own
+    below the figure that names them.
+  */}
+  <ConceptFlow
+    title="從風向條件到來源歸因，中間還缺哪些證據"
+    summary="CBPF 是形成來源假說的工具；它把值得追查的條件指出來，但不會替污染源命名。"
+    figureHeight="4.6rem"
+    steps={[
+      {
+        label: "觀測條件",
+        title: "把風向、風速與高濃度小時配對",
+        detail: "每一格回答特定風向與風速下，PM2.5 落在高值的條件機率。",
+        ...sourcesConcept[0],
+      },
+      {
+        label: "可支持",
+        title: "辨認高值較常出現的來風條件",
+        detail: "這是測站與氣象條件的關聯，可用來比較模式並提出問題。",
+        tone: "cool",
+        ...sourcesConcept[1],
+      },
+      {
+        label: "待檢驗假說",
+        title: "列出可能的傳送或局地機制",
+        detail: "低風速與高風速高值各自對應多種機制。",
+        tone: "warm",
+        stop: "本章證據到此",
+        ...sourcesConcept[2],
+      },
+      {
+        label: "來源歸因",
+        title: "CBPF 不識別污染來源",
+        detail: "本章能指出值得追查的條件；為污染源命名還需要下列證據。",
+        tone: "boundary",
+        options: [
+          { title: "軌跡或擴散模式" },
+          { title: "排放清冊與操作紀錄" },
+          { title: "化學組成與受體模式" },
+          { title: "跨測站一致的結果" },
+        ],
+        ...sourcesConcept[3],
+      },
+    ]}
+  />
 
   <h2>尖峰風速是觀測分類</h2>
 
@@ -490,17 +518,6 @@ const legend = BREAKS.map((b, i) => ({
       <h3>高風速高值型</h3>
       <p>可能與區域傳送、高架排放／下洗、再懸浮、海鹽或地形導流有關；這些機制也不能由 CBPF 單獨區分。</p>
     </div>
-  </div>
-
-  <h2>歸因需要的證據</h2>
-
-  <div class="card">
-    <ul>
-      <li>軌跡或擴散模式；</li>
-      <li>排放清冊與操作紀錄；</li>
-      <li>化學組成與受體模式；</li>
-      <li>多個測站之間一致的結果。</li>
-    </ul>
   </div>
 
   <div class="note">

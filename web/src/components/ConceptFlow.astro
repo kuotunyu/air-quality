@@ -20,7 +20,46 @@
  * The remaining one keeps this component's DOM contract — an ordered list a screen reader
  * hears as a sequence — because the reading ORDER is still sequential even
  * where the geometry is not.
+ *
+ * ── 2026-09-02 — supersedes the paragraph above about uniformity ──────────
+ *
+ * The owner looked at the seven rendered diagrams and asked the question the
+ * comment had answered too easily: could the site's diagrams be better looking,
+ * and could each chapter use a form that fits what it argues? Six of the seven
+ * were the identical four-card row. Coherence was real, but it was carried by
+ * the CARD — a raised surface, a ring disc, an arrow — and a card says nothing
+ * about the argument inside it. So the card and the disc are gone, and what
+ * they carried has moved:
+ *
+ * - **The plate.** Every diagram is now a monograph's ruled figure: a Plex
+ *   numeral on a short heavy toned baseline running into a long light hairline
+ *   that continues into both gutters and breaks where the connector sits. That
+ *   rule is the coherence the cards used to provide, and it costs no surface,
+ *   so the screen state and the print state are finally the same drawing.
+ * - **The strip.** Above each column, one optional drawing, and it is the only
+ *   thing allowed to differ between chapters: narrowing brackets on /trend/, a
+ *   cloud ringed and then cut on /space/, a ladder that turns dashed where the
+ *   evidence stops on /sources/, two lanes meeting one band on /detection/, one
+ *   concentration axis gaining a cut on /health/, two wires crossing an edge
+ *   with a stopped return track on /explore/, one month at three densities on
+ *   /data/. The drawings live in `web/src/lib/concept-vignettes.ts`, whose
+ *   header carries the rules they obey; the one this file enforces is that
+ *   every word beside a drawing is an HTML span, never SVG text.
+ * - **Tone follows the page's own figure.** Where a chapter's chart has already
+ *   given `--k0`/`--k1` a meaning, the plate takes the same assignment rather
+ *   than the one the sequence would suggest. The same hue two hundred pixels
+ *   apart with two meanings is the trap this redesign was most at risk of.
+ * - **Dashed means the claim stops here**, on all seven plates: the boundary
+ *   step's baseline and head rule, the unreached rungs, the return track that
+ *   carries nothing, the edge beyond which this project does not go. No plate
+ *   inverts it.
+ *
+ * The four variant names are unchanged and no route changed its own. `timeline`
+ * finally has geometry — two lanes and a join — rather than being a name with
+ * no CSS behind it.
  */
+import type { StripLabel } from "../lib/concept-vignettes";
+
 export type ConceptVariant = "process" | "timeline" | "layers" | "boundary";
 export type ConceptTone = "neutral" | "cool" | "warm" | "boundary";
 
@@ -35,6 +74,20 @@ export interface ConceptStep {
   detail: string;
   tone?: ConceptTone;
   options?: readonly ConceptOption[];
+  /** An SVG string from `concept-vignettes.ts`. All steps carry one, or none do. */
+  figure?: string;
+  /** Words for the strip, placed in the strip's own coordinates. */
+  labels?: readonly StripLabel[];
+  /** `timeline`: where this step's connector sits, as a fraction of the strip. */
+  lane?: number;
+  /** `timeline`: draw 「∥」 rather than 「→」 — the same procedure, another input. */
+  join?: "same";
+  /** `layers`: the rule that folds this layer into the next, drawn on the connector. */
+  fold?: string;
+  /** `process`: a dashed limit down this card's leading edge. */
+  stop?: string;
+  /** `boundary`: this step's connector crosses the zone edge, so it is drawn heavier. */
+  crossing?: boolean;
 }
 
 interface Props {
@@ -42,43 +95,154 @@ interface Props {
   summary: string;
   steps: readonly ConceptStep[];
   variant?: ConceptVariant;
-  /** boundary only: the zone label. Steps 2..N are drawn inside the zone. */
-  boundaryLabel?: string;
+  /** The strip row's height, e.g. `"5.2rem"`. Required when any step draws. */
+  figureHeight?: string;
+  /** `boundary` only: the zone's label and the steps it encloses (1-based, inclusive). */
+  boundary?: { label: string; from: number; to: number };
+  /** `layers` only: the publication edge is drawn in this step's foot (1-based). */
+  edgeAfter?: number;
+  edgeLabel?: string;
 }
 
-const { title, summary, steps, variant = "process", boundaryLabel } = Astro.props;
+const {
+  title,
+  summary,
+  steps,
+  variant = "process",
+  figureHeight,
+  boundary,
+  edgeAfter,
+  edgeLabel,
+} = Astro.props;
 
-if (variant === "boundary" && !boundaryLabel) {
-  throw new Error("ConceptFlow boundary variant requires a boundaryLabel");
+if (variant === "boundary" && !boundary) {
+  throw new Error("ConceptFlow boundary variant requires a boundary zone");
 }
 
 if (steps.length < 3 || steps.length > 5) {
   throw new Error(`ConceptFlow requires 3–5 steps; received ${steps.length}`);
 }
 
+/*
+ * A drawing row is complete or absent, and the build says so rather than the
+ * gate. `check_site_quality.mjs` fails a page whose strips outnumber nothing
+ * and undernumber its steps, because a gap in the row is a drawing that failed
+ * to render; catching it here names the caller instead of the route.
+ */
+const drawn = steps.filter((step) => step.figure).length;
+if (drawn && drawn !== steps.length) {
+  throw new Error(`ConceptFlow draws ${drawn} of ${steps.length} steps; draw all or none`);
+}
+if (drawn && !figureHeight) {
+  throw new Error("ConceptFlow needs a figureHeight when its steps draw");
+}
+
+/* `timeline` is two lanes and a join; without the strips it is `process` under
+   another name, which is what it was for as long as it had no CSS. */
+if (variant === "timeline" && !drawn) {
+  throw new Error("ConceptFlow timeline is two lanes; its steps must draw them");
+}
+
+/*
+ * `attr()` on a pseudo-element resolves an absent attribute to the empty
+ * string, which would draw 「↓ 」 — a connector the gate can see and a reader
+ * cannot read. All the folds or none of them, for the same reason the drawing
+ * row is all or none; a layers diagram with no folds keeps the bare arrow.
+ */
+const folded = steps.slice(0, -1).filter((step) => step.fold).length;
+if (folded && folded !== steps.length - 1) {
+  throw new Error(`ConceptFlow names ${folded} of ${steps.length - 1} folds; name all or none`);
+}
+
+if ((edgeAfter === undefined) !== (edgeLabel === undefined)) {
+  throw new Error("ConceptFlow edgeAfter and edgeLabel are set together");
+}
+
 const number = (index: number) => String(index + 1).padStart(2, "0");
+
+/*
+ * A label's box is capped so it can never leave its card: the cap is the room
+ * that remains between the label's anchor and the far edge of the content box.
+ * A long label wraps inside that room rather than crossing into the gutter,
+ * which is the property `stepOverflowCount` measures on every route and width.
+ */
+const labelStyle = (label: StripLabel): string => {
+  const x = label.x / 100;
+  const anchor = label.anchor ?? "start";
+  const room = anchor === "start" ? 1 - x : anchor === "end" ? x : 2 * Math.min(x, 1 - x);
+  const parts = [
+    `--lx:${x}`,
+    `--ly:${label.y / 40}`,
+    `--lw:${Math.round(room * 1000) / 1000}`,
+  ];
+  if (anchor === "middle") parts.push("--ltx:-50%");
+  if (label.vertical === "bottom") parts.push("--lty:-100%");
+  return `${parts.join(";")};`;
+};
+
+const figureStyle = [
+  `--concept-columns:${steps.length}`,
+  figureHeight ? `--concept-figure-h:${figureHeight}` : "",
+]
+  .filter(Boolean)
+  .join(";");
+
+const listStyle = [
+  variant === "boundary" && boundary
+    ? `--concept-zone-start:${boundary.from};--concept-zone-end:${boundary.to + 1}`
+    : "",
+  edgeAfter
+    ? `--concept-edge-row:${edgeAfter};--concept-edge-row-end:${edgeAfter + 1}`
+    : "",
+]
+  .filter(Boolean)
+  .join(";");
 ---
 
 <figure
   class="concept-flow"
   data-concept-diagram
   data-variant={variant}
-  style={`--concept-columns:${steps.length}`}
+  style={figureStyle}
 >
   <figcaption>
+    <span class="concept-kind">圖解</span>
     <strong data-concept-title>{title}</strong>
     <span data-concept-summary>{summary}</span>
   </figcaption>
 
   <ol
     role="list"
-    data-boundary-label={variant === "boundary" ? boundaryLabel : undefined}
-    style={variant === "boundary" ? `--concept-zone-end:${steps.length + 1}` : undefined}
+    data-boundary-label={variant === "boundary" ? boundary?.label : undefined}
+    data-edge-label={edgeLabel}
+    style={listStyle || undefined}
   >
     {
       steps.map((step, index) => (
-        <li data-concept-step data-tone={step.tone ?? "neutral"}>
-          <span class="concept-index" aria-hidden="true">{number(index)}</span>
+        <li
+          data-concept-step
+          data-tone={step.tone ?? "neutral"}
+          data-join={step.join}
+          data-concept-crossing={step.crossing ? "" : undefined}
+          data-concept-edge={edgeAfter === index + 1 ? "" : undefined}
+          data-fold={step.fold}
+          style={step.lane === undefined ? undefined : `--concept-lane:${step.lane}`}
+        >
+          {step.figure && <Fragment set:html={step.figure} />}
+          {step.labels?.map((label) => (
+            <span
+              class="concept-figure-label"
+              data-anchor={label.anchor === "end" ? "end" : undefined}
+              data-ink={label.ink}
+              style={labelStyle(label)}
+            >
+              {label.text}
+            </span>
+          ))}
+          {step.stop && <span class="concept-stop">{step.stop}</span>}
+          <span class="concept-head" aria-hidden="true">
+            <span class="concept-index">{number(index)}</span>
+          </span>
           <span class="concept-label" data-concept-label>{step.label}</span>
           <strong class="concept-title" data-concept-step-title>{step.title}</strong>
           <p data-concept-detail>{step.detail}</p>
@@ -104,6 +268,14 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     /* 2026-09-02 — `relative` for the toolbar's corner; one column, because
        the toolbar no longer takes the first one. */
     position: relative;
+    /* 2026-09-02 — a plate without a strip declares a zero-height drawing row,
+       so the same six rows serve every diagram and nothing moves on the plates
+       that do not draw. The head's height is a token rather than a measurement
+       because the connector is placed against it: the rule is at
+       `--concept-head-h` minus its own hairline, on every card of every plate,
+       whatever the label under it does. */
+    --concept-figure-h: 0px;
+    --concept-head-h: 1.55rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     column-gap: var(--space-3);
@@ -188,6 +360,21 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     line-height: 1.55;
   }
 
+  /*
+   * 2026-09-02 — the series mark the numbered figures have and this one lacks.
+   *
+   * An evidence figure opens 「圖 1.1」 and a reader learns from that alone what
+   * kind of thing they are looking at. A concept diagram had no such mark, so
+   * it read as one more chart whose numbers were missing. 「圖解」 says what it
+   * is: a drawing of the method, with nothing measured in it.
+   */
+  .concept-flow > figcaption .concept-kind {
+    color: var(--text-faint);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
   .concept-flow > figcaption strong {
     color: var(--text);
     font-size: var(--text-lg);
@@ -232,6 +419,9 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 
   .concept-flow[data-variant="layers"] > ol {
     grid-template-columns: minmax(0, 1fr);
+    /* 2026-09-02 — the fold rule is set on the connector between two layers, so
+       the gap between cards has to hold two lines of it. */
+    row-gap: var(--space-5);
   }
 
   /*
@@ -249,29 +439,52 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
    * tracks inside one column would need sixteen: the explicit `1fr` would fall
    * to the first card and stretch it alone.
    */
+  /* 2026-09-02 — six rows now, not four: the drawing strip took the first and
+     the role label left the head for its own. The head's track is the token the
+     connector is placed against, so it is sized here rather than by content. */
   @media (min-width: 48.0625rem) {
     .concept-flow:not([data-variant="layers"]) > ol {
-      grid-template-rows: auto auto auto 1fr;
+      grid-template-rows:
+        var(--concept-figure-h) var(--concept-head-h) auto auto auto 1fr;
     }
 
     .concept-flow:not([data-variant="layers"]) > ol > [data-concept-step] {
-      grid-row: span 4;
+      grid-row: span 6;
       grid-template-rows: subgrid;
+    }
+
+    .concept-flow:not([data-variant="layers"]) :global(.concept-figure) {
+      grid-row: 1;
+    }
+
+    .concept-flow:not([data-variant="layers"]) .concept-head {
+      grid-row: 2;
+    }
+
+    .concept-flow:not([data-variant="layers"]) .concept-label {
+      grid-row: 3;
+    }
+
+    .concept-flow:not([data-variant="layers"]) .concept-title {
+      grid-row: 4;
+    }
+
+    .concept-flow:not([data-variant="layers"]) [data-concept-detail] {
+      grid-row: 5;
+    }
+
+    .concept-flow:not([data-variant="layers"]) [data-concept-step] > ul {
+      grid-row: 6;
     }
   }
 
   [data-concept-step] {
     --step-mark: var(--diagram-neutral);
-    --step-surface: color-mix(in oklab, var(--step-mark) 8%, var(--bg-raised));
     position: relative;
     display: grid;
-    /* 2rem, not 2.25: the boundary label is the longest on every diagram and
-       needed 175px on one line against 174px of track. Six pixels off a
-       decorative, aria-hidden circle buys it, and buys back the second label
-       row that subgrid would otherwise charge to all four cards. */
-    grid-template-columns: 2rem minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
-    gap: 0.3rem var(--space-2);
+    gap: 0.3rem 0;
     min-width: 0;
     /*
      * Symmetric, and `--space-2` on the inline axis.
@@ -290,9 +503,14 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
      * of four columns would set its text on a different measure. The boundary
      * card below only changes this border's colour and style.
      */
-    border: 1px solid transparent;
-    border-radius: var(--radius);
-    background: var(--step-surface);
+    /* 2026-09-02 — supersedes the border and the surface above. The card is
+       gone: the columns are separated by the gutter and by the ruled head, and
+       the boundary step is marked by the kind of its rule rather than by an
+       outline. This also makes the screen state identical to the print state,
+       which the print gate has required of the steps from the beginning. */
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   /*
@@ -306,8 +524,9 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
    * disc's ring and the label, and every card takes the same surface. Four
    * roles, four visible markers.
    */
+  /* 2026-09-02 — three places now: the numeral's baseline, the role label, and
+     whatever the strip draws in the role's own colour. Still never a surface. */
   [data-concept-step] {
-    --step-surface: var(--bg-raised);
     --step-ink: var(--text-faint);
   }
 
@@ -350,13 +569,23 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
      * that carries the most marks needs no more.
      */
     --step-ink: var(--text-faint);
-    /* The only card that keeps an outline, now that the others have given
-       theirs up — and it is dashed and unfilled, so the difference reads as
-       「this one is not part of the solid sequence」 rather than as one more
-       hue. */
-    --step-surface: transparent;
-    border-color: color-mix(in oklab, var(--diagram-boundary) 45%, var(--line));
-    border-style: dashed;
+  }
+
+  /* 2026-09-02 — the dashed outline the card used to carry has become a dashed
+     rule: the numeral's baseline and the head's hairline, including the parts
+     that run into the gutters. Same meaning, one line instead of a box. */
+  /* One side each, and never both. `border-*-style` on a side whose width was
+     never set resolves that width to `medium`, so naming the top style here as
+     well drew a 3px dashed rule across the top of the boundary card — measured
+     on /trend/ at 1440, 49px above the rule it was supposed to be. */
+  [data-tone="boundary"] .concept-index,
+  [data-tone="boundary"] .concept-head {
+    border-block-end-style: dashed;
+  }
+
+  [data-tone="boundary"] .concept-head::before,
+  [data-tone="boundary"] .concept-head::after {
+    border-top-style: dashed;
   }
 
   /*
@@ -374,17 +603,37 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
    * it most; a glyph is painted with `color`, which forced-colors maps to
    * CanvasText — and the gate checks that mapping.
    */
+  /* 2026-09-02 — the height is now the head rule's, which is the line the
+     reader is already following across the row. `--text-base` rather than
+     `--text-lg`: the rule carries the continuity, so the glyph only has to
+     carry the direction. It is set in `--font-numeric` because 「∥」 exists in
+     Noto Sans TC and not in IBM Plex Sans, and that stack falls through in
+     exactly that order. */
   .concept-flow > ol > [data-concept-step]:not(:last-child)::after {
     content: "→";
     position: absolute;
     z-index: 1;
     inset-inline-end: calc(var(--space-3) * -0.5);
-    inset-block-start: calc(var(--space-3) + 1rem);
+    inset-block-start: calc(
+      var(--space-3) + var(--concept-figure-h) + var(--concept-head-h) - 1px
+    );
     color: var(--rule);
-    font-size: var(--text-lg);
+    font-family: var(--font-numeric);
+    font-size: var(--text-base);
     font-weight: 400;
     line-height: 1;
     transform: translate(50%, -50%);
+  }
+
+  /* Two arms of one procedure, not two stages of one sequence. */
+  .concept-flow > ol > [data-join="same"]:not(:last-child)::after {
+    content: "∥";
+  }
+
+  /* The two connectors that cross the drawn edge carry the reader's whole
+     question on /explore/, so they are ink rather than rule. */
+  .concept-flow > ol > [data-concept-crossing]:not(:last-child)::after {
+    color: var(--text);
   }
 
   .concept-flow[data-variant="layers"] > ol > [data-concept-step]:not(:last-child)::after {
@@ -396,20 +645,84 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     transform: translate(-50%, 50%);
   }
 
+  /*
+   * 2026-09-02 — the layers connector says what the fold DOES.
+   *
+   * 「↓」 alone between L2 and L1 says only that one is above the other. The
+   * rule that turns hours into a day — and the coverage threshold it applies —
+   * is the whole content of that arrow, so it is written on it. Still a
+   * pseudo-element painted by `color` with no border, which is what the
+   * connector predicates require.
+   */
+  .concept-flow[data-variant="layers"] > ol > [data-fold]:not(:last-child)::after {
+    content: "↓ " attr(data-fold);
+    inset-inline-start: 0;
+    max-width: 100%;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: normal;
+    transform: translateY(50%);
+  }
+
+  /*
+   * 2026-09-02 — the ruled head, in place of the ring disc.
+   *
+   * The 2rem ring was the diagram's structural mark once the cards lost their
+   * borders. On a plate the structural mark is the rule: a numeral on a short
+   * heavy baseline in the step's own tone, running into a long light hairline
+   * that continues into both gutters and stops short of the connector. The row
+   * then reads as one broken line with the arrows sitting in the breaks, which
+   * is the line the reader was already being asked to follow.
+   */
+  .concept-head {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    min-height: var(--concept-head-h);
+    border-block-end: 1px solid var(--line);
+  }
+
+  .concept-head::before,
+  .concept-head::after {
+    content: "";
+    position: absolute;
+    /* The card's own padding plus half the gutter, less the room the glyph
+       needs: the rule runs to 0.55rem short of the gutter's centre from both
+       sides, so the break is centred on the arrow. */
+    width: calc(var(--space-2) + var(--space-3) * 0.5 - 0.55rem);
+    top: calc(100% - 1px);
+    border-top: 1px solid var(--line);
+  }
+
+  .concept-head::before {
+    right: 100%;
+  }
+
+  .concept-head::after {
+    left: 100%;
+  }
+
+  .concept-flow > ol > [data-concept-step]:first-child .concept-head::before,
+  .concept-flow > ol > [data-concept-step]:last-child .concept-head::after {
+    content: none;
+  }
+
   .concept-index {
-    display: grid;
-    grid-row: 1;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    /* 2px, not 1: with the card's own border gone this ring is the diagram's
-       structural mark, and a hairline reads as a hint rather than a station on
-       a line. The number stays `--text` on `--bg-raised` — a filled disc would
-       need white on `--k0`, which measures Lc 35 in the dark theme. */
-    border: 2px solid var(--step-mark);
-    border-radius: 50%;
+    display: block;
+    min-width: 1.6rem;
+    /* −1px so the numeral's own 2px baseline sits on the head's hairline
+       rather than above it; the two read as one rule of two weights. */
+    margin-block-end: -1px;
+    padding-block-end: 0.3rem;
+    border: 0;
+    border-block-end: 2px solid var(--step-mark);
+    border-radius: 0;
     color: var(--text);
-    background: var(--bg-raised);
+    background: transparent;
+    font-family: var(--font-numeric);
     font-size: var(--text-xs);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -417,7 +730,6 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
   }
 
   .concept-label {
-    align-self: center;
     /* The role's own ink. `--k0-ink`/`--k1-ink` are the measured reading
        weights of the same two marks, so the label names the role in the colour
        the disc draws it in without inventing a hue or a contrast. */
@@ -436,7 +748,6 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
   }
 
   .concept-title {
-    grid-column: 1 / -1;
     min-width: 0;
     color: var(--text);
     font-size: var(--text-base);
@@ -445,7 +756,6 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
   }
 
   [data-concept-detail] {
-    grid-column: 1 / -1;
     margin: var(--space-1) 0 0;
     color: var(--text-muted);
     font-size: var(--text-sm);
@@ -454,7 +764,6 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 
   [data-concept-step] > ul {
     display: grid;
-    grid-column: 1 / -1;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
     gap: var(--space-1);
     margin: var(--space-2) 0 0;
@@ -478,6 +787,150 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
   }
 
   /*
+   * 2026-09-02 — the drawing strip.
+   *
+   * One SVG per step, stretched to 100 × 40 of its own units so a label placed
+   * beside a mark stays beside it at every width. Every stroke is
+   * `currentColor` and every weight is `non-scaling-stroke`, so the drawing
+   * takes the step's tone, survives forced colours as one CanvasText line
+   * drawing, and never thins or thickens with the card.
+   */
+  :global(.concept-figure) {
+    display: block;
+    width: 100%;
+    height: var(--concept-figure-h);
+    overflow: visible;
+    color: var(--step-mark);
+  }
+
+  :global(.concept-figure line),
+  :global(.concept-figure rect) {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+
+  :global(.concept-figure .hair) {
+    stroke-width: 1;
+  }
+
+  :global(.concept-figure .heavy) {
+    stroke-width: 2.6;
+  }
+
+  /* A dot is a zero-length stroke with a round cap, so the strip's anisotropic
+     stretch cannot turn a circle into an ellipse. */
+  :global(.concept-figure .dot) {
+    stroke-width: 3.4;
+    stroke-linecap: round;
+  }
+
+  :global(.concept-figure .big) {
+    stroke-width: 5.4;
+  }
+
+  /* Never alone: a fill always duplicates a stroke, so print and forced
+     colours keep the meaning when the tint goes. */
+  :global(.concept-figure .fill) {
+    fill: currentColor;
+    fill-opacity: 0.14;
+  }
+
+  :global(.concept-figure .c-neutral),
+  :global(.concept-figure .c-limit) {
+    color: var(--rule);
+  }
+
+  :global(.concept-figure .c-cool) {
+    color: var(--diagram-cool);
+  }
+
+  :global(.concept-figure .c-warm) {
+    color: var(--diagram-warm);
+  }
+
+  :global(.concept-figure .c-hair) {
+    color: var(--line);
+  }
+
+  :global(.concept-figure .c-text) {
+    color: var(--text);
+  }
+
+  /*
+   * A line drawn to the card's edge is a line the eye carries into the next
+   * card. There is no next card when the plate is one column, so each vignette
+   * carries both readings and the layout picks one: a bracket that spans the
+   * row becomes a bracket that closes inside its own card.
+   */
+  @media (max-width: 48rem) {
+    :global(.concept-figure [data-wide]) {
+      display: none;
+    }
+  }
+
+  @media (min-width: 48.0625rem) {
+    :global(.concept-figure [data-narrow]) {
+      display: none;
+    }
+  }
+
+  /*
+   * A word beside a drawing, and never inside it.
+   *
+   * SVG text is invisible to the glossary, CJK-spacing and no-JavaScript gates
+   * — all three read the page's HTML and treat `<svg>` as opaque — and it
+   * cannot be selected, translated or resized by a reader. The label is an
+   * HTML span placed in the strip's own coordinates, capped so it wraps inside
+   * its card rather than crossing into the gutter.
+   */
+  .concept-figure-label {
+    position: absolute;
+    z-index: 1;
+    top: calc(var(--space-3) + var(--ly) * var(--concept-figure-h));
+    left: calc(var(--space-2) + var(--lx) * (100% - 2 * var(--space-2)));
+    max-width: calc(var(--lw) * (100% - 2 * var(--space-2)));
+    color: var(--text-faint);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.2;
+    transform: translate(var(--ltx, 0), var(--lty, 0));
+  }
+
+  .concept-figure-label[data-anchor="end"] {
+    left: auto;
+    right: calc(var(--space-2) + (1 - var(--lx)) * (100% - 2 * var(--space-2)));
+  }
+
+  .concept-figure-label[data-ink="role"] {
+    color: var(--step-ink);
+  }
+
+  .concept-figure-label[data-ink="text"] {
+    color: var(--text);
+  }
+
+  /*
+   * 2026-09-02 — where this chapter's evidence stops, drawn on the card that
+   * stops it. A dashed rule down the card's own leading edge, the height of
+   * the strip, so the ladder above it is read as climbing into a limit rather
+   * than as continuing.
+   */
+  .concept-stop {
+    position: absolute;
+    top: var(--space-3);
+    left: 0;
+    height: var(--concept-figure-h);
+    max-width: calc(100% - var(--space-2));
+    padding-inline-start: 0.4rem;
+    border-inline-start: 1px dashed color-mix(in oklab, var(--diagram-boundary) 45%, var(--line));
+    color: var(--text-faint);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  /*
    * Boundary: the subject is a trust edge, so the edge is drawn.
    *
    * A dashed zone encloses steps 2..N — the work that stays inside the
@@ -488,6 +941,11 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
    * The label takes an implicit row of its own below the zone rather than
    * absolute positioning, so it can never overlap a card at any width.
    */
+  /* 2026-09-02 — the zone's columns are a prop now. On /explore/ it encloses
+     steps 2–3 only, because step 4 — the CSV the reader saves — is the one
+     thing that does leave the tab, and a zone drawn over it said the opposite
+     of what the chapter says. Two crossings, in and out, and both are drawn
+     heavier than the connector inside the zone. */
   .concept-flow[data-variant="boundary"] > ol {
     position: relative;
   }
@@ -507,7 +965,7 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     content: "";
     position: absolute;
     z-index: 0;
-    grid-column: 2 / -1;
+    grid-column: var(--concept-zone-start, 2) / var(--concept-zone-end, -1);
     grid-row: 1 / -1;
     inset: calc(var(--space-2) * -1);
     border: 2px dashed color-mix(in oklab, var(--diagram-boundary) 60%, var(--line));
@@ -517,8 +975,8 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
 
   .concept-flow[data-variant="boundary"] > ol::after {
     content: attr(data-boundary-label);
-    grid-column: 2 / -1;
-    grid-row: 5;
+    grid-column: var(--concept-zone-start, 2) / var(--concept-zone-end, -1);
+    grid-row: 7;
     justify-self: center;
     margin-block-start: calc(var(--space-2) * -0.5);
     color: var(--text-muted);
@@ -529,6 +987,59 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     text-wrap: balance;
   }
 
+  /*
+   * 2026-09-02 — the publication edge on /data/.
+   *
+   * L2 is the layer this project does not distribute, and that is a fact about
+   * the boundary BELOW it rather than about the card. The rule is drawn in the
+   * card's own foot as the list's absolutely positioned pseudo-element, so it
+   * is one dashed weight in one place; the card keeps its dashed head as the
+   * mark of its kind.
+   */
+  /*
+   * A key, not a banner.
+   *
+   * The three density strips are the only marks a reader compares across the
+   * layers, so they share one width; at the card's full 1240px they read as
+   * three coloured bands rather than as one month drawn three ways.
+   */
+  .concept-flow[data-variant="layers"] :global(.concept-figure) {
+    max-width: 24rem;
+  }
+
+  .concept-flow[data-variant="layers"] > ol > [data-concept-edge] {
+    padding-block-end: calc(var(--space-3) + 2.6rem);
+  }
+
+  /* Positioned, so the edge below resolves against the list rather than the
+     panel; without it the rule landed at the foot of the whole diagram. */
+  .concept-flow[data-variant="layers"] > ol {
+    position: relative;
+  }
+
+  /* Only a list that names an edge draws one: `attr()` on a missing attribute
+     is the empty string, and an empty pseudo-element still paints its border. */
+  .concept-flow[data-variant="layers"] > ol[data-edge-label]::before {
+    content: attr(data-edge-label);
+    position: absolute;
+    grid-column: 1;
+    /* Both lines, never one. `grid-row: 1` leaves the end line `auto`, and for
+       an absolutely positioned grid child `auto` means the container's own
+       padding edge — so the rule meant for L2's foot was drawn at the foot of
+       the whole list, measured on /data/ at 1440 as 22px above the last card's
+       bottom rather than the first's. */
+    grid-row: var(--concept-edge-row, 1) / var(--concept-edge-row-end, 2);
+    inset-inline: 0;
+    top: auto;
+    bottom: var(--space-3);
+    padding: 0 var(--space-2) 0.25rem 0;
+    border-bottom: 1.5px dashed color-mix(in oklab, var(--diagram-boundary) 60%, var(--line));
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: end;
+  }
 
   @media (max-width: 48rem) {
     .concept-flow {
@@ -557,15 +1068,23 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
       grid-column: 1;
       grid-row: 2;
       grid-template-columns: minmax(0, 1fr);
+      row-gap: var(--space-5);
     }
 
     .concept-flow > ol > [data-concept-step]:not(:last-child)::after {
       content: "↓";
       inset-inline-end: auto;
       inset-block-start: auto;
-      inset-inline-start: 1.45rem;
+      /* Centred on the numeral, which is the mark the column is hung from. */
+      inset-inline-start: calc(var(--space-2) + 0.8rem);
       inset-block-end: calc(var(--space-3) * -0.5);
       transform: translate(-50%, 50%);
+    }
+
+    /* One column has no gutters to run into. */
+    .concept-head::before,
+    .concept-head::after {
+      content: none;
     }
 
     /* One column: the zone wraps the rows of steps 2..N instead of columns.
@@ -573,13 +1092,19 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
        line cannot be computed in CSS. */
     .concept-flow[data-variant="boundary"] > ol::before {
       grid-column: 1;
-      grid-row: 2 / var(--concept-zone-end, 5);
+      grid-row: var(--concept-zone-start, 2) / var(--concept-zone-end, 5);
     }
 
     .concept-flow[data-variant="boundary"] > ol::after {
       grid-column: 1;
       grid-row: var(--concept-zone-end, 5);
     }
+  }
+
+  /* The gutter rules belong to a row of columns, and `layers` never has one. */
+  .concept-flow[data-variant="layers"] .concept-head::before,
+  .concept-flow[data-variant="layers"] .concept-head::after {
+    content: none;
   }
 
   @media (forced-colors: active) {
@@ -591,13 +1116,19 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
       border-color: CanvasText;
     }
 
-    .concept-flow[data-variant="boundary"] > ol::after {
+    .concept-flow[data-variant="boundary"] > ol::after,
+    .concept-flow[data-variant="layers"] > ol::before {
       color: CanvasText;
+      border-color: CanvasText;
     }
 
     .concept-flow,
     [data-concept-step],
     .concept-index,
+    .concept-head,
+    .concept-head::before,
+    .concept-head::after,
+    .concept-stop,
     [data-concept-step] > ul > li {
       border-color: CanvasText;
       background: Canvas;
@@ -607,6 +1138,10 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     .concept-index,
     .concept-label,
     .concept-title,
+    .concept-stop,
+    :global(.concept-figure),
+    :global(.concept-figure *),
+    .concept-figure-label,
     [data-concept-detail],
     [data-concept-step] > ul span {
       color: CanvasText;
@@ -623,6 +1158,11 @@ const number = (index: number) => String(index + 1).padStart(2, "0");
     [data-concept-step],
     .concept-index,
     [data-concept-step] > ul > li {
+      break-inside: avoid;
+      background: transparent;
+    }
+
+    :global(.concept-figure) {
       break-inside: avoid;
       background: transparent;
     }

@@ -17,6 +17,7 @@ import { axisNumber, n, nFixed, ticks } from "../lib/chart";
 import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
 import ConceptFlow from "./ConceptFlow.astro";
+import { spacePlate } from "../lib/concept-vignettes";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const network = spatial.network as {
@@ -167,6 +168,27 @@ const readingMap = [
   { href: "#space-controls", question: "哪一種分層真正移除了大部分相依？" },
   { href: "#space-inference", question: "剩餘相依對推論與空白區預測有什麼代價？" },
 ] as const satisfies readonly { href: `#${string}`; question: string }[];
+
+/*
+ * The whisker fan is the one measured proportion on any of the seven plates,
+ * so it is read by `cov_type` rather than by row order, and a payload that
+ * stops carrying one of the four fails the build rather than drawing three
+ * whiskers and a gap.
+ */
+const COVARIANCE_LABELS = [
+  ["iid", "iid"],
+  ["cluster_month", "月"],
+  ["cluster_station", "站"],
+  ["cluster_twoway", "雙向"],
+] as const;
+const spaceConcept = spacePlate(
+  COVARIANCE_LABELS.map(([key, label]) => {
+    const row = inference.rows.find((r) => r.cov_type === key);
+    if (!row) throw new Error(`chapter 3 concept plate: no inference row for ${key}`);
+    return { key, label, value: row.se_inflation };
+  }),
+);
+
 ---
 
 <section id="space" class="page">
@@ -261,32 +283,44 @@ const readingMap = [
     </Fragment>
   </EvidenceFigure>
 
+  {/*
+    One object, four operations on it: a row of residuals around a fitted line,
+    the same station cloud ringed by distance, that cloud cut by one boundary,
+    and the coefficient the cut is paid for in. Only the last strip is
+    proportioned, and only by a quantity the payload holds — `se_inflation`,
+    read by `cov_type` above, which nothing else on this page draws.
+  */}
   <ConceptFlow
     title="空間相依如何一路影響到結論"
     summary="這裡分析的是模型尚未解釋的殘差；分區能移除一部分結構，但剩餘相依仍會改變推論與空白區預測。"
+    figureHeight="4.6rem"
     steps={[
       {
         label: "分析對象",
         title: "取得每站每月的模型殘差",
         detail: "量的是模型解釋完之後還剩下什麼；濃度本身的空間差異在這裡不重測。",
+        ...spaceConcept[0],
       },
       {
         label: "距離結構",
         title: "按測站距離比較同號與反號聚集",
         detail: "Moran's I 隨距離改變，能顯示近距離聚集與長距離偶極。",
         tone: "cool",
+        ...spaceConcept[1],
       },
       {
         label: "控制比較",
         title: "比較官方分區與純地理分群",
         detail: "在同一批資料上量化不同空間控制移除了多少相依。",
         tone: "warm",
+        ...spaceConcept[2],
       },
       {
         label: "推論代價",
         title: "剩餘相依不能當成獨立樣本",
         detail: "顯著性可能被高估，測站之間的空白也不能假裝已有可靠預測。",
         tone: "boundary",
+        ...spaceConcept[3],
       },
     ]}
   />

@@ -16,6 +16,8 @@ import { dataFiles, publishedL1Codes } from "../lib/data";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ConceptFlow from "./ConceptFlow.astro";
+import { explorePlate } from "../lib/concept-vignettes";
+import { ENGINE_TRANSFER_MB } from "../lib/engine-transfer";
 
 const EXAMPLES = [
   {
@@ -100,13 +102,17 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
   name: entry.name_zh,
   file: entry.l1.file,
 }] : []);
+
+/* Two wires in, one stopped return track, one file out. */
+const exploreConcept = explorePlate();
+
 ---
 
 <section id="explore" class="page" data-explorer-workspace data-explorer-state="initial">
   <ChapterIntro slug="explore">
   <p class="lede">
     這是一個在讀者瀏覽器內執行的資料庫。沒有查詢伺服器，沒有 API 金鑰，
-    沒有任何東西被送到別的地方。按下執行才會開始下載查詢引擎（約 8 MB 傳輸量）。
+    沒有任何東西被送到別的地方。按下執行才會開始下載查詢引擎（約 {ENGINE_TRANSFER_MB} MB 傳輸量）。
   </p>
   </ChapterIntro>
 
@@ -136,35 +142,58 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
       edge. The zone drawn around steps 2–4 is the reader's tab; the only
       arrow that crosses it is the download into step 2, and the label states
       the outbound half — nothing crosses back.
+
+      2026-09-02 — the zone encloses steps 2–3, not 2–4. Step 4 is the CSV the
+      reader saves to their own disk, which is the one thing that does leave
+      the tab, and a boundary drawn over it said the opposite of what this
+      chapter says. There are two crossings now — in from the host, out to the
+      reader — and both connectors are drawn in ink rather than rule, while
+      the one inside the zone stays light. The third step also drops its
+      boundary tone: the zone IS the boundary, and a dashed card inside a
+      dashed frame marked the same thing twice.
+
+      The strip draws the wires. Two arrive, the query and its result stay
+      inside, and the return track is dashed and stopped — an absence a
+      sentence can assert and only a drawing can show.
     */}
     <ConceptFlow
       title="查詢在你的瀏覽器裡如何完成"
-      summary="網站只提供公開檔案與查詢程式；查詢、暫存結果與匯出動作都留在目前這個瀏覽器分頁。"
+      summary="網站只提供公開檔案與查詢程式；查詢文字與結果都留在目前這個瀏覽器分頁。"
       variant="boundary"
-      boundaryLabel="虛線內是你的瀏覽器分頁—查詢、結果與匯出都不會離開這裡"
+      figureHeight="4.6rem"
+      boundary={{
+        label: "虛線內是你的瀏覽器分頁：查詢文字與結果不會離開；離開的只有存到你電腦的 CSV",
+        from: 2,
+        to: 3,
+      }}
       steps={[
         {
           label: "公開資料",
           title: "讀取已發布的 L1 Parquet",
           detail: "只在執行查詢後，按需要取得目前網站公開的站日資料。",
+          crossing: true,
+          ...exploreConcept[0],
         },
         {
           label: "本機引擎",
           title: "載入 DuckDB-WASM",
           detail: "資料庫引擎在瀏覽器內執行，不需要查詢伺服器或 API 金鑰。",
           tone: "cool",
+          ...exploreConcept[1],
         },
         {
           label: "執行位置",
           title: "查詢與資料都不離開瀏覽器",
           detail: "這裡沒有上傳步驟，也不把查詢內容送到另一台伺服器。",
-          tone: "boundary",
+          tone: "warm",
+          crossing: true,
+          ...exploreConcept[2],
         },
         {
           label: "輸出",
           title: "讀表格，必要時匯出 CSV",
           detail: "結果、空結果與錯誤都在本頁呈現，供讀者檢查後下載。",
-          tone: "warm",
+          ...exploreConcept[3],
         },
       ]}
     />

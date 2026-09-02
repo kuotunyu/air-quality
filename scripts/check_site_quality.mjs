@@ -928,6 +928,9 @@ function conceptDiagramProblems(state, expectedCount, viewport) {
     if (diagram?.figureCount > 0 && diagram.figureCount < diagram.stepCount) {
       problems.push(`${name} drawing row is incomplete`);
     }
+    if (diagram?.variant === "timeline" && diagram?.figureCount !== diagram?.stepCount) {
+      problems.push(`${name} timeline draws no lanes`);
+    }
     if (diagram?.hiddenFigures !== 0) {
       problems.push(`${name} has ${diagram?.hiddenFigures ?? "unknown"} hidden drawing strips`);
     }
@@ -9758,6 +9761,7 @@ async function lifecycleSelfTest() {
     ["boxed connector", "boxed connectors", (state) => { state.diagrams[0].boxedConnectors = 1; }],
     ["svg text label", "carries SVG text", (state) => { state.diagrams[0].figureTextCount = 1; }],
     ["partial drawing row", "drawing row is incomplete", (state) => { state.diagrams[0].figureCount = 2; }],
+    ["timeline without lanes", "draws no lanes", (state) => { state.diagrams[0].variant = "timeline"; }],
     ["hidden strip", "hidden drawing strips", (state) => { state.diagrams[0].hiddenFigures = 1; }],
     ["narrow title", "available card width", (state) => { state.diagrams[0].minimumTitleWidthRatio = 0.7; }],
     ["reordered step", "visually reordered", (state) => { state.diagrams[0].outOfOrderSteps = 1; }],

@@ -113,7 +113,13 @@ LATIN_LIMIT = 0x2E80
 
 _ASCII = {chr(c) for c in range(0x20, 0x7F)}
 _LATIN_1 = {chr(c) for c in range(0xA0, 0x100)}
-_SYMBOLS = set("μ²³°±−×→←↑↓≤≥≈·…–—′″‰")
+# 2026-09-02 — ∥ (U+2225) joins them, and it is the first member of this
+# set that no page's TEXT carries: /detection/'s concept plate draws it as
+# a CSS `content` between the two arms of one procedure, and the coverage
+# scan reads the built HTML. A glyph the subsetter is never told about is
+# a glyph the browser fetches from whatever the system happens to have,
+# which on this machine is a different face at a different weight.
+_SYMBOLS = set("μ²³°±−×→←↑↓≤≥≈·…–—′″‰∥")
 _CJK_PUNCTUATION = {chr(c) for c in range(0x3000, 0x3040)}
 # The assigned fullwidth forms only — U+FF01–FF60 and U+FFE0–FFE6. The whole
 # block also holds halfwidth kana and Hangul fillers the site never sets, and

@@ -47,6 +47,7 @@ import { pagesPublication } from "../lib/publication";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ConceptFlow from "./ConceptFlow.astro";
+import { dataPlate } from "../lib/concept-vignettes";
 
 import manifest from "../../public/data/manifest.json";
 import meta from "../../public/data/meta.json";
@@ -94,6 +95,10 @@ const zhDate = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return `${year} 年 ${month} 月 ${day} 日`;
 };
+
+/* One month at three resolutions. */
+const dataConcept = dataPlate();
+
 ---
 
 <section id="data" class="page">
@@ -113,33 +118,52 @@ const zhDate = (value: string) => {
     </ol>
   </div>
 
+  {/*
+    Three layers, one month, three resolutions: a hatch nobody publishes, a run
+    of day cells with one withheld for coverage, and a single month cell. The
+    arrows carry the fold rules, because 「↓」 alone between L2 and L1 says only
+    that one is above the other, and the rule that turns hours into a day is
+    the whole content of that step.
+
+    The fourth step, 讀者使用, is gone. It repeated the register below — which
+    lists the three layers by the reader who wants each — and this figure's
+    subject is the derivation, which ends at L0. The register runs in the
+    opposite order for the opposite reason, so the summary now says so.
+
+    The publication edge is drawn in L2's own foot rather than as a card
+    border: L2 already carries a dashed head as the mark of its kind, and the
+    boundary is a fact about what lies below it.
+  */}
   <ConceptFlow
     title="資料從逐時觀測走到網站圖表"
-    summary="三層資料保留不同時間尺度；發布邊界與用途一起標示，避免把未發布的重建層誤認成下載承諾。"
+    summary="三層資料保留不同時間尺度；由上而下是推導方向，下方的三層登錄以讀者的選擇順序排列。發布邊界與用途一起標示，避免把未發布的重建層誤認成下載承諾。"
     variant="layers"
+    figureHeight="2.2rem"
+    edgeAfter={1}
+    edgeLabel="發布邊界：以上不轉散布，以下由 Pages 發布"
     steps={[
       {
-        label: "L2 · 站－時",
+        label: "L2 · 站-時",
         title: "完整逐時觀測與品管旗標",
         detail: "不轉散布；以公開原始檔與專案的匯入、建置管線獨立重建。",
         tone: "boundary",
+        fold: "逐時併成日：有效小時達門檻才算一日",
+        ...dataConcept[0],
       },
       {
-        label: "L1 · 站－日",
+        label: "L1 · 站-日",
         title: "供查詢與桌面分析的日資料",
         detail: `Pages 目前發布 ${publishedL1Codes.join("、")}；其餘測項可由本機管線產生。`,
         tone: "warm",
+        fold: "日併成月：有效天數比例達門檻才算一月",
+        ...dataConcept[1],
       },
       {
-        label: "L0 · 站－月",
+        label: "L0 · 站-月",
         title: "供快速查值與網站圖表的月資料",
         detail: "每個測項一個 JSON，保留月均值與有效天數。",
         tone: "cool",
-      },
-      {
-        label: "讀者使用",
-        title: "網站圖表、直接下載或瀏覽器查詢",
-        detail: "依需要的時間尺度選一層，再依檔案格式或第九章的查詢工具取得資料。",
+        ...dataConcept[2],
       },
     ]}
   />

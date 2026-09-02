@@ -16,6 +16,7 @@ import { axisNumber, linear, n, ticks } from "../lib/chart";
 import { href } from "../lib/chapters";
 import ChapterIntro from "./ChapterIntro.astro";
 import ConceptFlow from "./ConceptFlow.astro";
+import { detectionPlate } from "../lib/concept-vignettes";
 import EvidenceFigure from "./EvidenceFigure.astro";
 
 const events = detection.events as {
@@ -228,6 +229,10 @@ const estimandLabel = (kind: string) => {
   if (kind === "trend_break") return "趨勢斷點：斜率差";
   throw new Error(`Unknown detection event kind: ${kind}`);
 };
+
+/* The window, the two lanes it feeds, and the band they meet. */
+const detectionConcept = detectionPlate();
+
 ---
 
 <section id="detection" class="page">
@@ -397,33 +402,52 @@ const estimandLabel = (kind: string) => {
   </Fragment>
   </EvidenceFigure>
 
+  {/*
+    `timeline` finally draws what its name claims. The window enters once; the
+    same procedure runs on it and on every unmarked window, so steps 2 and 3
+    are two arms rather than two stages — the connector between them is 「∥」,
+    not an arrow. Both lanes meet one band in the last card, and the estimate's
+    tick lands inside it.
+
+    Tones follow 圖 5.1, which draws the estimates in `--k1` and the placebos
+    in grey. The steps had those two the other way round.
+  */}
   <ConceptFlow
     title="事件效應要先越過方法本身的噪音"
     summary="事件估計值只有在離開同一程序產生的安慰劑散布後，才算被這套資料與方法辨識。"
     variant="timeline"
+    figureHeight="5.2rem"
     steps={[
       {
         label: "事件窗口",
         title: "先定義要檢驗的日曆期間",
         detail: "窗口只是待檢驗標記，還不是已成立的因果介入。",
+        tone: "cool",
+        lane: 0.66,
+        ...detectionConcept[0],
       },
       {
         label: "站別估計",
         title: "計算觀測值與模型預測的差額",
         detail: "每個測站得到一個事件窗口內的候選效應量。",
-        tone: "cool",
+        tone: "warm",
+        lane: 0.5,
+        join: "same",
+        ...detectionConcept[1],
       },
       {
         label: "安慰劑比較",
         title: "把同一程序套到未標記事件的窗口",
         detail: "這個散布量出沒有事件標記時，方法仍會算出多大的差額。",
-        tone: "warm",
+        lane: 0.7,
+        ...detectionConcept[2],
       },
       {
         label: "可辨識範圍",
         title: "未檢出不等於事件無效",
         detail: "結果只表示目前訊號沒有越過噪音底線，不能證明真實效應為零。",
         tone: "boundary",
+        ...detectionConcept[3],
       },
     ]}
   />

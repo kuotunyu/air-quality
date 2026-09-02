@@ -11,6 +11,7 @@ import ChapterIntro from "./ChapterIntro.astro";
 import ChapterReadingMap from "./ChapterReadingMap.astro";
 import { href } from "../lib/chapters";
 import ConceptFlow from "./ConceptFlow.astro";
+import { trendPlate } from "../lib/concept-vignettes";
 import EvidenceFigure from "./EvidenceFigure.astro";
 import { trend, trendByAirzone, deweatherEvidence } from "../lib/data";
 import { n } from "../lib/chart";
@@ -248,6 +249,10 @@ const taiwanAnnualGuide = (
   },
 });
 
+
+/* The plate's four brackets, drawn once at build time. */
+const trendConcept = trendPlate();
+
 ---
 
 <section id="trend" class="page">
@@ -305,32 +310,50 @@ const taiwanAnnualGuide = (
     </Fragment>
   </EvidenceFigure>
 
+  {/*
+    The strip draws four over-brackets, each opening one column later and all
+    closing at the last: the range of conclusions this chapter can support
+    narrows once as the sample is fixed and again as the weather is levelled.
+    The fourth bracket is dashed and never closes, which is the one thing the
+    prose has to keep saying and a sequence of cards could not show.
+
+    Tones follow 圖 1.1 and 圖 1.2, which both draw the uncorrected series in
+    `--k0` and the corrected one in `--k1`. The steps used to borrow those two
+    hues for a different meaning, two hundred pixels from the charts that own
+    them.
+  */}
   <ConceptFlow
-    title="從觀測下降走到可以支持的結論"
-    summary="依序排除測站組成與氣象差異；最後一步是科學界線，不是把剩餘趨勢改名為排放效果。"
+    title="兩次校正之後，可支持的結論範圍"
+    summary="每一次校正都把可支持的範圍再收窄一層；最後一層是本章未估計的排放變化。"
+    figureHeight="5.6rem"
     steps={[
       {
         label: "觀測",
         title: "先讀實際年均",
         detail: "全體測站呈現長期下降，但監測網組成也在同期間改變。",
+        tone: "cool",
+        ...trendConcept[0],
       },
       {
         label: "樣本控制",
         title: "固定同一批測站",
         detail: "排除後期新增測站可能改變全台平均的影響。",
-        tone: "cool",
+        tone: "warm",
+        ...trendConcept[1],
       },
       {
         label: "氣象控制",
         title: "把各年天氣調成相同水準",
         detail: "比較觀測趨勢與氣象標準化趨勢的下降幅度。",
         tone: "warm",
+        ...trendConcept[2],
       },
       {
         label: "可支持的結論",
         title: "改善成立，歸因仍未完成",
         detail: "剩餘趨勢不是直接量測排放，也不是政策貢獻估計。",
         tone: "boundary",
+        ...trendConcept[3],
       },
     ]}
   />

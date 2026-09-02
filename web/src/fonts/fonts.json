@@ -1,9 +1,9 @@
 {
   "pages": 12,
   "characters": {
-    "sans": 1387,
+    "sans": 1388,
     "display": 639,
-    "latin": 210
+    "latin": 211
   },
   "faces": {
     "noto-sans-tc": {
@@ -18,11 +18,11 @@
           900.0
         ]
       },
-      "glyphs": 1445,
-      "characters": 1387,
+      "glyphs": 1446,
+      "characters": 1388,
       "output": "noto-sans-tc.woff2",
-      "bytes": 338516,
-      "sha256": "2824c6f0284022d833e3cc594c92130cc8ff663edcddf912c9c3f7c4869362ba"
+      "bytes": 338780,
+      "sha256": "0475ea1bc7c62866e111475245ff0e870472fe2b7a3cd2820163b93d1f1766fe"
     },
     "noto-serif-tc": {
       "role": "display",
@@ -39,8 +39,8 @@
       "glyphs": 693,
       "characters": 639,
       "output": "noto-serif-tc.woff2",
-      "bytes": 205032,
-      "sha256": "1a2f244cf5763c3fe6c9f05ff7d1d08377a96a05536621e623246c1bfdbc5366"
+      "bytes": 204452,
+      "sha256": "7e51b72118f5c1166ba47944aa195ffee517a47d2bc52ab316fd6cff2cb26b2a"
     },
     "ibm-plex-sans": {
       "role": "latin",
@@ -55,10 +55,10 @@
         ]
       },
       "glyphs": 244,
-      "characters": 210,
+      "characters": 211,
       "output": "ibm-plex-sans.woff2",
-      "bytes": 36772,
-      "sha256": "1daecd74271a005d2371149ac4e10f59c8caa7673d4a1b4f073e3dae3f52540a"
+      "bytes": 36800,
+      "sha256": "676bbf4dec38eba3093256e3fe5b706da0af3e86825d3f9d396a3f6f24f7f0c8"
     }
   }
 }
