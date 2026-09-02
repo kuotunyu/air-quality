@@ -2986,6 +2986,35 @@ main {
 }
 
 /*
+ * A key without a value is a mark beside a block, not a run of text.
+ *
+ * The hanging-indent run above is right for chapter 1's keys, whose value has
+ * to follow the label's last character wherever that lands. For a key that is
+ * only a mark and a name it has a failure the run cannot avoid: chapter 8's
+ * 「鄰近測站（有缺陷的做法）」 is twelve characters, 266px at 375, and the row
+ * after the mark offers 261. Chrome did not break it after 「做」 — at a row of
+ * 270 to 290px it does — but moved the whole name under the mark, leaving a
+ * dotted line alone on the first line and the name on the second. In a grid
+ * cell the name is a block whose first line is its own, the closing bracket
+ * hangs past the cell as full-width punctuation does, and the same name sets on
+ * one line beside its mark. The mark's top is 0.48em down, which is where the
+ * inline mark's `vertical-align` put it: measured 10.84px at 22.15px and
+ * 11.53px at 24.2px against 10.63 and 11.62 here.
+ */
+.chart-key > li:has(> .key-mark):not(.key-guide):not(:has(.key-value)) {
+  display: grid;
+  grid-template-columns: 1.4em minmax(0, 1fr);
+  column-gap: 0.5em;
+  align-items: start;
+  padding-left: 0;
+  text-indent: 0;
+}
+
+.chart-key > li:has(> .key-mark):not(.key-guide):not(:has(.key-value)) > .key-mark {
+  margin: 0.48em 0 0;
+}
+
+/*
  * Not bold. The colour already carries the difference between a label and its
  * value — `.chart-key li` paints the whole item in the series' own ink — and
  * on top of that a numeric face at `--chart-label` (1rem–1.1rem, already the
