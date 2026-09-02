@@ -16,6 +16,8 @@ import { axisNumber, linePath, linear, markInk, n, nFixed, padded, smoothPath, t
 import { compass, SYNTHETIC_DATA } from "../lib/labels";
 import ChapterIntro from "./ChapterIntro.astro";
 import EvidenceFigure from "./EvidenceFigure.astro";
+import ConceptFlow from "./ConceptFlow.astro";
+import { methodsPlate } from "../lib/concept-vignettes";
 
 type Row = Record<string, any>;
 const t = (name: string) => (pitfallTables[name] ?? []) as Row[];
@@ -36,6 +38,11 @@ const pooledRetained = (variance.find((r) => r.scale === "monthly_mean")?.varian
 const hourlySd = (variance.find((r) => r.scale === "hourly")?.sd ?? 0) as number;
 const monthlySd = (variance.find((r) => r.scale === "station_month")?.sd ?? 0) as number;
 const pooledSd = (variance.find((r) => r.scale === "monthly_mean")?.sd ?? 0) as number;
+
+/* The plate's last card draws the same three variance rows this case quotes. */
+const methodsConcept = methodsPlate(
+  variance.map((r) => ({ scale: r.scale as string, variance_retained: r.variance_retained as number })),
+);
 
 const diurnalValues = diurnal.map((r) => r.mean as number);
 const diurnalPeak = diurnal.reduce((a, b) => (a.mean > b.mean ? a : b), diurnal[0]);
@@ -163,6 +170,44 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       ))}
     </ol>
   </nav>
+
+  {/*
+    2026-09-03 — the shape all seven cases share, drawn once between the
+    index and the first case: one data block, two procedures run on it, and
+    the distance between their results as the price. The last card is case
+    01's own price from pitfalls.json — the variance retained by hourly,
+    station-month and national-monthly scales, scaled to the largest — the
+    same three rows the case's paragraph quotes. It sits after the index
+    because the site gate keeps the index inside the first viewport at 375
+    and 1280, and a plate ahead of it pushed the index out at both.
+  */}
+  <ConceptFlow
+    title="一個方法選擇的代價怎麼量"
+    summary="同一批資料跑兩種做法，差額就是代價；七個案例各自用自己的單位量，這裡以案例 01 的變異保留為例。"
+    figureHeight="5.2rem"
+    steps={[
+      {
+        label: "同一批資料",
+        title: "七個案例都從同一個資料庫開始",
+        detail: "逐時觀測、同一段期間；差別只在接下來怎麼處理。",
+        ...methodsConcept[0],
+      },
+      {
+        label: "兩種做法",
+        title: "常見做法與較好的做法各跑一次",
+        detail: "兩條都是真的計算，沒有一條是假設出來的。",
+        tone: "warm",
+        ...methodsConcept[1],
+      },
+      {
+        label: "差額即代價",
+        title: "兩個結果的距離，用該案例自己的單位",
+        detail: "案例 01：月平均留下的變異比逐時觀測少了一大半，全國月均更少。",
+        tone: "warm",
+        ...methodsConcept[2],
+      },
+    ]}
+  />
 
   <!-- ─── 錯誤一 ─── -->
   <article class="mistake" id={METHOD_CASES[0].id} data-method-case={METHOD_CASES[0].number}>

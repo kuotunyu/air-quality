@@ -644,3 +644,91 @@ export function dataPlate(): StepArt[] {
     { figure: svg(rect(0.35, 6, 99.3, 28, "fill c-cool")) },
   ];
 }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * /methods/ — the shape every one of the chapter's seven cases has: one data
+ * block, two procedures run on it, and the distance between their results,
+ * which is the case's price in its own unit. The last card draws case 01's
+ * price from `pitfalls.json`: the variance the hourly data holds, and the
+ * share of it a station-month mean and a national monthly mean retain, each
+ * bar scaled to the largest.
+ *
+ * 2026-09-03 — added after the seven-plate review, when the owner asked
+ * whether chapters 2, 6 and 8 should have one. Chapter 2 is a lookup with a
+ * one-clause rule and chapter 6 already has a three-step decision sheet, so
+ * only this chapter gained a plate.
+ */
+export interface VarianceRow {
+  scale: string;
+  variance_retained: number;
+}
+
+export function methodsPlate(rows: readonly VarianceRow[]): StepArt[] {
+  const retained = (scale: string): number => {
+    const row = rows.find((r) => r.scale === scale);
+    if (!row || !(row.variance_retained > 0)) {
+      throw new Error(`methodsPlate: no positive variance row for ${scale}`);
+    }
+    return row.variance_retained;
+  };
+  const shares = [retained("hourly"), retained("station_month"), retained("monthly_mean")];
+  const maximum = Math.max(...shares);
+
+  /* The block stops at y=28 and the bars' base is y=31: the bottom six units
+     are the labels' band, so a word sits under a shape and not on it. */
+  const block =
+    rect(30, 4, 40, 24, "c-neutral") +
+    [10, 16, 22].map((y) => line(30, y, 70, y, "c-neutral")).join("") +
+    [43.33, 56.67].map((x) => line(x, 4, x, 28, "c-neutral")).join("");
+
+  const lanes =
+    rect(2, 10, 16, 20, "c-hair") +
+    line(2, 20, 18, 20, "c-hair") +
+    line(18, 12, 62, 12, "c-neutral") +
+    rect(62, 8, 12, 8, "c-neutral") +
+    line(18, 28, 62, 28, "c-warm") +
+    rect(62, 24, 12, 8, "fill c-warm");
+
+  const base = 31;
+  const top = 6;
+  const xs = [18, 52, 84];
+  const heightOf = (share: number): number => (share / maximum) * (base - top);
+  const bars = shares
+    .map((share, i) =>
+      rect(xs[i] - 6, base - heightOf(share), 12, heightOf(share), i === 0 ? "fill c-warm" : "fill c-neutral"),
+    )
+    .join("");
+  const y1 = base - heightOf(shares[1]);
+  const price =
+    line(8, base, 96, base, "c-hair") +
+    line(24, top, 30, top, "c-hair") +
+    line(46, y1, 30, y1, "c-hair") +
+    line(30, top, 30, y1, "c-warm") +
+    line(28, top, 32, top, "c-warm") +
+    line(28, y1, 32, y1, "c-warm");
+
+  return [
+    {
+      figure: svg(block),
+      labels: [{ text: "逐時觀測", x: 50, y: 40, anchor: "middle", vertical: "bottom" }],
+    },
+    {
+      figure: svg(lanes),
+      labels: [
+        { text: "常見做法", x: 20, y: 1 },
+        { text: "較好的做法", x: 20, y: 40, vertical: "bottom", ink: "role" },
+      ],
+    },
+    {
+      figure: svg(bars + price),
+      labels: [
+        { text: "代價", x: 33, y: 12, ink: "role" },
+        { text: "逐時", x: 18, y: 40, anchor: "middle", vertical: "bottom" },
+        { text: "站月", x: 52, y: 40, anchor: "middle", vertical: "bottom" },
+        { text: "月均", x: 84, y: 40, anchor: "middle", vertical: "bottom" },
+      ],
+    },
+  ];
+}

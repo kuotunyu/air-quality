@@ -160,7 +160,8 @@ const STATIC_NATIVE_FIGURES = new Map([
   ["/detection/", 2],
   ["/forecast/", 3],
   ["/health/", 3],
-  ["/methods/", 2],
+  // 2026-09-03: 2 -> 3, the plate chapter 8 gained beside 圖 8.1 and 8.2.
+  ["/methods/", 3],
   ["/explore/", 1],
   ["/data/", 1],
 ]);
@@ -195,11 +196,14 @@ const STATIC_CONCEPT_DIAGRAMS = new Map([
   ["/detection/", 1],
   ["/forecast/", 0],
   ["/health/", 1],
-  ["/methods/", 0],
+  // 2026-09-03 — chapter 8 gained a plate; chapters 2 and 6 were judged not
+  // to need one, so the zeros above and below it are decisions, not gaps.
+  ["/methods/", 1],
   ["/explore/", 1],
   ["/data/", 1],
 ]);
-const EXPECTED_NATIVE_FIGURES = 21;
+// 2026-09-03: 21 -> 22, the plate chapter 8 gained.
+const EXPECTED_NATIVE_FIGURES = 22;
 // 2026-08-17: 9 -> 7. /methods/ lost two <details> — the transcribed K-S table
 // and the published-vs-reproduced comparison table.
 const EXPECTED_SECONDARY_DISCLOSURES = 8;
