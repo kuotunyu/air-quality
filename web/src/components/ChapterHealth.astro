@@ -863,7 +863,10 @@ const healthConcept = healthPlate(
     color: var(--text-faint);
     font-weight: 400;
   }
+  /* 2026-09-03 — the global `code` rule already floors itself at the small
+     token; this scoped one had overridden it with a bare em, which the phone
+     root (18px) put at 17.1px, under the 18px floor. */
   code {
-    font-size: 0.95em;
+    font-size: max(0.95em, var(--text-xs));
   }
 </style>

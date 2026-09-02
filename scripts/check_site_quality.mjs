@@ -1809,8 +1809,12 @@ function homepageMobileTypeProblems({
   const ratio = (value) => value / root;
   const close = (actual, expected) =>
     Number.isFinite(actual) && Number.isFinite(expected) && Math.abs(actual - expected) <= 0.01;
+  // 2026-09-03 — the phone root is 18px (was 20.2), and 0.95 of it is 17.1px,
+  // under the 18px floor; the intro and claim now sit at 1rem below 480px, so
+  // the ratio is 1 on both sides of the boundary and only the two 1.1 roles
+  // still mark the phone scale.
   const expected = viewportWidth <= 480
-    ? { finding: 1.1, routeLabel: 1.1, routeIntro: 0.95, routeClaim: 0.95 }
+    ? { finding: 1.1, routeLabel: 1.1, routeIntro: 1, routeClaim: 1 }
     : { finding: 1.2, routeLabel: 1.2, routeIntro: 1, routeClaim: 1 };
   for (const [role, value] of Object.entries({ finding, routeLabel, routeIntro, routeClaim })) {
     if (!close(ratio(value), expected[role])) {
@@ -6949,13 +6953,14 @@ async function lifecycleSelfTest() {
   }
   console.log("site quality homepage editorial order self-test passed");
 
+  // 2026-09-03 — the phone root is 18 and the intro/claim sit on it (ratio 1).
   const completeMobileType = {
     viewportWidth: 375,
-    root: 20,
-    finding: 22,
-    routeLabel: 22,
-    routeIntro: 19,
-    routeClaim: 19,
+    root: 18,
+    finding: 19.8,
+    routeLabel: 19.8,
+    routeIntro: 18,
+    routeClaim: 18,
   };
   const completeWideType = {
     viewportWidth: 1440,

@@ -355,11 +355,27 @@
       openReadouts.delete(plot);
     }
 
+    /*
+     * 2026-09-03 — a touch is not a hover. A finger produces no `pointermove`
+     * until it drags, so a tap opened nothing; and when it lifts the browser
+     * fires `pointerleave`, which closed the reading the moment it appeared.
+     * A touch now opens the reading where it lands and keeps it until the
+     * plot loses focus (a tap elsewhere), Escape, or a scroll gesture's
+     * `pointercancel`; `.plot` sets `touch-action: pan-y` so a sideways drag
+     * reaches `pointermove` and an up-down one still scrolls.
+     */
+    plot.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch") return;
+      show(indexAt(event.clientX));
+      openReadouts.set(plot, clear);
+    });
     plot.addEventListener("pointermove", (event) => {
       show(indexAt(event.clientX));
       openReadouts.set(plot, clear);
     });
-    plot.addEventListener("pointerleave", clear);
+    plot.addEventListener("pointerleave", (event) => {
+      if (event.pointerType !== "touch") clear();
+    });
     plot.addEventListener("pointercancel", clear);
     plot.addEventListener("blur", clear);
     plot.addEventListener("focus", () => {

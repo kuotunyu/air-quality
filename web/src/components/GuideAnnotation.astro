@@ -145,8 +145,11 @@ const { annotation, fallback, layout = "stacked", fromMark, fromInk, toMark, toI
     overflow: visible;
   }
 
+  /* 2026-09-03 — floored at the small token: at the phone root (18px) the
+     bare em fell to 17.8px, under the site's 18px floor; on wider surfaces
+     the em is the larger of the two and nothing changes. */
   .guide-state {
-    font-size: 0.9em;
+    font-size: max(0.9em, var(--text-xs));
   }
 
   .guide-change {
@@ -156,7 +159,8 @@ const { annotation, fallback, layout = "stacked", fromMark, fromInk, toMark, toI
     align-items: center;
     margin-left: calc(1.7em + 0.42em);
     color: var(--text-muted);
-    font-size: 0.86em;
+    /* Same floor as `.guide-state`: 17.0px at the phone root without it. */
+    font-size: max(0.86em, var(--text-xs));
   }
 
   /* A glyph, not a word: 1.18em already makes it legible and the weight was

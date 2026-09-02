@@ -1697,6 +1697,87 @@ main > section:first-child {
   }
 }
 
+/*
+ * 2026-09-03 — the phone pass, measured at 390×844 before any of it: prose at
+ * 20.2px in a 344px column was 17 characters a line and a `.note` 14; the
+ * figure title beside its number had 258px and ran to three lines; a key item
+ * with a value broke into mark, name and value on three lines; the plot drew
+ * in 257px of a 344px card; nine tables scrolled inside 342px and the
+ * seven-column one broke 「測站」 across two lines; the bar held 72px of every
+ * screen. The root drops from 20.2 to 18px — every rem token follows, so the
+ * scale keeps its ratios and its 16px floor — the page pad from 23 to 16px,
+ * which is 358px and 20 characters a line; the rest is each box giving back
+ * what it had taken from the column.
+ */
+@media (max-width: 30rem) {
+  :root {
+    font-size: 1.125rem;
+    /* The site's floor is 18px of visible text (the gate's MIN_FONT_PX). At
+       this root the two small tokens would sit at 16.4 and 17.1px, so on a
+       phone the apparatus reads at the body size and the floor holds. */
+    --text-xs: 1rem;
+    --text-sm: 1rem;
+  }
+
+  main .page {
+    --page-pad: 0.9rem;
+  }
+
+  .note {
+    padding-inline: var(--space-3);
+  }
+
+  /* The figure number on its own line, so the title has the whole column.
+     `main` because the base rule sits later in this file. */
+  main .evidence-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Every keyed item is mark | name | value, and a long name wraps inside its
+     own column instead of falling under the mark. */
+  .chart-key > li:has(> .key-mark):not(.key-guide) {
+    display: grid;
+    grid-template-columns: 1.4em minmax(0, 1fr) auto;
+    column-gap: 0.5em;
+    align-items: start;
+    padding-left: 0;
+    text-indent: 0;
+  }
+  .chart-key > li:has(> .key-mark):not(.key-guide) > .key-mark {
+    margin: 0.48em 0 0;
+  }
+
+  .chart {
+    padding-inline: 0.35rem;
+  }
+
+  /* Tables: the row's name stays put while the rest scrolls, cells give back
+     padding, and a header never breaks inside a word. */
+  main .table-wrap table {
+    --cell-pad-block: 0.45rem;
+    --cell-pad-inline: 0.55rem;
+    font-size: var(--text-xs);
+  }
+  .table-wrap th {
+    word-break: keep-all;
+  }
+  .table-wrap th:first-child,
+  .table-wrap td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background-color: var(--bg);
+  }
+  .table-wrap th:first-child {
+    z-index: 3;
+    background-color: var(--bg-raised);
+  }
+
+  body .shell .column .handle {
+    padding-block: 0.4rem;
+  }
+}
+
 /* 2026-08-04 — at a measured 375px viewport the two full-size controls, two
    20px flex gaps and desktop page inset left the current chapter title a 24px
    box: technically ellipsized, but too narrow to expose a useful prefix. The
@@ -1710,7 +1791,9 @@ main > section:first-child {
 
   body #hero .start-here-intro,
   body #hero .start-here-claim {
-    font-size: 0.95rem;
+    /* 2026-09-03 — was 0.95rem, which the phone root of 18px puts at 17.1px,
+       under the 18px floor; at the earlier 20.2px root it was 19.2px. */
+    font-size: 1rem;
   }
 
   body .shell .column .handle {
@@ -2394,6 +2477,10 @@ main {
      box; see PlotReadout. (It used to say "the in-plot legend", which floated
      here until it was measured covering 46% of the drawing area.) */
   position: relative;
+  /* 2026-09-03 — a finger dragged sideways reads the series; dragged up or
+     down it still scrolls the page. Without this the browser claimed every
+     touch for scrolling and the readout never opened on a phone. */
+  touch-action: pan-y;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   /*
