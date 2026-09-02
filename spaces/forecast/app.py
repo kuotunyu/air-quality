@@ -304,4 +304,16 @@ with gr.Blocks(title="air-quality — PM2.5 預測 demo") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    # 2026-09-03 — SSR off, explicitly.
+    #
+    # Gradio 5.9.1's own default is client-side rendering; `ssr_mode=None`
+    # reads `GRADIO_SSR_MODE`, and the Spaces runtime sets it to true. The
+    # July container predated that and never restarted, so the first rebuild
+    # since — this bundle's — was the first to render through the
+    # experimental Node/SvelteKit layer, which answered every page load with
+    # `SvelteKitError: POST method not allowed` and left the browser waiting
+    # until it gave up. The app itself was healthy throughout. An explicit
+    # argument wins over the environment variable (blocks.py, `ssr_mode is
+    # not None`), so this pins the rendering mode the demo was built and
+    # tested against rather than inheriting whatever the platform defaults to.
+    demo.launch(ssr_mode=False)
