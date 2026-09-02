@@ -1,5 +1,7 @@
 # air-quality｜台灣空氣品質再分析
 
+[![English Version](https://img.shields.io/badge/README-English%20Version-2563eb?style=for-the-badge)](README.en.md)
+
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![DuckDB-WASM](https://img.shields.io/badge/DuckDB--WASM-In--Browser-FFF000?logo=duckdb&logoColor=black)
@@ -17,13 +19,6 @@
 這是把氣象條件標準化之後量出的對比——61 個測站、同一批資料、兩條線。
 用另一種完全不同的聚合方式（逐站斜率比值的中位數）再問一次，答案是 42.2%。
 已發布的 M4 尚未使用 ERA5 BLH，長程傳輸也仍是限制。
-[看那張圖 →](https://kuotunyu.github.io/air-quality/trend/)
-
-[English](README.en.md) ·
-[互動網站](https://kuotunyu.github.io/air-quality/) ·
-[預測 demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
-[資料集（L0／L1）](https://huggingface.co/datasets/steven0226/air-quality) ·
-[方法論](docs/methodology.md)
 
 ---
 
@@ -136,9 +131,9 @@ flowchart TD
 
 | 項目 | 內容說明 |
 |---|---|
-| **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
+| **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層已公開為 [資料集（L0／L1）](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
-| **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
+| **互動網站** | [線上探索平台](https://kuotunyu.github.io/air-quality/)涵蓋趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
 | **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
 | **Python 套件** | `twair` — 資料管線與分析工具 |
 
@@ -207,11 +202,7 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 
 </details>
 
-<details>
-<summary><b>研發里程碑與交付邊界審計</b>（點開展開工程紀錄）</summary>
-
-<br>
-
+<!--
 目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
 與後續方向見下表；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
 
@@ -231,8 +222,7 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 那個指令量的是本機事實。已實作的工程取捨見
 [docs/working-rules.md](docs/working-rules.md)，資料與方法的現行證據分別見
 [docs/data-sources.md](docs/data-sources.md) 與 [docs/methodology.md](docs/methodology.md)。
-
-</details>
+-->
 
 ---
 

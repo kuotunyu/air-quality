@@ -1,5 +1,7 @@
 # air-quality｜Taiwan Air Quality Reanalysis
 
+[![繁體中文版](https://img.shields.io/badge/README-%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%E7%89%88-2563eb?style=for-the-badge)](README.md)
+
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![DuckDB-WASM](https://img.shields.io/badge/DuckDB--WASM-In--Browser-FFF000?logo=duckdb&logoColor=black)
@@ -17,13 +19,6 @@ That 43% is a contrast between two estimated declines, not causal proof that wea
 Measured by standardising meteorological conditions — 61 stations, one set of rows, two lines.
 Asked again by a completely different aggregation (the median of per-station slope ratios), the answer is 42.2%.
 The published M4 does not yet use ERA5 BLH, and long-range transport remains a limitation.
-[See the chart →](https://kuotunyu.github.io/air-quality/trend/)
-
-[繁體中文](README.md) ·
-[Interactive site](https://kuotunyu.github.io/air-quality/) ·
-[Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality) ·
-[Forecast demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
-[Methodology](docs/methodology.md)
 
 ---
 
@@ -143,9 +138,9 @@ And two claimed defects were **overturned by the full data** and are documented 
 
 | Deliverable | Description |
 |---|---|
-| **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
+| **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
-| **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
+| **Interactive Dashboard** | [Interactive evidence platform](https://kuotunyu.github.io/air-quality/) covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
 | **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
 | **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
@@ -221,11 +216,7 @@ the released meteorological normalisation still uses station measurements.
 
 </details>
 
-<details>
-<summary><b>Engineering Milestones & Release Boundaries</b> (click to expand)</summary>
-
-<br>
-
+<!--
 For the measured state of the store and outputs, run `uv run twair status`.
 The table below owns the public release boundary and next directions; durable
 evidence and decisions live in the relevant public [technical docs](docs/).
@@ -246,8 +237,7 @@ Implemented engineering decisions live in
 [docs/working-rules.md](docs/working-rules.md); current data and method evidence
 live in [docs/data-sources.md](docs/data-sources.md) and
 [docs/methodology.md](docs/methodology.md).
-
-</details>
+-->
 
 ---
 
