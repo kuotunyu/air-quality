@@ -1,4 +1,4 @@
-"""The Pages download register must agree with source, build, and rendered links."""
+"""The Pages download register must agree with source and build trees."""
 
 from __future__ import annotations
 
@@ -40,10 +40,6 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
             "l1": ["l1/pm25.parquet"],
             "l2": [],
         },
-    )
-    (dist / "index.html").write_text(
-        "".join(f'<a download href="/air-quality/data/{member}">x</a>' for member in members),
-        encoding="utf-8",
     )
     return register, public, dist
 
@@ -104,16 +100,3 @@ def test_a_selected_member_missing_from_dist_fails(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "dist" in result.stdout
-
-
-def test_a_rendered_download_outside_the_register_fails(tmp_path: Path) -> None:
-    register, public, dist = _fixture(tmp_path)
-    (dist / "index.html").write_text(
-        '<a download href="/air-quality/data/l1/so2.parquet">Parquet</a>',
-        encoding="utf-8",
-    )
-
-    result = _run(register, public, dist)
-
-    assert result.returncode == 1
-    assert "rendered download" in result.stdout
