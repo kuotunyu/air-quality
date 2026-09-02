@@ -3791,20 +3791,10 @@ function dataProvenanceRegisterProblems(state, viewport) {
     problems.push(`${scope}L2 unexpectedly has ${String(state?.counts?.l2Downloads)} download`);
   }
 
-  if (state?.counts?.boundaries !== 1) {
-    problems.push(`${scope}L2 boundary count is ${String(state?.counts?.boundaries)}, expected 1`);
-  }
-  if (state?.l2Boundary) {
-    problems.push(
-      ...healthInspectionProblems(state.l2Boundary, "L2 boundary", scope, viewport),
-    );
-  }
-  if (
-    !state?.l2BoundaryText?.includes("L2 不發布，理由不是檔案太大") ||
-    !state?.l2BoundaryText?.includes("繞過這個矛盾而不是解決它")
-  ) {
-    problems.push(`${scope}L2 boundary text changed`);
-  }
+  // 2026-09-03 — the L2 licensing-conflict note held here (its own note count,
+  // its own visibility inspection, its own text) is gone: the owner's
+  // decision, since the layer register's own 「不發布」 clause already states
+  // the fact and docs/legal.md (linked from chapter 9) holds the full account.
 
   const landmarks = state?.landmarks ?? {};
   const ordered = [
@@ -3812,7 +3802,6 @@ function dataProvenanceRegisterProblems(state, viewport) {
     landmarks.primary,
     landmarks.register,
     landmarks.licensing,
-    landmarks.l2Boundary,
   ];
   if (ordered.some((part) => !part)) {
     problems.push(`${scope}provenance source-order landmark is missing`);
@@ -5218,9 +5207,6 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
   const terms = [...document.querySelectorAll("[data-data-layer]")];
   const uses = [...document.querySelectorAll("[data-data-layer-use]")];
   const descriptions = [...document.querySelectorAll("[data-data-layer-description]")];
-  const boundaries = [...document.querySelectorAll("main .note")].filter((element) =>
-    compact(element.innerText).includes("L2 不發布，理由不是檔案太大")
-  );
   const register = registers[0] ?? null;
   const lede = document.querySelector("main .chapter-intro .lede");
   const licensing = [...document.querySelectorAll("main h2")].find((element) =>
@@ -5238,7 +5224,6 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
       l2Downloads: document.querySelectorAll(
         '[data-data-layer="L2"] a[download], [data-data-layer="L2"] + [data-data-layer-description="L2"] a[download]'
       ).length,
-      boundaries: boundaries.length,
     },
     register: inspect(register),
     layers: terms.map((term) => {
@@ -5258,14 +5243,11 @@ const dataProvenanceRegisterSnapshotExpression = (mode) => `(() => {
         descriptionInspection: inspect(description),
       };
     }),
-    l2BoundaryText: compact(boundaries[0]?.innerText),
-    l2Boundary: inspect(boundaries[0] ?? null),
     landmarks: {
       lede: inspect(lede),
       primary: inspect(taskRegisters[0] ?? null),
       register: inspect(register),
       licensing: inspect(licensing),
-      l2Boundary: inspect(boundaries[0] ?? null),
     },
     viewport: { width: innerWidth, height: innerHeight },
     document: {
@@ -9275,7 +9257,6 @@ async function lifecycleSelfTest() {
       descriptions: 3,
       downloads: 0,
       l2Downloads: 0,
-      boundaries: 1,
     },
     register: dataPart(460, 30, { height: 270 }),
     layers: DATA_LAYER_ROWS.map(([level, term, useText, descriptionText], index) => ({
@@ -9288,14 +9269,11 @@ async function lifecycleSelfTest() {
       useInspection: dataPart(530 + index * 70, 41 + index * 3, { height: 24 }),
       descriptionInspection: dataPart(560 + index * 70, 42 + index * 3),
     })),
-    l2BoundaryText: "L2 不發布，理由不是檔案太大。這個專案繞過這個矛盾而不是解決它。",
-    l2Boundary: dataPart(1620, 110, { height: 140 }),
     landmarks: {
       lede: dataPart(100, 10),
       primary: dataPart(180, 20, { height: 230 }),
       register: dataPart(460, 30, { height: 270 }),
       licensing: dataPart(1500, 105, { height: 80 }),
-      l2Boundary: dataPart(1620, 110, { height: 140 }),
     },
     viewport: { width: 1280, height: 720 },
     document: { clientWidth: 1280, scrollWidth: 1280 },
@@ -9324,8 +9302,6 @@ async function lifecycleSelfTest() {
     ["visual level reorder", "layer visual order changed", (state) => { state.layers[0].termInspection.top = 800; }],
     ["download returned", "download link returned", (state) => { state.counts.downloads = 1; }],
     ["L2 download", "L2 unexpectedly has 1 download", (state) => { state.counts.l2Downloads = 1; }],
-    ["missing L2 boundary", "L2 boundary count is 0", (state) => { state.counts.boundaries = 0; state.l2Boundary = null; }],
-    ["changed L2 boundary", "L2 boundary text changed", (state) => { state.l2BoundaryText = "L2 不發布。"; }],
     ["source reorder", "provenance source order changed", (state) => { state.landmarks.register.sourceIndex = 106; }],
     ["task register below viewport", "task register does not enter the first viewport", (state) => { state.landmarks.primary.top = 720; }],
     ["document overflow", "document scrolls sideways", (state) => { state.document.scrollWidth = 1281; }],
@@ -12526,14 +12502,12 @@ async function main() {
       { name: "disclosure around register", expected: "register is user-collapsible", script: `(() => { const e=document.querySelector("[data-data-layer-register]"); const d=document.createElement("details"); d.open=true; e.before(d); d.append(e); })()` },
       { name: "download returned", expected: "download link returned", script: `(() => { const a=document.createElement("a"); a.download=""; a.href="#"; document.querySelector("main .lede").append(a); })()` },
       { name: "added L2 download", expected: "L2 unexpectedly has 1 download", script: `(() => { const a=document.createElement("a"); a.download=""; a.href="#"; document.querySelector('[data-data-layer-description="L2"]').append(a); })()` },
-      { name: "lost L2 boundary", expected: "L2 boundary count is 0", script: `(() => { [...document.querySelectorAll(".note")].find((e)=>e.innerText.includes("L2 不發布"))?.remove(); })()` },
     ];
     const requiredNames = [
       "missing level", "duplicate level", "reordered level", "wrong term", "wrong use",
       "inaccessible use", "hidden use", "off-canvas use", "clipped use", "description change",
       "extended contradictory description",
       "disclosure around register", "download returned", "added L2 download",
-      "lost L2 boundary",
     ];
     for (const name of requiredNames) {
       if (!mutations.some((mutation) => mutation.name === name)) {

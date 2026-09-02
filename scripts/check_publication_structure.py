@@ -1459,7 +1459,6 @@ def data_provenance_register_failures_for_text(
     )
     for label, fragment in (
         ("licensing", "授權與再散布"),
-        ("L2 boundary", "L2 不發布，理由不是檔案太大"),
         ("missing-value caveat", "關於缺值"),
         ("hourly PM2.5 caveat", "逐時 PM2.5 的官方但書"),
     ):
@@ -4913,7 +4912,6 @@ def _run_preflight() -> None:
 <dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。</dd>
 </dl>
 <h2>授權與再散布</h2>
-<p><strong>L2 不發布，理由不是檔案太大。</strong></p>
 <p><strong>關於缺值。</strong>這個專案不補值。</p>
 <details data-publication-disagreement><summary>官方值不一致</summary><p>這是未解的來源歧異。</p></details>
 <p><strong>逐時 PM2.5 的官方但書。</strong>小時值僅供預警參考。</p>
@@ -5005,10 +5003,6 @@ def _run_preflight() -> None:
             valid_data_register.replace(
                 "<strong>不發布</strong>", '<a href="/l2" download><strong>不發布</strong></a>', 1
             ),
-        ),
-        "lost L2 boundary": (
-            "data L2 boundary statement changed",
-            valid_data_register.replace("L2 不發布，理由不是檔案太大。", "L2 不發布。", 1),
         ),
         "lost disagreement": (
             "data publication-disagreement evidence changed",
