@@ -105,19 +105,11 @@ flowchart TD
 
 ## Research Overview & Objectives
 
-An open, quality-controlled reanalysis of **44 years** of Taiwanese air-quality
-monitoring — 1982 to 2025, 340,371,384 hourly observations across 82 stations.
-Three core deliverables emerge from it:
+This study conducts an open, quality-controlled reanalysis of **44 years** (1982–2025) of Taiwanese air quality monitoring, consolidating **340,371,384 hourly observations** across 82 stations. The investigation centers on three scientific and engineering objectives:
 
-1. **A canonical, unified dataset that did not previously exist.** Taiwan's ministry publishes
-   raw annual archives in four different container formats, two date orders, and changing quality-flag
-   conventions. This project parses all of it into one canonical, per-row-provenanced store.
-2. **A formal methodological comparison.** Monthly means, stepwise-eliminated OLS, and PM10
-   predicting its own subset were standard practice for a generation of Taiwanese air-quality work.
-   The flawed arm is *fitted here* — 6,771 station-months over 72 stations — so both arms run on the
-   same rows and every difference is measured rather than asserted.
-3. **An auditable, interactive platform**, including SQL execution over the whole record
-   directly in the user's browser via DuckDB-WASM.
+1. **Multi-Era Historical Observation Standardization**: Ministry archives historically span four container formats, two date orderings, and evolving quality-flag taxonomies. This project resolves them into a unified, immutable canonical store with full row-level provenance.
+2. **Empirical Benchmarking of Methodological Costs**: Common conventions—such as monthly aggregation, stepwise OLS, and predicting PM2.5 with PM10—are benchmarked against corrected alternatives on the **identical observation cohort**, quantifying the exact statistical penalty of each modeling choice.
+3. **Client-Side Reproducible Analytical Platform**: Incorporates in-browser SQL execution via DuckDB-WASM, enabling direct client-side verification of all published metrics without external database dependencies.
 
 ### Governing Data Principles
 
@@ -275,19 +267,13 @@ The `probe sources` utility parses the live airtw annual catalogue, resolves cur
 
 To run the interactive web interface locally:
 ```bash
-# Export analytics results from Parquet into static front-end assets
-uv run twair export web                 
-
-# Set up and preview the Astro server
-cd web
-npm install
-npm run dev    # Dashboard launches on http://localhost:4321
+uv run twair export web                 # Export analytics results from Parquet into static front-end assets
+cd web && npm install && npm run dev    # Dashboard launches on http://localhost:4321
 ```
 
-### Dashboard Core Philosophy
-1. **Charts are HTML native**: Charts are compiled into lightweight SVGs inside Astro frontmatter. The website loads immediately and is completely interactive even with JavaScript disabled in the browser.
-2. **Null Values are Sacred**: Missing data points represent periods of station inactivity or insufficient data coverage. Instead of smoothly interpolating across gaps, charts render distinct breaks.
-3. **No External Query Servers**: The chapter 9 explorer runs **DuckDB-WASM** compiled to WebAssembly. When a user explores daily records, DuckDB fetches only the required bytes from remote Parquet files via *HTTP Range Requests*—bypassing the need for database API keys or external server upkeep.
+Astro static site architecture: charts are compiled directly into vector SVGs during build time, providing full offline readability and zero JavaScript dependency.
+
+Live release: **<https://kuotunyu.github.io/air-quality/>**
 
 ---
 
