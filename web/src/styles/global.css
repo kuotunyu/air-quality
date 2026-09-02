@@ -2123,7 +2123,19 @@ figure {
 .evidence-header {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  align-items: center;
+  /*
+   * Baseline, not centre, once the title wraps.
+   *
+   * The block above records why centring won when the label was 20px beside
+   * a 33px title. The sizes have matched since (see `.evidence-number`), so
+   * on one line the label and the title share a line-height and the two
+   * centres are the two baselines: centring and baseline draw the same row.
+   * They part on a phone: at 375 figure 1.1's title runs three lines (110px),
+   * and the centred 「圖 1.1」 hung 37px below the title's first line, in the
+   * middle of a sentence it does not belong to. Baseline puts it on the first
+   * line at every width and changes nothing where the title is one line.
+   */
+  align-items: baseline;
   column-gap: var(--space-2);
   row-gap: var(--space-2);
   max-width: var(--measure);
