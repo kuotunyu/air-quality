@@ -144,14 +144,14 @@ flowchart TD
 Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)。
 各來源的授權與再散布邊界見 [docs/legal.md](docs/legal.md)。
 
-| 資料來源與機構 | 觀測內容 | <nobr>涵蓋期間</nobr> | 取得狀態 |
+| 資料來源與機構 | 觀測內容 | 涵蓋<br/>期間 | 取得狀態 |
 |---|---|---|---|
-| [環境部空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | <nobr>1982–2025</nobr> | 全部 44 年已取得，本專案所有結果都出自這裡 |
-| [環境部環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | <nobr>即時更新</nobr> | 使用中（測站登錄、資料新鮮度檢查） |
-| [中央氣象署開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | <nobr>近期觀測</nobr> | 尚未取得 |
-| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | <nobr>1940–至今</nobr> | 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | <nobr>2018–至今</nobr> | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | <nobr>2000–至今</nobr> | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
+| [環境部空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–<br/>2025 | 全部 44 年已取得，本專案所有結果都出自這裡 |
+| [環境部環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時<br/>更新 | 使用中（測站登錄、資料新鮮度檢查） |
+| [中央氣象署開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期<br/>觀測 | 尚未取得 |
+| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | 1940–<br/>至今 | 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018–<br/>至今 | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000–<br/>至今 | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
 
 ### 衛星遙測與氣象再分析特徵之增量預測價值
 

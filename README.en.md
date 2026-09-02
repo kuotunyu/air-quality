@@ -145,14 +145,14 @@ Copernicus satellite inputs are governed separately by the
 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
 See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution boundaries.
 
-| Data Source & Agency | Measured Content | <nobr>Temporal Span</nobr> | Access Status |
+| Data Source & Agency | Measured Content | Temporal<br/>Span | Access Status |
 |---|---|---|---|
-| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | <nobr>1982–2025</nobr> | all 44 years held; every result here comes from this |
-| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | <nobr>Live Updates</nobr> | in use (station register, freshness check) |
-| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | <nobr>Recent Records</nobr> | not yet acquired |
-| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | ERA5 Boundary Layer Height (BLH) | <nobr>1940–Present</nobr> | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | <nobr>2018–Present</nobr> | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | <nobr>2000–Present</nobr> | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
+| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | 1982–<br/>2025 | all 44 years held; every result here comes from this |
+| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | Live<br/>Updates | in use (station register, freshness check) |
+| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Recent<br/>Records | not yet acquired |
+| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | ERA5 Boundary Layer Height (BLH) | 1940–<br/>Present | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | 2018–<br/>Present | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | 2000–<br/>Present | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
 ### Incremental Predictive Value of Satellite & ERA5 Features
 
