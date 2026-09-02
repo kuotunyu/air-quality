@@ -771,13 +771,16 @@ const listStyle = [
     list-style: none;
   }
 
+  /* 2026-09-02 — the tint went with the cards. A filled box inside a plate
+     that has no other box reads as a different component; the rule in the
+     step's own tone is the mark, as it is on the numeral above. */
   [data-concept-step] > ul > li {
     display: grid;
     gap: 0.12rem;
     min-width: 0;
-    padding: var(--space-1) var(--space-2);
+    padding: 0 0 0 var(--space-2);
     border-inline-start: 2px solid var(--step-mark);
-    background: color-mix(in oklab, var(--step-mark) 5%, var(--bg-raised));
+    background: transparent;
     font-size: var(--text-xs);
     line-height: 1.4;
   }
@@ -1132,6 +1135,10 @@ const listStyle = [
     [data-concept-step] > ul > li {
       border-color: CanvasText;
       background: Canvas;
+    }
+
+    [data-concept-step] > ul > li > strong {
+      color: CanvasText;
     }
 
     .concept-flow > ol > [data-concept-step]:not(:last-child)::after,
