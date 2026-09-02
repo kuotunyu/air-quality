@@ -618,6 +618,33 @@ grid/flex children is in `global.css`; keep it there.
 Verify with `document.documentElement.scrollWidth - clientWidth === 0` at
 375px, in both colour schemes.
 
+### A border style on a side whose width was never set draws a 3px rule
+
+`border-block-end: 1px solid` sets one side. Adding `border-top-style: dashed`
+to the same element does not merely record a style for a side with no width:
+the initial `border-top-width` is `medium`, and it computes to 0 only while
+that side's style is `none`. Naming the style resolves the width, so the
+element gains a 3px dashed rule nobody asked for.
+
+It cost an hour on the concept plates, where one rule meant to make the
+boundary step's hairline dashed drew a second dashed line across the top of
+that card, 49px above the one it was aimed at — measured on /trend/ at 1440.
+**Name the side you mean:** `border-block-end-style` for the element, and
+`border-top-style` only for the pseudo-elements that actually use `border-top`.
+
+### `attr()` on a missing attribute is the empty string, and the box still paints
+
+A pseudo-element whose `content: attr(data-x)` finds no attribute does not
+disappear. It renders as an empty box, and every border, background and padding
+on it is drawn. The layers variant's publication edge is a dashed
+`border-bottom` on `ol::before`, and on the diagram that names no edge it drew
+a stray dashed rule at the foot of the panel.
+
+Gate the rule on the attribute — `ol[data-edge-label]::before` — rather than
+trusting the empty string to hide it. The same trap runs the other way for
+connectors: `content: "↓ " attr(data-fold)` on a step with no fold reads as an
+arrow to the gate and as nothing to a reader, so the component throws instead.
+
 ### Polars: do not group_by a Hive partition key
 
 Grouping directly on `year`/`month` from `scan_parquet(hive_partitioning=True)`
