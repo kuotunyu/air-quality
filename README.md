@@ -1,6 +1,11 @@
 # air-quality｜台灣空氣品質再分析
 
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+![DuckDB-WASM](https://img.shields.io/badge/DuckDB--WASM-In--Browser-FFF000?logo=duckdb&logoColor=black)
+![Astro](https://img.shields.io/badge/Astro-Static%20SVG-BC52EE?logo=astro&logoColor=white)
+![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Datasets%20%26%20Space-FFD21E?logo=huggingface&logoColor=black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > 1982–2025 年環境部年度檔裡的全台逐時原始觀測：
 > 3.40 億筆資料，標記品質而不悄悄修補，
@@ -22,47 +27,122 @@
 
 ---
 
+## 系統架構與資料管線
+
+### 1. 3.4 億筆觀測再分析與科學建模 Pipeline
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
+flowchart TD
+    subgraph IngestStage ["階段一：多世代巨量資料工程與品質控制 (Data Pipeline & QC)"]
+        direction LR
+        RawData[("44 年環境部年度原始檔<br/>(1982–2025 · 3.4 億筆逐時觀測)")] --> Parse["多世代跨格式解析器<br/>(4 種封裝 · 2 種日期序相容)"] --> QC{"多層品管與一致性檢驗<br/>(旗標分類 · 圓形風向 888/999)"} --> Store[("不可變 Canonical Parquet<br/>(Hive 逐月分區 · zstd 壓縮)")]
+    end
+
+    subgraph ModelStage ["階段二：科學統計建模與偏誤代價量化 (Scientific Modeling)"]
+        direction LR
+        Store --> M3["方法學偏誤對照 (M1–M3)<br/>(風向線性化/PM10 滲漏實測)"] --> M4["氣象標準化與邊界 (M4–M7)<br/>(61 站標準化 · CBPF 風速風向型態)"] --> M8["多源加值與預測 (M8–M12)<br/>(ERA5 · 衛星 S5P/MAIAC · LightGBM)"]
+    end
+
+    subgraph DeliveryStage ["階段三：多端交付與無障礙科學探索 (Web & Deliverables)"]
+        direction LR
+        M8 --> WebLayer[("L0/L1 輕量衍生資料層<br/>(站月 L0 · 站日 L1 Parquet)")] --> Site(["Astro 靜態科學圖集<br/>(純 SVG 建置 · 零 JS 可讀)"]) & WASM["DuckDB-WASM 引擎<br/>(瀏覽器端直接跑 SQL)"] & HF(["Hugging Face 交付<br/>(L0/L1 資料集 · 48h 預測 Space)"])
+    end
+
+    IngestStage --> ModelStage --> DeliveryStage
+
+    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
+    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
+    classDef condStyle fill:#fff9db,stroke:#f59f00,stroke-width:2px,color:#212529
+    classDef evalStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
+
+    class RawData,Store,WebLayer srcStyle
+    class Parse,M3,M4,M8,WASM procStyle
+    class QC condStyle
+    class Site,HF evalStyle
+
+    style IngestStage fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
+    style ModelStage fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
+    style DeliveryStage fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+```
+
+### 2. 資料治理架構與零漂移 CI 驗證防線
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
+flowchart TD
+    subgraph DataTiers ["階段一：三層資料架構分工 (Data Tiering)"]
+        direction LR
+        T1[("L0 站月衍生層<br/>(網站圖表即時讀取)")]
+        T2[("L1 站日衍生層<br/>(DuckDB 範圍查詢匯出)")]
+        T3[("L2 完整逐時庫<br/>(3.4 億列本地重現)")]
+    end
+
+    subgraph Principles ["階段二：三大嚴謹科學原則與邊界門禁 (Governance Gates)"]
+        direction LR
+        P1["Null is a Finding<br/>(零插值 · 覆蓋不足傳回 null)"] --> P2["量化方法論代價<br/>(以同一批資料量化傳統偏誤)"] --> P3{"嚴格邊界門禁<br/>(不宣稱因果 · 不過度推論源解析)"}
+    end
+
+    subgraph CIVerify ["階段三：零漂移 CI 對帳與自動化檢核 (Zero-Drift CI)"]
+        direction LR
+        V1["check_published_headline.py<br/>(文字數據直連 Parquet 驗算)"] & V2["check_published_forecast.py<br/>(預測指標零漂移核帳)"] & V3["check_site_quality.mjs<br/>(無障礙與宣告邊界防護)"] --> Gate(["100% CI 通過驗證<br/>(自動部署 GitHub Pages)"])
+    end
+
+    T1 & T2 & T3 --> P1
+    P3 --> V1 & V2 & V3
+
+    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
+    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
+    classDef condStyle fill:#fff9db,stroke:#f59f00,stroke-width:2px,color:#212529
+    classDef safeStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
+
+    class T1,T2,T3 srcStyle
+    class P1,P2,V1,V2,V3 procStyle
+    class P3 condStyle
+    class Gate safeStyle
+
+    style DataTiers fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
+    style Principles fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
+    style CIVerify fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+```
+
+---
+
 ## 這是什麼
 
 一份涵蓋 **44 年**、經過完整品管的台灣空氣品質開放再分析：
 1982 到 2025 年，82 個測站，**340,371,384 筆逐時觀測**。產出三件事：
 
-1. **一份原本不存在的資料集。** 環境部有公開年度原始檔，但橫跨四種封裝格式、
-   兩種日期順序，品質旗標的慣例還逐年在變。本專案把它們全部解析成
-   單一份標準化、逐列可追溯來源的資料儲存。
-2. **一組方法學對照。** 月平均、逐步剔除的 OLS、用 PM10 預測 PM2.5——
-   這些是台灣空品分析用了一整個世代的做法。把它們與修正後的方法放在
-   **同一份資料**上並排重跑，就能算出每個選擇值多少。
+1. **一份原本不存在的資料集。** 環境部有公開年度原始檔，但橫跨四種封裝格式、兩種日期順序，品質旗標的慣例還逐年在變。本專案把它們全部解析成單一份標準化、逐列可追溯來源的資料儲存。
+2. **一組方法學對照。** 月平均、逐步剔除的 OLS、用 PM10 預測 PM2.5——這些是台灣空品分析用了一整個世代的做法。把它們與修正後的方法放在**同一份資料**上並排重跑，就能算出每個選擇值多少。
 3. **一個可以自己驗算的網站**，包含在你自己瀏覽器裡跑 SQL 的資料探索器。
 
 ### 貫穿全案的原則
 
-**測量並公布資料品質，絕不悄悄修補。** 無效值標記但不刪除；超出物理範圍的值
-保留原數字以供檢視；覆蓋率不足的聚合直接回傳 **null**，而不是一個有偏誤的平均。
-網站上每一條線的中斷都是真的中斷。
+**測量並公布資料品質，絕不悄悄修補。** 無效值標記但不刪除；超出物理範圍的值保留原數字以供檢視；覆蓋率不足的聚合直接回傳 **null**，而不是一個有偏誤的平均。網站上每一條線的中斷都是真的中斷。
 
 ### 對照組是方法，不是任何人
 
-有缺陷的那一邊不是描述，是 `analysis/baseline.py` **實際配適出來的模型**——
-所以兩邊跑在同一批列上，每個代價都是量出來的。其中兩個選擇的代價很大：
+有缺陷的那一邊不是描述，是 `analysis/baseline.py` **實際配適出來的模型**——所以兩邊跑在同一批列上，每個代價都是量出來的。其中兩個選擇的代價很大：
 
-1. **用 PM10 去預測 PM2.5。** PM2.5 在定義上就是 PM10 的子集，這是定義上的重疊，
-   不是實證發現。實測代價：**含 PM10 的模型有 32.1% 的 R² 來自這個重疊**（0.524 → 0.772）。
-2. **把風向（0–360°）當成線性連續變數。** 0° 與 359° 在物理上相鄰，數值上卻相距 359。
-   在 OLS 之下，sin/cos 編碼的 R² 是原始方位角的 **2.55 倍**。
+1. **用 PM10 去預測 PM2.5。** PM2.5 在定義上就是 PM10 的子集，這是定義上的重疊，不是實證發現。實測代價：**含 PM10 的模型有 32.1% 的 R² 來自這個重疊**（0.524 → 0.772）。
+2. **把風向（0–360°）當成線性連續變數。** 0° 與 359° 在物理上相鄰，數值上卻相距 359。在 OLS 之下，sin/cos 編碼的 R² 是原始方位角的 **2.55 倍**。
 
-另外有**兩項我原先列為缺陷、卻被全量資料否證**的說法，一樣照實記錄——見
-[docs/working-rules.md](docs/working-rules.md)。
+另外有**兩項我原先列為缺陷、卻被全量資料否證**的說法，一樣照實記錄——見 [docs/working-rules.md](docs/working-rules.md)。
+
+---
 
 ## 五項產出
 
-| | 內容 |
+| 項目 | 內容說明 |
 |---|---|
 | 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | 📊 **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
 | 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
 | 🔧 **Python 套件** | `twair` — 資料管線與分析工具 |
+
+---
 
 ## 資料來源
 
@@ -127,6 +207,8 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 
 </details>
 
+---
+
 ## 快速開始
 
 ```bash
@@ -156,6 +238,8 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 會明確保留為未驗證。
 政府網站的連結會變動，所以這一步每次都重新解析，不寫死任何 URL。
 
+---
+
 ## 專案狀態
 
 目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
@@ -178,6 +262,8 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 [docs/working-rules.md](docs/working-rules.md)，資料與方法的現行證據分別見
 [docs/data-sources.md](docs/data-sources.md) 與 [docs/methodology.md](docs/methodology.md)。
 
+---
+
 ## 網站
 
 ```bash
@@ -194,11 +280,15 @@ Astro 靜態網站，深淺兩色主題，沒有繪圖套件——圖表在建�
 CI 沒有那 3.40 億列資料庫的複本，所以**更新網站的資料是本機步驟加一次 commit**——
 `uv run twair export web` 之後把 `web/public/data/` 一起提交。
 
+---
+
 ## 授權
 
 - 程式碼：[MIT](LICENSE)
 - 資料衍生物：[CC BY 4.0](LICENSE-DATA)，原始資料出處為中華民國環境部
   （地圖的縣市界線來自內政部國土測繪中心，依政府資料開放授權條款第 1 版）
+
+---
 
 ## 引用
 

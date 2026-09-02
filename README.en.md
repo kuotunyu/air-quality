@@ -1,6 +1,11 @@
 # air-quality｜Taiwan Air Quality Reanalysis
 
 [![CI](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml/badge.svg)](https://github.com/kuotunyu/air-quality/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+![DuckDB-WASM](https://img.shields.io/badge/DuckDB--WASM-In--Browser-FFF000?logo=duckdb&logoColor=black)
+![Astro](https://img.shields.io/badge/Astro-Static%20SVG-BC52EE?logo=astro&logoColor=white)
+![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Datasets%20%26%20Space-FFD21E?logo=huggingface&logoColor=black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > Every hourly observation published in MoENV's 1982–2025 annual archives:
 > 340 million measurements, quality-flagged rather than quietly repaired,
@@ -19,6 +24,87 @@ The published M4 does not yet use ERA5 BLH, and long-range transport remains a l
 [Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality) ·
 [Forecast demo](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) ·
 [Methodology](docs/methodology.md)
+
+---
+
+## System Architecture & Pipeline
+
+### 1. 340M Observations Reanalysis & Scientific Modeling Pipeline
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
+flowchart TD
+    subgraph IngestStage ["Phase 1: Multi-Generation Data Ingestion & Quality Control"]
+        direction LR
+        RawData[("44 Years MoENV Archives<br/>(1982–2025 · 340M hourly rows)")] --> Parse["Multi-Format Parser<br/>(4 containers · 2 date orders)"] --> QC{"Strict Quality Control Suite<br/>(Flag taxonomy · Wind 888/999)"} --> Store[("Canonical Parquet Store<br/>(Hive monthly partitions · zstd)")]
+    end
+
+    subgraph ModelStage ["Phase 2: Scientific Modeling & Methodological Baselines"]
+        direction LR
+        Store --> M3["Method Comparisons (M1–M3)<br/>(Wind linearity / PM10 leakage)"] --> M4["Weather Normalisation (M4–M7)<br/>(61 stations · CBPF wind patterns)"] --> M8["Value-Add & Forecasts (M8–M12)<br/>(ERA5 · S5P/MAIAC · LightGBM)"]
+    end
+
+    subgraph DeliveryStage ["Phase 3: Multi-Target Delivery & Accessible Exploration"]
+        direction LR
+        M8 --> WebLayer[("L0/L1 Lightweight Storage<br/>(Monthly L0 · Daily L1 Parquet)")] --> Site(["Astro Static Science Atlas<br/>(Build-time SVG · Zero JS readable)"]) & WASM["DuckDB-WASM Engine<br/>(In-browser client-side SQL)"] & HF(["Hugging Face Releases<br/>(L0/L1 Dataset · 48h Forecast Space)"])
+    end
+
+    IngestStage --> ModelStage --> DeliveryStage
+
+    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
+    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
+    classDef condStyle fill:#fff9db,stroke:#f59f00,stroke-width:2px,color:#212529
+    classDef evalStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
+
+    class RawData,Store,WebLayer srcStyle
+    class Parse,M3,M4,M8,WASM procStyle
+    class QC condStyle
+    class Site,HF evalStyle
+
+    style IngestStage fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
+    style ModelStage fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
+    style DeliveryStage fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+```
+
+### 2. Data Governance & Zero-Drift CI Architecture
+
+```mermaid
+%%{init: {'themeVariables': {'fontSize': '18px'}}}%%
+flowchart TD
+    subgraph DataTiers ["Phase 1: Multi-Tier Data Storage Architecture"]
+        direction LR
+        T1[("L0 Station-Month Layer<br/>(Direct website SVG rendering)")]
+        T2[("L1 Station-Day Layer<br/>(DuckDB range query export)")]
+        T3[("L2 Complete Hourly Store<br/>(340M rows reproducible locally)")]
+    end
+
+    subgraph Principles ["Phase 2: Scientific Governance & Boundary Gates"]
+        direction LR
+        P1["Null is a Finding<br/>(Zero imputation · Coverage gates)"] --> P2["Methodological Cost<br/>(Measure difference on same rows)"] --> P3{"Strict Boundary Gates<br/>(No overclaimed causal / source attribution)"}
+    end
+
+    subgraph CIVerify ["Phase 3: Zero-Drift CI Reconciliation & Quality Linter"]
+        direction LR
+        V1["check_published_headline.py<br/>(Prose verified against Parquet)"] & V2["check_published_forecast.py<br/>(Zero-drift metric reconciliation)"] & V3["check_site_quality.mjs<br/>(Accessibility & claim bounds)"] --> Gate(["100% CI Verification Pass<br/>(Continuous GitHub Pages deployment)"])
+    end
+
+    T1 & T2 & T3 --> P1
+    P3 --> V1 & V2 & V3
+
+    classDef srcStyle fill:#e7f5ff,stroke:#1971c2,stroke-width:2px,color:#212529
+    classDef procStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#212529
+    classDef condStyle fill:#fff9db,stroke:#f59f00,stroke-width:2px,color:#212529
+    classDef safeStyle fill:#e6fcf5,stroke:#0ca678,stroke-width:2px,color:#212529
+
+    class T1,T2,T3 srcStyle
+    class P1,P2,V1,V2,V3 procStyle
+    class P3 condStyle
+    class Gate safeStyle
+
+    style DataTiers fill:#f8f9fa,stroke:#1971c2,stroke-width:2px,color:#1971c2,stroke-dasharray: 4 4
+    style Principles fill:#faf5ff,stroke:#7b1fa2,stroke-width:2px,color:#7b1fa2,stroke-dasharray: 4 4
+    style CIVerify fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
+```
 
 ---
 
@@ -67,58 +153,9 @@ as such — see [docs/working-rules.md](docs/working-rules.md).
 
 ---
 
-## System Architecture
-
-```mermaid
-flowchart TD
-    subgraph Data Sources [Measured Inputs]
-        A[MoENV Annual Archive Catalogue] -->|Probe file IDs / gdown| D[Raw ZIP / 7z Archives]
-        B[MoENV Station Register] -->|Metadata only| S[Station Metadata]
-        C[CWA / ERA5 / Satellite] -.->|ERA5 2024–2025 acquisition and multi-year/held-out-station robustness delivered; CWA deferred| X[Future covariates]
-    end
-
-    subgraph Ingestion [Processing & Pipeline]
-        D -->|twair build| G[Cross-generation CSV / XLS / ODS Parsing]
-    end
-
-    subgraph QC [Quality Control Suite]
-        G -->|Flags parsing| H[Flag Classification]
-        H_flag["#, *, x, A, NR, ND, -"] --> H
-        G -->|Sentinel & Consistency Check| I[Physical Consistency]
-        I_check["PM2.5 <= PM10, NO+NO2 ~ NOx"] --> I
-        G -->|Sentinel Handling| J[Circular Sentinels]
-        J_set["888 (variable dir), 999 (calm)"] --> J
-    end
-
-    subgraph Storage [Canonical Parquet Store]
-        H & I & J --> K[observations/ year=YYYY/month=MM/]
-        K -->|zstd Hive Partition| L[(Canonical Parquet Store)]
-        L -->|coverage-gated aggregation| M[(Daily / Monthly / Wide Datasets)]
-    end
-
-    subgraph Analytics [Analysis Modules]
-        L -->|twair qc outliers| N_out[Isolated Excursion vs Network Episode]
-        M -->|M1| N[Naive Monthly OLS Baseline]
-        M -->|M2-M3| O[Hourly Drivers & Pitfall Analysis]
-        M -->|M4-M5| P[Weather Normalisation & Detection Limits]
-        M -->|M6-M12| T[Spatial / Forecast / Health / Sensitivity Analyses]
-    end
-
-    subgraph Export [Web Packaging]
-        O & P & T -->|twair export web| Q_json[L0 JSON / L1 Parquet Web Layer]
-        Q_json -->|Embedded SVG Charts| R_astro[Astro Static Engine]
-        Q_json -->|DuckDB WebAssembly| S_wasm[In-Browser SQL Query Engine]
-    end
-
-    classDef tech fill:#f9f8f6,stroke:#333,stroke-width:1.5px;
-    class K,L,M,Q_json,S_wasm tech;
-```
-
----
-
 ## Five Main Deliverables
 
-| | Description |
+| Deliverable | Description |
 |---|---|
 | 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | 📊 **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
@@ -202,31 +239,27 @@ the released meteorological normalisation still uses station measurements.
 
 ## Quick Start
 
-### 1. Synchronize the Environment
-This project uses the modern, high-speed Python package manager `uv`:
 ```bash
 uv sync
 ```
 
-### 2. Configure Environment Variables
 ```bash
 cp .env.example .env
 ```
 
-### 3. Check System Integrity
 ```bash
 uv run twair doctor
 ```
 
-### 4. Locate & Cache Live Links
 ```bash
 uv run twair probe sources
 ```
-In a source checkout, the repository root is the workspace. When running an
-installed wheel elsewhere, set `TWAIR_WORKSPACE_DIR` in the process environment
-before startup; otherwise the current working directory is used. Relative
-`data/`, `.env`, `conf/`, report, and probe paths stay in that external
-workspace. If a `conf/*.yaml` override is absent, `twair` reads the reviewed,
+
+When run from a source checkout, the repository root serves as the workspace.
+If running from an installed wheel, configure `TWAIR_WORKSPACE_DIR` in your process
+environment before launch; otherwise, the current working directory is used. The
+relative `data/`, `.env`, `conf/`, reports, and probe outputs remain within this
+external workspace. If `conf/*.yaml` files are absent, the application reads the
 read-only defaults packaged in the wheel. Refresh and probe commands create
 workspace overrides and never rewrite the installed package.
 
