@@ -134,9 +134,16 @@ export const CHAPTERS: readonly Chapter[] = [
   {
     n: 10,
     slug: "data",
-    nav: "資料下載",
-    title: "資料下載與方法",
-    question: "哪些資料可下載、如何重建，以及缺值為何保留？",
+    /*
+     * 2026-09-02 — 資料層與授權, matching the h1. The chapter was 資料下載與方法
+     * while it carried a file-by-file download table; the owner removed the
+     * table, since a reader gets data through chapter 9's in-browser query,
+     * and a chapter named for downloads with none on it would be the third
+     * stale registry entry this file has held.
+     */
+    nav: "資料層",
+    title: "資料層與授權",
+    question: "三層資料各是什麼、如何重建，以及缺值為何保留？",
     claim: "三層資料的內容、授權，以及這個專案為什麼不補值。",
   },
 ] as const;

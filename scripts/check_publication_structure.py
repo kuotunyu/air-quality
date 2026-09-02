@@ -1241,21 +1241,15 @@ DATA_LAYER_ROWS = (
 )
 
 
-@dataclass(frozen=True)
-class DataDownloadRow:
-    name: str
-    period: str
-    l0_href: str
-    l0_size: str
-    l1_href: str | None
-    l1_size: str
-    l1_label: str
-
-
+# 2026-09-02 — the contract used to carry a `DataDownloadRow` per measurand
+# and the register check held chapter 10 to a 21-row table of L0 and L1 links.
+# The owner removed that table (a reader gets data through chapter 9's query),
+# so the contract is the three layer descriptions alone. The layer arithmetic
+# that fed the L1 description — which files the Pages register publishes and
+# their total — is unchanged, because the description still states it.
 @dataclass(frozen=True)
 class DataProvenanceContract:
     descriptions: Mapping[str, str]
-    downloads: tuple[DataDownloadRow, ...]
 
 
 def _data_mb(value: int) -> str:
@@ -1313,7 +1307,6 @@ def load_data_provenance_contract() -> DataProvenanceContract:
         if isinstance(file, str)
     }
 
-    downloads: list[DataDownloadRow] = []
     l1_total = 0
     published_l1_codes: list[str] = []
     for row in pollutant_rows:
@@ -1350,17 +1343,6 @@ def load_data_provenance_contract() -> DataProvenanceContract:
         if l1_selected:
             l1_total += cast(int, l1_size)
             published_l1_codes.append(pollutant)
-        downloads.append(
-            DataDownloadRow(
-                name=f"{name}{pollutant}",
-                period=f"{months[0]}–{months[1]}",
-                l0_href=f"/data/{file}",
-                l0_size=_data_mb(l0_size),
-                l1_href=f"/data/{l1_file}" if l1_selected else None,
-                l1_size=_data_mb(cast(int, l1_size)) if l1_selected else "",
-                l1_label="Parquet" if l1_selected else "Pages 未發布",
-            )
-        )
 
     descriptions = {
         "L0": "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。",
@@ -1373,13 +1355,12 @@ def load_data_provenance_contract() -> DataProvenanceContract:
             "不發布—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
         ),
     }
-    return DataProvenanceContract(descriptions=descriptions, downloads=tuple(downloads))
+    return DataProvenanceContract(descriptions=descriptions)
 
 
 def data_provenance_register_failures_for_text(
     html: str,
     expected_descriptions: Mapping[str, str],
-    expected_downloads: Sequence[DataDownloadRow],
 ) -> list[str]:
     parser = StructureParser()
     parser.feed(html)
@@ -1459,107 +1440,17 @@ def data_provenance_register_failures_for_text(
         ):
             failures.append("data layer L2 became downloadable")
 
-    tables = [
-        element
-        for element in elements
-        if element.visible and element.tag == "table" and "dense" in element.classes
-    ]
-    if len(tables) != 1:
-        failures.append(f"data download table inventory changed: {len(tables)}")
-        table = None
-    else:
-        table = tables[0]
-        if register is not None and register.start_order >= table.start_order:
-            failures.append("data provenance register no longer precedes the download table")
-
-    table_rows = [
-        element
-        for element in elements
-        if element.visible
-        and element.tag == "tr"
-        and table is not None
-        and element.is_inside(table)
-    ]
-    table_bodies = [
-        element
-        for element in elements
-        if element.visible
-        and element.tag == "tbody"
-        and table is not None
-        and element.is_inside(table)
-    ]
-    body_rows = [row for row in table_rows if any(row.is_inside(body) for body in table_bodies)]
-    if len(body_rows) != 21:
-        failures.append(f"data download row inventory changed: {len(body_rows)}")
+    # 2026-09-02 — the download table and its 25 links used to be checked here,
+    # row by row against the contract. The table is gone from the chapter; what
+    # remains checkable is that no layer grew a download link, which the L2
+    # clause above still holds, and the statements below.
     downloads = [
         element
         for element in elements
         if element.visible and element.tag == "a" and "download" in element.attributes
     ]
-    table_downloads = [link for link in downloads if table is not None and link.is_inside(table)]
-    if len(downloads) != 25 or len(table_downloads) != 23:
+    if downloads:
         failures.append(f"data download link inventory changed: {len(downloads)}")
-
-    if len(expected_downloads) != 21:
-        failures.append(f"data expected download row inventory changed: {len(expected_downloads)}")
-    for index, expected in enumerate(expected_downloads):
-        if index >= len(body_rows):
-            continue
-        row = body_rows[index]
-        cells = [child for child in row.children if child.visible]
-        observed: DataDownloadRow | None = None
-        if len(cells) == 4 and all(cell.tag == "td" for cell in cells):
-            l0_links = [link for link in table_downloads if link.is_inside(cells[2])]
-            l1_links = [link for link in table_downloads if link.is_inside(cells[3])]
-            l0_sizes = [
-                element
-                for element in elements
-                if element.visible and "size" in element.classes and element.is_inside(cells[2])
-            ]
-            l1_sizes = [
-                element
-                for element in elements
-                if element.visible and "size" in element.classes and element.is_inside(cells[3])
-            ]
-            unavailable = [
-                element
-                for element in elements
-                if element.visible
-                and "data-pages-unavailable" in element.attributes
-                and element.is_inside(cells[3])
-            ]
-            l0_label = " ".join("".join(l0_links[0].text).split()) if len(l0_links) == 1 else ""
-            l1_label = " ".join("".join(l1_links[0].text).split()) if len(l1_links) == 1 else ""
-            if (
-                len(l0_links) == len(l0_sizes) == 1
-                and l0_label == "JSON"
-                and (
-                    (
-                        expected.l1_href is not None
-                        and len(l1_links) == len(l1_sizes) == 1
-                        and not unavailable
-                        and l1_label == "Parquet"
-                    )
-                    or (
-                        expected.l1_href is None
-                        and not l1_links
-                        and not l1_sizes
-                        and len(unavailable) == 1
-                        and unavailable[0].rendered_text() == "Pages 未發布"
-                    )
-                )
-            ):
-                observed = DataDownloadRow(
-                    name=cells[0].rendered_text(),
-                    period=cells[1].rendered_text(),
-                    l0_href=l0_links[0].attributes.get("href") or "",
-                    l0_size=l0_sizes[0].rendered_text(),
-                    l1_href=(l1_links[0].attributes.get("href") or "") if l1_links else None,
-                    l1_size=l1_sizes[0].rendered_text() if l1_sizes else "",
-                    l1_label="Parquet" if l1_links else "Pages 未發布",
-                )
-        if observed != expected:
-            failures.append(f"data download row {index + 1} changed")
 
     page_text = " ".join(
         element.rendered_text()
@@ -5003,18 +4894,6 @@ def _run_preflight() -> None:
                 f"{expected_failure}: {mutation_failures}"
             )
 
-    data_download_rows = "".join(
-        f"<tr><td>測項 {index:02d}</td><td>1982–2025</td>"
-        f'<td><a href="/data/l0/{index:02d}.json" download>JSON'
-        f'<span class="size">0.{index:02d} MB</span></a></td>'
-        + (
-            f'<td><a href="/data/l1/{index:02d}.parquet" download>Parquet'
-            f'<span class="size">1.{index:02d} MB</span></a></td></tr>'
-            if index <= 2
-            else "<td><span data-pages-unavailable>Pages 未發布</span></td></tr>"
-        )
-        for index in range(1, 22)
-    )
     data_expected_descriptions = {
         "L0": "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。",
         "L1": "Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。",
@@ -5023,19 +4902,7 @@ def _run_preflight() -> None:
             "不發布—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
         ),
     }
-    data_expected_downloads = tuple(
-        DataDownloadRow(
-            name=f"測項 {index:02d}",
-            period="1982–2025",
-            l0_href=f"/data/l0/{index:02d}.json",
-            l0_size=f"0.{index:02d} MB",
-            l1_href=f"/data/l1/{index:02d}.parquet" if index <= 2 else None,
-            l1_size=f"1.{index:02d} MB" if index <= 2 else "",
-            l1_label="Parquet" if index <= 2 else "Pages 未發布",
-        )
-        for index in range(1, 22)
-    )
-    valid_data_register = f"""
+    valid_data_register = """
 <p class="lede">所有數字都可以獨立重算。</p>
 <dl class="layers" data-data-layer-register>
 <dt data-data-layer="L0"><span data-data-layer-term>L0 站-月</span><span data-data-layer-use>閱讀者 · 快速查值與網站圖表</span></dt>
@@ -5045,10 +4912,6 @@ def _run_preflight() -> None:
 <dt data-data-layer="L2"><span data-data-layer-term>L2 站-時</span><span data-data-layer-use>重現者 · 逐時稽核與管線重建</span></dt>
 <dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。</dd>
 </dl>
-<h2>下載</h2>
-<a href="/data/meta.json" download>資料與產製資訊</a>
-<a href="/data/l0/index.json" download>L0 測項索引</a>
-<table class="dense"><caption>三層資料的 L0 與 L1，逐測項。</caption><tbody>{data_download_rows}</tbody></table>
 <h2>授權與再散布</h2>
 <p><strong>L2 不發布，理由不是檔案太大。</strong></p>
 <p><strong>關於缺值。</strong>這個專案不補值。</p>
@@ -5056,7 +4919,7 @@ def _run_preflight() -> None:
 <p><strong>逐時 PM2.5 的官方但書。</strong>小時值僅供預警參考。</p>
 """
     valid_data_failures = data_provenance_register_failures_for_text(
-        valid_data_register, data_expected_descriptions, data_expected_downloads
+        valid_data_register, data_expected_descriptions
     )
     if valid_data_failures:
         raise RuntimeError(
@@ -5073,20 +4936,6 @@ def _run_preflight() -> None:
         "<span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>\n"
         '<dd data-data-layer-description="L1">Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；'
         "其餘測項可由本機管線產生。</dd>"
-    )
-    data_row_1 = (
-        "<tr><td>測項 01</td><td>1982–2025</td>"
-        '<td><a href="/data/l0/01.json" download>JSON<span class="size">0.01 MB</span></a></td>'
-        '<td><a href="/data/l1/01.parquet" download>Parquet<span class="size">1.01 MB</span></a></td></tr>'
-    )
-    data_row_2 = (
-        "<tr><td>測項 02</td><td>1982–2025</td>"
-        '<td><a href="/data/l0/02.json" download>JSON<span class="size">0.02 MB</span></a></td>'
-        '<td><a href="/data/l1/02.parquet" download>Parquet<span class="size">1.02 MB</span></a></td></tr>'
-    )
-    data_table = (
-        '<table class="dense"><caption>三層資料的 L0 與 L1，逐測項。</caption>'
-        f"<tbody>{data_download_rows}</tbody></table>"
     )
     data_mutations = {
         "missing level hook": (
@@ -5143,27 +4992,13 @@ def _run_preflight() -> None:
                 "網站直接讀這一層。", "網站直接讀這一層，但內容規格已改變。", 1
             ),
         ),
-        "table before register": (
-            "data provenance register no longer precedes the download table",
-            valid_data_register.replace(data_table, "", 1).replace(
-                '<dl class="layers"', data_table + '\n<dl class="layers"', 1
-            ),
-        ),
-        "lost download": (
+        "download link returned": (
             "data download link inventory changed",
-            valid_data_register.replace(" download>JSON", ">JSON", 1),
-        ),
-        "changed download destination": (
-            "data download row 1 changed",
-            valid_data_register.replace("/data/l0/01.json", "/data/l0/wrong.json", 1),
-        ),
-        "reordered download rows": (
-            "data download row 1 changed",
-            valid_data_register.replace(data_row_1 + data_row_2, data_row_2 + data_row_1, 1),
-        ),
-        "extra table row": (
-            "data download row inventory changed",
-            valid_data_register.replace("</tbody>", "<tr><td>額外</td></tr></tbody>", 1),
+            valid_data_register.replace(
+                "<h2>授權與再散布</h2>",
+                '<a href="/data/l0/01.json" download>JSON</a>\n<h2>授權與再散布</h2>',
+                1,
+            ),
         ),
         "L2 became downloadable": (
             "data layer L2 became downloadable",
@@ -5184,7 +5019,7 @@ def _run_preflight() -> None:
         if html == valid_data_register:
             raise RuntimeError(f"data provenance register preflight did not apply {name}")
         mutation_failures = data_provenance_register_failures_for_text(
-            html, data_expected_descriptions, data_expected_downloads
+            html, data_expected_descriptions
         )
         if not any(failure.startswith(expected_failure) for failure in mutation_failures):
             raise RuntimeError(
@@ -6441,9 +6276,7 @@ def main(argv: list[str]) -> int:
                     failures.append(f"data provenance sources are invalid: {exc}")
                 else:
                     failures.extend(
-                        data_provenance_register_failures_for_text(
-                            html, data_contract.descriptions, data_contract.downloads
-                        )
+                        data_provenance_register_failures_for_text(html, data_contract.descriptions)
                     )
             elif slug == "explore":
                 failures.extend(explorer_guided_workspace_failures_for_text(html))

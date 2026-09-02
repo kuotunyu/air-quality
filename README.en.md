@@ -120,7 +120,7 @@ flowchart TD
 
 | | Description |
 |---|---|
-| 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025, downloadable from [chapter 10](https://kuotunyu.github.io/air-quality/data/) and published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
+| 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | 📊 **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
 | 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
 | 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |

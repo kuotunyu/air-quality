@@ -423,6 +423,13 @@ export function asset(path: string): string {
  * The two layers are matched on the filename stem and the pairing is asserted,
  * because a half-listed measurand would be worse than an unlisted one: it would
  * look like the Parquet did not exist.
+ *
+ * 2026-09-02 — chapter 10 no longer renders these as links. The owner removed
+ * the download table: a reader gets data through chapter 9's in-browser query,
+ * and the files stay served for it. `dataFiles` is kept because the layer
+ * register still derives `publishedL1Codes` and `layerBytes` from it, and
+ * because it is still the one place the manifest and the Pages register are
+ * asserted to agree.
  */
 export interface DataFile {
   /**

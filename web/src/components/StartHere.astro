@@ -21,9 +21,11 @@ const paths = [
     primary: false,
   },
   {
-    path: "data",
-    label: "下載或查詢資料",
-    claim: "先按用途選檔，也可前往瀏覽器查詢並匯出 CSV。",
+    /* 2026-09-02 — this route led to chapter 10's download table. The table
+       is gone, and the way a reader gets data is chapter 9's query. */
+    path: "explore",
+    label: "查詢或匯出資料",
+    claim: "六個問題在瀏覽器內查完，可匯出 CSV。",
     primary: false,
   },
 ] as const;

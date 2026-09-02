@@ -33,23 +33,26 @@
  * source table marks the CWA feed ⬜ 尚未取得 — every meteorological variable
  * used here comes from the air-quality stations' own instruments. Crediting a
  * source the work never used is worse than crediting none.
+ *
+ * ── 2026-09-02 — the download section is gone ────────────────────────────
+ *
+ * The 下載 heading, the two supporting links, the schema list and the
+ * 21-row table of L0 JSON and L1 Parquet links were the owner's decision to
+ * remove: a reader of this site gets data through chapter 9's in-browser
+ * query and its CSV export, and a file-by-file download list was a second
+ * doorway to the same files that nobody was asked for. The files themselves
+ * are still served — chapter 9 reads the L1 Parquet and every chart reads the
+ * L0 JSON — so the Pages register and the manifest are unchanged; only the
+ * links left. The chapter is now the register of layers, the limits and the
+ * licence, and its name says so. The paragraph above about placing the limits
+ * 「above the download table」 describes the layout this section had then.
  */
-import {
-  asset,
-  dataFiles,
-  hourlyObservationsShort,
-  layerBytes,
-  mb,
-  publishedL1Codes,
-} from "../lib/data";
-import { href } from "../lib/chapters";
-import { pagesPublication } from "../lib/publication";
+import { hourlyObservationsShort, layerBytes, mb, publishedL1Codes } from "../lib/data";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ConceptFlow from "./ConceptFlow.astro";
 import { dataPlate } from "../lib/concept-vignettes";
 
-import manifest from "../../public/data/manifest.json";
 import meta from "../../public/data/meta.json";
 
 interface PublicationConflictRecord {
@@ -78,19 +81,6 @@ const wanliPm25Conflict =
       )
     : undefined;
 const integer = new Intl.NumberFormat("zh-TW");
-const manifestBytes = new Map(
-  (manifest.files as { file: string; bytes: number }[]).map((file) => [file.file, file.bytes]),
-);
-const supportingFiles = [
-  ...pagesPublication.metadata.map((file) => ({ file, label: "資料與產製資訊" })),
-  ...pagesPublication.l0
-    .filter((file) => file === "l0/index.json")
-    .map((file) => ({ file, label: "L0 測項索引" })),
-].map(({ file, label }) => {
-  const bytes = manifestBytes.get(file);
-  if (bytes === undefined) throw new Error(`Pages register member ${file} is absent from manifest.json`);
-  return { file, label, bytes };
-});
 const zhDate = (value: string) => {
   const [year, month, day] = value.slice(0, 10).split("-").map(Number);
   return `${year} 年 ${month} 月 ${day} 日`;
@@ -240,86 +230,6 @@ const dataConcept = dataPlate();
     </div>
   </details>
 
-  <h2 id="downloads">下載</h2>
-
-  <p>
-    Pages 目前發布 PM10、PM2.5 的 L1；其餘測項可由本機管線產生。
-    下列已發布檔案可直接取得，
-    不需要註冊也不經過任何伺服器端處理。
-    要先依測站或日期挑出其中一段再匯出 CSV，用<a href={href("explore")}>第九章</a>的瀏覽器內查詢。
-  </p>
-
-  <ul class="supporting-downloads">
-    {supportingFiles.map((file) => (
-      <li>
-        <a href={asset(`data/${file.file}`)} download>{file.label}</a>
-        <span class="size">{file.file} · {mb(file.bytes)}</span>
-      </li>
-    ))}
-  </ul>
-
-  <dl class="schemas" data-data-schema-register>
-    <dt>L0 JSON</dt>
-    <dd><code>pollutant</code>、<code>name_zh</code>、<code>unit</code>、<code>precision</code>、<code>months</code>、<code>stations</code>、<code>mean</code>、<code>n_days</code>；<code>mean</code> 的 null 不是零。</dd>
-    <dt>L1 Parquet</dt>
-    <dd><code>station_name</code>、<code>date</code>、<code>mean</code>、<code>n_valid</code>；<code>n_valid</code> 是形成日均值的有效小時數。</dd>
-  </dl>
-
-  {/*
-    A table, because there are three things to compare per row and 21 rows of
-    them: a reader looking for one measurand scans the first column, and a
-    reader sizing up the download scans the last two. The file sizes come from
-    `manifest.json` — the same file CI checks — so a number here cannot drift
-    from the bytes actually served.
-
-    `download` on the anchors, so a Parquet does not open as a wall of mojibake
-    in a tab, and a JSON does not either. The href goes through `asset()`,
-    which was the only base-path helper in the codebase and until now had no
-    callers while six other files inlined their own copy of the same rule.
-  */}
-  <div class="table-wrap">
-    <table class="dense">
-      <caption>三層資料的 L0 與 L1，逐測項。檔案大小取自匯出時寫下的 manifest。</caption>
-      <thead>
-        <tr>
-          <th scope="col">測項</th>
-          <th scope="col">涵蓋期間</th>
-          <th scope="col">L0 站-月</th>
-          <th scope="col">L1 站-日</th>
-        </tr>
-      </thead>
-      <tbody>
-        {
-          dataFiles.map((f) => (
-            <tr>
-              <td data-label="測項" aria-label="測項">
-                {f.name_zh}
-                <span class="code">{f.pollutant}</span>
-              </td>
-              <td class="span" data-label="涵蓋期間" aria-label="涵蓋期間">
-                {f.months[0]}–{f.months[1]}
-              </td>
-              <td data-label="L0 站-月" aria-label="L0 站-月">
-                <a href={asset(f.l0.path)} download>
-                  JSON<span class="size">{mb(f.l0.bytes)}</span>
-                </a>
-              </td>
-              <td data-label="L1 站-日" aria-label="L1 站-日">
-                {f.l1 ? (
-                  <a href={asset(f.l1.path)} download>
-                    Parquet<span class="size">{mb(f.l1.bytes)}</span>
-                  </a>
-                ) : (
-                  <span class="unavailable" data-pages-unavailable>Pages 未發布</span>
-                )}
-              </td>
-            </tr>
-          ))
-        }
-      </tbody>
-    </table>
-  </div>
-
   <h2>授權與再散布</h2>
 
   {/*
@@ -411,33 +321,8 @@ const dataConcept = dataPlate();
   display: grid;
   gap: var(--space-1);
 }
-.task-register li span,
-.schemas dd,
-.unavailable {
+.task-register li span {
   color: var(--text-muted);
-}
-.supporting-downloads {
-  display: grid;
-  gap: var(--space-3);
-  max-width: var(--measure);
-  padding: 0;
-  list-style: none;
-}
-.supporting-downloads li {
-  display: grid;
-  gap: var(--space-1);
-}
-.schemas {
-  display: grid;
-  grid-template-columns: max-content minmax(0, var(--measure));
-  gap: var(--space-2) var(--space-4);
-  margin: var(--space-5) 0;
-}
-.schemas dt {
-  font-weight: 650;
-}
-.schemas dd {
-  margin: 0;
 }
 /* On one column the term and its description are one row, so only the term
    carries the rule. */
@@ -446,73 +331,6 @@ const dataConcept = dataPlate();
     border-top: 0;
     padding-top: 0;
   }
-  .schemas {
-    grid-template-columns: 1fr;
-  }
-  .schemas dd + dt {
-    margin-top: var(--space-2);
-  }
-  .table-wrap {
-    overflow: visible;
-  }
-  .dense,
-  .dense tbody,
-  .dense tr,
-  .dense td {
-    display: block;
-    width: 100%;
-  }
-  .dense thead {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-  .dense th {
-    padding: var(--space-1) 0;
-  }
-  .dense tr {
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--line-soft);
-  }
-  .dense td {
-    border: 0;
-    padding: var(--space-1) 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-  .dense td::before {
-    content: attr(data-label);
-    display: inline-block;
-    min-inline-size: 6.5rem;
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-  }
-}
-
-/*
- * The measurand's symbol and the file's size are both metadata about the thing
- * beside them, so both are set the way this site sets metadata everywhere else:
- * one step down, muted, and — for the sizes — in the numeric face so 5.83 and
- * 52.08 line up down the column. They sit on their own line rather than beside
- * their label, because at 390px a 「二氧化硫 SO2」 cell that wraps mid-phrase is
- * harder to scan than two short lines.
- */
-.code,
-.size,
-.span {
-  display: block;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  font-family: var(--font-numeric);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The download links are the point of the table, so they carry the weight the
-   rest of the cells give up. */
-.table-wrap a[download] {
-  font-weight: 650;
 }
 
 /* Chapter 1 and chapter 7 link straight at these three, and the site header

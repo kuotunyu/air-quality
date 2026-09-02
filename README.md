@@ -58,7 +58,7 @@
 
 | | 內容 |
 |---|---|
-| 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計，可從[網站第十章](https://kuotunyu.github.io/air-quality/data/)直接下載，也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
+| 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | 📊 **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
 | 🌐 **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
 | 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |

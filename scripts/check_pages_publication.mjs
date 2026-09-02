@@ -4,14 +4,21 @@
  * The export manifest describes everything the local pipeline generated. That
  * is deliberately broader than the Pages distribution decision, which lives
  * in web/src/data/pages-publication.json. This gate joins those two identities
- * to the tracked public tree, the built dist tree, and the links readers see.
+ * to the tracked public tree and the built dist tree.
+ *
+ * 2026-09-02 — it also joined them to the download links readers saw: every
+ * registered member had to be linked from a built page and no page could link
+ * outside the register. Chapter 10's download table is gone (the owner's
+ * decision; a reader gets data through chapter 9's in-browser query), so the
+ * link half of the join is gone with it. The register still says what Pages
+ * serves, because chapter 9 and the charts read those files.
  *
  *     node scripts/check_pages_publication.mjs
  *     node scripts/check_pages_publication.mjs --register path --public path --dist path
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,7 +30,6 @@ const DEFAULTS = {
 };
 const REQUIRED_KEYS = ["l0", "l1", "l2", "metadata", "schema_version"];
 const LAYERS = ["metadata", "l0", "l1", "l2"];
-const DATA_HREF = /<a\b(?=[^>]*\bdownload\b)[^>]*\bhref=(?:"([^"]+)"|'([^']+)')[^>]*>/giu;
 
 function argumentsOf(argv) {
   const values = { ...DEFAULTS };
@@ -40,43 +46,6 @@ function argumentsOf(argv) {
 
 function json(path) {
   return JSON.parse(readFileSync(path, "utf8"));
-}
-
-function htmlFiles(root) {
-  const found = [];
-  const visit = (directory) => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const path = join(directory, entry.name);
-      if (entry.isDirectory()) visit(path);
-      else if (entry.isFile() && entry.name.endsWith(".html")) found.push(path);
-    }
-  };
-  if (existsSync(root)) visit(root);
-  return found;
-}
-
-function dataMemberFromHref(href) {
-  let decoded;
-  try {
-    decoded = decodeURIComponent(href).replaceAll("\\", "/");
-  } catch {
-    return null;
-  }
-  const marker = "/data/";
-  const at = decoded.indexOf(marker);
-  return at < 0 ? null : decoded.slice(at + marker.length).split(/[?#]/u, 1)[0];
-}
-
-function renderedDownloads(distRoot) {
-  const found = new Set();
-  for (const path of htmlFiles(distRoot)) {
-    const html = readFileSync(path, "utf8");
-    for (const match of html.matchAll(DATA_HREF)) {
-      const member = dataMemberFromHref(match[1] ?? match[2]);
-      if (member) found.add(member);
-    }
-  }
-  return found;
 }
 
 function tracked(path) {
@@ -149,14 +118,12 @@ function inspect(paths) {
     }
   }
 
-  const rendered = renderedDownloads(paths.dist);
-  for (const member of rendered) {
-    if (!selectedSet.has(member)) problems.push(`rendered download is outside register: ${member}`);
-  }
-  for (const member of selected) {
-    if (!rendered.has(member)) problems.push(`registered member has no rendered download: ${member}`);
-  }
   return problems;
+}
+
+function registeredCount(registerPath) {
+  const register = json(registerPath);
+  return LAYERS.reduce((total, layer) => total + register[layer].length, 0);
 }
 
 let paths;
@@ -168,7 +135,7 @@ try {
 }
 
 const problems = inspect(paths);
-console.log(`Pages members registered : ${problems.length ? "invalid" : renderedDownloads(paths.dist).size}`);
+console.log(`Pages members registered : ${problems.length ? "invalid" : registeredCount(paths.register)}`);
 console.log(`Pages publication problems : ${problems.length}`);
 for (const problem of problems) console.log(`  FAIL: ${problem}`);
 process.exit(problems.length ? 1 : 0);
