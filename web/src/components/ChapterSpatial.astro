@@ -278,8 +278,7 @@ const spaceConcept = spacePlate(
       站均殘差的 Moran's I 按距離分帶（＊為 BH 校正後顯著）。
       殘差是扣掉模型已經解釋掉的部分之後、每站每月還差多少。10 公里內同號相聚
       （I = +{correlogram[0].i.toFixed(3)}），100 公里外反號
-      （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）—
-      北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
+      （I = −{Math.abs(far?.i ?? 0).toFixed(3)}，z = {n(far?.z ?? 0, 1)}）—北部與南部的殘差反向共變，是偶極結構，不是一團模糊的正相關。
     </Fragment>
   </EvidenceFigure>
 
@@ -330,15 +329,13 @@ const spaceConcept = spacePlate(
   </p>
 
   <p>
-    量測對象是第八章那個基準模型的殘差，不是 PM2.5 本身—
-    濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
+    量測對象是第八章那個基準模型的殘差，不是 PM2.5 本身—濃度有空間結構是人盡皆知的事，不算發現。要緊的是模型「解釋完」之後剩下的部分
     還會不會沿著地圖聚集：會，就表示它把 {(network.stations * network.months).toLocaleString("en-US")}{" "}
     筆站月當獨立樣本的推論是錯的。網路是 {network.stations} 站 × {network.months} 個月，
     {network.placed} 站有座標、{network.complete} 站每月都有值；
     {network.historical.length > 0 && (
       <>
-        其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊—
-        該站已停用而從清冊消失，位置改依審閱過的環境部歷史測站紀錄補上，
+        其中 {network.historical.join("、")} 的座標不是來自環境部現行測站清冊—該站已停用而從清冊消失，位置改依審閱過的環境部歷史測站紀錄補上，
         {/*
           The citation is the government's record, and the date is on the page.
 
@@ -367,14 +364,12 @@ const spaceConcept = spacePlate(
         {network.unplaced.join("、")}仍無任何官方來源可定位，照實排除；
       </>
     )}
-    虛無分布—「如果空間上其實沒有結構，這個統計量會長成什麼樣」—
-    一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
+    虛無分布—「如果空間上其實沒有結構，這個統計量會長成什麼樣」—一律在配適模型下模擬 {network.null_draws} 次（殘差滿足 X'e = 0，
     不可交換，所以不能用排列檢定），權重 {network.weights}。
   </p>
 
   <p>
-    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變—
-    這就是為什麼本章不發表單一的「空間自相關係數」：
+    Moran's I 的大小是「場 × 權重矩陣」的共同性質。按距離分帶算，符號自己會變—這就是為什麼本章不發表單一的「空間自相關係數」：
   </p>
 
   <h2 id="space-controls" data-space-field-question>哪一種分層真正移除了大部分相依？</h2>
@@ -446,8 +441,7 @@ const spaceConcept = spacePlate(
         但「大部分」不是全部：站均殘差場的 I 仍是
         +{n(spatial.station_mean_i.i as number, 3)}（z = {n(spatial.station_mean_i.z as number, 2)}，
         p = {n(spatial.station_mean_i.p as number, 3)}）。更要緊的是：
-        t 統計量通常報自合併式模型—也就是上圖最上面那一列—
-        而不是分層之後的那個版本。
+        t 統計量通常報自合併式模型—也就是上圖最上面那一列—而不是分層之後的那個版本。
       </p>
     </div>
   )}
@@ -594,8 +588,7 @@ const spaceConcept = spacePlate(
       </div>
 
       <p class="small">
-        每格為 MAE（μg/m³），月×站逐一預測後彙整；<strong>留一站是樂觀上界</strong>
-        —600 公尺外就有鄰站時，它量到的是近重複點之間的內插。
+        每格為 MAE（μg/m³），月×站逐一預測後彙整；<strong>留一站是樂觀上界</strong>—600 公尺外就有鄰站時，它量到的是近重複點之間的內插。
         {field.failed_folds > 0 && (
           <>
             {" "}緩衝把西部網路挖掉大半時 fold 會失敗，共 {n(field.failed_folds, 0)}

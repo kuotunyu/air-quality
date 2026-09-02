@@ -476,8 +476,7 @@ const detectionConcept = detectionPlate();
       每個事件的實際通過數都低於各自純靠機率的預期。
       這個方法在這些日曆窗口的噪音底線是 2.5–3.5 μg/m³，
       而待測的效應量是 0.5–1.6 μg/m³。<strong>噪音底線高於訊號。</strong>
-      真正的結論是：<strong>這批資料與這個方法，無法分辨這種大小的效應</strong>—
-      不是「這些事件沒有影響」。
+      真正的結論是：<strong>這批資料與這個方法，無法分辨這種大小的效應</strong>—不是「這些事件沒有影響」。
       非偵測不是「事件沒有發生」或「介入無效」的證明。
     </p>
     <p>
@@ -489,8 +488,7 @@ const detectionConcept = detectionPlate();
   </aside>
 
   <p data-detection-method-evidence>
-    這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」—
-    測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
+    這份資料裡有一個 <code>ND</code> 旗標，意思是「低於儀器偵測極限」—測不到，不代表沒有，只代表低於這台儀器能分辨的下限。
   </p>
 
   <p>
@@ -559,8 +557,7 @@ const detectionConcept = detectionPlate();
   <p>
     下面每一條帶狀圖是一個日曆窗口事件，所以是兩張，不是三張：
     空污法修正是制度轉變而不是有前後的視窗，它的檢定在本章最後一節，用的是分段迴歸。
-    <span class="k-pl">淡色的短線</span>是安慰劑—
-    同一個方法在未標記為該事件年份的對照窗口算出的差額。
+    <span class="k-pl">淡色的短線</span>是安慰劑—同一個方法在未標記為該事件年份的對照窗口算出的差額。
     <span class="k-real">亮色的點</span>是各測站的觀測－預測差額。
     兩張圖共用同一個刻度，零在正中間，所以雲的寬度可以直接比。
   </p>
@@ -616,8 +613,7 @@ const detectionConcept = detectionPlate();
 
   <div class="note caveat">
     <strong>安慰劑的均值幾乎從不是零，這件事本身就是重點。</strong>
-    COVID 那個日曆窗口的安慰劑均值是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)} μg/m³—
-    模型在五到七月系統性高估。所以看到某站「下降 {minus(Math.abs(urban[2].effect), 2)}」時，
+    COVID 那個日曆窗口的安慰劑均值是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)} μg/m³—模型在五到七月系統性高估。所以看到某站「下降 {minus(Math.abs(urban[2].effect), 2)}」時，
     真正該問的是：這個方法在未標記為該事件年份的對照窗口，平均也會給出多少？
     答案是 {n(windowed[0]?.median_placebo_mean ?? 0, 2)}。
   </div>
@@ -669,8 +665,7 @@ const detectionConcept = detectionPlate();
         <p>
           一條法規生效之後就一直生效，它給的是一次制度轉變，沒有前後可比的視窗。
           該改變的是下降的速率。所以空污法修正改用分段迴歸，
-          跑在<a href={href("trend")}>第一章</a>那條氣象正規化序列的逐月版本上—
-          那條線平滑（重抽樣把季節循環一起移除了，所以第一章只畫年度），
+          跑在<a href={href("trend")}>第一章</a>那條氣象正規化序列的逐月版本上—那條線平滑（重抽樣把季節循環一起移除了，所以第一章只畫年度），
           解析不出十週的封城，卻正好適合問一個多年的下降有沒有轉折。
         </p>
         <p class="small">

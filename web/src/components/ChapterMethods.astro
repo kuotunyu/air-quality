@@ -267,8 +267,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <p>
       基準的方法是：取 2010–2017 年的月平均、12 個解釋變數、
       Pearson 相關、逐步剔除的 OLS。這在當時是標準做法。
-      本專案把它實際配適出來，面板是 6,771 個站月、72 個測站—
-      這個數字是量出來的，不是引用來的。
+      本專案把它實際配適出來，面板是 6,771 個站月、72 個測站—這個數字是量出來的，不是引用來的。
     </p>
 
     <p>
@@ -279,29 +278,25 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p>
       先說結論：有些選擇無關痛癢，有些讓整個模型的解釋力高估了三分之一。
-      這些做法是整個世代的環境統計慣例，跟誰粗心無關—
-      同一批做法在那個時期的期刊論文裡到處都是。
+      這些做法是整個世代的環境統計慣例，跟誰粗心無關—同一批做法在那個時期的期刊論文裡到處都是。
     </p>
 
     <div class="note">
       <strong>兩邊必須跑在同一批列上。</strong>
-      有缺陷的那一版是實際配適出來的基準模型，不是描述—
-      它的係數、VIF 與共線性病理都完整保存在管線的基準模型產物裡。
+      有缺陷的那一版是實際配適出來的基準模型，不是描述—它的係數、VIF 與共線性病理都完整保存在管線的基準模型產物裡。
       沒有這一步，後面所有「修正之後結論不同」的宣稱都無從驗證。
     </div>
 
     <p>
       2010–2017 年逐時 PM2.5 的標準差是 {n(hourlySd)} μg/m³。
-      壓成「每站每月一個值」之後只剩 {n(monthlySd)} μg/m³—
-      變異保留了 {n(retained * 100, 1)}%。
+      壓成「每站每月一個值」之後只剩 {n(monthlySd)} μg/m³—變異保留了 {n(retained * 100, 1)}%。
       在月平均上配適的模型無論怎麼調，能解釋的上限就是這剩下的四成。
     </p>
 
     <p class="small">
       這裡要小心一件事，我們自己先弄錯過：如果再把各站併成單一的全台月序列，
       保留率會掉到 {n(pooledRetained * 100, 1)}%（標準差 {n(pooledSd)} μg/m³）。
-      那個數字曾經是本節的標題，但它不是這個基準做的事—
-      基準保留了測站維度（這段期間的站月聚合共有 7,269 筆，實際配適的面板是其中的 6,771 筆）。
+      那個數字曾經是本節的標題，但它不是這個基準做的事—基準保留了測站維度（這段期間的站月聚合共有 7,269 筆，實際配適的面板是其中的 6,771 筆）。
       兩者的差額幾乎剛好是測站之間的變異：
       逐時變異中，月份解釋 {n(pooledRetained * 100, 1)}%，「測站 × 月份」解釋 {n(retained * 100, 1)}%。
       把後面那 20 個百分點也算到「月平均」頭上，是把空間的損失記在時間帳上。
@@ -311,8 +306,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
       <strong>把話說準：日夜節律只是被丟掉的一小部分。</strong>
       日內振幅是 {n(diurnalPeak.mean - diurnalTrough.mean)} μg/m³，
       相對於 {n(hourlySd)} 的整體標準差並不大。
-      消失的大宗是逐日到綜觀尺度的變化—
-      境外傳輸的高濃度事件、鋒面過境、逆溫累積。
+      消失的大宗是逐日到綜觀尺度的變化—境外傳輸的高濃度事件、鋒面過境、逆溫累積。
       一個 40 μg/m³ 的污染日和一個 10 μg/m³ 的乾淨日落在同一個月，
       月平均只留下 25，兩者都不見了。
       日內節律容易說明、容易繪製，但它不是主要的損失來源，這裡不把它當成主要證據。
@@ -353,8 +347,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p>
       這個基準裡最顯著的變數是 PM10。
-      問題是 <strong>PM2.5 在定義上就是 PM10 的一部分</strong>—
-      PM10 是直徑 10 微米以下的顆粒，PM2.5 是 2.5 微米以下的，後者被前者包含。
+      問題是 <strong>PM2.5 在定義上就是 PM10 的一部分</strong>—PM10 是直徑 10 微米以下的顆粒，PM2.5 是 2.5 微米以下的，後者被前者包含。
       這等於把答案的一部分放進題目。
     </p>
 
@@ -399,8 +392,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <p>
       但把同一份資料按 30° 分組，最高的 {compass(sectorHigh?.sector as number)}
       是 {n(sectorHigh?.mean as number)} μg/m³，最低的
-      {" "}{compass(sectorLow?.sector as number)} 是 {n(sectorLow?.mean as number)} μg/m³—
-      相差 {n(windSummary.sector_mean_range)} μg/m³，
+      {" "}{compass(sectorLow?.sector as number)} 是 {n(sectorLow?.mean as number)} μg/m³—相差 {n(windSummary.sector_mean_range)} μg/m³，
       是整體平均的 {n(windSummary.sector_range_as_pct_of_mean, 0)}%。
       方向依賴一直都在，是線性相關係數看不見它。
     </p>
@@ -478,8 +470,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
 
     <p>
       第二個更根本：<strong>樣本夠大時，常態檢定必然顯著</strong>。
-      下表是用已知真相的合成資料做的—
-      一組真的來自常態分布，一組有輕微偏態。
+      下表是用已知真相的合成資料做的—一組真的來自常態分布，一組有輕微偏態。
     </p>
 
     <details>
@@ -633,8 +624,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
     <p>
       缺漏值常常被一句話處理掉：<strong>「以鄰近測站之資料代替」</strong>。
       沒有數量、沒有誤差估計、沒有敏感度分析，也沒有說哪一站借給了哪一站。
-      批評這句話很容易，所以這裡改成把它標上價格—
-      同樣的做法實作出來，跟另外三種並排跑在同一批資料上。
+      批評這句話很容易，所以這裡改成把它標上價格—同樣的做法實作出來，跟另外三種並排跑在同一批資料上。
     </p>
 
     <div class="note">
@@ -770,8 +760,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
         平均絕對誤差（μg/m³），依被隱藏的缺口長度分。做法是把
         {" "}{imputationEvidence.hidden.toLocaleString()} 筆真的存在的讀數藏起來，
         叫每個策略猜回來，再跟實際值比對。
-        隱藏的洞是成串的，長度抽自這批資料自己量到的缺口分布—
-        隨機遮蔽單一格會把每個洞都變成 1 小時，而那正是線性內插不可能失敗的情況。
+        隱藏的洞是成串的，長度抽自這批資料自己量到的缺口分布—隨機遮蔽單一格會把每個洞都變成 1 小時，而那正是線性內插不可能失敗的情況。
       </Fragment>
     </EvidenceFigure>
 
@@ -800,8 +789,7 @@ const dTicks = ticks(dDomain[0], dDomain[1], 4);
         <strong>兩件只有分桶才看得到的事。</strong>
         第一，在完全相同的單小時缺口上，內插的誤差是
         {" "}{n(GAP_SERIES[0].values[0] as number, 2)}、鄰站法是
-        {" "}{n(GAP_SERIES[2].values[0] as number, 2)}—
-        最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
+        {" "}{n(GAP_SERIES[2].values[0] as number, 2)}—最簡單的情況下差了 {n((GAP_SERIES[2].values[0] as number) / (GAP_SERIES[0].values[0] as number), 1)} 倍。
         從 30 公里外借一個值，比把前後兩小時連成一條直線還差。
       </p>
       <p>

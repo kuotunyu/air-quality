@@ -361,8 +361,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
     <Fragment slot="caption">
       均方根誤差（RMSE），越低越好。兩條基準線都是規則不是模型：
       <strong>persistence 說「下一小時就跟現在一樣」</strong>，
-      <strong>climatology 那條是平的</strong>—
-      它根本不看今天發生什麼事，所以期距對它毫無影響，
+      <strong>climatology 那條是平的</strong>—它根本不看今天發生什麼事，所以期距對它毫無影響，
       因此它是這張圖裡唯一固定不動的參考線。
     </Fragment>
   </EvidenceFigure>
@@ -875,8 +874,7 @@ const totalStations = horizons.reduce((most, h) => Math.max(most, h.stations), 0
         </p>
         <p>
           它在 {sarWins.map((h) => `${h.horizon}h`).join("、")} 會贏，但勝出的幅度為：
-          {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}
-          —到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
+          {sarWins.map((h) => `${h.horizon} 小時 ${n(h.margin * 100, 1)}%`).join("、")}—到 48 小時已經在雜訊層級，而那正是本章前面量到的同一件事：
           <strong>兩天後任何方法都退化成 climatology</strong>。
         </p>
       </div>

@@ -472,12 +472,10 @@ const trendConcept = trendPlate();
 
   <p>
     這個比例還可以用完全不同的方式再問一次。上面是全國面板的水準差；
-    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「氣象標準化斜率差額比例」的中位數—
-    那個答案是 {n(dw.median_weather_share * 100, 1)}%，
+    另一種是對 {dw.n_significant} 個測站各自估斜率，再取「氣象標準化斜率差額比例」的中位數—那個答案是 {n(dw.median_weather_share * 100, 1)}%，
     與 {n(dwShare, 1)}% 相差不到 1.5 個百分點。
     兩種聚合方式互相獨立，一致比任何單一數字更值得相信。
-    跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%—
-    {dw.n_significant} 個獨立配適的模型落在同一個窄帶裡，
+    跨測站的 p10–p90 也只有 {n(dw.weather_share_p10 * 100, 0)}–{n(dw.weather_share_p90 * 100, 0)}%—{dw.n_significant} 個獨立配適的模型落在同一個窄帶裡，
     是因為整座島共用同一套季風通風機制。
   </p>
 

@@ -1370,7 +1370,7 @@ def load_data_provenance_contract() -> DataProvenanceContract:
         ),
         "L2": (
             f"{hourly_observations / 1e8:.2f} 億筆完整逐時觀測，含每一筆的品管旗標。"
-            "不發布— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
+            "不發布—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
         ),
     }
     return DataProvenanceContract(descriptions=descriptions, downloads=tuple(downloads))
@@ -5020,7 +5020,7 @@ def _run_preflight() -> None:
         "L1": "Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。",
         "L2": (
             "3.40 億筆完整逐時觀測，含每一筆的品管旗標。"
-            "不發布— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
+            "不發布—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。"
         ),
     }
     data_expected_downloads = tuple(
@@ -5043,7 +5043,7 @@ def _run_preflight() -> None:
 <dt data-data-layer="L1"><span data-data-layer-term>L1 站-日</span><span data-data-layer-use>分析者 · 逐日查詢與桌面分析</span></dt>
 <dd data-data-layer-description="L1">Pages 目前發布 PM10、PM2.5 的 Parquet，共 2.03 MB；其餘測項可由本機管線產生。</dd>
 <dt data-data-layer="L2"><span data-data-layer-term>L2 站-時</span><span data-data-layer-use>重現者 · 逐時稽核與管線重建</span></dt>
-<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。</dd>
+<dd data-data-layer-description="L2">3.40 億筆完整逐時觀測，含每一筆的品管旗標。<strong>不發布</strong>—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。</dd>
 </dl>
 <h2>下載</h2>
 <a href="/data/meta.json" download>資料與產製資訊</a>

@@ -3022,7 +3022,7 @@ function loadDataProvenanceContract() {
   const layers = [
     ["L0", "L0 站-月", "閱讀者 · 快速查值與網站圖表", "每個測項一個 JSON，含月均值與該月的有效天數。網站直接讀這一層。"],
     ["L1", "L1 站-日", "分析者 · 逐日查詢與桌面分析", `Pages 目前發布 ${publishedL1Codes.join("、")} 的 Parquet，共 ${dataMegabytes(l1Total)}；其餘測項可由本機管線產生。`],
-    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布— 只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。`],
+    ["L2", "L2 站-時", "重現者 · 逐時稽核與管線重建", `${(meta.hourly_observations / 1e8).toFixed(2)} 億筆完整逐時觀測，含每一筆的品管旗標。不發布—只發衍生產物與完整管線，跑一次匯入與建置即可獨立重建。`],
   ].map((row) => Object.freeze(row));
   return Object.freeze({ layers: Object.freeze(layers), downloads: Object.freeze(downloads) });
 }
