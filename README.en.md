@@ -16,7 +16,7 @@
 ### Taiwan's PM2.5 fell 60% between 2008 and 2025; the meteorologically standardised decline is 43% smaller than the observed decline.
 
 That 43% is a contrast between two estimated declines, not causal proof that weather produced 43% of the change; the remainder is not an emissions or policy estimate.
-Measured by standardising meteorological conditions — 61 stations, one set of rows, two lines.
+Measured by standardising meteorological conditions: 61 stations, one set of rows, two lines.
 Asked again by a completely different aggregation (the median of per-station slope ratios), the answer is 42.2%.
 The published M4 does not yet use ERA5 BLH, and long-range transport remains a limitation.
 
@@ -122,19 +122,19 @@ To evaluate the impact of conventional modeling assumptions, baseline models are
 1. **Using PM10 to predict PM2.5**: PM2.5 is physically a subset of PM10, so this is definitional overlap rather than an empirical finding. Measured cost: 32.1% of the leaking model's $R^2$ (0.524 → 0.772).
 2. **Treating wind direction ($0^\circ$–$360^\circ$) as a linear variable**: $0^\circ$ and $359^\circ$ are physically adjacent but numerically $359$ apart. Under OLS, sin/cos encoding yields 2.55× the $R^2$ of the raw bearing.
 
-And two claimed defects were overturned by the full data and are documented as such — see [docs/working-rules.md](docs/working-rules.md).
+And two claimed defects were overturned by the full data and are documented as such (see [docs/working-rules.md](docs/working-rules.md)).
 
 ---
 
 ## Core Deliverables
 
-| Deliverable | Description |
+| Core Deliverables | Description |
 |---|---|
-| **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
-| **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
+| <nobr>**Open-Source Dataset**</nobr> | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
+| <nobr>**Reproducible Science**</nobr> | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
 | **Interactive Dashboard** | [Interactive evidence platform](https://kuotunyu.github.io/air-quality/) covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
-| **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
-| **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
+| **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast): PM2.5 one to 48 hours ahead, against two baselines. |
+| **Python Toolchain** | `twair`: An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
 ---
 
@@ -145,14 +145,14 @@ Copernicus satellite inputs are governed separately by the
 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
 See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution boundaries.
 
-| Source Authority & Product | Measured Content | Spatial & Temporal Span | Access Status |
+| Data Source & Agency | Measured Content | <nobr>Temporal Span</nobr> | Access Status |
 |---|---|---|---|
-| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | all 44 years held; every result here comes from this |
-| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | in use (station register, freshness check) |
-| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | not yet acquired |
-| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | ERA5 Boundary Layer Height (BLH) | 10m wind, 2m temperature/dewpoint, surface pressure | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
+| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | <nobr>1982–2025</nobr> | all 44 years held; every result here comes from this |
+| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | <nobr>Live Updates</nobr> | in use (station register, freshness check) |
+| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | <nobr>Recent Records</nobr> | not yet acquired |
+| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | ERA5 Boundary Layer Height (BLH) | <nobr>1940–Present</nobr> | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | <nobr>2018–Present</nobr> | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | <nobr>2000–Present</nobr> | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
 ### Incremental Predictive Value of Satellite & ERA5 Features
 

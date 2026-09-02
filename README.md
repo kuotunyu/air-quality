@@ -16,7 +16,7 @@
 ### 台灣的 PM2.5 在 2008–2025 年間下降了 60%；氣象標準化後的降幅比觀測值少 43%。
 
 這個 43% 是兩條序列下降幅度的差額比例，不是「天氣造成 43%」的因果證明；剩餘也不是排放或政策貢獻估計。
-這是把氣象條件標準化之後量出的對比——61 個測站、同一批資料、兩條線。
+這是把氣象條件標準化之後量出的對比：61 個測站、同一批資料、兩條線。
 用另一種完全不同的聚合方式（逐站斜率比值的中位數）再問一次，答案是 42.2%。
 已發布的 M4 尚未使用 ERA5 BLH，長程傳輸也仍是限制。
 
@@ -122,19 +122,19 @@ flowchart TD
 1. **用 PM10 去預測 PM2.5**：PM2.5 在物理定義上即為 PM10 的子集，屬於定義重疊而非實證因果。實測代價：含 PM10 的模型有 32.1% 的 R² 來自這個重疊（0.524 → 0.772）。
 2. **把風向（0–360°）當成線性連續變數**：0° 與 359° 在物理方位上相鄰，數值上卻相差 359。在 OLS 迴歸下，sin/cos 週期編碼的 R² 是原始方位角的 2.55 倍。
 
-另外有兩項原先列為缺陷、卻被全量資料否證的說法，亦如實完整記錄——詳見 [docs/working-rules.md](docs/working-rules.md)。
+另外有兩項原先列為缺陷、卻被全量資料否證的說法，亦如實完整記錄（詳見 [docs/working-rules.md](docs/working-rules.md)）。
 
 ---
 
 ## 核心產出
 
-| 項目 | 內容說明 |
+| 核心產出項目 | 內容說明 |
 |---|---|
-| **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層已公開為 [資料集（L0／L1）](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
-| **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
+| <nobr>**開源資料集**</nobr> | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層已公開為 [資料集（L0／L1）](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
+| <nobr>**可重現研究**</nobr> | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
 | **互動網站** | [線上探索平台](https://kuotunyu.github.io/air-quality/)涵蓋趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
-| **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
-| **Python 套件** | `twair` — 資料管線與分析工具 |
+| **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast)：PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
+| **Python 套件** | `twair`：資料管線與分析工具 |
 
 ---
 
@@ -144,14 +144,14 @@ flowchart TD
 Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)。
 各來源的授權與再散布邊界見 [docs/legal.md](docs/legal.md)。
 
-| 來源機構與資料集 | 觀測內容 | 涵蓋期間 | 取得狀態 |
+| 資料來源與機構 | 觀測內容 | <nobr>涵蓋期間</nobr> | 取得狀態 |
 |---|---|---|---|
-| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–2025 | 全部 44 年已取得，本專案所有結果都出自這裡 |
-| [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時 | 使用中（測站登錄、資料新鮮度檢查） |
-| [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 | 尚未取得 |
-| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | 1940– | 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
+| [環境部空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | <nobr>1982–2025</nobr> | 全部 44 年已取得，本專案所有結果都出自這裡 |
+| [環境部環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | <nobr>即時更新</nobr> | 使用中（測站登錄、資料新鮮度檢查） |
+| [中央氣象署開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | <nobr>近期觀測</nobr> | 尚未取得 |
+| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | 邊界層高度、10m 風、2m 溫度／露點、地面氣壓 | <nobr>1940–至今</nobr> | 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | <nobr>2018–至今</nobr> | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | <nobr>2000–至今</nobr> | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
 
 ### 衛星遙測與氣象再分析特徵之增量預測價值
 
