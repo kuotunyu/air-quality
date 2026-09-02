@@ -24,7 +24,7 @@ The published M4 does not yet use ERA5 BLH, and long-range transport remains a l
 
 ## System Architecture & Pipeline
 
-### 1. 340M Observations Reanalysis & Scientific Modeling Pipeline
+### 340M Observations Reanalysis & Scientific Modeling Pipeline
 
 ```mermaid
 %%{init: {'themeVariables': {'fontSize': '18px'}}}%%
@@ -61,7 +61,7 @@ flowchart TD
     style DeliveryStage fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
 ```
 
-### 2. Data Governance & Zero-Drift CI Architecture
+### Data Governance & Zero-Drift CI Architecture
 
 ```mermaid
 %%{init: {'themeVariables': {'fontSize': '18px'}}}%%
@@ -262,7 +262,7 @@ The `probe sources` utility parses the live airtw annual catalogue, resolves cur
 
 ---
 
-## Local Environment
+## Run Locally
 
 To run the interactive web interface locally:
 ```bash
@@ -280,10 +280,3 @@ Live release: **<https://kuotunyu.github.io/air-quality/>**
 
 - Code: [MIT License](LICENSE)
 - Datasets & Analytical Outputs: [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE-DATA). Source attribution belongs to the Ministry of Environment (Taiwan). County boundaries come from the National Land Surveying and Mapping Center under the Open Government Data License v1.0.
-
----
-
-## Citation
-
-A personal side project — no DOI, no formal citation format. Link to the repository
-if you need to reference it, and credit the data to Taiwan's Ministry of Environment.

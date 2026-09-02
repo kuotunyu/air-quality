@@ -24,7 +24,7 @@
 
 ## 系統架構與資料管線
 
-### 1. 3.4 億筆觀測再分析與科學建模 Pipeline
+### 3.4 億筆觀測再分析與科學建模 Pipeline
 
 ```mermaid
 %%{init: {'themeVariables': {'fontSize': '18px'}}}%%
@@ -61,7 +61,7 @@ flowchart TD
     style DeliveryStage fill:#f4fbf7,stroke:#0ca678,stroke-width:2px,color:#0ca678,stroke-dasharray: 4 4
 ```
 
-### 2. 資料治理架構與零漂移 CI 驗證防線
+### 資料治理架構與零漂移 CI 驗證防線
 
 ```mermaid
 %%{init: {'themeVariables': {'fontSize': '18px'}}}%%
@@ -256,7 +256,7 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 
 ---
 
-## Local 端運行
+## 執行Local 端
 
 ```bash
 uv run twair export web                 # 從 Parquet 產生網站資料層
@@ -274,10 +274,3 @@ Astro 靜態架構，所有圖表於建置期直接編譯為原生向量 SVG，�
 - Code：[MIT](LICENSE)
 - 資料集與分析產出：[CC BY 4.0](LICENSE-DATA)，原始資料出處為中華民國環境部
   （地圖的縣市界線來自內政部國土測繪中心，依政府資料開放授權條款第 1 版）
-
----
-
-## 引用
-
-這是個人的 side project，沒有 DOI 也沒有正式引用格式。
-要引用的話，連結到這個 repo 就夠了；資料來源請一併註明「中華民國環境部」。
