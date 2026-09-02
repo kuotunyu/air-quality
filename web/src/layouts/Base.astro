@@ -472,6 +472,11 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
           top: 0;
           max-height: 100vh;
           overflow-y: auto;
+          /* 2026-09-02 — `overflow-y: auto` alone makes the other axis `auto`
+             too, and the owner's Chrome at 110% drew a horizontal scrollbar
+             under the rail for the progress bar's 1px overhang. The rail never
+             has anything to scroll sideways to. */
+          overflow-x: hidden;
         }
       }
 
@@ -558,7 +563,9 @@ const iconDark = icon("#232527", ["#267bbe", "#5ea28b", "#dea07b", "#f6b8e3"]);
 
       .progress {
         position: absolute;
-        right: -1px;
+        /* 2026-09-02 — was -1px, riding the rail's border; inside a scroller
+           that 1px is scrollable overflow. See the rail's `overflow-x`. */
+        right: 0;
         top: 0;
         width: 2px;
         height: 0;
