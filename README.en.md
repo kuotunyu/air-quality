@@ -158,10 +158,10 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 
 > **Methodological Boundary**: This evaluation measures only the **incremental predictive value** of external features on held-out splits. It is **not** causal attribution, satellite PM2.5 calibration, sensor fusion, or an M4 replacement. Calibration and fusion remain deferred.
 
-| Data Stream | Cohort Scale | Held-out Evaluation Splits | Median Predictive Gain | Methodological Boundary |
+| Data Stream | Cohort Scale | Held-out Improvement Rate | Median Predictive Gain<br/>(ΔRMSE · ΔR²) | Methodological Boundary |
 |---|---|---|---|---|
-| **Satellite Remote Sensing**<br/>(S5P NO₂/SO₂ + MAIAC AOD) | 851 common complete station-months<br/>(76 stations · 12 months) | - Held-quarter: 3/4 folds improved<br/>- Held-station: 9/10 folds improved<br/>- Joint transfer: 37/40 folds improved<br/>(Combined all-satellite: 49/54 folds improved) | ΔRMSE: −0.588 µg/m³<br/>ΔR²: +0.147 | Not causal, not calibration, not fusion; calibration/fusion deferred |
-| **ERA5 Reanalysis**<br/>(Boundary Layer Height BLH + Surface Met) | 674,520 station-hour rows<br/>(77 stations · zero source nulls) | - 74-station cohort (632,760 rows): 205 of 222 station-folds improved<br/>- Same-station / held-out station cross-year: 63/74, 70/74 stations improved | ΔRMSE: −0.758 µg/m³<br/>ΔR²: +0.249 | Has not been added to published M4; station met used for normalisation |
+| **Satellite Remote Sensing**<br/>(S5P + MAIAC AOD) | 851 station-months<br/>(76 stations · 12 months) | - Held-quarter: 3/4 folds improved<br/>- Held-station: 9/10 folds improved<br/>- Joint transfer: 37/40 folds improved<br/>(Combined: 49/54 folds improved) | ΔRMSE: −0.588<br/>ΔR²: +0.147 | Predictive only, not calibration<br/>(Calibration/fusion deferred) |
+| **ERA5 Reanalysis**<br/>(BLH + Surface Met) | 674,520 station-hours<br/>(77 stations · 6 variables) | - 74-station cohort: 205/222 folds<br/>- Cross-year same-station: 63/74<br/>- Cross-year held-station: 70/74 | ΔRMSE: −0.758<br/>ΔR²: +0.249 | Has not been added to M4<br/>(Station met used for normalisation) |
 
 <!--
 The 2025 M8 association and held-out predictive-value diagnostics delivered use
