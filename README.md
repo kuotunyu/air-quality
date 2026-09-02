@@ -153,13 +153,16 @@ Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
 
-<details>
-<summary><b>衛星與 ERA5 的 held-out predictive value —— 逐 fold 數字與範圍限制</b>（點開展開）<br>
-兩者都在 2025 年內的留出評估上顯示增量預測資訊；<b>都不是</b>因果歸因、衛星 PM2.5 校正、
-融合場，也不是 M4 的替代。校正與融合仍然延後。</summary>
+### 衛星遙測與氣象再分析特徵之增量預測價值
 
-<br>
+> **方法學邊界宣告**：本階段評估僅量測機器學習模型於留出資料集（Held-out Sets）之**增量預測價值（Predictive Value）**，非因果歸因推論、非感測器空間融合（Sensor Fusion），亦非直接以衛星反演地表 PM2.5 濃度。
 
+| 資訊來源 | 驗證樣本規模 | 跨站／跨期留出檢驗 (Held-out Evaluation) | 預測效益中位數 (Median Gain) | 邊界與限制 |
+|---|---|---|---|---|
+| **衛星遙測**<br/>(S5P NO₂/SO₂ + MAIAC AOD) | 851 筆共同完整站月<br/>(76 測站 · 12 個月份) | - 留出季度 (Held-quarter): **3／4** fold 同時改善<br/>- 留出測站 (Held-station): **9／10** fold 同時改善<br/>- 聯合轉移 (Joint transfer): **37／40** fold 同時改善<br/>(全特徵綜合改善率：**49／54** fold) | ΔRMSE: **−0.588 µg/m³**<br/>ΔR²: **+0.147** | 非因果推論、非衛星 PM2.5 校正；校正與融合仍延後 |
+| **ERA5 再分析**<br/>(邊界層高度 BLH + 地表氣象) | 674,520 筆 station-hour<br/>(77 測站 · 6 變數皆為 0 null) | - 74 站共同樣本 (632,760 筆)：**205／222** station-fold 同時改善<br/>- 跨年同站 / 跨年留站：**63／74**、**70／74** 站同時改善 | ΔRMSE: **−0.758 µg/m³**<br/>ΔR²: **+0.249** | 尚未納入已發布 M4；正規化仍以站內觀測為準 |
+
+<!--
 2025 M8 關聯與 held-out predictive-value 診斷已交付。predictive-value 實驗使用
 851 筆共同完整站月、76 站、12 個月份；all-satellite 相對只含月份週期與測站地理的
 baseline，在 held-quarter、held-station、joint transfer 分別有 3／4、9／10、37／40 個
@@ -199,9 +202,6 @@ paired rows。combined 相對站內氣象在跨年同站、2025 同年留站、�
 predictive generalisation；整組結果不是因果歸因、校正或融合。ERA5 尚未納入已發布的 M4；
 網站上的氣象正規化仍只使用站內觀測。
 
-</details>
-
-<!--
 目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
 與後續方向見下表；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
 
@@ -256,7 +256,7 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 
 ---
 
-## 網站本地啟動
+## Local 端運行
 
 ```bash
 uv run twair export web                 # 從 Parquet 產生網站資料層
@@ -271,8 +271,8 @@ Astro 靜態架構，所有圖表於建置期直接編譯為原生向量 SVG，�
 
 ## 授權
 
-- 程式碼：[MIT](LICENSE)
-- 資料衍生物：[CC BY 4.0](LICENSE-DATA)，原始資料出處為中華民國環境部
+- Code：[MIT](LICENSE)
+- 資料集與分析產出：[CC BY 4.0](LICENSE-DATA)，原始資料出處為中華民國環境部
   （地圖的縣市界線來自內政部國土測繪中心，依政府資料開放授權條款第 1 版）
 
 ---

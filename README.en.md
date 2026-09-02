@@ -154,14 +154,16 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
-<details>
-<summary><b>Held-out predictive value of satellite and ERA5 features — per-fold counts and their limits</b> (click to expand)<br>
-Both show incremental predictive information under held-out evaluation within 2025. Neither is
-causal attribution, satellite PM2.5 calibration, a fusion field, or a replacement for M4.
-Calibration and fusion remain deferred.</summary>
+### Incremental Predictive Value of Satellite & ERA5 Features
 
-<br>
+> **Methodological Boundary**: This evaluation measures only the **incremental predictive value** of external features on held-out splits. It is **not** causal attribution, satellite PM2.5 calibration, sensor fusion, or an M4 replacement. Calibration and fusion remain deferred.
 
+| Data Stream | Cohort Scale | Held-out Evaluation Splits | Median Predictive Gain | Methodological Boundary |
+|---|---|---|---|---|
+| **Satellite Remote Sensing**<br/>(S5P NO₂/SO₂ + MAIAC AOD) | 851 common complete station-months<br/>(76 stations · 12 months) | - Held-quarter: **3/4** folds improved<br/>- Held-station: **9/10** folds improved<br/>- Joint transfer: **37/40** folds improved<br/>(Combined all-satellite: **49/54** folds improved) | ΔRMSE: **−0.588 µg/m³**<br/>ΔR²: **+0.147** | Not causal, not calibration, not fusion; calibration/fusion deferred |
+| **ERA5 Reanalysis**<br/>(Boundary Layer Height BLH + Surface Met) | 674,520 station-hour rows<br/>(77 stations · zero source nulls) | - 74-station cohort (632,760 rows): **205 of 222** station-folds improved<br/>- Same-station / held-out station cross-year: **63/74**, **70/74** stations improved | ΔRMSE: **−0.758 µg/m³**<br/>ΔR²: **+0.249** | Has not been added to published M4; station met used for normalisation |
+
+<!--
 The 2025 M8 association and held-out predictive-value diagnostics delivered use
 851 common complete station-months, 76 stations, and 12 months. Relative to a baseline containing
 calendar seasonality and station geography, the combined all-satellite feature set improved both RMSE and R² in
@@ -206,9 +208,6 @@ Contemporaneous spatial transfer measures predictive generalisation, not future-
 These results are not causal attribution, calibration, or fusion. ERA5 has not been added to the published M4 model;
 the released meteorological normalisation still uses station measurements.
 
-</details>
-
-<!--
 For the measured state of the store and outputs, run `uv run twair status`.
 The table below owns the public release boundary and next directions; durable
 evidence and decisions live in the relevant public [technical docs](docs/).
@@ -263,7 +262,7 @@ The `probe sources` utility parses the live airtw annual catalogue, resolves cur
 
 ---
 
-## Web Dashboard
+## Local Environment
 
 To run the interactive web interface locally:
 ```bash
@@ -279,8 +278,8 @@ Live release: **<https://kuotunyu.github.io/air-quality/>**
 
 ## Licensing
 
-- **Software Source Code**: [MIT License](LICENSE)
-- **Data Derivatives**: [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE-DATA). Source attribution belongs to the Ministry of Environment (Taiwan). County boundaries come from the National Land Surveying and Mapping Center under the Open Government Data License v1.0.
+- Code: [MIT License](LICENSE)
+- Datasets & Analytical Outputs: [Creative Commons Attribution 4.0 International (CC BY 4.0)](LICENSE-DATA). Source attribution belongs to the Ministry of Environment (Taiwan). County boundaries come from the National Land Surveying and Mapping Center under the Open Government Data License v1.0.
 
 ---
 
