@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![DuckDB-WASM](https://img.shields.io/badge/DuckDB--WASM-In--Browser-FFF000?logo=duckdb&logoColor=black)
 ![Astro](https://img.shields.io/badge/Astro-Static%20SVG-BC52EE?logo=astro&logoColor=white)
-![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Datasets%20%26%20Space-FFD21E?logo=huggingface&logoColor=black)
+![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Datasets-FFD21E?logo=huggingface&logoColor=black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > Every hourly observation published in MoENV's 1982–2025 annual archives:
@@ -41,7 +41,7 @@ flowchart TD
 
     subgraph DeliveryStage ["Phase 3: Multi-Target Delivery & Accessible Exploration"]
         direction LR
-        M8 --> WebLayer[("L0/L1 Lightweight Storage<br/>(Monthly L0 · Daily L1 Parquet)")] --> Site(["Astro Static Science Atlas<br/>(Build-time SVG · Zero JS readable)"]) & WASM["DuckDB-WASM Engine<br/>(In-browser client-side SQL)"] & HF(["Hugging Face Releases<br/>(L0/L1 Dataset · 48h Forecast Space)"])
+        M8 --> WebLayer[("L0/L1 Lightweight Storage<br/>(Monthly L0 · Daily L1 Parquet)")] --> Site(["Astro Static Science Atlas<br/>(Build-time SVG · Zero JS readable)"]) & WASM["DuckDB-WASM Engine<br/>(In-browser client-side SQL)"] & HF(["Hugging Face Releases<br/>(L0/L1 Dataset)"])
     end
 
     IngestStage --> ModelStage --> DeliveryStage
@@ -133,7 +133,6 @@ And two claimed defects were overturned by the full data and are documented as s
 | <nobr>**Open-Source Dataset**</nobr> | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Dataset (L0/L1)](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
 | <nobr>**Reproducible Science**</nobr> | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
 | **Interactive Dashboard** | [Interactive evidence platform](https://kuotunyu.github.io/air-quality/) covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
-| **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast): PM2.5 one to 48 hours ahead, against two baselines. |
 | **Python Toolchain** | `twair`: An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
 ---

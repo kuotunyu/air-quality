@@ -5818,7 +5818,7 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
       ],
       "README.md": [
         {
-          claim: { start: "| **互動網站**", end: "| **預測 demo**" },
+          claim: { start: "| **互動網站**", end: "| **Python 套件**" },
           description: "dashboard M7 observed high-value wind boundary",
           patterns: [
             /高值時段/u,
@@ -5846,7 +5846,7 @@ function repositoryClaimBoundaryProblems(surfaceTextOverrides = new Map()) {
       ],
       "README.en.md": [
         {
-          claim: { start: "| **Interactive Dashboard**", end: "| **Forecast Demo**" },
+          claim: { start: "| **Interactive Dashboard**", end: "| **Python Toolchain**" },
           description: "dashboard M7 observed high-value wind boundary",
           patterns: [
             ...ENGLISH_OBSERVED_WIND_PATTERNS,

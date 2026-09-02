@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![DuckDB-WASM](https://img.shields.io/badge/DuckDB--WASM-In--Browser-FFF000?logo=duckdb&logoColor=black)
 ![Astro](https://img.shields.io/badge/Astro-Static%20SVG-BC52EE?logo=astro&logoColor=white)
-![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Datasets%20%26%20Space-FFD21E?logo=huggingface&logoColor=black)
+![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Datasets-FFD21E?logo=huggingface&logoColor=black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > 1982–2025 年環境部年度檔裡的全台逐時原始觀測：
@@ -41,7 +41,7 @@ flowchart TD
 
     subgraph DeliveryStage ["階段三：多端交付與無障礙科學探索 (Web & Deliverables)"]
         direction LR
-        M8 --> WebLayer[("L0/L1 輕量衍生資料層<br/>(站月 L0 · 站日 L1 Parquet)")] --> Site(["Astro 靜態科學圖集<br/>(純 SVG 建置 · 零 JS 可讀)"]) & WASM["DuckDB-WASM 引擎<br/>(瀏覽器端直接跑 SQL)"] & HF(["Hugging Face 交付<br/>(L0/L1 資料集 · 48h 預測 Space)"])
+        M8 --> WebLayer[("L0/L1 輕量衍生資料層<br/>(站月 L0 · 站日 L1 Parquet)")] --> Site(["Astro 靜態科學圖集<br/>(純 SVG 建置 · 零 JS 可讀)"]) & WASM["DuckDB-WASM 引擎<br/>(瀏覽器端直接跑 SQL)"] & HF(["Hugging Face 交付<br/>(L0/L1 資料集)"])
     end
 
     IngestStage --> ModelStage --> DeliveryStage
@@ -133,7 +133,6 @@ flowchart TD
 | <nobr>**開源資料集**</nobr> | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層已公開為 [資料集（L0／L1）](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
 | <nobr>**可重現研究**</nobr> | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
 | **互動網站** | [線上探索平台](https://kuotunyu.github.io/air-quality/)涵蓋趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
-| **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast)：PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
 | **Python 套件** | `twair`：資料管線與分析工具 |
 
 ---
