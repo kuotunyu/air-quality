@@ -105,24 +105,24 @@ flowchart TD
 
 ## Research Overview & Objectives
 
-This study conducts an open, quality-controlled reanalysis of **44 years** (1982–2025) of Taiwanese air quality monitoring, consolidating **340,371,384 hourly observations** across 82 stations. The investigation centers on three scientific and engineering objectives:
+This study conducts an open, quality-controlled reanalysis of 44 years (1982–2025) of Taiwanese air quality monitoring, consolidating 340,371,384 hourly observations across 82 stations. The investigation centers on three scientific and engineering objectives:
 
 1. **Multi-Era Historical Observation Standardization**: Ministry archives historically span four container formats, two date orderings, and evolving quality-flag taxonomies. This project resolves them into a unified, immutable canonical store with full row-level provenance.
-2. **Empirical Benchmarking of Methodological Costs**: Common conventions—such as monthly aggregation, stepwise OLS, and predicting PM2.5 with PM10—are benchmarked against corrected alternatives on the **identical observation cohort**, quantifying the exact statistical penalty of each modeling choice.
+2. **Empirical Benchmarking of Methodological Costs**: Common conventions—such as monthly aggregation, stepwise OLS, and predicting PM2.5 with PM10—are benchmarked against corrected alternatives on the identical observation cohort, quantifying the exact statistical penalty of each modeling choice.
 3. **Client-Side Reproducible Analytical Platform**: Incorporates in-browser SQL execution via DuckDB-WASM, enabling direct client-side verification of all published metrics without external database dependencies.
 
 ### Governing Data Principles
 
-**Measure and publish data quality; never silently repair it.** Invalid readings are flagged, not deleted. Out-of-range values keep their number so they stay inspectable. Aggregates below a coverage threshold return **null**, never a biased mean. Every gap on every chart reflects real missingness.
+Measure and publish data quality; never silently repair it. Invalid readings are flagged, not deleted. Out-of-range values keep their number so they stay inspectable. Aggregates below a coverage threshold return null, never a biased mean. Every gap on every chart reflects real missingness.
 
-### The comparison is against a method, not against anyone
+### Empirical Baseline Models & Methodological Cost Quantification
 
-The flawed arm is not a description: it is an empirical model actually fitted here by `analysis/baseline.py`. Both arms run on the identical set of observations, ensuring every methodological cost is rigorously quantified:
+To evaluate the impact of conventional modeling assumptions, baseline models are empirically fitted via `analysis/baseline.py` on the identical observation cohort, quantifying the statistical costs of common choices:
 
-1. **Using PM10 to predict PM2.5.** PM2.5 is physically a subset of PM10, so this is definitional overlap rather than an empirical finding. Measured cost: **32.1% of the leaking model's $R^2$** (0.524 → 0.772).
-2. **Treating wind direction ($0^\circ$–$360^\circ$) as a linear variable.** $0^\circ$ and $359^\circ$ are physically adjacent but numerically $359$ apart. Under OLS, sin/cos encoding yields **2.55×** the $R^2$ of the raw bearing.
+1. **Using PM10 to predict PM2.5**: PM2.5 is physically a subset of PM10, so this is definitional overlap rather than an empirical finding. Measured cost: 32.1% of the leaking model's $R^2$ (0.524 → 0.772).
+2. **Treating wind direction ($0^\circ$–$360^\circ$) as a linear variable**: $0^\circ$ and $359^\circ$ are physically adjacent but numerically $359$ apart. Under OLS, sin/cos encoding yields 2.55× the $R^2$ of the raw bearing.
 
-And two claimed defects were **overturned by the full data** and are documented as such — see [docs/working-rules.md](docs/working-rules.md).
+And two claimed defects were overturned by the full data and are documented as such — see [docs/working-rules.md](docs/working-rules.md).
 
 ---
 
@@ -147,10 +147,10 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 
 | Source Authority & Product | Measured Content | Spatial & Temporal Span | Access Status |
 |---|---|---|---|
-| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | **all 44 years held**; every result here comes from this |
-| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | **in use** (station register, freshness check) |
-| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | **not yet acquired** |
-| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
+| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | all 44 years held; every result here comes from this |
+| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | in use (station register, freshness check) |
+| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | not yet acquired |
+| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | ERA5 Boundary Layer Height (BLH) | 10m wind, 2m temperature/dewpoint, surface pressure | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
 | [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
 | [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
@@ -160,8 +160,8 @@ See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution 
 
 | Data Stream | Cohort Scale | Held-out Evaluation Splits | Median Predictive Gain | Methodological Boundary |
 |---|---|---|---|---|
-| **Satellite Remote Sensing**<br/>(S5P NO₂/SO₂ + MAIAC AOD) | 851 common complete station-months<br/>(76 stations · 12 months) | - Held-quarter: **3/4** folds improved<br/>- Held-station: **9/10** folds improved<br/>- Joint transfer: **37/40** folds improved<br/>(Combined all-satellite: **49/54** folds improved) | ΔRMSE: **−0.588 µg/m³**<br/>ΔR²: **+0.147** | Not causal, not calibration, not fusion; calibration/fusion deferred |
-| **ERA5 Reanalysis**<br/>(Boundary Layer Height BLH + Surface Met) | 674,520 station-hour rows<br/>(77 stations · zero source nulls) | - 74-station cohort (632,760 rows): **205 of 222** station-folds improved<br/>- Same-station / held-out station cross-year: **63/74**, **70/74** stations improved | ΔRMSE: **−0.758 µg/m³**<br/>ΔR²: **+0.249** | Has not been added to published M4; station met used for normalisation |
+| **Satellite Remote Sensing**<br/>(S5P NO₂/SO₂ + MAIAC AOD) | 851 common complete station-months<br/>(76 stations · 12 months) | - Held-quarter: 3/4 folds improved<br/>- Held-station: 9/10 folds improved<br/>- Joint transfer: 37/40 folds improved<br/>(Combined all-satellite: 49/54 folds improved) | ΔRMSE: −0.588 µg/m³<br/>ΔR²: +0.147 | Not causal, not calibration, not fusion; calibration/fusion deferred |
+| **ERA5 Reanalysis**<br/>(Boundary Layer Height BLH + Surface Met) | 674,520 station-hour rows<br/>(77 stations · zero source nulls) | - 74-station cohort (632,760 rows): 205 of 222 station-folds improved<br/>- Same-station / held-out station cross-year: 63/74, 70/74 stations improved | ΔRMSE: −0.758 µg/m³<br/>ΔR²: +0.249 | Has not been added to published M4; station met used for normalisation |
 
 <!--
 The 2025 M8 association and held-out predictive-value diagnostics delivered use
@@ -232,7 +232,7 @@ live in [docs/data-sources.md](docs/data-sources.md) and
 
 ---
 
-## Local Development Guide
+## Run Locally
 
 ### Python Data Pipeline (CLI)
 
@@ -253,8 +253,6 @@ cd web && npm install && npm run dev    # Dashboard launches on http://localhost
 ```
 
 Astro static site architecture: charts are compiled directly into vector SVGs during build time, providing full offline readability and zero JavaScript dependency.
-
-Live preview: **<https://kuotunyu.github.io/air-quality/>**
 
 ---
 
