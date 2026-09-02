@@ -225,9 +225,9 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 
 ---
 
-## 本地運行指南
+## local端執行
 
-### Python 資料分析管線 (CLI)
+### Python Data Pipeline (CLI)
 
 ```bash
 uv sync                     # 安裝 Python 依賴與環境
@@ -238,7 +238,7 @@ uv run twair probe sources  # 解析年度目錄並取得即時資料樣本
 
 從 source checkout 執行時，repository root 即為工作目錄。若從安裝好的 wheel 執行，可在啟動前設定 `TWAIR_WORKSPACE_DIR` 環境變數。`probe sources` 指令會自動解析環境部最新開放檔案目錄結構並驗證連線，確保取得之資料與配置具備完全再現性。
 
-### 前端視覺化網站 (Web Dashboard)
+### Web Dashboard (Astro)
 
 ```bash
 uv run twair export web                 # 從 Parquet 匯出前端分析資料層
@@ -247,7 +247,7 @@ cd web && npm install && npm run dev    # 本地啟動：http://localhost:4321
 
 Astro 靜態架構，所有圖表於建置期直接編譯為原生向量 SVG，支援深淺色主題切換，無須依賴額外繪圖套件，且在禁用 JavaScript 環境下仍具備完整可讀性。
 
-線上發布版本：**<https://kuotunyu.github.io/air-quality/>**
+線上即時預覽：**<https://kuotunyu.github.io/air-quality/>**
 
 ---
 

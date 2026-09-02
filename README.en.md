@@ -254,7 +254,7 @@ cd web && npm install && npm run dev    # Dashboard launches on http://localhost
 
 Astro static site architecture: charts are compiled directly into vector SVGs during build time, providing full offline readability and zero JavaScript dependency.
 
-Live release: **<https://kuotunyu.github.io/air-quality/>**
+Live preview: **<https://kuotunyu.github.io/air-quality/>**
 
 ---
 
