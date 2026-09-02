@@ -12,7 +12,7 @@
  * The table list is filled in after probing what is actually deployed, not
  * from what happened to exist on the machine that built the page.
  */
-import { dataFiles, publishedL1Codes } from "../lib/data";
+import { dataFiles, mb, publishedL1Codes } from "../lib/data";
 import { repoFile } from "../lib/repo";
 import ChapterIntro from "./ChapterIntro.astro";
 import ConceptFlow from "./ConceptFlow.astro";
@@ -104,7 +104,10 @@ const candidates = dataFiles.flatMap((entry) => entry.l1 ? [{
 }] : []);
 
 /* Two wires in, one stopped return track, one file out. */
-const exploreConcept = explorePlate();
+/* The wire labels carry the two sizes the prose quotes, from the same sources. */
+const pm25L1 = dataFiles.find((entry) => entry.l1?.file === "l1/pm25.parquet")?.l1;
+if (!pm25L1) throw new Error("Explorer: the PM2.5 L1 file is not in the manifest");
+const exploreConcept = explorePlate(`${ENGINE_TRANSFER_MB} MB`, mb(pm25L1.bytes));
 
 ---
 

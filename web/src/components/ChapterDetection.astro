@@ -231,7 +231,8 @@ const estimandLabel = (kind: string) => {
 };
 
 /* The window, the two lanes it feeds, and the band they meet. */
-const detectionConcept = detectionPlate();
+/* The band and the tick on the last card are the first event's own numbers. */
+const detectionConcept = detectionPlate(detection.events[0]);
 
 ---
 
@@ -411,6 +412,12 @@ const detectionConcept = detectionPlate();
 
     Tones follow 圖 5.1, which draws the estimates in `--k1` and the placebos
     in grey. The steps had those two the other way round.
+
+    2026-09-02 — the last card's band is the first event's placebo mean ± 2 sd
+    (the method's own threshold, as `method.threshold` states it) and its tick
+    the median effect, both from detection-limit.json. The tick used to be
+    drawn to land inside; now it lands where the payload puts it, and the
+    event is named beside it so the reader knows whose noise this is.
   */}
   <ConceptFlow
     title="事件效應要先越過方法本身的噪音"

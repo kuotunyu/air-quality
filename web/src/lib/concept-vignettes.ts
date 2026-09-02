@@ -6,11 +6,12 @@
  * by what each chapter actually argues. What differs is not the reading order
  * (an ordered list, every time) but the geometry: on /trend/ each correction
  * narrows a bracket; on /space/ one residual row becomes a cloud, a cut and a
- * fan of standard errors; on /sources/ the evidence climbs and stops; on
- * /detection/ one procedure runs in two lanes and meets one band; on /health/
- * one concentration axis gains a band, then a cut; on /explore/ two wires
- * cross an edge and nothing comes back; on /data/ one month is drawn at three
- * densities. This module draws exactly that, one strip per step.
+ * fan of standard errors; on /sources/ one CBPF grid holds, marks, doubts and
+ * empties; on /detection/ one procedure runs in two lanes and meets one band;
+ * on /health/ one concentration axis gains four baselines, then four lengths;
+ * on /explore/ two wires cross an edge and nothing comes back; on /data/ one
+ * month is drawn at three densities. This module draws exactly that, one
+ * strip per step.
  *
  * Rules every strip obeys. The first is pinned by `check_site_quality.mjs`;
  * the rest are why the plates survive print, forced colours and the PNG
@@ -20,9 +21,13 @@
  *   the drawing, because the glossary, CJK-spacing and no-JavaScript gates
  *   read the page's HTML and treat `<svg>` as opaque. A word inside a strip
  *   would be a word no gate can see and no reader can select.
- * - **No digits, and no proportion the payload does not hold.** The single
- *   measured quantity drawn anywhere is /space/'s `se_inflation`, read by
- *   `cov_type` and scaled to its own maximum.
+ * - **No digits, and no proportion the payload does not hold.** What is drawn
+ *   from a payload is drawn from that payload alone, each scaled to itself:
+ *   /space/'s `se_inflation` by `cov_type`; /sources/' held cells and peak
+ *   cell of the opening station; /detection/'s placebo band and effect tick
+ *   of the first event; /health/'s counterfactual concentrations and their
+ *   attributable fractions. A digit still never enters a strip; a size or a
+ *   name may appear in a label, which is HTML.
  * - **One coordinate system: 100 × 40 units stretched to the strip's box**
  *   (`preserveAspectRatio="none"`). A label's `x`/`y` are those same units, so
  *   a word placed beside a mark stays beside it at every width —
@@ -73,7 +78,6 @@ export interface StepArt {
 
 /* Shared heights, so adjacent cards agree at their edges. */
 const BRACKET_ROWS = [5, 15, 25, 36] as const;
-const LADDER_PLATEAUS = [34, 24, 14, 4] as const;
 const LANE_WARM = 12;
 const LANE_GREY = 28;
 const AXIS_X = 18;
@@ -204,11 +208,15 @@ export interface Whisker {
 /**
  * /space/ — one residual row, then one station cloud with the same six
  * comparisons drawn on it twice: once whole, once with the two pairs a
- * boundary separates removed. What a spatial control does IS that removal, so
- * it is the only thing that changes between the two cards. The last card is
- * one coefficient under four covariance assumptions, and its whisker
- * half-lengths are the only measured proportion on any of the seven plates:
- * `se_inflation` by `cov_type`, scaled to its own maximum.
+ * boundary separates drawn dashed. What a spatial control does IS that
+ * removal, so it is the only thing that changes between the two cards. The
+ * last card is one coefficient under four covariance assumptions, and its
+ * whisker half-lengths are measured: `se_inflation` by `cov_type`, scaled to
+ * its own maximum.
+ *
+ * 2026-09-02 — the severed pairs used to be left out of card 3, and a reader
+ * who did not hold card 2 in mind saw nothing removed. Dashed is the plates'
+ * word for unheld, so the removal is now drawn.
  */
 export function spacePlate(whiskers: readonly Whisker[]): StepArt[] {
   const xs = [12, 30, 48, 66, 84];
@@ -218,9 +226,9 @@ export function spacePlate(whiskers: readonly Whisker[]): StepArt[] {
     residual += line(x, 20, x, ys[i]) + dot(x, ys[i]);
   });
 
-  // The focal station and the six it is compared with. The three that the
+  // The focal station and the six it is compared with. The two that the
   // boundary in card 3 separates from it are listed apart, because the whole
-  // of card 3 is those three edges going away.
+  // of card 3 is those two edges going dashed.
   const focal = CLOUD[6];
   const kept = [CLOUD[5], CLOUD[7], CLOUD[9], CLOUD[3]];
   const severed = [CLOUD[4], CLOUD[8]];
@@ -233,6 +241,7 @@ export function spacePlate(whiskers: readonly Whisker[]): StepArt[] {
     line(0, 38, 50, 24, "c-cool") +
     line(50, 24, 100, 2, "c-cool") +
     star(kept) +
+    severed.map(([x, y]) => dashes(focal[0], focal[1], x, y, "c-limit", 2, 1.4)).join("") +
     cloud +
     dot(focal[0], focal[1], "big");
 
@@ -264,44 +273,127 @@ export function spacePlate(whiskers: readonly Whisker[]): StepArt[] {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * /sources/ — a profile that climbs one rung per step and turns dashed where
- * this chapter's evidence stops. The last rung never closes: attribution is
- * the rung the figure cannot reach.
+ * /sources/ — the CBPF grid itself, twelve wind sectors by six speed bins,
+ * on every card at a different degree of hold: the cells with enough hours
+ * to carry a probability (the rest are suppressed, `null` in the payload),
+ * then the one cell where high values are most frequent, then that cell as
+ * a hypothesis, dashed, then the frame alone, dashed, because attribution
+ * is what this grid cannot reach. Which cells hold and where the peak sits
+ * are the opening station's own fields; the probabilities are 圖 4.1's to
+ * draw, so no cell here is shaded by one.
+ *
+ * 2026-09-02 — replaced a four-rung ladder that climbed one plateau per
+ * step and went dashed where the evidence stopped. It carried the shape of
+ * the argument and nothing of its object: no reader could tell from it
+ * what a CBPF cell was, which is the chapter's method.
  */
-export function sourcesPlate(): StepArt[] {
-  const [p0, p1, p2, p3] = LADDER_PLATEAUS;
-  const riser = 5;
-  const cards = [
-    line(0, p0, 100, p0),
-    line(0, p0, riser, p0, "c-hair") + line(riser, p0, riser, p1) + line(riser, p1, 100, p1),
-    line(0, p1, riser, p1, "c-hair") +
-      dashes(riser, p1, riser, p2) +
-      dashes(riser, p2, 100, p2),
-    dashes(0, p2, riser, p2, "c-limit") +
-      dashes(riser, p2, riser, p3, "c-limit") +
-      dashes(riser, p3, 88, p3, "c-limit") +
-      dot(92, p3, "c-limit"),
+export interface CbpfStation {
+  probability: readonly (readonly (number | null)[])[];
+  peak_sector: number | null;
+  peak_speed: string | null;
+}
+
+export function sourcesPlate(
+  station: CbpfStation,
+  sectors: readonly number[],
+  speedBins: readonly string[],
+): StepArt[] {
+  const columns = sectors.length;
+  const rows = speedBins.length;
+  if (
+    station.probability.length !== columns ||
+    station.probability.some((row) => row.length !== rows)
+  ) {
+    throw new Error("sourcesPlate: probability grid does not match sectors × speed bins");
+  }
+  /* The top twelve units are for words — the axis names on card 1, the stop
+     on card 3 — so the grid starts below them and no label sits on a cell. */
+  const ox = 10;
+  const oy = 12;
+  const gap = 0.9;
+  const cw = (86 - (columns - 1) * gap) / columns;
+  const ch = (24 - (rows - 1) * gap) / rows;
+  const cellX = (column: number) => ox + column * (cw + gap);
+  /* Slow wind at the bottom, so speed reads upward like an axis. */
+  const cellY = (row: number) => oy + (rows - 1 - row) * (ch + gap);
+  const peakColumn = station.peak_sector == null ? -1 : sectors.indexOf(station.peak_sector);
+  const peakRow = station.peak_speed == null ? -1 : speedBins.indexOf(station.peak_speed);
+  const hasPeak = peakColumn >= 0 && peakRow >= 0;
+
+  const grid = (held: string, suppressed: string): string => {
+    let body = "";
+    for (let column = 0; column < columns; column += 1) {
+      for (let row = 0; row < rows; row += 1) {
+        const classes = station.probability[column][row] == null ? suppressed : held;
+        body += rect(cellX(column), cellY(row), cw, ch, classes);
+      }
+    }
+    return body;
+  };
+  const peakCell = (classes: string): string =>
+    hasPeak ? rect(cellX(peakColumn), cellY(peakRow), cw, ch, classes) : "";
+  const peakDashed = (): string => {
+    if (!hasPeak) return "";
+    const x = cellX(peakColumn);
+    const y = cellY(peakRow);
+    return (
+      dashes(x, y, x + cw, y, "c-warm", 1.4, 0.9) +
+      dashes(x + cw, y, x + cw, y + ch, "c-warm", 1.4, 0.9) +
+      dashes(x + cw, y + ch, x, y + ch, "c-warm", 1.4, 0.9) +
+      dashes(x, y + ch, x, y, "c-warm", 1.4, 0.9)
+    );
+  };
+  const frameDashed = (): string => {
+    const x0 = ox - gap;
+    const y0 = oy - gap;
+    const x1 = cellX(columns - 1) + cw + gap;
+    const y1 = cellY(0) + ch + gap;
+    return (
+      dashes(x0, y0, x1, y0, "c-limit") +
+      dashes(x1, y0, x1, y1, "c-limit") +
+      dashes(x1, y1, x0, y1, "c-limit") +
+      dashes(x0, y1, x0, y0, "c-limit")
+    );
+  };
+
+  return [
+    {
+      figure: svg(grid("fill c-neutral", "hair c-hair")),
+      labels: [
+        { text: "風速", x: 0, y: 0 },
+        { text: "風向", x: 100, y: 0, anchor: "end" },
+      ],
+    },
+    { figure: svg(grid("fill c-neutral", "hair c-hair") + peakCell("fill c-cool heavy")) },
+    { figure: svg(grid("hair c-hair", "hair c-hair") + peakDashed()) },
+    { figure: svg(frameDashed()) },
   ];
-  const narrow = [
-    line(0, p0, 100, p0),
-    line(0, p1, 100, p1),
-    dashes(0, p2, 100, p2),
-    dashes(0, p3, 88, p3, "c-limit") + dot(92, p3, "c-limit"),
-  ];
-  return cards.map((wide, index) => ({
-    figure: svg(group("data-wide", wide) + group("data-narrow", narrow[index])),
-  }));
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
  * /detection/ — one calendar window enters, the same procedure runs on the
- * marked window and on every unmarked one, and the two lanes meet a band. The
- * estimate's tick lands inside the band, which is the chapter's finding: the
- * method cannot tell this effect from its own noise.
+ * marked window and on every unmarked one, and the two lanes meet a band.
+ * The band is the placebo mean ± 2 sd — the method's own threshold — and the
+ * estimate's tick sits at its median effect, both from the event passed in,
+ * so where the tick lands is read rather than drawn. For the first event it
+ * lands inside, which is the chapter's finding: the method cannot tell this
+ * effect from its own noise.
+ *
+ * 2026-09-02 — until now the band and the tick were drawn to land inside.
  */
-export function detectionPlate(): StepArt[] {
+export interface DetectionEvent {
+  event: string;
+  median_effect: number;
+  median_placebo_mean: number;
+  median_placebo_sd: number;
+}
+
+export function detectionPlate(event: DetectionEvent): StepArt[] {
+  if (!(event.median_placebo_sd > 0)) {
+    throw new Error("detectionPlate: the placebo sd must be positive");
+  }
   const columns = 7;
   const rows = 5;
   const cw = 4.6;
@@ -341,11 +433,21 @@ export function detectionPlate(): StepArt[] {
     line(wmid, LANE_GREY, gridRight, LANE_GREY, "c-neutral") +
     group("data-wide", line(gridRight, LANE_GREY, 100, LANE_GREY, "c-neutral"));
   const bandX = 46;
+  const bandTop = 8;
+  const bandBottom = 32;
+  const low = event.median_placebo_mean - 2 * event.median_placebo_sd;
+  const high = event.median_placebo_mean + 2 * event.median_placebo_sd;
+  const yOf = (value: number): number =>
+    Math.min(36, Math.max(4, bandBottom - ((value - low) / (high - low)) * (bandBottom - bandTop)));
+  const effectY = yOf(event.median_effect);
+  const meanY = yOf(event.median_placebo_mean);
   const range =
-    line(0, LANE_WARM, bandX, LANE_WARM, "c-warm") +
-    line(0, LANE_GREY, bandX, LANE_GREY, "c-neutral") +
-    rect(bandX, 8, 100 - bandX, 24, "fill c-neutral") +
-    line(bandX + 4, LANE_WARM, bandX + 16, LANE_WARM, "c-warm heavy");
+    line(0, LANE_WARM, bandX - 10, LANE_WARM, "c-warm") +
+    line(bandX - 10, LANE_WARM, bandX, effectY, "c-warm") +
+    line(0, LANE_GREY, bandX - 10, LANE_GREY, "c-neutral") +
+    line(bandX - 10, LANE_GREY, bandX, meanY, "c-neutral") +
+    rect(bandX, bandTop, 100 - bandX, bandBottom - bandTop, "fill c-neutral") +
+    line(bandX + 4, effectY, bandX + 16, effectY, "c-warm heavy");
 
   return [
     { figure: svg(window) },
@@ -356,6 +458,7 @@ export function detectionPlate(): StepArt[] {
       labels: [
         { text: "可辨識", x: 98, y: 1, anchor: "end" },
         { text: "不可辨識", x: 98, y: 21, anchor: "end" },
+        { text: event.event, x: 98, y: 40, anchor: "end", vertical: "bottom" },
       ],
     },
   ];
@@ -364,35 +467,70 @@ export function detectionPlate(): StepArt[] {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * /health/ — one concentration axis, drawn at the same place on every card: a
- * reading, then the baseline the analyst chooses, then the length between
- * them, then that length alone beside an edge this project does not cross.
+ * /health/ — one concentration axis, drawn at the same place on every card:
+ * the reading, then the baselines the analyst may choose, then the length
+ * from the reading down to each, then the attributable fractions those
+ * lengths become, beside an edge this project does not cross. The reading
+ * is the panel's last-year median, the baselines the four counterfactual
+ * concentrations and the fractions their last-year PAFs, all from
+ * `health.json`; the axis is scaled so the reading sits where it always did.
+ *
+ * 2026-09-02 — until now the strip drew one baseline as a band and one
+ * bracket, and carried no value. Ticks at their true heights and bars at
+ * their true lengths are what 「一段範圍」 means; 圖 7.1 keeps the curves and
+ * the numbers, and no baseline is named here.
  */
-export function healthPlate(): StepArt[] {
+export function healthPlate(
+  reading: number,
+  baselines: readonly number[],
+  fractions: readonly number[],
+): StepArt[] {
+  if (baselines.length < 2 || baselines.length !== fractions.length) {
+    throw new Error("healthPlate: one attributable fraction per baseline, at least two");
+  }
+  if (!(reading > Math.max(...baselines)) || fractions.some((f) => !(f > 0))) {
+    throw new Error("healthPlate: the reading must exceed every baseline; fractions positive");
+  }
   const x = AXIS_X;
-  const axis = line(x, 3, x, 37, "c-neutral") + line(x - 4, 37, x + 4, 37, "c-neutral");
-  const readingY = 9;
-  const reading = dot(x, readingY, "c-text");
-  const bandTop = 27;
-  const band = rect(x - 7, bandTop, 14, 6, "fill c-cool");
-  const bx = x + 9;
-  const bracket = (classes: string) =>
-    line(bx, readingY, bx, bandTop, classes) +
-    line(bx, readingY, bx + 4, readingY, classes) +
-    line(bx, bandTop, bx + 4, bandTop, classes);
+  const top = 9;
+  const base = 37;
+  const yOf = (concentration: number) => base - (concentration / reading) * (base - top);
+  const axis = line(x, 3, x, base, "c-neutral") + line(x - 4, base, x + 4, base, "c-neutral");
+  const readingDot = dot(x, top, "c-text");
+  const ticks = baselines.map((b) => line(x - 5, yOf(b), x + 5, yOf(b), "c-cool")).join("");
+  const spans = (classes: string): string =>
+    baselines
+      .map((b, i) => {
+        const bx = x + 10 + i * 5;
+        return (
+          line(bx, top, bx, yOf(b), classes) + line(bx - 1.5, yOf(b), bx + 1.5, yOf(b), classes)
+        );
+      })
+      .join("");
+  const maximum = Math.max(...fractions);
+  const bars = fractions
+    .map((f, i) => {
+      const bx = 14 + i * 12;
+      const h = (f / maximum) * (base - top);
+      return (
+        line(bx, base, bx, base - h, "c-neutral") +
+        line(bx - 3, base - h, bx + 3, base - h, "c-neutral")
+      );
+    })
+    .join("");
   return [
-    { figure: svg(axis + reading), labels: [{ text: "測得濃度", x: 26, y: 5 }] },
+    { figure: svg(axis + readingDot), labels: [{ text: "測得濃度", x: 26, y: 5 }] },
     {
-      figure: svg(axis + reading + band),
+      figure: svg(axis + readingDot + ticks),
       labels: [{ text: "比較基準", x: 28, y: 24, ink: "role" }],
     },
     {
-      figure: svg(axis + reading + band + bracket("c-warm")),
-      labels: [{ text: "可歸因的一截", x: 34, y: 13, ink: "role" }],
+      figure: svg(axis + readingDot + ticks + spans("c-warm")),
+      labels: [{ text: "可歸因的一截", x: 50, y: 13, ink: "role" }],
     },
     {
-      figure: svg(bracket("c-neutral") + dashes(78, 3, 78, 37, "c-limit")),
-      labels: [{ text: "一段範圍", x: 34, y: 13 }],
+      figure: svg(bars + line(6, base, 60, base, "c-hair") + dashes(90, 3, 90, 37, "c-limit")),
+      labels: [{ text: "一段範圍", x: 60, y: 13 }],
     },
   ];
 }
@@ -404,7 +542,7 @@ export function healthPlate(): StepArt[] {
  * inside the tab, the return track is dashed and stopped, and the only thing
  * that leaves goes to the reader's own disk.
  */
-export function explorePlate(): StepArt[] {
+export function explorePlate(engineSize: string, dataSize: string): StepArt[] {
   const engineY = 12;
   const dataY = 31;
   const stack = (x: number, y: number, classes = "") =>
@@ -465,8 +603,8 @@ export function explorePlate(): StepArt[] {
     {
       figure: svg(inside),
       labels: [
-        { text: "下載一次", x: 42, y: 1, ink: "role" },
-        { text: "依範圍", x: 42, y: 20, ink: "role" },
+        { text: `下載一次 · ${engineSize}`, x: 30, y: 1, ink: "role" },
+        { text: `依範圍 · ${dataSize} 內`, x: 30, y: 20, ink: "role" },
       ],
     },
     { figure: svg(query), labels: [{ text: "回傳：無", x: 28, y: 24 }] },

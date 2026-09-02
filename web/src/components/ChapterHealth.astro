@@ -209,7 +209,12 @@ const langOf = (s: string | null | undefined) =>
   s && !/[㐀-鿿]/.test(s) ? "en" : undefined;
 
 /* One concentration axis, four times. */
-const healthConcept = healthPlate();
+/* The strip's heights come from the same payload 圖 7.1 draws. */
+const healthConcept = healthPlate(
+  health.mean_median[health.mean_median.length - 1],
+  health.series.map((s) => s.value),
+  health.series.map((s) => s.paf[s.paf.length - 1]),
+);
 
 ---
 
@@ -356,12 +361,17 @@ const healthConcept = healthPlate();
   */}
   {/*
     One concentration axis, drawn at the same place on all four cards: the
-    reading, then the baseline the analyst chooses, then the length between
-    them — which is the whole of what this chapter reports — and finally that
-    length beside an edge the project does not cross. Nothing on the strip
-    carries a value; 圖 7.1 below owns the four counterfactuals and their
-    numbers, and a strip that re-listed them is why the `fork` variant was
-    deleted.
+    reading, then the baselines the analyst may choose, then the length from
+    the reading down to each — which is the whole of what this chapter
+    reports — and finally the fractions those lengths become, beside an edge
+    the project does not cross.
+
+    2026-09-02 — the strip now takes its heights from health.json: the
+    panel's last-year median, the four counterfactual concentrations, their
+    last-year PAFs. This is not the duplication the comment above removed:
+    no baseline is named or numbered on the strip, and 圖 7.1 keeps the
+    curves and the legend. What the strip adds is the one thing four chips
+    could not say — that 「一段範圍」 is four lengths, and how unequal they are.
   */}
   <ConceptFlow
     title="同一批濃度如何變成一段可歸因比例"

@@ -126,8 +126,8 @@ const legend = BREAKS.map((b, i) => ({
   label: i === 0 ? `< ${b}` : `${BREAKS[i - 1]}–${b}`,
 })).concat([{ colour: `var(${RAMP[RAMP.length - 1]})`, label: `≥ ${BREAKS[BREAKS.length - 1]}` }]);
 
-/* The evidence ladder, one rung per step. */
-const sourcesConcept = sourcesPlate();
+/* The CBPF grid of the opening station, held → peak → hypothesis → frame. */
+const sourcesConcept = sourcesPlate(start, data.sectors, data.speed_bins);
 
 ---
 
@@ -428,17 +428,21 @@ const sourcesConcept = sourcesPlate();
     The paragraph above used to sit below this figure, so the reader met a
     ladder climbing out of a chart nobody had explained yet.
 
-    The strip is that ladder: one rung per step, solid while this chapter's
-    evidence carries it, dashed from the riser where it stops, and open-ended
-    on the last rung. The dashed rule down the third card's leading edge says
-    where the stop is; the fourth card's options are what would be needed to
-    climb past it, which used to be a heading and a bulleted card of its own
-    below the figure that names them.
+    2026-09-02 — the strip is the grid that paragraph explains, drawn for the
+    opening station at four degrees of hold: the cells with enough hours to
+    carry a probability, the one cell where high values are most frequent
+    (the station's own `peak_sector` × `peak_speed`), that cell as a dashed
+    hypothesis, and the frame alone. The dashed rule down the third card's
+    leading edge says where the stop is; the fourth card's options are what
+    would be needed to go past it. Probabilities stay on 圖 4.1: the strip
+    says what a cell is, the figure says what is in it. Before this the strip
+    was a ladder climbing one rung per step, which carried the argument's
+    shape and nothing a reader could recognise as the method.
   */}
   <ConceptFlow
     title="從風向條件到來源歸因，中間還缺哪些證據"
     summary="CBPF 是形成來源假說的工具；它把值得追查的條件指出來，但不會替污染源命名。"
-    figureHeight="4.6rem"
+    figureHeight="5.6rem"
     steps={[
       {
         label: "觀測條件",
