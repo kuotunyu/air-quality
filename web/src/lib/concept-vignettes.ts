@@ -145,41 +145,44 @@ function chevronDown(x: number, y: number, classes = ""): string {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * /trend/ — four over-brackets, each opening one column later and all closing
- * at the last: the range of conclusions narrows as each correction is applied.
- * The fourth is dashed and never closes, because the chapter does not estimate
- * it. Only that one carries a word; the three solid brackets are named by the
- * step labels directly beneath them.
+ * /trend/ — four brackets nested inside every card, each inset one step from
+ * the one before, so the narrowing is a width the reader sees within a card.
+ * Card k holds layers 0–k: the earlier ones as hairlines, its own in the
+ * step's tone. The fourth is dashed and never closes, because the chapter
+ * does not estimate it; only that one carries a word.
+ *
+ * 2026-09-02 — until this evening each bracket ran across the row, opening
+ * one card later than the last and closing on the fourth. Three 48px gutters
+ * cut a 1.5px line into four pieces, every piece the width of its card, and
+ * the owner asked what the lines were. The inset is a constant step, the same
+ * convention the row-spanning version had, so no width here is a proportion.
  */
 export function trendPlate(): StepArt[] {
-  const rows = [BRACKET_ROWS[0], BRACKET_ROWS[1], BRACKET_ROWS[2]];
-  const open = BRACKET_ROWS[3];
   const colour = ["c-cool", "c-warm", "c-warm"];
+  const inset = 6;
   const tick = 6;
   const arts: StepArt[] = [];
   for (let card = 0; card < 4; card += 1) {
-    let wide = "";
-    let narrow = "";
-    for (let b = 0; b < Math.min(card + 1, 3); b += 1) {
-      const y = rows[b];
-      if (b === card) wide += line(0, y, 0, y + tick, colour[b]);
-      wide += line(0, y, 100, y, colour[b]);
-      if (card === 3) wide += line(100, y, 100, y + tick, colour[b]);
+    let body = "";
+    for (let layer = 0; layer <= Math.min(card, 2); layer += 1) {
+      const y = BRACKET_ROWS[layer];
+      const x0 = inset * layer;
+      const x1 = 100 - inset * layer;
+      const classes = layer === card ? colour[layer] : "hair c-hair";
+      body +=
+        line(x0, y, x0, y + tick, classes) +
+        line(x0, y, x1, y, classes) +
+        line(x1, y, x1, y + tick, classes);
     }
-    if (card < 3) {
-      const y = rows[card];
-      narrow =
-        line(0, y, 0, y + tick, colour[card]) +
-        line(0, y, 100, y, colour[card]) +
-        line(100, y, 100, y + tick, colour[card]);
-    } else {
-      const dashed = dashes(0, open, 92, open, "c-limit", 8, 6);
-      wide += dashed;
-      narrow = dashed;
+    if (card === 3) {
+      const y = BRACKET_ROWS[3];
+      body += dashes(inset * 3, y, 100 - inset * 3, y, "c-limit", 8, 6);
     }
-    arts.push({ figure: svg(group("data-wide", wide) + group("data-narrow", narrow)) });
+    arts.push({ figure: svg(body) });
   }
-  arts[3].labels = [{ text: "本章未估計", x: 2, y: open - 1, vertical: "bottom" }];
+  arts[3].labels = [
+    { text: "本章未估計", x: inset * 3 + 1, y: BRACKET_ROWS[3] - 1, vertical: "bottom" },
+  ];
   return arts;
 }
 
