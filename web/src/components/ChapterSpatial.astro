@@ -177,7 +177,10 @@ const readingMap = [
  * whiskers and a gap.
  */
 const COVARIANCE_LABELS = [
-  ["iid", "iid"],
+  /* 2026-09-03 — 「獨立」, not 「iid」: the strip is read with no legend, and the
+     code means nothing to a reader who is not a statistician. The table
+     below keeps the code beside its gloss. */
+  ["iid", "獨立"],
   ["cluster_month", "月"],
   ["cluster_station", "站"],
   ["cluster_twoway", "雙向"],

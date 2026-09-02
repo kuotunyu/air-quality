@@ -5,7 +5,7 @@
  * three arrows — and the owner asked whether the site's diagrams could differ
  * by what each chapter actually argues. What differs is not the reading order
  * (an ordered list, every time) but the geometry: on /trend/ each correction
- * narrows a bracket; on /space/ one residual row becomes a cloud, a cut and a
+ * shortens a bar; on /space/ one residual row becomes a cloud, a cut and a
  * fan of standard errors; on /sources/ one CBPF grid holds, marks, doubts and
  * empties; on /detection/ one procedure runs in two lanes and meets one band;
  * on /health/ one concentration axis gains four baselines, then four lengths;
@@ -77,7 +77,6 @@ export interface StepArt {
 }
 
 /* Shared heights, so adjacent cards agree at their edges. */
-const BRACKET_ROWS = [5, 15, 25, 36] as const;
 const LANE_WARM = 12;
 const LANE_GREY = 28;
 const AXIS_X = 18;
@@ -149,44 +148,45 @@ function chevronDown(x: number, y: number, classes = ""): string {
 /* ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * /trend/ — four brackets nested inside every card, each inset one step from
- * the one before, so the narrowing is a width the reader sees within a card.
- * Card k holds layers 0–k: the earlier ones as hairlines, its own in the
- * step's tone. The fourth is dashed and never closes, because the chapter
- * does not estimate it; only that one carries a word.
+ * /trend/ — one bar per card, the range of conclusions the step still
+ * supports, shorter by a constant step from the first card to the last. The
+ * fourth is a dashed outline, the layer this chapter does not estimate, and
+ * the only one that carries a word.
  *
- * 2026-09-02 — until this evening each bracket ran across the row, opening
- * one card later than the last and closing on the fourth. Three 48px gutters
- * cut a 1.5px line into four pieces, every piece the width of its card, and
- * the owner asked what the lines were. The inset is a constant step, the same
- * convention the row-spanning version had, so no width here is a proportion.
+ * 2026-09-03 — the second drawing here to fail a reader. Brackets running
+ * across the row failed on 2026-09-02 (three gutters cut them into pieces);
+ * the nested brackets that replaced them, hairlines under a toned one, read
+ * to the owner as faint lines with no meaning, and they asked for something
+ * a reader takes in without wondering. A solid bar that gets shorter is the
+ * plainest picture of 「收窄」 there is, and four in a row read as one
+ * sequence with no legend. The step is constant, so no width is a
+ * proportion.
  */
 export function trendPlate(): StepArt[] {
   const colour = ["c-cool", "c-warm", "c-warm"];
-  const inset = 6;
-  const tick = 6;
+  const top = 13;
+  const height = 14;
+  const step = 24;
   const arts: StepArt[] = [];
   for (let card = 0; card < 4; card += 1) {
-    let body = "";
-    for (let layer = 0; layer <= Math.min(card, 2); layer += 1) {
-      const y = BRACKET_ROWS[layer];
-      const x0 = inset * layer;
-      const x1 = 100 - inset * layer;
-      const classes = layer === card ? colour[layer] : "hair c-hair";
-      body +=
-        line(x0, y, x0, y + tick, classes) +
-        line(x0, y, x1, y, classes) +
-        line(x1, y, x1, y + tick, classes);
+    const width = 100 - step * card;
+    const x0 = (100 - width) / 2;
+    if (card < 3) {
+      arts.push({ figure: svg(rect(x0, top, width, height, `fill ${colour[card]}`)) });
+      continue;
     }
-    if (card === 3) {
-      const y = BRACKET_ROWS[3];
-      body += dashes(inset * 3, y, 100 - inset * 3, y, "c-limit", 8, 6);
-    }
-    arts.push({ figure: svg(body) });
+    const x1 = x0 + width;
+    const y1 = top + height;
+    const frame =
+      dashes(x0, top, x1, top, "c-limit", 3, 2) +
+      dashes(x1, top, x1, y1, "c-limit", 3, 2) +
+      dashes(x1, y1, x0, y1, "c-limit", 3, 2) +
+      dashes(x0, y1, x0, top, "c-limit", 3, 2);
+    arts.push({
+      figure: svg(frame),
+      labels: [{ text: "本章未估計", x: 50, y: 40, anchor: "middle", vertical: "bottom" }],
+    });
   }
-  arts[3].labels = [
-    { text: "本章未估計", x: inset * 3 + 1, y: BRACKET_ROWS[3] - 1, vertical: "bottom" },
-  ];
   return arts;
 }
 
@@ -263,7 +263,12 @@ export function spacePlate(whiskers: readonly Whisker[]): StepArt[] {
   });
 
   return [
-    { figure: svg(residual) },
+    /* 2026-09-03 — the row of pins had no word; a reader cannot know they
+       are residuals from the picture alone. */
+    {
+      figure: svg(residual),
+      labels: [{ text: "殘差", x: 50, y: 40, anchor: "middle", vertical: "bottom" }],
+    },
     { figure: svg(ringed) },
     { figure: svg(cut) },
     { figure: svg(fan), labels: fanLabels },
@@ -449,10 +454,14 @@ export function detectionPlate(event: DetectionEvent): StepArt[] {
     rect(bandX, bandTop, 100 - bandX, bandBottom - bandTop, "fill c-neutral") +
     line(bandX + 4, effectY, bandX + 16, effectY, "c-warm heavy");
 
+  /* 2026-09-03 — one word beside each of the first three drawings. A grid with
+     an outlined column, a cell with a line, cells with a line: the owner's
+     standard after chapter 1 is that a reader takes a strip in with no
+     legend, and these three had nothing to say what they were. */
   return [
-    { figure: svg(window) },
-    { figure: svg(estimate) },
-    { figure: svg(placebo) },
+    { figure: svg(window), labels: [{ text: "事件窗口", x: 30, y: 1 }] },
+    { figure: svg(estimate), labels: [{ text: "估計值", x: 72, y: 1, ink: "role" }] },
+    { figure: svg(placebo), labels: [{ text: "安慰劑", x: 72, y: 30 }] },
     {
       figure: svg(range),
       labels: [
