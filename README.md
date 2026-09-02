@@ -108,39 +108,39 @@ flowchart TD
 
 ---
 
-## 這是什麼
+## 研究概述與核心目標
 
 一份涵蓋 **44 年**、經過完整品管的台灣空氣品質開放再分析：
-1982 到 2025 年，82 個測站，**340,371,384 筆逐時觀測**。產出三件事：
+1982 到 2025 年，82 個測站，**340,371,384 筆逐時觀測**。產出三項關鍵成果：
 
-1. **一份原本不存在的資料集。** 環境部有公開年度原始檔，但橫跨四種封裝格式、兩種日期順序，品質旗標的慣例還逐年在變。本專案把它們全部解析成單一份標準化、逐列可追溯來源的資料儲存。
-2. **一組方法學對照。** 月平均、逐步剔除的 OLS、用 PM10 預測 PM2.5——這些是台灣空品分析用了一整個世代的做法。把它們與修正後的方法放在**同一份資料**上並排重跑，就能算出每個選擇值多少。
-3. **一個可以自己驗算的網站**，包含在你自己瀏覽器裡跑 SQL 的資料探索器。
+1. **一份原本不存在的結構化資料庫**：環境部歷年公開檔案橫跨四種封裝格式、兩種日期順序，品質旗標慣例逐年更迭。本專案將其完全解析為單一份標準化、逐列可追溯來源的資料庫。
+2. **一組量化方法學對照實驗**：月平均壓縮、逐步剔除的 OLS、用 PM10 預測 PM2.5——這些是台灣空品研究常見之經驗作法。本專案將其與修正後的方法置於**同一份資料**上並排配適，精確衡量每個建模選擇的統計代價。
+3. **一個透明可複驗的互動平台**：包含於瀏覽器端執行 SQL 的資料探索介面，所有視覺化圖表與數據均可直接驗算。
 
-### 貫穿全案的原則
+### 貫穿全案的資料治理原則
 
-**測量並公布資料品質，絕不悄悄修補。** 無效值標記但不刪除；超出物理範圍的值保留原數字以供檢視；覆蓋率不足的聚合直接回傳 **null**，而不是一個有偏誤的平均。網站上每一條線的中斷都是真的中斷。
+**測量並公布資料品質，絕不悄悄修補。** 無效值標記但不刪除；超出物理範圍的值保留原數字以供檢視；覆蓋率不足的聚合直接回傳 **null**，而不是一個有偏誤的平均。網站上每一條線的中斷都是真實資料缺失的如實反映。
 
 ### 對照組是方法，不是任何人
 
-有缺陷的那一邊不是描述，是 `analysis/baseline.py` **實際配適出來的模型**——所以兩邊跑在同一批列上，每個代價都是量出來的。其中兩個選擇的代價很大：
+有缺陷的那一邊不是抽象描述，而是 `analysis/baseline.py` **實際配適出來的模型**——兩組模型在同一批觀測數據上執行，每個統計代價都是嚴謹量測得出：
 
-1. **用 PM10 去預測 PM2.5。** PM2.5 在定義上就是 PM10 的子集，這是定義上的重疊，不是實證發現。實測代價：**含 PM10 的模型有 32.1% 的 R² 來自這個重疊**（0.524 → 0.772）。
-2. **把風向（0–360°）當成線性連續變數。** 0° 與 359° 在物理上相鄰，數值上卻相距 359。在 OLS 之下，sin/cos 編碼的 R² 是原始方位角的 **2.55 倍**。
+1. **用 PM10 去預測 PM2.5**：PM2.5 在物理定義上即為 PM10 的子集，屬於定義重疊而非實證因果。實測代價：**含 PM10 的模型有 32.1% 的 R² 來自這個重疊**（0.524 → 0.772）。
+2. **把風向（0–360°）當成線性連續變數**：0° 與 359° 在物理方位上相鄰，數值上卻相差 359。在 OLS 迴歸下，sin/cos 週期編碼的 R² 是原始方位角的 **2.55 倍**。
 
-另外有**兩項我原先列為缺陷、卻被全量資料否證**的說法，一樣照實記錄——見 [docs/working-rules.md](docs/working-rules.md)。
+另外有**兩項原先列為缺陷、卻被全量資料否證**的說法，亦如實完整記錄——詳見 [docs/working-rules.md](docs/working-rules.md)。
 
 ---
 
-## 五項產出
+## 核心產出
 
 | 項目 | 內容說明 |
 |---|---|
-| 📦 **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
-| 📊 **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
-| 🌐 **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
-| 🔮 **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
-| 🔧 **Python 套件** | `twair` — 資料管線與分析工具 |
+| **開源資料集** | 1982–2025 全測站的 L0 站月與 L1 站日衍生統計：L0 由網站圖表直接讀取，L1 可在[網站第九章](https://kuotunyu.github.io/air-quality/explore/)的瀏覽器內查詢並匯出 CSV，兩層也已公開為 [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality)。完整 L2 逐時複本不發布；任何人可用公開管線與上游資料重建 |
+| **可重現研究** | 有缺陷的基準在這裡實際配適，逐項修正並量化差異 |
+| **互動網站** | 趨勢、個人化暴露報告、高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、事件偵測極限、方法學對照 |
+| **預測 demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 未來 1–48 小時，模型 vs 兩條基準線 |
+| **Python 套件** | `twair` — 資料管線與分析工具 |
 
 ---
 
@@ -150,17 +150,17 @@ flowchart TD
 Copernicus 衛星資料另依其 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)。
 各來源的授權與再散布邊界見 [docs/legal.md](docs/legal.md)。
 
-| 來源 | 內容 | 期間 | 狀態 |
+| 來源機構與資料集 | 觀測內容 | 涵蓋期間 | 取得狀態 |
 |---|---|---|---|
-| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–2025 | ✅ **全部 44 年已取得**，本專案所有結果都出自這裡 |
-| [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時 | ✅ 使用中（測站登錄、資料新鮮度檢查） |
-| [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 | ⬜ **尚未取得** |
-| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、10m 風、2m 溫度／露點、地面氣壓 | 1940– | ✅ 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 🟡 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | 🟡 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
+| [環境部 空氣品質監測網](https://airtw.moenv.gov.tw/cht/Query/His_Data.aspx) | 全年逐時原始觀測 | 1982–2025 | **全部 44 年已取得**，本專案所有結果都出自這裡 |
+| [環境部 環境資料開放平臺](https://data.moenv.gov.tw/) | 測站座標、即時 AQI | 即時 | **使用中**（測站登錄、資料新鮮度檢查） |
+| [中央氣象署 開放資料平臺](https://opendata.cwa.gov.tw/) | 氣象站逐時觀測 | 近期 | **尚未取得** |
+| [Copernicus ERA5](https://cds.climate.copernicus.eu/) | **邊界層高度**、10m 風、2m 溫度／露點、地面氣壓 | 1940– | 2024–2025 年來源取得與多年度／留出測站 robustness 已完成；校正尚未交付 |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | NO₂ 對流層柱濃度、SO₂ 垂直柱濃度 | 2018– | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；校正／融合未做 |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | 氣膠光學厚度 | 2000– | 2024–2025 站月來源、M8 關聯與 multi-year predictive robustness 已交付；AOD 校正／融合未做 |
 
 <details>
-<summary><b>衛星與 ERA5 的 held-out predictive value —— 逐 fold 數字與範圍限制</b>（點開）<br>
+<summary><b>衛星與 ERA5 的 held-out predictive value —— 逐 fold 數字與範圍限制</b>（點開展開）<br>
 兩者都在 2025 年內的留出評估上顯示增量預測資訊；<b>都不是</b>因果歸因、衛星 PM2.5 校正、
 融合場，也不是 M4 的替代。校正與融合仍然延後。</summary>
 
@@ -207,6 +207,33 @@ predictive generalisation；整組結果不是因果歸因、校正或融合。E
 
 </details>
 
+<details>
+<summary><b>研發里程碑與交付邊界審計</b>（點開展開工程紀錄）</summary>
+
+<br>
+
+目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
+與後續方向見下表；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
+
+| 階段 | 目前交付 | 交付判定 |
+|---|---|---|
+| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | 核心完成；GEE 衛星 Stage A 已交付；ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已交付；CWA 延後 |
+| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | 完成；L0／L1 Dataset 已公開上架；完整 L2 逐時複本不發布 |
+| Phase 2 | M1 基準、M2 逐時重做、M3 方法學對照與核心報告 | 完成 |
+| Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | 完成 |
+| Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | 有界完成，不宣稱政策因果 |
+| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、spatial baseline 與 covariate-model readiness gates | baseline gate 的 `go` 允許了有界的 covariate-model design；實測 covariate-model gate 為 `stop`，所以這個固定模型分支關閉；HYSPLIT／1 km 場／人口加權暴露未交付；兩個 readiness gate 的完整結果與 claim boundary 見 [docs/methodology.md](docs/methodology.md) |
+| Phase 6 | 衛星、ERA5 與微型感測器加值 | S5P 與 MAIAC 來源取得 Stage A 已交付；2025 M8 關聯與 held-out predictive-value 診斷已交付；ERA5 2024–2025 robustness 已交付；微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付，一月 reference-station satellite-context predictive-value limit 已交付，微型感測器 2025 全年 readiness audit 已交付，Q4-supported cross-station agreement 亦已交付（29 個 fold 中只有 5 個可評分，其餘 18 個測試集為空、6 個訓練集為空，均標為 unscored 而非以零計；held-quarter 與 joint station-quarter 不可估計）；validated calibration 與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5；agreement audit 的完整結果與 claim boundary 見 [docs/methodology.md](docs/methodology.md) |
+| Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | 完成；DL／GNN stretch goals 不納入 |
+| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | 發布收尾完成：正常工程與編輯式科學圖集 UI 已整合至 `master`、部署於 GitHub Pages，L0／L1 HF Dataset 亦已公開。非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |
+
+磁碟上的實際狀態用 `uv run twair status` 看——這份表寫的是 release 邊界；
+那個指令量的是本機事實。已實作的工程取捨見
+[docs/working-rules.md](docs/working-rules.md)，資料與方法的現行證據分別見
+[docs/data-sources.md](docs/data-sources.md) 與 [docs/methodology.md](docs/methodology.md)。
+
+</details>
+
 ---
 
 ## 快速開始
@@ -237,30 +264,6 @@ read-only defaults；refresh 或 probe 只會建立 workspace override，不會�
 並把結果寫進 `conf/sources.yaml` 與 `docs/data-sources.md`；需要憑證的加值來源若未設定，
 會明確保留為未驗證。
 政府網站的連結會變動，所以這一步每次都重新解析，不寫死任何 URL。
-
----
-
-## 專案狀態
-
-目前磁碟與產物的可量測狀態，請先執行 `uv run twair status`。公開 release boundary
-與後續方向見下表；可重用的實測證據與穩定決策見相關的 [docs/](docs/) 技術文件。
-
-| 階段 | 目前交付 | 交付判定 |
-|---|---|---|
-| Phase 0 | 專案骨架、airtw live probe、真實跨世代樣本與資料源文件 | ✅ 核心完成；GEE 衛星 Stage A 已交付；ERA5 2024–2025 來源取得與多年度／留出測站 robustness 已交付；CWA 延後 |
-| Phase 1 | 1982–2025 Canonical Parquet、QA/QC、coverage-aware aggregates | ✅ 完成；L0／L1 Dataset 已公開上架；完整 L2 逐時複本不發布 |
-| Phase 2 | M1 基準、M2 逐時重做、M3 方法學對照與核心報告 | ✅ 完成 |
-| Phase 3 | 首頁、10 個主題 route、build-time SVG、DuckDB-WASM | ✅ 完成 |
-| Phase 4 | M4 氣象正規化、M5 counterfactual + placebo 偵測極限 | ✅ 有界完成，不宣稱政策因果 |
-| Phase 5 | M6 空間結構、M7 CBPF 高值時段的風速／風向型態（不識別來源身分、位置、傳輸距離或貢獻）、spatial baseline 與 covariate-model readiness gates | ✅ baseline gate 的 `go` 允許了有界的 covariate-model design；實測 covariate-model gate 為 `stop`，所以這個固定模型分支關閉；HYSPLIT／1 km 場／人口加權暴露未交付；兩個 readiness gate 的完整結果與 claim boundary 見 [docs/methodology.md](docs/methodology.md) |
-| Phase 6 | 衛星、ERA5 與微型感測器加值 | 🟡 S5P 與 MAIAC 來源取得 Stage A 已交付；2025 M8 關聯與 held-out predictive-value 診斷已交付；ERA5 2024–2025 robustness 已交付；微型感測器 2025-01 觀測、readiness 與 grouped predictive benchmark 已交付，一月 reference-station satellite-context predictive-value limit 已交付，微型感測器 2025 全年 readiness audit 已交付，Q4-supported cross-station agreement 亦已交付（29 個 fold 中只有 5 個可評分，其餘 18 個測試集為空、6 個訓練集為空，均標為 unscored 而非以零計；held-quarter 與 joint station-quarter 不可估計）；validated calibration 與融合仍延後；不是因果、不是校正，也不是衛星推估 PM2.5；agreement audit 的完整結果與 claim boundary 見 [docs/methodology.md](docs/methodology.md) |
-| Phase 7 | M9 四期距 forecast、M12 SARIMA、公開 HF Space | ✅ 完成；DL／GNN stretch goals 不納入 |
-| Phase 8 | M10 健康假設、CI、weekly freshness、完整網站敘事 | ✅ 發布收尾完成：正常工程與編輯式科學圖集 UI 已整合至 `master`、部署於 GitHub Pages，L0／L1 HF Dataset 亦已公開。非本科讀者試讀延後且不阻擋發布；PyPI 選配。 |
-
-磁碟上的實際狀態用 `uv run twair status` 看——這份表寫的是 release 邊界；
-那個指令量的是本機事實。已實作的工程取捨見
-[docs/working-rules.md](docs/working-rules.md)，資料與方法的現行證據分別見
-[docs/data-sources.md](docs/data-sources.md) 與 [docs/methodology.md](docs/methodology.md)。
 
 ---
 

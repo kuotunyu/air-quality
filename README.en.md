@@ -108,60 +108,46 @@ flowchart TD
 
 ---
 
-## What is this?
+## Research Overview & Objectives
 
 An open, quality-controlled reanalysis of **44 years** of Taiwanese air-quality
 monitoring — 1982 to 2025, 340,371,384 hourly observations across 82 stations.
-Three things come out of it:
+Three core deliverables emerge from it:
 
-1. **A dataset that did not previously exist.** Taiwan's ministry publishes the
-   raw annual archives, but in four different container formats, two date
-   orders, and with a quality-flag convention that changes from year to year.
-   This project parses all of it into one canonical, per-row-provenanced store.
-2. **A methodological comparison.** Monthly means, stepwise-eliminated OLS
-   and PM10 predicting its own subset were standard practice for a generation
-   of Taiwanese air-quality work. The flawed arm is *fitted here* — 6,771
-   station-months over 72 stations — so both arms run on the same rows and
-   every difference is measured rather than quoted.
-3. **A site that lets you check the work**, including SQL over the whole record
-   in your own browser.
+1. **A canonical, unified dataset that did not previously exist.** Taiwan's ministry publishes
+   raw annual archives in four different container formats, two date orders, and changing quality-flag
+   conventions. This project parses all of it into one canonical, per-row-provenanced store.
+2. **A formal methodological comparison.** Monthly means, stepwise-eliminated OLS, and PM10
+   predicting its own subset were standard practice for a generation of Taiwanese air-quality work.
+   The flawed arm is *fitted here* — 6,771 station-months over 72 stations — so both arms run on the
+   same rows and every difference is measured rather than asserted.
+3. **An auditable, interactive platform**, including SQL execution over the whole record
+   directly in the user's browser via DuckDB-WASM.
 
-### The governing principle
+### Governing Data Principles
 
-**Measure and publish data quality; never silently repair it.** Invalid
-readings are flagged, not deleted. Out-of-range values keep their number so
-they stay inspectable. Aggregates below a coverage threshold return **null**,
-never a biased mean. Every gap on every chart is a real gap.
+**Measure and publish data quality; never silently repair it.** Invalid readings are flagged, not deleted. Out-of-range values keep their number so they stay inspectable. Aggregates below a coverage threshold return **null**, never a biased mean. Every gap on every chart reflects real missingness.
 
 ### The comparison is against a method, not against anyone
 
-The flawed arm is not a description: it is a model actually fitted here, by
-`analysis/baseline.py`. Both arms therefore run on the same rows and every cost
-below is measured rather than asserted.
+The flawed arm is not a description: it is an empirical model actually fitted here by `analysis/baseline.py`. Both arms run on the identical set of observations, ensuring every methodological cost is rigorously quantified:
 
-Two of those choices turn out to matter a great deal:
+1. **Using PM10 to predict PM2.5.** PM2.5 is physically a subset of PM10, so this is definitional overlap rather than an empirical finding. Measured cost: **32.1% of the leaking model's $R^2$** (0.524 → 0.772).
+2. **Treating wind direction ($0^\circ$–$360^\circ$) as a linear variable.** $0^\circ$ and $359^\circ$ are physically adjacent but numerically $359$ apart. Under OLS, sin/cos encoding yields **2.55×** the $R^2$ of the raw bearing.
 
-1. **Using PM10 to predict PM2.5.** PM2.5 is physically a subset of PM10, so
-   this is definitional overlap rather than an empirical finding. Measured
-   cost: **32.1% of the leaking model's $R^2$** (0.524 → 0.772).
-2. **Treating wind direction ($0^\circ$–$360^\circ$) as a linear variable.**
-   $0^\circ$ and $359^\circ$ are adjacent but numerically $359$ apart. Under
-   OLS, sin/cos encoding gives **2.55×** the $R^2$ of the raw bearing.
-
-And two claimed defects were **overturned by the full data** and are documented
-as such — see [docs/working-rules.md](docs/working-rules.md).
+And two claimed defects were **overturned by the full data** and are documented as such — see [docs/working-rules.md](docs/working-rules.md).
 
 ---
 
-## Five Main Deliverables
+## Core Deliverables
 
 | Deliverable | Description |
 |---|---|
-| 📦 **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
-| 📊 **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
-| 🌐 **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
-| 🔮 **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
-| 🔧 **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
+| **Open-Source Dataset** | Public L0 station-month and L1 station-day aggregates for 1982–2025: the site's charts read L0 directly, L1 can be queried in the browser and exported as CSV from [chapter 9](https://kuotunyu.github.io/air-quality/explore/), and both layers are published as a [Hugging Face Dataset](https://huggingface.co/datasets/steven0226/air-quality). The complete hourly L2 copy is not redistributed; the open pipeline and upstream archives rebuild it. |
+| **Reproducible Science** | A deliberately flawed baseline, fitted here, then corrected choice by choice with every difference measured. |
+| **Interactive Dashboard** | Routed evidence chapters covering trends, station summaries, observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), event-detection limits, forecasting, health assumptions, and method comparisons. |
+| **Forecast Demo** | [Hugging Face Space](https://huggingface.co/spaces/steven0226/airlens-taiwan-forecast) — PM2.5 one to 48 hours ahead, against two baselines. |
+| **Python Toolchain** | `twair` — An extensible, high-performance data pipeline with built-in QC, database management, and analysis. |
 
 ---
 
@@ -172,17 +158,17 @@ Copernicus satellite inputs are governed separately by the
 [Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
 See [docs/legal.md](docs/legal.md) for source-specific terms and redistribution boundaries.
 
-| Source | Content | Spatial/Temporal | Span | Status |
-|---|---|---|---|---|
-| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | 1982–2025 | ✅ **all 44 years held**; every result here comes from this |
-| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | Real-time | ✅ in use (station register, freshness check) |
-| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | Historical | ⬜ **not yet acquired** |
-| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 1940–Present | ✅ 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
-| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2018–Present | 🟡 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
-| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2000–Present | 🟡 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
+| Source Authority & Product | Measured Content | Spatial & Temporal Span | Access Status |
+|---|---|---|---|
+| [Ministry of Environment (MoENV)](https://airtw.moenv.gov.tw/) | Historical Hourly Archives | All 82 monitoring stations | **all 44 years held**; every result here comes from this |
+| [MoENV Open Data Platform](https://data.moenv.gov.tw/) | Station Meta & Live AQI API | GPS Coordinates & Daily Updates | **in use** (station register, freshness check) |
+| [Central Weather Administration (CWA)](https://opendata.cwa.gov.tw/) | Meteorological Stations | Barometric pressure, solar radiation, visibility | **not yet acquired** |
+| [Copernicus Climate Change Service](https://cds.climate.copernicus.eu/) | **ERA5 Boundary Layer Height (BLH)** | 10m wind, 2m temperature/dewpoint, surface pressure | 2024–2025 acquisition plus multi-year and held-out-station robustness complete; calibration not delivered |
+| [Sentinel-5P TROPOMI](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S5P_OFFL_L3_NO2) | TROPOMI L3 via Google Earth Engine | Station-month tropospheric NO₂ and vertical SO₂ columns | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; calibration/fusion not done |
+| [MODIS MAIAC](https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MCD19A2_GRANULES) | MAIAC via Google Earth Engine | Aerosol optical depth | 2024–2025 source acquisition, M8 association, and multi-year predictive robustness delivered; AOD calibration/fusion not done |
 
 <details>
-<summary><b>Held-out predictive value of satellite and ERA5 features — per-fold counts and their limits</b> (click to open)<br>
+<summary><b>Held-out predictive value of satellite and ERA5 features — per-fold counts and their limits</b> (click to expand)<br>
 Both show incremental predictive information under held-out evaluation within 2025. Neither is
 causal attribution, satellite PM2.5 calibration, a fusion field, or a replacement for M4.
 Calibration and fusion remain deferred.</summary>
@@ -235,6 +221,34 @@ the released meteorological normalisation still uses station measurements.
 
 </details>
 
+<details>
+<summary><b>Engineering Milestones & Release Boundaries</b> (click to expand)</summary>
+
+<br>
+
+For the measured state of the store and outputs, run `uv run twair status`.
+The table below owns the public release boundary and next directions; durable
+evidence and decisions live in the relevant public [technical docs](docs/).
+
+| Phase | Current delivery | Disposition |
+|---|---|---|
+| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | Core complete; GEE satellite Stage A delivered; ERA5 2024–2025 acquisition and multi-year/held-out-station robustness delivered; CWA deferred |
+| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | Complete; The L0/L1 Dataset is publicly available; the complete hourly L2 copy is not published |
+| **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | Complete |
+| **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | Complete |
+| **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | Bounded delivery; no policy-causal claim |
+| **Phase 5** | M6 spatial structure, M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), and the spatial baseline and covariate-model readiness gates | The baseline `go` permitted bounded covariate-model design; the measured covariate-model gate is `stop`, so this fixed model branch closes; HYSPLIT, a 1 km field, and population-weighted exposure were not delivered; the full results and claim boundaries of both readiness gates are in [docs/methodology.md](docs/methodology.md) |
+| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered; 2025 annual micro-sensor readiness audit delivered, and the Q4-supported cross-station agreement delivered — 5 of 29 folds scorable, the remaining 18 with an empty test set and 6 with an empty training set, all reported unscored rather than as zero; held-quarter and joint station-quarter are not estimable — while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5; the agreement audit's full result and claim boundary are in [docs/methodology.md](docs/methodology.md) |
+| **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | Complete; DL/GNN stretch goals excluded |
+| **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | Release closeout complete: normal engineering and the editorial UI implementation are integrated into `master` and deployed to GitHub Pages, and the L0/L1 HF Dataset is public. The external-reader trial remains deferred and non-blocking; PyPI is optional. |
+
+Implemented engineering decisions live in
+[docs/working-rules.md](docs/working-rules.md); current data and method evidence
+live in [docs/data-sources.md](docs/data-sources.md) and
+[docs/methodology.md](docs/methodology.md).
+
+</details>
+
 ---
 
 ## Quick Start
@@ -264,31 +278,6 @@ read-only defaults packaged in the wheel. Refresh and probe commands create
 workspace overrides and never rewrite the installed package.
 
 The `probe sources` utility parses the live airtw annual catalogue, resolves current Google Drive identifiers, downloads one real archive sample, and populates `conf/sources.yaml` and `docs/data-sources.md`. Credentialed value-add sources remain explicitly unprobed when no credential is configured. Since government links change periodically, the catalogue is rediscovered rather than treated as a permanent hardcoded URL list.
-
----
-
-## Project Status
-
-For the measured state of the store and outputs, run `uv run twair status`.
-The table below owns the public release boundary and next directions; durable
-evidence and decisions live in the relevant public [technical docs](docs/).
-
-| Phase | Current delivery | Disposition |
-|---|---|---|
-| **Phase 0** | Project skeleton, live airtw probe, real cross-generation samples, source documentation | ✅ Core complete; GEE satellite Stage A delivered; ERA5 2024–2025 acquisition and multi-year/held-out-station robustness delivered; CWA deferred |
-| **Phase 1** | 1982–2025 canonical Parquet, QA/QC, coverage-aware aggregates | ✅ Complete; The L0/L1 Dataset is publicly available; the complete hourly L2 copy is not published |
-| **Phase 2** | M1 replication, M2 hourly rebuild, M3 method comparisons, core report | ✅ Complete |
-| **Phase 3** | Homepage, ten routed chapters, build-time SVG, DuckDB-WASM | ✅ Complete |
-| **Phase 4** | M4 meteorological normalisation, M5 counterfactual + placebo detection limit | ✅ Bounded delivery; no policy-causal claim |
-| **Phase 5** | M6 spatial structure, M7 CBPF observed high-value wind-speed/direction patterns (not source identity, position, transport distance, or contribution), and the spatial baseline and covariate-model readiness gates | ✅ The baseline `go` permitted bounded covariate-model design; the measured covariate-model gate is `stop`, so this fixed model branch closes; HYSPLIT, a 1 km field, and population-weighted exposure were not delivered; the full results and claim boundaries of both readiness gates are in [docs/methodology.md](docs/methodology.md) |
-| **Phase 6** | Satellite, ERA5, and low-cost sensor value-adds | 🟡 S5P and MAIAC source-acquisition Stage A delivered; the 2025 M8 association and held-out predictive-value diagnostics delivered; ERA5 2024–2025 robustness delivered; January 2025 micro-sensor observations, readiness, and grouped predictive benchmark delivered; January 2025 reference-station satellite-context predictive-value limit delivered; 2025 annual micro-sensor readiness audit delivered, and the Q4-supported cross-station agreement delivered — 5 of 29 folds scorable, the remaining 18 with an empty test set and 6 with an empty training set, all reported unscored rather than as zero; held-quarter and joint station-quarter are not estimable — while validated calibration and fusion remain deferred; not causal, not calibration, and not satellite-estimated PM2.5; the agreement audit's full result and claim boundary are in [docs/methodology.md](docs/methodology.md) |
-| **Phase 7** | M9 four-horizon forecast, M12 SARIMA, public HF Space | ✅ Complete; DL/GNN stretch goals excluded |
-| **Phase 8** | M10 health assumptions, CI, weekly freshness, full website narrative | ✅ Release closeout complete: normal engineering and the editorial UI implementation are integrated into `master` and deployed to GitHub Pages, and the L0/L1 HF Dataset is public. The external-reader trial remains deferred and non-blocking; PyPI is optional. |
-
-Implemented engineering decisions live in
-[docs/working-rules.md](docs/working-rules.md); current data and method evidence
-live in [docs/data-sources.md](docs/data-sources.md) and
-[docs/methodology.md](docs/methodology.md).
 
 ---
 
