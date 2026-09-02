@@ -439,6 +439,19 @@ the Hub API — `/api/spaces/<id>/runtime` and the authenticated
 `/logs/build` and `/logs/run` — to see a build finish and Gradio start, and
 let the owner open the page.
 
+**A green `RUNNING` badge is not a working page.** After the 2026-09-03
+upload the stage read RUNNING and the run log showed Gradio bound to
+0.0.0.0:7860, and the page still timed out in a browser: the Spaces runtime
+sets `GRADIO_SSR_MODE=true`, Gradio 5.9.1 therefore rendered through its
+experimental Node/SvelteKit layer, and every page load came back
+`SvelteKitError: POST method not allowed` with 「Too little data for declared
+Content-Length」. The July container predated that variable and had never
+restarted, so the first rebuild since was the first to hit it — meaning any
+restart, for any reason, would have done the same. `app.py` now passes
+`ssr_mode=False`, which wins over the environment variable. Read those two
+error signatures in `/logs/run` as a broken front door, not as noise, and
+treat 「the owner loaded the page」 as the only completion check.
+
 Four things it does deliberately, each of which cost a debugging round:
 
 - **LightGBM's text format, never pickle**, and written with `Path.write_text`
