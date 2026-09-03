@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # A manual run is the way to redeploy the site without a commit; the deploy
+  # job below runs on it as on a push.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -185,7 +188,8 @@ jobs:
 
   # The site had no gate that ran before a merge.
   #
-  # `pages.yml` builds the site, but only `on: push` — so a pull request that
+  # The deployment (then `pages.yml`, now the `deploy` job at the end of this
+  # file) built the site, but only `on: push` — so a pull request that
   # broke the Astro build, or reintroduced the mid-sentence spaces in Chinese
   # that check_cjk_spacing.py exists to catch, was green until it had already
   # landed. And `astro check` ran in no workflow at all, although the repository
@@ -324,3 +328,71 @@ jobs:
       # reading them.
       - name: The site still holds its executable design contract
         run: node scripts/check_site_quality.mjs --cdp-timeout-ms 45000
+
+  # Build and publish the website to GitHub Pages.
+  #
+  # 2026-09-03 — this was `pages.yml`, its own workflow on any push that touched
+  # web/: it rebuilt the site and published it about 44 seconds later without
+  # waiting for the two jobs above, so a commit whose gates were red could
+  # still go live, and every web push showed up twice in the Actions list. It
+  # is a job here now, after both gates, on pushes only — a pull request never
+  # deploys. It rebuilds rather than reusing the `web` job's dist because that
+  # build is the root-path one the gates are written against, and Pages serves
+  # a project site under /<name>/. The local runner (scripts/check_like_ci.py)
+  # skips it: a job with an `environment` is a deployment, not a check.
+  #
+  # This does not deploy until Pages is switched to "GitHub Actions" under
+  # Settings → Pages; until then the job is inert, which is deliberate:
+  # publishing is the owner's decision, not a side effect of pushing.
+  #
+  # The site builds from the data committed under web/public/data/, produced by
+  # `uv run twair export web`. CI has no copy of the 341M-row store and cannot
+  # regenerate it, so refreshing the site's data is a local step followed by a
+  # commit.
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [test, web]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One deployment at a time; never cancel one mid-flight, since a
+    # half-published site is worse than a stale one.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        working-directory: web
+        run: npm ci
+      - name: Build
+        working-directory: web
+        env:
+          # `github.repository` is owner/name; Pages serves a project site at
+          # https://<owner>.github.io/<name>/, so both halves are needed.
+          PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io
+          PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/
+          # The footer claims the work is open and prints the sha it was
+          # exported at; both are links now, and a fork's build should point at
+          # the fork rather than at this repository.
+          PUBLIC_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: npm run build
+      - name: Verify the complete Pages publication boundary
+        run: node scripts/check_pages_publication.mjs
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: web/dist
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

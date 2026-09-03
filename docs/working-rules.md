@@ -1571,7 +1571,11 @@ scientific design choice is not.
 source. Keep it concise and point durable reasoning here instead of duplicating
 this document. The authoritative completion-gate inventory is
 `.github/workflows/ci.yml`; `scripts/check_like_ci.py` reads that workflow so a
-local completion run and CI execute the same list.
+local completion run and CI execute the same list — except a job that declares
+an `environment`, which is a deployment (the Pages `deploy` job, since
+2026-09-03) and not a check: the runner names it as skipped rather than
+running its build, whose base-path output would overwrite the `web/dist` the
+site gate is written against.
 
 Never delegate: anything touching null semantics, QC flag meaning, statistical
 method choice, existing comments and docstrings, or prose that makes a claim.

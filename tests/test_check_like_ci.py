@@ -81,6 +81,33 @@ def test_listing_the_real_workflow_succeeds() -> None:
     assert "skipped as environment setup" in result.stdout
 
 
+def test_a_deployment_job_is_skipped_not_run(tmp_path: Path) -> None:
+    """A job with an `environment` publishes what the gates verified. The local
+    runner must neither run its steps nor count them as gates, and must say so."""
+    workflow = tmp_path / "ci.yml"
+    workflow.write_text(
+        yaml.safe_dump(
+            {
+                "jobs": {
+                    "test": {"steps": [{"name": "Gate", "run": "true"}]},
+                    "deploy": {
+                        "environment": {"name": "github-pages"},
+                        "steps": [{"name": "Build", "run": "echo build"}],
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run("--list", "--workflow", str(workflow))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "[test] Gate" in result.stdout
+    assert "[deploy]" not in result.stdout
+    assert "skipped (deployment): deploy" in result.stdout
+
+
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["uv", "run", "python", str(REPO_ROOT / "scripts" / "check_like_ci.py"), *args],

@@ -99,7 +99,15 @@ def main() -> int:
 
     planned: list[tuple[str, str, str, str | None]] = []
     skipped: list[str] = []
+    deployments: list[str] = []
     for key, job in jobs.items():
+        # 2026-09-03 — a job with an `environment` publishes what the other jobs
+        # verified (the Pages deploy); this machine has nothing to verify there,
+        # and running its build would overwrite web/dist with the base-path
+        # build the site gate is not written against.
+        if job.get("environment"):
+            deployments.append(key)
+            continue
         found = steps(job)
         if not found:
             raise SystemExit(
@@ -124,6 +132,8 @@ def main() -> int:
         print(f"\nskipped as environment setup: {len(skipped)}")
         for entry in skipped:
             print(f"  {entry}")
+        for entry in deployments:
+            print(f"  skipped (deployment): {entry}")
         return 0
 
     failures: list[str] = []
@@ -138,6 +148,8 @@ def main() -> int:
     print(f"ran {len(planned)} step(s); {len(failures)} failed")
     for entry in skipped:
         print(f"  skipped (setup): {entry}")
+    for entry in deployments:
+        print(f"  skipped (deployment): {entry}")
     for entry in failures:
         print(f"  FAILED: {entry}")
     return 1 if failures else 0

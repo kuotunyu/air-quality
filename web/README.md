@@ -130,7 +130,9 @@ interpolates, and reports a null as `無資料`.
 
 ## Deployment
 
-`.github/workflows/pages.yml` builds and publishes to GitHub Pages. Live at
-<https://kuotunyu.github.io/air-quality/>; it runs on any push to `master` that
-touches `web/`. `PUBLIC_SITE_URL` and `PUBLIC_BASE_PATH` are derived from the
+The `deploy` job in `.github/workflows/ci.yml` builds and publishes to GitHub
+Pages. Live at <https://kuotunyu.github.io/air-quality/>; it runs on every push
+to `master`, after both gate jobs have passed, so a commit whose checks are red
+never goes live (until 2026-09-03 this was its own workflow that deployed
+without waiting). `PUBLIC_SITE_URL` and `PUBLIC_BASE_PATH` are derived from the
 repository name in CI; set them yourself for a custom domain.

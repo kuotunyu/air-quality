@@ -2,7 +2,7 @@
 
 The original blueprint asked for a daily job that fetches increments, re-runs QC, rebuilds the
 Parquet store and redeploys. That cannot be built here, and the reason is
-already written down in `.github/workflows/pages.yml`: **CI has no copy of the
+already written down at the `deploy` job in `.github/workflows/ci.yml`: **CI has no copy of the
 341-million-row store.** A workflow that claimed to refresh it would either
 have to ship 605 MB into the runner on every run or maintain a second,
 divergent data path — and a second path that can silently disagree with the
