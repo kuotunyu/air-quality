@@ -271,8 +271,11 @@ def test_download_one_can_actually_call_gdown(
     calls: list[dict[str, object]] = []
 
     def fake_download(*, id: str, output: str, quiet: bool = False) -> str:
+        import zipfile
+
         calls.append({"id": id, "output": output})
-        pathlib.Path(output).write_bytes(b"PK\x03\x04" + b"0" * 64)
+        with zipfile.ZipFile(output, "w") as archive:
+            archive.writestr("sample.csv", "a,b\n1,2\n")
         return output
 
     monkeypatch.setitem(
