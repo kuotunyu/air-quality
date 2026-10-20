@@ -11,7 +11,9 @@ always traceable back to a specific upstream file.
 from __future__ import annotations
 
 import logging
+import tempfile
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -140,14 +142,18 @@ def is_supported_archive(path: Path, data_type: str = HOURLY_DATA_TYPE) -> bool:
     """
     with path.open("rb") as fh:
         magic = fh.read(8)
+    if magic.startswith(b"PK\x03\x04"):
+        # A local-header prefix alone also matches interrupted ZIP downloads.
+        # Read the directory without extracting/decompressing payloads.
+        try:
+            with zipfile.ZipFile(path):
+                return True
+        except zipfile.BadZipFile:
+            return False
     if data_type == HOURLY_DATA_TYPE:
-        return magic.startswith(b"PK\x03\x04") or magic.startswith(b"7z\xbc\xaf\x27\x1c")
+        return magic.startswith(b"7z\xbc\xaf\x27\x1c")
     # A report may be published as a PDF or wrapped in an archive; both are real.
-    return (
-        magic.startswith(b"%PDF")
-        or magic.startswith(b"PK\x03\x04")
-        or magic.startswith(b"7z\xbc\xaf\x27\x1c")
-    )
+    return magic.startswith(b"%PDF") or magic.startswith(b"7z\xbc\xaf\x27\x1c")
 
 
 def download_one(item: AirtwFile, *, force: bool = False, patient: bool = False) -> DownloadResult:
@@ -187,33 +193,35 @@ def download_one(item: AirtwFile, *, force: bool = False, patient: bool = False)
     from gdown.download import download as gdown_download
 
     attempts = len(_QUOTA_BACKOFF_SECONDS) + 1 if patient else 1
-    error = ""
     for attempt in range(attempts):
-        try:
-            gdown_download(id=item.drive_file_id, output=str(dest), quiet=True)
-            error = ""
-            break
-        except Exception as exc:
-            error = str(exc)
-            if not (patient and _looks_like_quota(error) and attempt < attempts - 1):
-                log.warning("download failed for %s: %s", item.key, error)
-                return DownloadResult(item, None, cached=False, error=error)
-            wait = _QUOTA_BACKOFF_SECONDS[attempt]
-            log.info("%s rate-limited; waiting %ss before retry", item.key, wait)
-            time.sleep(wait)
-
-    if error:
-        return DownloadResult(item, None, cached=False, error=error)
-
-    if not dest.exists() or dest.stat().st_size == 0:
-        # Google Drive returns an HTML interstitial instead of an error status
-        # when a file is unavailable, so an empty result is a real failure mode.
-        return DownloadResult(item, None, cached=False, error="empty or missing after download")
-
-    if not is_supported_archive(dest, item.data_type):
-        head = dest.read_bytes()[:64]
-        dest.unlink(missing_ok=True)
-        return DownloadResult(item, None, cached=False, error=f"not an archive (got {head[:32]!r})")
+        # Same filesystem for atomic promotion. Isolate gdown's own temporary
+        # files too, and never let a failed attempt overwrite a good archive.
+        with tempfile.TemporaryDirectory(prefix=f".{dest.name}-", dir=dest.parent) as staging:
+            candidate = Path(staging) / dest.name
+            try:
+                downloaded = gdown_download(
+                    id=item.drive_file_id, output=str(candidate), quiet=True
+                )
+                if downloaded is None or not candidate.exists() or candidate.stat().st_size == 0:
+                    return DownloadResult(
+                        item, None, cached=False, error="empty or missing after download"
+                    )
+                if not is_supported_archive(candidate, item.data_type):
+                    with candidate.open("rb") as fh:
+                        head = fh.read(32)
+                    return DownloadResult(
+                        item, None, cached=False, error=f"not an archive (got {head!r})"
+                    )
+                candidate.replace(dest)
+                break
+            except Exception as exc:
+                error = str(exc)
+                if not (patient and _looks_like_quota(error) and attempt < attempts - 1):
+                    log.warning("download failed for %s: %s", item.key, error)
+                    return DownloadResult(item, None, cached=False, error=error)
+        wait = _QUOTA_BACKOFF_SECONDS[attempt]
+        log.info("%s rate-limited; waiting %ss before retry", item.key, wait)
+        time.sleep(wait)
 
     record_download(
         key=item.key,
